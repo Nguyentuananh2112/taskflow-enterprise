@@ -272,7 +272,7 @@
 | ROL-02 | U, I | — | Pam đổi role bất kỳ ai | `403` | SEC-13 |
 | ROL-03 | U, I | Alice là OWNER duy nhất | Alice tự hạ xuống PM | `422 BUSINESS_RULE_VIOLATION`, `details.rule = "LAST_OWNER"`; role không đổi | SEC-15 |
 | ROL-04 | U | A có Alice và Olga là OWNER | Alice hạ Olga xuống PM | `200` | |
-| ROL-05 | I | A có đúng 2 OWNER Alice, Olga | Alice hạ Olga **đồng thời** với Olga hạ Alice (lặp 20 lần) | Mỗi lần đúng 1 `200`, 1 `422 LAST_OWNER`; cuối cùng còn đúng 1 OWNER; không deadlock (không có lỗi `40P01`) | SEC-46 |
+| ROL-05 | I | A có đúng 2 OWNER Alice, Olga | Alice hạ Olga **đồng thời** với Olga hạ Alice (lặp 20 lần) | Mỗi lần đúng 1 `200`, 1 bị từ chối an toàn — `422 LAST_OWNER`, hoặc (từ X6, T-032: role của actor đọc lại sau khóa owners) `403` / `404` vì bên thắng đã hạ / xóa chính actor đó; cuối cùng còn đúng 1 OWNER; không deadlock (không có lỗi `40P01`) | SEC-46 |
 | ROL-06 | U, I | Mia được gán 3 task: T1, T2 (chưa xóa), T3 (đã xóa mềm) | Alice hạ Mia xuống VIEWER | `200 { unassignedTaskCount: 2 }`; U: `ITaskAssignmentCleaner.unassignAllForUser({ workspaceId: A, userId: Mia, actorId: Alice })` được gọi đúng 1 lần **trong** transaction; I: T1, T2 có `assigneeId = null`, `version + 1`, mỗi task 1 audit `ASSIGNEE_CHANGED` actor = Alice; T3 không đổi; sau commit event `task:updated` cho T1, T2 và `member:role-changed` | SEC-44 |
 | ROL-06b | U, I | Mia được gán T4 thuộc project **archived** | Alice hạ Mia xuống VIEWER (hoặc xóa Mia) | T4 cũng bị bỏ gán, có audit — ngoại lệ có chủ đích của ADR-045 (ADR-092) | SEC-44 |
 | ROL-07 | I | — | Pam gán T1 cho Mia **đồng thời** với Alice hạ Mia xuống VIEWER (lặp 20 lần) | Không lần nào kết thúc với task gán cho Mia khi Mia là VIEWER | SEC-45 |
