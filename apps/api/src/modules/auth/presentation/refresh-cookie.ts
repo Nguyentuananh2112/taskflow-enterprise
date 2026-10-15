@@ -39,18 +39,22 @@ export class RefreshCookie {
     res.cookie(this.name, '', this.#options(0));
   }
 
-  /** Đọc từ header Cookie (không cần cookie-parser). Nhiều cookie trùng tên ⇒ lấy cái đầu. */
+  /**
+   * Đọc từ header Cookie (không cần cookie-parser). Nhiều cookie trùng tên ⇒ coi như KHÔNG có
+   * (T-028): cookie của ta host-only nên chỉ có một; cookie thứ hai chỉ có thể do subdomain anh em
+   * đặt với `Domain=` (cookie tossing) — lấy "cái đầu" sẽ đăng nhập nạn nhân vào phiên kẻ tấn công.
+   */
   read(req: Request): string | undefined {
+    const values: string[] = [];
     for (const part of (req.headers.cookie ?? '').split(';')) {
       const eq = part.indexOf('=');
-      if (eq < 0 || part.slice(0, eq).trim() !== this.name) continue;
-      const value = part.slice(eq + 1).trim();
-      try {
-        return decodeURIComponent(value) || undefined;
-      } catch {
-        return undefined;
-      }
+      if (eq >= 0 && part.slice(0, eq).trim() === this.name) values.push(part.slice(eq + 1).trim());
     }
-    return undefined;
+    if (values.length !== 1) return undefined;
+    try {
+      return decodeURIComponent(values[0]!) || undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
