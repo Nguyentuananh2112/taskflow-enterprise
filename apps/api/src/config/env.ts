@@ -49,6 +49,10 @@ const EnvSchema = z
     SOCKET_REDIS_ADAPTER: z.stringbool().default(false),
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
     READINESS_DRAIN_MS: z.coerce.number().int().min(0).max(60_000).default(5_000),
+    // Job bảo trì (T-033): không đặt ⇒ bật ở staging/production, tắt ở local/test (composition tính).
+    MAINTENANCE_JOBS_ENABLED: z.stringbool().optional(),
+    PURGE_INTERVAL_MS: z.coerce.number().int().min(60_000).max(86_400_000).default(3_600_000),
+    PURGE_JITTER_MS: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
     METRICS_TOKEN: z.string().min(32).optional(),
     // T-020/T-024: lưu trữ của MỌI module (auth, workspace, task) — Prisma + Valkey, hoặc `memory`
     // (bộ nhớ, MẤT dữ liệu khi khởi động lại; chỉ local/test). Không còn trạng thái "lai" theo module.

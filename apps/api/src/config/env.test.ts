@@ -139,3 +139,20 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     expect(variablesOf(testEnvVars({ NODE_ENV: 'development', APP_ENV: 'local' }))).toEqual([]);
   });
 });
+
+describe('job bảo trì (T-033)', () => {
+  it('mặc định: không đặt MAINTENANCE_JOBS_ENABLED (composition tính theo APP_ENV), chu kỳ 1 giờ + jitter 5 phút', () => {
+    expect(loadEnv(testEnvVars())).toMatchObject({
+      PURGE_INTERVAL_MS: 3_600_000,
+      PURGE_JITTER_MS: 300_000,
+    });
+    expect(loadEnv(testEnvVars()).MAINTENANCE_JOBS_ENABLED).toBeUndefined();
+    expect(
+      loadEnv(testEnvVars({ MAINTENANCE_JOBS_ENABLED: 'false' })).MAINTENANCE_JOBS_ENABLED,
+    ).toBe(false);
+  });
+
+  it('chu kỳ quá ngắn (< 1 phút) bị từ chối', () => {
+    expect(variablesOf(testEnvVars({ PURGE_INTERVAL_MS: '1000' }))).toEqual(['PURGE_INTERVAL_MS']);
+  });
+});
