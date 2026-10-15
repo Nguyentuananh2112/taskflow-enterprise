@@ -60,6 +60,8 @@ export function startMockApi(options: MockApiOptions = {}) {
   return {
     ...api,
     jar,
+    /** Chèn handler tạm (vd lỗi 500 một lần — `{ once: true }`) để test trạng thái lỗi. */
+    server,
     stop: () => {
       jar.restore();
       server.close();

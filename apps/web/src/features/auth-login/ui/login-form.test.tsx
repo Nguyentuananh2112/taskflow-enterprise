@@ -1,9 +1,10 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
-import { startMockApi } from '@test/mock-api';
+import { API_BASE, startMockApi } from '@test/mock-api';
 import { cleanupApp, renderWithProviders } from '@test/render';
 
 import { useSession } from '@/entities/session';
@@ -81,9 +82,40 @@ describe('LoginForm', () => {
     await user.type(screen.getByLabelText(/Mật khẩu/), 'sai');
     for (let i = 0; i < 6; i += 1) {
       await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
-      // chờ request xong (nút hết trạng thái loading) rồi mới bấm lần kế
-      await screen.findByRole('button', { name: 'Đăng nhập' });
+      // chờ request xong (nút hết loading) — lần thứ 6 nút bị khóa và đổi thành đếm ngược
+      await screen.findByRole('button', { name: /^(Đăng nhập|Thử lại sau \d+ giây)$/ });
     }
     expect((await screen.findByRole('alert')).textContent).toMatch(/Thử lại sau 60 giây/);
+    expect(screen.getByRole('button', { name: /Thử lại sau \d+ giây/ })).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+
+  it('RATE_LIMITED ⇒ khóa nút + đếm ngược theo retryAfterSec; hết giờ ⇒ mở lại + aria-live báo (F1, G2)', async () => {
+    mock.server.use(
+      http.post(
+        `${API_BASE}/auth/login`,
+        () =>
+          HttpResponse.json(
+            {
+              success: false,
+              error: { code: 'RATE_LIMITED', message: 'x', details: { retryAfterSec: 2 } },
+              meta: { timestamp: new Date().toISOString(), requestId: 'req-rl' },
+            },
+            { status: 429 },
+          ),
+        { once: true },
+      ),
+    );
+    renderWithProviders(<LoginForm />);
+    await fillAndSubmit('lan@example.com', 'bat-ky-mat-khau');
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Thử lại sau 2 giây/);
+    const waiting = screen.getByRole('button', { name: /Thử lại sau [12] giây/ });
+    expect(waiting).toHaveProperty('disabled', true);
+    const ready = await screen.findByRole('button', { name: 'Đăng nhập' }, { timeout: 4_000 });
+    expect(ready).toHaveProperty('disabled', false);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Bạn có thể đăng nhập lại.').getAttribute('aria-live')).toBe('polite');
   });
 });
