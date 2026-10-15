@@ -48,9 +48,10 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
       apiError({ status: 401, code: 'INVALID_CREDENTIALS', message: 'Sai email hoặc mật khẩu.' }),
       { fields: FIELDS },
     );
+    // Câu do FE quyết theo code — không lấy nguyên văn message của server (T-034, B review).
     expect(setError).toHaveBeenCalledExactlyOnceWith(ROOT_ERROR, {
       type: 'INVALID_CREDENTIALS',
-      message: 'Sai email hoặc mật khẩu.',
+      message: 'Email hoặc mật khẩu không đúng.',
     });
   });
 
@@ -113,5 +114,26 @@ describe('applyServerErrors — RESOURCE_CONFLICT theo details.field (T-034)', (
     });
     applyServerErrors(setError, error, { fields: ['name'] });
     expect(setError.mock.calls[0]?.[0]).toBe('root.server');
+  });
+});
+
+describe('applyServerErrors — không hiển thị nguyên văn message của server (B review T-034)', () => {
+  it('mã đã biết ⇒ câu FE theo code; mã lạ 4xx ⇒ câu chung', () => {
+    const setError = vi.fn<SetFieldError>();
+    applyServerErrors(
+      setError,
+      new ApiError({ status: 403, code: 'FORBIDDEN_ACCESS', message: '<b>server nói</b>' }),
+      { fields: [] },
+    );
+    expect(setError.mock.calls[0]?.[1]).toMatchObject({
+      message: 'Bạn không có quyền thực hiện thao tác này.',
+    });
+    setError.mockClear();
+    applyServerErrors(
+      setError,
+      new ApiError({ status: 413, code: 'PAYLOAD_TOO_LARGE', message: 'raw server text' }),
+      { fields: [] },
+    );
+    expect(setError.mock.calls[0]?.[1]?.message).not.toContain('raw server text');
   });
 });

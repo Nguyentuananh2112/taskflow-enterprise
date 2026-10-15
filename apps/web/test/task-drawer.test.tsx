@@ -116,13 +116,37 @@ describe('drawer chi tiết task', () => {
       new FakeRealtimeHub(mock.board).client(getClientId()),
     );
     const drawer = await screen.findByRole('dialog', { name: task.key });
-    const picker = await within(drawer).findByLabelText<HTMLSelectElement>('Người phụ trách');
-    await waitFor(() => expect(picker.options.length).toBe(3));
-    expect([...picker.options].map((o) => o.text)).toEqual(['Chưa giao', 'Trần Lan', 'Mai Hoa']);
-    await userEvent.setup({ delay: null }).selectOptions(picker, hoa.id);
+    const user = userEvent.setup({ delay: null });
+    // T-034: Combobox có tìm kiếm (q phía server) thay <select>.
+    const picker = await within(drawer).findByRole('combobox', { name: 'Người phụ trách' });
+    expect(picker).toHaveProperty('value', 'Chưa giao');
+    await user.click(picker);
+    const listbox = within(drawer).getByRole('listbox', { name: 'Người phụ trách' });
+    await waitFor(() =>
+      expect(
+        within(listbox)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['Chưa giao', 'Trần Lanlan@example.com', 'Mai Hoahoa@example.com']),
+    );
+    // Tìm phía server: "khang" (VIEWER) không bao giờ xuất hiện; "hoa" ⇒ chỉ Mai Hoa.
+    await user.type(picker, 'khang');
+    await waitFor(() => expect(within(listbox).queryAllByRole('option')).toHaveLength(0));
+    await user.clear(picker);
+    await user.type(picker, 'hoa');
+    await waitFor(() =>
+      expect(
+        within(listbox)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['Mai Hoahoa@example.com']),
+    );
+    // Bàn phím: ↓ chọn dòng đầu (đã ở 0) rồi Enter.
+    await user.keyboard('{Enter}');
     await waitFor(() =>
       expect(mock.board.getTask(fx.project.id, task.id)?.assignee?.id).toBe(hoa.id),
     );
+    await waitFor(() => expect(picker).toHaveProperty('value', 'Mai Hoa'));
   });
 
   it('MEMBER trên task người khác: chỉ có "Nhận việc" (không có picker), không có nút xóa', async () => {

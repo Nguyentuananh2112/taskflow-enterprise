@@ -32,7 +32,7 @@ export function applyServerErrors(
   }
   const field = opts.fieldByCode?.[error.code];
   if (field) {
-    setError(field, { type: error.code, message: error.message });
+    setError(field, { type: error.code, message: messageFor(error) });
     return;
   }
   const conflict = ResourceConflictDetails.safeParse(error.details);
@@ -75,5 +75,23 @@ function messageFor(error: { code: string; message: string; status: number; deta
   if (error.status >= 500 || error.code === 'UNKNOWN_ERROR' || error.code === 'BAD_RESPONSE') {
     return GENERIC;
   }
-  return error.message || GENERIC;
+  // KHÔNG hiển thị nguyên văn `message` của server (có thể đổi, không dành cho UI) — câu theo `code`.
+  return CODE_MESSAGES[error.code] ?? GENERIC;
 }
+
+/** Câu FE theo `error.code` (FE rẽ nhánh theo code, không theo message — data-and-api §3.1). */
+const CODE_MESSAGES: Readonly<Record<string, string>> = {
+  INVALID_CREDENTIALS: 'Email hoặc mật khẩu không đúng.',
+  INVALID_CURRENT_PASSWORD: 'Mật khẩu hiện tại không đúng.',
+  EMAIL_ALREADY_EXISTS: 'Email đã được sử dụng.',
+  FORBIDDEN_ACCESS: 'Bạn không có quyền thực hiện thao tác này.',
+  RESOURCE_NOT_FOUND: 'Không tìm thấy hoặc bạn không có quyền truy cập.',
+  RESOURCE_CONFLICT: 'Giá trị này đã được sử dụng.',
+  PROJECT_ARCHIVED: 'Dự án đã lưu trữ — chỉ đọc.',
+  VERSION_CONFLICT: 'Dữ liệu vừa được người khác thay đổi. Tải lại và thử lại.',
+  BUSINESS_RULE_VIOLATION: 'Thao tác vi phạm quy tắc của hệ thống.',
+  VALIDATION_ERROR: 'Dữ liệu không hợp lệ.',
+  UNAUTHORIZED: 'Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.',
+  TOKEN_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+  ORIGIN_NOT_ALLOWED: 'Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.',
+};
