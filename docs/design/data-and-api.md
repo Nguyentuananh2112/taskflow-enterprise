@@ -56,7 +56,11 @@ RETURNING next_task_number - 1 AS number, key_prefix;
 - Sắp xếp luôn `ORDER BY rank, id` (id phá hòa nếu có trùng).
 - **Unique partial** `(project_id, status, rank) WHERE deleted_at IS NULL` — khai báo **native** bằng preview `partialIndexes` của Prisma 7.10 (ADR-062): `@@unique([projectId, status, rank], map: "tasks_rank_live_key", where: raw("deleted_at IS NULL"))`. CI kiểm `prisma migrate diff` rỗng. Khi 2 người thả vào cùng một khe cùng lúc, thư viện sinh cùng key → một bên vi phạm unique → server **tự thử lại tối đa 3 lần** với hàng xóm đọc mới; vẫn lỗi → `409 RESOURCE_CONFLICT`.
 - Task mới: rank = `generateKeyBetween(lastRankInColumn, null)` (cuối cột TODO).
-- Rebalance (rank quá dài) ngoài phạm vi v1.1; log cảnh báo khi `length(rank) > 100`.
+- **Rebalance theo cột** (T-033): rank chỉ dài ra khi chèn lặp vào CÙNG một khe (~1 ký tự/5 lần; 1000 lần ⇒ 169–202 ký tự), thêm đầu/cuối cột không làm dài. Move sinh rank > **64** ký tự ⇒ cân bằng lại cả cột đích trong cùng transaction:
+  - Create/move lấy `pg_advisory_xact_lock(hashtextextended('taskflow:rank:<project>:<status>'))` **trước** khi đọc hàng xóm (move đọc lại task sau khi có khóa) ⇒ không tính rank theo cột đang được tính lại.
+  - Pha 1: đổi rank cả cột sang khóa tạm duy nhất `~<id>` (unique index kiểm theo từng dòng, nên không ghi thẳng được); pha 2: ghi `generateNKeysBetween(null, null, n)` theo thứ tự cũ (chèn task đang move vào đúng chỗ).
+  - Không có actor `system` (ADR-014): actor là người đang move ⇒ mỗi task đổi rank có `version + 1`, audit `MOVED`, realtime `task:moved`; task nhận lại đúng rank cũ thì chỉ khôi phục, không version/audit/event.
+  - Task trong cột bị sửa song song trong khe đọc→khóa ⇒ thử lại cả transaction (như trùng rank).
 
 ### 1.4. Schema Prisma v1.1
 
@@ -340,7 +344,7 @@ Sau commit: phát `workspace:access-revoked { workspaceId }` vào phòng `user:{
 - Không phát socket event; thành viên thấy lại workspace qua `GET /workspaces`.
 - OWNER xem danh sách có thể khôi phục qua `GET /workspaces?deleted=true` (kèm `purgeAt`). v1 không cache membership (T-002).
 
-**Purge job** (ADR-095): `setInterval` mỗi giờ trong process API. Không thêm thư viện hàng đợi, không phụ thuộc Valkey (ADR-063); an toàn khi nhiều instance (ADR-000).
+**Purge job** (ADR-095): lịch chạy trong process API — `setTimeout` nối tiếp mỗi `PURGE_INTERVAL_MS` (mặc định 1 giờ) + jitter `PURGE_JITTER_MS` (mặc định 5 phút), không bao giờ chồng lượt; bật mặc định ở staging/production (`MAINTENANCE_JOBS_ENABLED`); graceful shutdown dừng lịch trước Prisma/pool, chờ lượt đang chạy ≤ ½ `SHUTDOWN_TIMEOUT_MS` (T-033). Không thêm thư viện hàng đợi, không phụ thuộc Valkey (ADR-063); an toàn khi nhiều instance (ADR-000).
 
 - Khóa: **mỗi lô là một transaction**, câu đầu tiên là `SELECT pg_try_advisory_xact_lock(<PURGE_LOCK_ID>)`. Trả `false` ⇒ instance khác đang chạy lô ⇒ dừng lượt này. Khóa tự nhả khi transaction commit/rollback. **Không** dùng `pg_try_advisory_lock` mức session: với connection pool của Prisma, khóa có thể dính vào một connection khác hoặc không bao giờ được nhả.
 - Hệ quả: hai instance có thể xen kẽ lô của nhau giữa các transaction. Điều đó an toàn vì mỗi lô tự kiểm lại điều kiện và idempotent.
