@@ -3,9 +3,7 @@
 **Chủ tài liệu:** Engineer B (bảo mật) · **Dùng khi:** lần đầu bật production, và mỗi lần đổi hạ tầng (domain, hosting, proxy, số instance).
 **Quan hệ với tài liệu khác:**
 - `docs/design/devops.md` §9 là checklist go-live **chung** (mạng, dữ liệu, vận hành). Runbook này đi sâu phần **bảo mật**: mỗi mục có cách kiểm và bằng chứng cần lưu.
-- Khi hai tài liệu lệch nhau, **tài liệu này và `security.md` đúng hơn**. Hai mục §9 đã cũ:
-  - mục 5 ghi `__Secure-tf_rt; Path=/api/v1/auth` — đã thay bằng `__Host-tf_rt; Path=/` (ADR-109);
-  - mục 7 ghi "sai 6 lần ⇒ 429" — đã thay theo ADR-108.
+- Khi hai tài liệu lệch nhau, **tài liệu này và `security.md` đúng hơn** — báo Engineer B để đồng bộ.
 - Bằng chứng (log, ảnh, link run CI) ghi vào `docs/ops/go-live.md`, kèm người ký.
 
 **Nguyên tắc:** app **tự từ chối khởi động** khi cấu hình production sai ở những chỗ nó kiểm được (`apps/api/src/config/env.ts`). Checklist này phủ phần app **không** tự kiểm được: topology, tài khoản, quy trình.

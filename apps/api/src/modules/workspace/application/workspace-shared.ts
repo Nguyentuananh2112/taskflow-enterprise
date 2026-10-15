@@ -8,7 +8,7 @@ import {
   type WorkspaceRole,
 } from '../domain/roles';
 import type { WorkspaceSnapshot } from '../domain/workspace';
-import type { UserSummary } from './ports/collaborators.port';
+import type { ProjectEventDto, UserSummary } from './ports/collaborators.port';
 
 /**
  * Người gọi trong một workspace — do middleware `loadMembership` dựng (ws chưa xóa, đã là member;
@@ -108,5 +108,16 @@ export function toProjectView(p: ProjectSnapshot): ProjectView {
     archivedAt: p.archivedAt,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
+  };
+}
+
+/** Payload `project:updated` — `ProjectDto` với ngày ISO (gửi qua socket, không qua responder HTTP). */
+export function toProjectEventDto(p: ProjectSnapshot): ProjectEventDto {
+  const v = toProjectView(p);
+  return {
+    ...v,
+    archivedAt: v.archivedAt?.toISOString() ?? null,
+    createdAt: v.createdAt.toISOString(),
+    updatedAt: v.updatedAt.toISOString(),
   };
 }
