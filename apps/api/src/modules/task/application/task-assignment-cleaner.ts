@@ -1,3 +1,4 @@
+import type { ITaskAssignmentCleaner } from '../../workspace';
 import type { ProjectRef } from './ports/collaborators.port';
 import type { TaskCommands } from './task-commands';
 
@@ -6,11 +7,8 @@ import type { TaskCommands } from './task-commands';
  * gọi BÊN TRONG transaction của Workspace khi thành viên bị xóa/tự rời hoặc hạ xuống VIEWER.
  * Bỏ gán mọi task sống của user trong workspace, KỂ CẢ project archived (ADR-092): mỗi task
  * `version + 1` + audit `ASSIGNEE_CHANGED` (actor = người thao tác); `task:updated` sau commit.
- *
- * TODO(T-015 merge): thêm `implements ITaskAssignmentCleaner` (`import type` từ
- * `modules/workspace/index.ts`) — hiện khớp theo cấu trúc, chữ ký chốt với B.
  */
-export class TaskAssignmentCleaner {
+export class TaskAssignmentCleaner implements ITaskAssignmentCleaner {
   constructor(private readonly c: TaskCommands) {}
 
   async unassignAllForUser(input: {

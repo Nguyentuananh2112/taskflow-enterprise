@@ -1,15 +1,10 @@
-export type TaskRole = 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER';
+import type { Permission, WorkspaceRole } from '../../workspace';
 
-export type TaskPermission =
-  | 'task:read'
-  | 'task:create'
-  | 'task:update'
-  | 'task:move'
-  | 'task:assign:any'
-  | 'task:assign:own'
-  | 'task:delete:any'
-  | 'task:delete:own'
-  | 'audit:read';
+// Kiểu lấy từ public API type-only của Workspace (ADR-093): đổi role/permission bên RBAC thì
+// Task không biên dịch được thay vì lệch im lặng.
+export type TaskRole = WorkspaceRole;
+
+export type TaskPermission = Extract<Permission, `task:${string}` | 'audit:read'>;
 
 /** Người thực hiện: `role` do middleware membership nạp (security.md 3.3). Use case không đọc `req`. */
 export interface TaskActor {
