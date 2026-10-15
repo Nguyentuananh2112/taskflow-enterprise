@@ -1,16 +1,16 @@
+import { applyVietnameseZodLocale } from '@taskflow/contracts';
 import { Router } from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod';
 
-import { errorOf, FakeClock, productionEnvVars } from '../test/support';
+import { errorOf, FakeClock, productionEnvVars, testEnvVars } from '../test/support';
 import { appConfigFromEnv, createApp, type AppConfig } from './app';
 import { loadEnv } from './config/env';
 import { requestContext } from './core/context/request-context';
 import { VersionConflictError } from './core/errors';
 import type { ReadinessProbe } from './core/http/health';
 import { validate } from './core/http/validate';
-import { configureZodLocale } from './core/http/zod';
 import { createLogger } from './core/logging/pino-logger';
 
 const ORIGIN = 'http://localhost:3000';
@@ -19,6 +19,7 @@ const config = (overrides: Partial<AppConfig> = {}): AppConfig => ({
   corsOrigins: [ORIGIN],
   trustProxyHops: 0,
   production: false,
+  hsts: false,
   bodyLimit: '1kb',
   ...overrides,
 });
@@ -58,10 +59,15 @@ const probe = (name: string, critical: boolean, ok: boolean): ReadinessProbe => 
 });
 
 function build(
-  options: { production?: boolean; probes?: ReadinessProbe[]; shuttingDown?: boolean } = {},
+  options: {
+    production?: boolean;
+    hsts?: boolean;
+    probes?: ReadinessProbe[];
+    shuttingDown?: boolean;
+  } = {},
 ) {
   return createApp({
-    config: config({ production: options.production ?? false }),
+    config: config({ production: options.production ?? false, hsts: options.hsts ?? false }),
     logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
     clock: new FakeClock('2026-10-15T08:00:00.000Z'),
     probes: options.probes ?? [probe('db', true, true), probe('valkey', false, true)],
@@ -72,7 +78,7 @@ function build(
 
 const TASK = '/api/v1/tasks/0199e5a2-7c1e-7cc3-9a3b-1f2e3d4c5b6a';
 
-beforeAll(() => configureZodLocale());
+beforeAll(() => applyVietnameseZodLocale());
 
 describe('appConfigFromEnv', () => {
   it('suy cấu hình HTTP từ Env đã validate (body limit 100kb cố định — ADR-028)', () => {
@@ -82,6 +88,7 @@ describe('appConfigFromEnv', () => {
       corsOrigins: ['https://app.example.com'],
       trustProxyHops: 1,
       production: true,
+      hsts: true,
       bodyLimit: '100kb',
     });
   });
@@ -118,9 +125,16 @@ describe('header bảo mật (security.md §6.2–6.3)', () => {
     expect(res.headers['strict-transport-security']).toBeUndefined();
   });
 
-  it('HSTS 1 năm + includeSubDomains ở production', async () => {
-    const res = await request(build({ production: true })).get('/healthz');
+  it('HSTS 1 năm + includeSubDomains khi APP_ENV staging/production (ADR-101)', async () => {
+    const res = await request(build({ hsts: true })).get('/healthz');
     expect(res.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
+  });
+
+  it('ADR-101: HSTS theo APP_ENV, không theo NODE_ENV — local/test không bao giờ có HSTS', () => {
+    const local = loadEnv(testEnvVars({ NODE_ENV: 'development', APP_ENV: 'local' }));
+    expect(appConfigFromEnv(local).hsts).toBe(false);
+    const staging = loadEnv(productionEnvVars({ APP_ENV: 'staging' }));
+    expect(appConfigFromEnv(staging).hsts).toBe(true);
   });
 
   it('CORS: origin trong whitelist được phản hồi kèm credentials; origin lạ không', async () => {
@@ -153,6 +167,39 @@ describe('body & Content-Type', () => {
 
   it('POST thiếu Content-Type (không body) ⇒ 415 — buộc preflight', async () => {
     expect((await request(build()).post(TASK)).status).toBe(415);
+  });
+
+  it.each(['utf-7', 'utf-16le', 'UTF-16BE', '"iso-8859-1"'])(
+    'JSON với charset=%s ⇒ 415 (RFC 8259: chỉ UTF-8 — QA F finding A5)',
+    async (charset) => {
+      const res = await request(build())
+        .post(TASK)
+        .set('Content-Type', `application/json; charset=${charset}`)
+        .send('{"title":"abc"}');
+      expect(res.status).toBe(415);
+      expect(errorOf(res).code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    },
+  );
+
+  it.each([
+    'application/json',
+    'application/json; charset=utf-8',
+    'application/json;charset="UTF-8"',
+  ])('%s ⇒ chấp nhận', async (contentType) => {
+    const res = await request(build())
+      .post(TASK)
+      .set('Content-Type', contentType)
+      .send('{"title":"abc"}');
+    expect(res.status).toBe(200);
+  });
+
+  it('DELETE có body JSON charset lạ ⇒ 415; DELETE không body ⇒ không cần Content-Type', async () => {
+    const del = (ct?: string) => {
+      const req = request(build()).delete('/api/v1/nope');
+      return ct ? req.set('Content-Type', ct).send('{}') : req;
+    };
+    expect((await del('application/json; charset=utf-16le')).status).toBe(415);
+    expect((await del()).status).toBe(404);
   });
 
   it('vượt body limit ⇒ 413 PAYLOAD_TOO_LARGE', async () => {

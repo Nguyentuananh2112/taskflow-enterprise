@@ -1,10 +1,10 @@
+import { ErrorCode } from '@taskflow/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
   AppError,
   BusinessRuleViolationError,
   EmailAlreadyExistsError,
-  ERROR_CODES,
   ForbiddenError,
   InternalError,
   InvalidCredentialsError,
@@ -87,8 +87,23 @@ describe('danh mục lỗi (data-and-api.md §3.2)', () => {
     expect(error.name).toBe(error.constructor.name);
   });
 
-  it('mọi code trong ERROR_CODES đều có lớp lỗi tương ứng', () => {
-    expect(new Set(CATALOG.map(([e]) => e.code))).toEqual(new Set(ERROR_CODES));
+  it('parity AppError ↔ ErrorCode của contracts: mỗi code có đúng một lớp lỗi, không thiếu, không thừa', () => {
+    const classCodes = CATALOG.map(([e]) => e.code);
+    expect(new Set(classCodes).size).toBe(classCodes.length);
+    expect([...classCodes].sort()).toEqual([...ErrorCode.options].sort());
+  });
+
+  it('mọi lớp con của AppError được export đều nằm trong catalog test (không lớp nào lọt lưới)', async () => {
+    const errors = await import('./index');
+    const exported = (Object.values(errors) as unknown[]).filter(
+      (v): v is { name: string; prototype: unknown } =>
+        typeof v === 'function' && (v as { prototype: unknown }).prototype instanceof AppError,
+    );
+    const tested = new Set<unknown>(CATALOG.map(([e]) => e.constructor));
+    const abstractBases = new Set<unknown>([errors.ConflictError]);
+    expect(
+      exported.filter((c) => !tested.has(c) && !abstractBases.has(c)).map((c) => c.name),
+    ).toEqual([]);
   });
 });
 

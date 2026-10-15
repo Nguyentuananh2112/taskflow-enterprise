@@ -1,4 +1,4 @@
-export { AppError, ERROR_CODES, type ErrorCode, type ErrorDetails } from './app-error';
+export { AppError, type ErrorCode, type ErrorDetails } from './app-error';
 export {
   ForbiddenError,
   InvalidCredentialsError,
