@@ -16,13 +16,15 @@
     "./system": "./src/system/healthz.schemas.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:coverage": "vitest run --coverage --maxWorkers=2"
   },
   "dependencies": {
     "zod": "catalog:"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
+    "@vitest/coverage-v8": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
