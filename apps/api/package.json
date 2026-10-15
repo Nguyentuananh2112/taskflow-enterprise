@@ -44,7 +44,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/core": "catalog:",
     "@taskflow/config": "workspace:*",
     "@types/cors": "catalog:",
     "@types/express": "catalog:",

@@ -1,46 +1,113 @@
-import { randomBytes } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 
 import pg from 'pg';
 
-import type { SecurityHarnessConfig } from './config';
+import { postgresUrl, type SecurityHarnessConfig } from './config';
 
-/** DB tạm cho một lần chạy suite: clone từ template, xóa khi xong (không bao giờ `migrate reset`). */
-export interface EphemeralDatabase {
-  name: string;
+/** DB của suite đã sẵn sàng cho một file: schema mới, đã migrate, đang giữ khóa độc quyền. */
+export interface SuiteDatabase {
   appUrl: string;
-  drop(): Promise<void>;
+  release(): Promise<void>;
 }
 
-async function withAdmin<T>(adminUrl: string, fn: (client: pg.Client) => Promise<T>): Promise<T> {
-  const client = new pg.Client({ connectionString: adminUrl });
+const LOCK_KEY = 'taskflow-security-suite';
+const LOCK_WAIT_MS = 120_000;
+const ident = (value: string) => `"${value.replaceAll('"', '""')}"`;
+
+async function connect(url: string): Promise<pg.Client> {
+  const client = new pg.Client({ connectionString: url });
   await client.connect();
+  return client;
+}
+
+/** Tạo DB riêng nếu chưa có (migrator có CREATEDB ⇒ thành owner). Không bao giờ DROP DATABASE. */
+async function ensureDatabase(config: SecurityHarnessConfig): Promise<void> {
+  const admin = await connect(postgresUrl(config, 'migrator', 'postgres'));
   try {
-    return await fn(client);
+    const found = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [
+      config.dbName,
+    ]);
+    if (found.rowCount === 0) await admin.query(`CREATE DATABASE ${ident(config.dbName)}`);
   } finally {
-    await client.end();
+    await admin.end();
   }
 }
 
-export async function createEphemeralDatabase(
+/** Khóa advisory mức session: hai lần chạy suite (hai session/agent) không xóa schema của nhau. */
+async function acquireLock(client: pg.Client, dbName: string): Promise<void> {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    const res = await client.query<{ ok: boolean }>(
+      'SELECT pg_try_advisory_lock(hashtext($1)) AS ok',
+      [LOCK_KEY],
+    );
+    if (res.rows[0]?.ok) return;
+    if (Date.now() > deadline) {
+      throw new Error(`DB ${dbName} đang được một lần chạy suite khác giữ quá ${LOCK_WAIT_MS}ms`);
+    }
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+}
+
+/** `prisma migrate deploy` bằng CLI trong node_modules của API đang test (ADR-061: không npx). */
+function migrate(apiDir: string, migratorUrl: string): void {
+  if (!existsSync(join(apiDir, 'prisma', 'migrations'))) return; // build chưa có Prisma
+  const cli = createRequire(join(apiDir, 'package.json')).resolve('prisma/build/index.js');
+  const result = spawnSync(process.execPath, [cli, 'migrate', 'deploy'], {
+    cwd: apiDir,
+    env: {
+      PATH: process.env.PATH ?? '',
+      ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+      DATABASE_URL: migratorUrl,
+    },
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  if (result.status !== 0) {
+    throw new Error(`prisma migrate deploy thất bại:\n${result.stdout}\n${result.stderr}`);
+  }
+}
+
+/**
+ * Chuẩn bị DB riêng cho một file suite (ADR-106): khóa → xóa + tạo lại schema `public` → migrate →
+ * cấp quyền DML cho user app (DEFAULT PRIVILEGES của init script chỉ có ở DB tạo lúc khởi tạo container).
+ */
+export async function prepareSuiteDatabase(
   config: SecurityHarnessConfig,
-): Promise<EphemeralDatabase> {
-  const name = `taskflow_sec_${Date.now()}_${randomBytes(3).toString('hex')}`;
-  const ident = (value: string) => `"${value.replaceAll('"', '""')}"`;
-
-  await withAdmin(config.adminUrl, (client) =>
-    client.query(`CREATE DATABASE ${ident(name)} TEMPLATE ${ident(config.templateDb)}`),
-  );
-
-  const appUrl =
-    `postgresql://${encodeURIComponent(config.appUser)}:${encodeURIComponent(config.appPassword)}` +
-    `@${config.pgHost}:${config.pgPort}/${name}`;
+  apiDir: string,
+): Promise<SuiteDatabase> {
+  await ensureDatabase(config);
+  const migratorUrl = postgresUrl(config, 'migrator');
+  const lock = await connect(migratorUrl);
+  try {
+    await acquireLock(lock, config.dbName);
+    const app = ident(config.appUser);
+    await lock.query('DROP SCHEMA IF EXISTS public CASCADE');
+    await lock.query(`CREATE SCHEMA public AUTHORIZATION ${ident(config.migratorUser)}`);
+    await lock.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
+    migrate(apiDir, migratorUrl);
+    await lock.query(`GRANT CONNECT, TEMPORARY ON DATABASE ${ident(config.dbName)} TO ${app}`);
+    await lock.query(`GRANT USAGE ON SCHEMA public TO ${app}`);
+    await lock.query(
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${app}`,
+    );
+    await lock.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${app}`);
+  } catch (err) {
+    await lock.end();
+    throw err;
+  }
 
   return {
-    name,
-    appUrl,
-    drop: () =>
-      withAdmin(config.adminUrl, (client) =>
-        client.query(`DROP DATABASE IF EXISTS ${ident(name)} WITH (FORCE)`),
-      ).then(() => undefined),
+    appUrl: postgresUrl(config, 'app'),
+    release: async () => {
+      try {
+        await lock.query('SELECT pg_advisory_unlock(hashtext($1))', [LOCK_KEY]);
+      } finally {
+        await lock.end();
+      }
+    },
   };
 }

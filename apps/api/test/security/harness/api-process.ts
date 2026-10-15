@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
  * Thư mục `apps/api` — process API chạy từ đây như `pnpm dev`. `SEC_API_DIR` trỏ sang worktree
  * khác (vd `../TaskFlow_wt/T-016/apps/api`) để dùng suite này làm cổng nghiệm thu branch chưa merge.
  */
-const API_DIR = process.env.SEC_API_DIR ?? fileURLToPath(new URL('../../../', import.meta.url));
+export const API_DIR =
+  process.env.SEC_API_DIR ?? fileURLToPath(new URL('../../../', import.meta.url));
 
 export interface RunningApi {
   baseUrl: string;
@@ -36,7 +37,7 @@ export async function freePort(): Promise<number> {
  */
 export async function startApi(
   env: Record<string, string>,
-  { readyTimeoutMs = 90_000 } = {},
+  { readyTimeoutMs = Number(process.env.SEC_API_READY_TIMEOUT_MS ?? 90_000) } = {},
 ): Promise<RunningApi> {
   const port = await freePort();
   const lines: string[] = [];

@@ -70,3 +70,16 @@ Ghi nhận trung thực: lần chạy `pnpm test` **đầu tiên** sau rebase b�
 
 Suite bảo mật (ngoài DoD): `pnpm --filter @taskflow/api test:security` trên main ⇒ 42 xanh, 3 đỏ (A5 — đã sửa ở T-021), 15 skip, 49 todo.
 Mutation: `pnpm --filter @taskflow/api mutation:<nhóm>` — tổng ~56 phút cho 6 nhóm trên máy dev (~5 GB RAM trống); đề xuất CI hằng tuần.
+
+## 7. T-017b — gating production + DB riêng (ADR-106)
+
+Branch `feat/T-017b` từ main 9e109fc.
+
+- **Gating `production.sec.ts`**: `useApi(env, { label, startupRefusal, requiredEnv })`. File chỉ bị skip (nhãn `PENDING-T020`) khi process API từ chối khởi động với **đúng** thông điệp guard đã biết ("Lưu trữ bộ nhớ không được dùng ở production"). Mọi lỗi khởi động khác vẫn đỏ. `SEC_REQUIRE_PRODUCTION=1` (CI sau T-020) ⇒ không bao giờ skip — đã kiểm: ép chạy trên main ⇒ đỏ thật với lỗi guard.
+- **DB riêng `taskflow_sec`** (`SEC_PG_DB`): harness tự `CREATE DATABASE` nếu chưa có (migrator có CREATEDB), giữ **advisory lock** suốt file (hai lần chạy suite không xóa schema của nhau, chờ tối đa 120s rồi báo lỗi), xóa + tạo lại schema `public`, `prisma migrate deploy` bằng CLI trong `node_modules` của API đang test (ADR-061), cấp DML cho `taskflow_app` (không cấp CREATE). Đã kiểm: 8 bảng, 1 migration, app INSERT được, không CREATE được.
+- **Từ chối mục tiêu nguy hiểm**: `taskflow_template`, `taskflow` (dev), `postgres`, `template0/1`, hoặc cổng 5435 ⇒ `UnsafeTestTargetError` trước khi mở bất kỳ kết nối nào — đã kiểm cả hai.
+- Valkey: vẫn db index 15 riêng (`SEC_REDIS_URL`), helper từ chối `FLUSHDB` ngoài db 1–15.
+- `SEC_API_READY_TIMEOUT_MS` (mặc định 90s): lần chạy nguội đầu tiên trong worktree mới (tsx chưa có cache, máy tải nặng) có file không khởi động kịp 90s; chạy lại ấm 17s. Đề xuất CI đặt 180s.
+- Mang theo từ T-017 (chưa merge): `@stryker-mutator/core` vào `catalog:` (TL duyệt); SEC-24b tách thành 24b/24c/24d theo ADR-105, **24c có thân** (cache tv bị xóa + 10 lượt đọc song song với logout-all ×20 ⇒ access cũ luôn 401) — kịch bản "đọc xen giữa" TL yêu cầu; SEC-21c/23b/24* mang nhãn `T-020` để chạy cổng nghiệm thu bằng `SEC_RUN_PENDING=T-020`.
+
+Kết quả trên main (9e109fc + T-017b): **41 xanh · 0 đỏ · 20 skip (gồm 4 production `PENDING-T020`) · 50 todo**, exit 0.
