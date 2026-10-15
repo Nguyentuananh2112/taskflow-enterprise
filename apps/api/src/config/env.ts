@@ -54,7 +54,20 @@ const EnvSchema = z
       z.coerce.number().int().min(0).max(10),
     ),
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
-    SENTRY_DSN: z.url().optional(),
+    // T-035: thiếu ở staging/production chỉ CẢNH BÁO lúc khởi động (main.ts) — giám sát không được
+    // làm sập app. Chuỗi rỗng = không đặt.
+    SENTRY_DSN: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.url({ protocol: /^https?$/ }).optional(),
+    ),
+    /** Tỉ lệ lấy mẫu trace Sentry (0…1) — thấp để nằm trong quota gói miễn phí (ADR-073). */
+    SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.05),
+    /**
+     * `/metrics` (Prometheus) trên cổng NỘI BỘ riêng — không qua app công khai (devops.md §6.4).
+     * `0` = cổng trống bất kỳ do OS chọn (test chạy song song nhiều tiến trình API).
+     */
+    METRICS_PORT: z.coerce.number().int().min(0).max(65_535).default(9464),
+    METRICS_HOST: z.string().min(1).default('0.0.0.0'),
     GIT_SHA: z.string().min(1),
     SOCKET_REDIS_ADAPTER: z.stringbool().default(false),
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
@@ -75,6 +88,7 @@ const EnvSchema = z
     if (env.JWT_ACCESS_SECRET_PREVIOUS === env.JWT_ACCESS_SECRET) {
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
     }
+    if (env.METRICS_PORT === env.PORT) fail('METRICS_PORT', 'phải khác PORT (cổng nội bộ riêng)');
     if (env.JWT_ACCESS_TTL_SECONDS !== undefined && env.APP_ENV !== 'test') {
       fail('JWT_ACCESS_TTL_SECONDS', 'chỉ được đặt khi APP_ENV=test');
     }
@@ -97,7 +111,6 @@ const EnvSchema = z
     for (const key of ['JWT_ACCESS_SECRET', 'JWT_ACCESS_SECRET_PREVIOUS'] as const) {
       if (NON_PRODUCTION_SECRET.test(env[key] ?? '')) fail(key, 'secret mẫu/test');
     }
-    if (!env.SENTRY_DSN) fail('SENTRY_DSN', 'bắt buộc ở staging/production');
     if (!env.METRICS_TOKEN) fail('METRICS_TOKEN', 'bắt buộc ở production');
   });
 

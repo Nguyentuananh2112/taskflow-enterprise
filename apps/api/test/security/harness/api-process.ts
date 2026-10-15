@@ -47,6 +47,8 @@ export async function startApi(
     env: {
       PATH: process.env.PATH ?? '',
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+      // T-035: cổng metrics nội bộ do OS chọn (nhiều tiến trình API song song không đụng 9464).
+      METRICS_PORT: '0',
       ...env,
       PORT: String(port),
     },

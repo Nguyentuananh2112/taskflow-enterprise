@@ -112,7 +112,7 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
       'JWT_ACCESS_SECRET_PREVIOUS',
     ],
     ['APP_ENV local với NODE_ENV production', { APP_ENV: 'local' }, 'APP_ENV'],
-    ['thiếu SENTRY_DSN', { SENTRY_DSN: undefined }, 'SENTRY_DSN'],
+    ['METRICS_PORT trùng PORT', { PORT: '4000', METRICS_PORT: '4000' }, 'METRICS_PORT'],
     ['thiếu METRICS_TOKEN', { METRICS_TOKEN: undefined }, 'METRICS_TOKEN'],
     ['T-020: lưu trữ bộ nhớ ở staging/production', { PERSISTENCE: 'memory' }, 'PERSISTENCE'],
   ])('%s', (_label, overrides, variable) => {
@@ -146,7 +146,6 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
         'METRICS_TOKEN',
         'NODE_ENV',
         'REDIS_URL',
-        'SENTRY_DSN',
       ]);
       expect(variablesOf(productionEnvVars({ APP_ENV: appEnv, NODE_ENV: 'development' }))).toEqual([
         'NODE_ENV',
@@ -186,6 +185,31 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
       expect(variablesOf(vars)).toEqual(['JWT_ACCESS_TTL_SECONDS']);
     },
   );
+
+  it('T-035: thiếu SENTRY_DSN ở staging/production KHÔNG chặn khởi động (main.ts cảnh báo); rỗng = không đặt', () => {
+    for (const appEnv of ['staging', 'production']) {
+      expect(variablesOf(productionEnvVars({ APP_ENV: appEnv, SENTRY_DSN: undefined }))).toEqual(
+        [],
+      );
+    }
+    expect(loadEnv(testEnvVars({ SENTRY_DSN: '' })).SENTRY_DSN).toBeUndefined();
+    expect(variablesOf(testEnvVars({ SENTRY_DSN: 'ftp://x@sentry.test/1' }))).toEqual([
+      'SENTRY_DSN',
+    ]);
+  });
+
+  it('T-035: mặc định trace 0.05, metrics cổng 9464 trên 0.0.0.0; trace ngoài 0…1 ⇒ lỗi', () => {
+    expect(loadEnv(testEnvVars({ METRICS_PORT: undefined }))).toMatchObject({
+      SENTRY_TRACES_SAMPLE_RATE: 0.05,
+      METRICS_PORT: 9464,
+      METRICS_HOST: '0.0.0.0',
+    });
+    for (const bad of ['-0.1', '1.5', 'abc']) {
+      expect(variablesOf(testEnvVars({ SENTRY_TRACES_SAMPLE_RATE: bad }))).toEqual([
+        'SENTRY_TRACES_SAMPLE_RATE',
+      ]);
+    }
+  });
 
   it('appConfigFromEnv: production / hsts theo APP_ENV, không theo NODE_ENV', () => {
     const local = appConfigFromEnv(loadEnv(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'test' })));
