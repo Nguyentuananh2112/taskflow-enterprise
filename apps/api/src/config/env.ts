@@ -67,7 +67,9 @@ const EnvSchema = z
      * `0` = cổng trống bất kỳ do OS chọn (test chạy song song nhiều tiến trình API).
      */
     METRICS_PORT: z.coerce.number().int().min(0).max(65_535).default(9464),
-    METRICS_HOST: z.string().min(1).default('0.0.0.0'),
+    // Mặc định chỉ loopback (review B L4): mở cho mạng nội bộ của nền tảng phải đặt TƯỜNG MINH
+    // (vd `0.0.0.0` trong container) — và khi đó cổng KHÔNG được map ra Internet.
+    METRICS_HOST: z.string().min(1).default('127.0.0.1'),
     GIT_SHA: z.string().min(1),
     SOCKET_REDIS_ADAPTER: z.stringbool().default(false),
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
@@ -111,7 +113,12 @@ const EnvSchema = z
     for (const key of ['JWT_ACCESS_SECRET', 'JWT_ACCESS_SECRET_PREVIOUS'] as const) {
       if (NON_PRODUCTION_SECRET.test(env[key] ?? '')) fail(key, 'secret mẫu/test');
     }
-    if (!env.METRICS_TOKEN) fail('METRICS_TOKEN', 'bắt buộc ở production');
+    // Staging + production (khối này chỉ chạy khi isDeployed).
+    if (!env.METRICS_TOKEN) fail('METRICS_TOKEN', 'bắt buộc ở staging/production');
+    // DSN là địa chỉ ingest: http ⇒ event đi dạng rõ (review B L3). Có thì phải https.
+    if (env.SENTRY_DSN && !env.SENTRY_DSN.startsWith('https://')) {
+      fail('SENTRY_DSN', 'staging/production bắt buộc https');
+    }
   });
 
 export type Env = z.output<typeof EnvSchema>;

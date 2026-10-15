@@ -14,7 +14,7 @@
 | Sentry web | `@sentry/nextjs`. Events go through `/monitoring` (same origin), so the CSP doesn't need loosening. | `SENTRY_DSN` for the web service |
 | Data sent | Allow-list: no email, password hash, token, cookie, body or query string (tested with real DB errors). | none |
 | Missing DSN | The app **still starts** and logs the warning `observability.sentry_disabled_missing_dsn`. | none |
-| Metrics | `/metrics` (Prometheus) on **internal port** `METRICS_PORT` (default 9464), Bearer `METRICS_TOKEN`. | Do NOT expose this port to the Internet |
+| Metrics | `/metrics` (Prometheus) on **internal port** `METRICS_PORT` (default 9464), listening on `127.0.0.1` by default; Bearer `METRICS_TOKEN` is required in staging and production. | Set `METRICS_HOST=0.0.0.0` only if the platform scrapes over its internal network. Do NOT expose this port to the Internet. |
 
 > The DSN is not a secret in the strict sense (it only allows *sending* events), but the repo is public, so set it through the hosting platform's environment variables and never commit it.
 

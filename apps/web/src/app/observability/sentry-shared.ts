@@ -45,10 +45,70 @@ export const DATA_COLLECTION: NonNullable<InitOptions['dataCollection']> = {
   frameContextLines: 0,
 };
 
-/** Giao dịch (nếu có trace): bỏ request/user, tên không query. */
+const SAFE_SPAN_DATA = new Set([
+  'http.method',
+  'http.request.method',
+  'http.response.status_code',
+  'http.route',
+  'sentry.op',
+  'sentry.origin',
+  'sentry.source',
+  'sentry.sample_rate',
+]);
+
+type SpanData = NonNullable<TransactionEvent['spans']>[number]['data'];
+
+function pickSpanData(data: Record<string, unknown> | undefined): SpanData {
+  const out: SpanData = {};
+  for (const [key, value] of Object.entries(data ?? {})) {
+    if (!SAFE_SPAN_DATA.has(key)) continue;
+    out[key] = (typeof value === 'string' ? scrubUrl(value) : value) as SpanData[string];
+  }
+  return out;
+}
+
+/**
+ * Giao dịch theo ALLOW-LIST (review B L2 — nhất quán với API, kể cả khi trace đang tắt): chỉ khung thời
+ * gian, tên route không query, span (op/status/thời gian, data an toàn). Bỏ request, user, extra, tag,
+ * breadcrumb, context khác `trace`.
+ */
 export function sanitizeWebTransaction(event: TransactionEvent): TransactionEvent {
-  const { request: _request, user: _user, ...rest } = event;
-  return { ...rest, ...(event.transaction ? { transaction: scrubUrl(event.transaction) } : {}) };
+  const trace = event.contexts?.trace;
+  return {
+    type: 'transaction',
+    ...(event.event_id ? { event_id: event.event_id } : {}),
+    ...(event.transaction ? { transaction: scrubUrl(event.transaction) } : {}),
+    ...(event.start_timestamp !== undefined ? { start_timestamp: event.start_timestamp } : {}),
+    ...(event.timestamp !== undefined ? { timestamp: event.timestamp } : {}),
+    ...(event.platform ? { platform: event.platform } : {}),
+    ...(event.environment ? { environment: event.environment } : {}),
+    ...(event.release ? { release: event.release } : {}),
+    ...(event.measurements ? { measurements: event.measurements } : {}),
+    contexts: trace
+      ? {
+          trace: {
+            trace_id: trace.trace_id,
+            span_id: trace.span_id,
+            ...(trace.parent_span_id ? { parent_span_id: trace.parent_span_id } : {}),
+            ...(trace.op ? { op: trace.op } : {}),
+            ...(trace.status ? { status: trace.status } : {}),
+            data: pickSpanData(trace.data),
+          },
+        }
+      : {},
+    spans: (event.spans ?? []).map((span) => ({
+      span_id: span.span_id,
+      trace_id: span.trace_id,
+      start_timestamp: span.start_timestamp,
+      status: span.status,
+      data: pickSpanData(span.data),
+      ...(span.parent_span_id ? { parent_span_id: span.parent_span_id } : {}),
+      ...(span.timestamp !== undefined ? { timestamp: span.timestamp } : {}),
+      ...(span.op ? { op: span.op } : {}),
+      ...(span.origin ? { origin: span.origin } : {}),
+      ...(span.description ? { description: scrubUrl(span.description) } : {}),
+    })),
+  };
 }
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$.]{0,100}$/;

@@ -202,13 +202,29 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     expect(loadEnv(testEnvVars({ METRICS_PORT: undefined }))).toMatchObject({
       SENTRY_TRACES_SAMPLE_RATE: 0.05,
       METRICS_PORT: 9464,
-      METRICS_HOST: '0.0.0.0',
+      METRICS_HOST: '127.0.0.1',
     });
     for (const bad of ['-0.1', '1.5', 'abc']) {
       expect(variablesOf(testEnvVars({ SENTRY_TRACES_SAMPLE_RATE: bad }))).toEqual([
         'SENTRY_TRACES_SAMPLE_RATE',
       ]);
     }
+  });
+
+  it.each(['staging', 'production'])(
+    'review B (L3/L4): %s — SENTRY_DSN http ⇒ từ chối; METRICS_TOKEN bắt buộc (cả staging)',
+    (appEnv) => {
+      expect(
+        variablesOf(productionEnvVars({ APP_ENV: appEnv, SENTRY_DSN: 'http://k@sentry.test/1' })),
+      ).toEqual(['SENTRY_DSN']);
+      expect(variablesOf(productionEnvVars({ APP_ENV: appEnv, METRICS_TOKEN: undefined }))).toEqual(
+        ['METRICS_TOKEN'],
+      );
+    },
+  );
+
+  it('review B (L3): local/test vẫn nhận DSN http (Sentry tự host trên máy dev)', () => {
+    expect(variablesOf(testEnvVars({ SENTRY_DSN: 'http://k@localhost:9000/1' }))).toEqual([]);
   });
 
   it('appConfigFromEnv: production / hsts theo APP_ENV, không theo NODE_ENV', () => {

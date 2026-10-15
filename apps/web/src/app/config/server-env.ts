@@ -56,9 +56,23 @@ export interface SentryRuntimeConfig {
  */
 export function readSentryConfig(source: EnvSource = process.env): SentryRuntimeConfig {
   const env = SentryEnv.parse(source);
+  // staging/production: DSN http ⇒ event đi dạng rõ (review B L3) ⇒ TẮT Sentry + cảnh báo. Không ném:
+  // hàm chạy mỗi request của root layout — giám sát không được làm sập trang (T-035 mục 5).
+  const insecure =
+    env.SENTRY_DSN !== undefined &&
+    !env.SENTRY_DSN.startsWith('https://') &&
+    (env.APP_ENV === 'staging' || env.APP_ENV === 'production');
+  if (insecure) warnInsecureDsnOnce();
   return {
     environment: env.APP_ENV,
-    ...(env.SENTRY_DSN ? { dsn: env.SENTRY_DSN } : {}),
+    ...(env.SENTRY_DSN && !insecure ? { dsn: env.SENTRY_DSN } : {}),
     ...(env.GIT_SHA ? { release: env.GIT_SHA } : {}),
   };
+}
+
+let warnedInsecureDsn = false;
+function warnInsecureDsnOnce(): void {
+  if (warnedInsecureDsn) return;
+  warnedInsecureDsn = true;
+  console.warn('[web] SENTRY_DSN không phải https ở staging/production — Sentry bị tắt');
 }

@@ -50,6 +50,8 @@ export function initClientSentry(
     environment: config.environment,
     ...(config.release ? { release: config.release } : {}),
     tunnel: SENTRY_TUNNEL_PATH,
+    // Chỉ gửi lỗi: tắt session tracking (tunnel cũng chỉ chuyển tiếp item `event` — review B L1).
+    integrations: (defaults) => defaults.filter((i) => i.name !== 'BrowserSession'),
     dataCollection: DATA_COLLECTION,
     tracesSampleRate: 0,
     maxBreadcrumbs: 0,
