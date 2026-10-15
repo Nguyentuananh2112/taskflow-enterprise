@@ -11,9 +11,9 @@
 | Mã | Tầng | Công cụ / phạm vi | Ghi chú |
 |---|---|---|---|
 | **U** | Unit domain | Vitest, chỉ `TaskEntity`/value object, không I/O | Chạy < 1 ms/case. Mục tiêu coverage domain ≥ 80% (blueprint §1.1). |
-| **A** | Unit application | Vitest, use case + `TaskPolicy` với `InMemoryTaskRepository`, `InMemoryProjectRepository`, `InMemoryMembershipReader`, `InMemoryAuditLogRepository`, `FakeTransactionManager` (rollback thật trên các repo in-memory), `SpyEventBus`, `FixedClock`, `SequentialIdGenerator` | Không Postgres. Phần lớn luật nghiệp vụ test ở đây. |
+| **A** | Unit application | Vitest, use case + `TaskPolicy` với `InMemoryTaskRepository`, `InMemoryProjectRepository`, `InMemoryMembershipReader`, `InMemoryAuditLogRepository`, `FakeUnitOfWork` (rollback thật trên các repo in-memory — `apps/api/test/support/fake-unit-of-work.ts`), `SpyEventBus` (`test/support/spies.ts`), `FakeClock`, `SequentialIdGenerator` (`test/support/time-and-ids.ts`) | Không Postgres. Phần lớn luật nghiệp vụ test ở đây. |
 | **I** | Integration | Vitest + Postgres thật (Docker, ADR-003), repository Prisma + use case thật, DB reset mỗi file (transaction rollback hoặc truncate) | Kiểm SQL, index/unique, collation, lọc `deleted_at`, phạm vi tenant. |
-| **C** | Concurrency | Như **I**, chạy N request song song bằng `Promise.all` với **kết nối riêng** (pool ≥ N) | Lặp mỗi case 20 lần trong CI nightly để bắt race không ổn định; PR chạy 1 lần. |
+| **C** | Concurrency | Như **I**, chạy N request song song bằng `Promise.all` với **kết nối riêng** (pool ≥ N) | Chạy cùng tầng I (`test:integration`), 1 lượt mỗi PR. Lặp 20 lần nightly: CHƯA có (chưa có workflow nightly) — dự định. |
 
 Test HTTP (route, middleware, envelope, IDOR) là Phase 3 và nằm trong bộ SEC-* của Engineer B. Ở đây chỉ thêm những case HTTP-level mà use case không bắt được (đánh dấu **I-HTTP**).
 
@@ -446,26 +446,39 @@ Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[
 | ADR-092/093 bỏ gán | UC-UN01..07, CC-UN01 |
 | Thứ tự 404→403→422→409 | UC-CR08, UC-MV16, UC-MV18, UC-MV19, UC-AS09, UC-AS12, UC-DL07 |
 
-## 5. Gợi ý bố trí file (chốt ở Phase 1)
+## 5. Bố trí file (thực tế — cập nhật theo G2 T1/T2, 2026-10-15)
+
+**Quy ước tên duy nhất: `*.test.ts`** (không dùng `*.spec.ts` / `__tests__/`). Vitest của API chỉ thu `src/**/*.test.ts` và `test/**/*.test.ts` (`apps/api/vitest.config.ts`) — file đặt tên khác sẽ KHÔNG chạy mà không báo lỗi. Test unit nằm cạnh code.
 
 ```
 apps/api/src/modules/task/
-  domain/__tests__/task.entity.spec.ts            TE-*
-  domain/__tests__/task-status-parity.spec.ts     TE-M19
-  application/__tests__/rbac-parity.spec.ts        TP-P01, TP-P02 (có thể nằm ở module rbac)
-  application/__tests__/task-assignment-cleaner.spec.ts  UC-UN (A) — hiện thực ITaskAssignmentCleaner
-  application/__tests__/task.policy.spec.ts       TP-*
-  application/__tests__/create-task.spec.ts       UC-CR (A)
-  application/__tests__/move-task.spec.ts         UC-MV (A)
-  application/__tests__/assign-task.spec.ts       UC-AS, UC-UN (A)
-  application/__tests__/update-task.spec.ts       UC-UP (A)
-  application/__tests__/delete-task.spec.ts       UC-DL (A)
-  application/__tests__/realtime-mapping.spec.ts  RT-*
-  infrastructure/__tests__/*.int.spec.ts          tầng I
-  infrastructure/__tests__/*.concurrency.spec.ts  tầng C
+  domain/task.test.ts                                   TE-*
+  application/task-status-parity.test.ts                TE-M19
+  application/task.policy.test.ts                       TP-*
+  application/task-realtime.test.ts                     RT-*
+  application/use-cases/create-task.use-case.test.ts    UC-CR (A)
+  application/use-cases/move-task.use-case.test.ts      UC-MV (A)
+  application/use-cases/assign-task.use-case.test.ts    UC-AS, UC-UN (A)
+  application/use-cases/update-delete-task.use-case.test.ts  UC-UP, UC-DL (A)
+  application/use-cases/rank-rebalance.test.ts          rebalance rank
+  application/use-cases/task.queries.test.ts            đọc board/chi tiết
+  infrastructure/rank/fractional-index-rank-generator.test.ts
+  infrastructure/persistence/in-memory/*.ts             repo/read-model in-memory (tầng A)
+  testing/task-harness.ts, task-backend.ts              harness dựng được cho cả in-memory và Postgres
+apps/api/test/integration/task/
+  task-persistence.int.ts                               tầng I
+  task-concurrency.int.ts, task-lock-timeout.int.ts     tầng C
+  prisma-task-backend.ts
 apps/api/test/support/
-  fixtures.ts         W1/P1/... (mục 0.2) — dựng được cho cả InMemory và Postgres
-  in-memory/*.ts      repo in-memory + FakeTransactionManager
+  fake-unit-of-work.ts, spies.ts, time-and-ids.ts, …    test double dùng chung
 ```
 
-Vitest tách project: `unit` (U + A, chạy mỗi lần lưu), `integration` (I), `concurrency` (C, chạy ở PR với 1 lượt, nightly 20 lượt).
+Vitest project (root `vitest.config.ts` gom `apps/*`, `packages/*`):
+
+| Project | Config | Thu file | Lệnh |
+|---|---|---|---|
+| `api` | `apps/api/vitest.config.ts` | `*.test.ts` (U + A + test HTTP không DB) | `pnpm test` / `pnpm verify` |
+| `api-integration` | `apps/api/vitest.integration.config.ts` | `test/integration/**/*.int.ts` (I + C, tuần tự, DB `taskflow_it`) | `pnpm --filter @taskflow/api test:integration` |
+| `api-security` | `apps/api/test/security/vitest.config.ts` | `test/security/**/*.sec.ts` | `pnpm --filter @taskflow/api test:security` |
+
+Rà ngày 2026-10-15: không có file `*.spec.ts` nào trong repo; các bộ `testing/contracts/*.contract.ts` (auth) là suite dùng chung, được gọi từ `in-memory.contract.test.ts` và `test/integration/auth/auth-contracts.int.ts` — không có test nằm im.
