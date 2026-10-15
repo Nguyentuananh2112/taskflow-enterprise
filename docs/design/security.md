@@ -54,7 +54,7 @@ sequenceDiagram
 2. Zod validate; chuẩn hóa email.
 3. `findUnique({ email })`. Nếu **không có** hoặc `deletedAt != null` → vẫn chạy `verify(DUMMY_HASH, password)` (DUMMY_HASH tạo lúc khởi động bằng **cùng tham số argon2id**, không commit vào repo) để thời gian phản hồi tương đương, rồi `401 INVALID_CREDENTIALS`.
 4. `verify` sai → `401 INVALID_CREDENTIALS` (cùng message: "Email hoặc mật khẩu không đúng").
-5. Đúng → nếu tham số trong chuỗi PHC của hash (`m`, `t`, `p`) khác cấu hình hiện tại thì băm lại và cập nhật (đổi tham số về sau không cần reset mật khẩu). `@node-rs/argon2` không có hàm `needsRehash` sẵn → adapter tự đọc tham số từ chuỗi PHC (T-013 kiểm chứng).
+5. Đúng → nếu tham số trong chuỗi PHC của hash (`m`, `t`, `p`) khác cấu hình hiện tại thì băm lại và cập nhật (đổi tham số về sau không cần reset mật khẩu). Adapter dùng `parseOptions(hash)` của `@node-rs/argon2` (đã kiểm chứng ở bản 2.2.2, T-013) rồi so `algorithm`, `version`, `memoryCost`, `timeCost`, `parallelism`, `outputLen` với cấu hình; hash không đọc được ⇒ coi như cần băm lại.
 6. Tạo refresh token (family mới, `familyExpiresAt = now + 30 ngày`), cập nhật `lastLoginAt`, ký access token với `tv = user.tokenVersion`, `sid = familyId`.
 7. `200 {accessToken, expiresIn, user}` + `Set-Cookie`.
 
@@ -489,6 +489,7 @@ Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dị
 
 ### 6.5 Mật khẩu & chống user enumeration
 - Chính sách (ADR-049, ADR-065): **tối thiểu 12 ký tự**, **tối đa 256 ký tự** (chống DoS — argon2 không có giới hạn đầu vào như bcrypt; đếm theo code point sau chuẩn hóa NFC), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ ~10k mục, không gọi dịch vụ ngoài), không được chứa phần local của email. Body limit 100kb (6.7) vẫn chặn trước ở tầng HTTP.
+- **Chuẩn hóa NFC trước khi băm VÀ trước khi verify** (register, login, change-password), không chỉ khi đếm độ dài. Nếu thiếu, cùng một mật khẩu có dấu gửi ở dạng NFD (thường gặp từ macOS/iOS) sẽ không khớp với hash tạo từ dạng NFC ⇒ người dùng tiếng Việt bị khóa ngoài. Việc chuẩn hóa nằm **bên trong** `Argon2idPasswordHasher` (cả `hash` lẫn `verify`) để không use case nào quên được; có test NFC vs NFD. Không áp dụng chuẩn hóa nào khác (không trim, không đổi hoa thường) — khoảng trắng là một phần của mật khẩu. *(Phát hiện bởi Engineer C khi rà T-003.)*
 - **Lệch NIST có chủ đích:** NIST SP 800-63B-4 yêu cầu tối thiểu 15 ký tự cho mật khẩu dùng làm yếu tố duy nhất (hệ thống chưa có MFA). Người dùng chọn 12 vì trải nghiệm (ADR-049). Bù lại bằng danh sách mật khẩu phổ biến, rate limit login đa khóa (6.4) và argon2id. Xem lại khi có MFA hoặc khi có yêu cầu tuân thủ.
 - **Băm (ADR-065):** argon2id qua `@node-rs/argon2`, `memoryCost: 47104` (46 MiB), `timeCost: 1`, `parallelism: 1` (mức OWASP; ≈27 ms/hash đo trên máy dev, T-001 §9). Chuỗi lưu dạng PHC `$argon2id$v=19$…`. Rehash khi tham số đổi (1.2 bước 5). Không pre-hash.
 - **Bộ nhớ là tài nguyên bị tấn công:** mỗi lần băm/verify chiếm ~46 MiB. Số lần băm đồng thời bị chặn bởi threadpool libuv (mặc định 4 ⇒ ~184 MiB đỉnh). **Không** tăng `UV_THREADPOOL_SIZE` khi chưa tính lại RAM container. Rate limit login/register/change-password chạy **trước** khi băm. Nếu container RAM thấp: dùng mức OWASP thay thế m=19456/t=2 (ghi ADR mới).

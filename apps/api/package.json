@@ -10,14 +10,17 @@
     "lint:deps": "depcruise src --config .dependency-cruiser.cjs"
   },
   "dependencies": {
+    "@node-rs/argon2": "catalog:",
     "@taskflow/contracts": "workspace:*",
     "express": "catalog:",
+    "jose": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
     "@types/express": "catalog:",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "dependency-cruiser": "catalog:",
     "tsdown": "catalog:",
     "tsx": "catalog:",
