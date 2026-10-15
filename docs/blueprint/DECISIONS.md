@@ -109,5 +109,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-111 ✅ (Người dùng chốt) **Bình luận trên task để sau v1.** Ma trận quyền giữ sẵn `comment:create`; không thêm model/API/UI ở v1. Deploy (Phase 5) chuẩn bị SAU khi hoàn thiện ## Hiệu năng kiểm thử trên máy (Mốc 1).
 
+- ADR-112 ✅ (Người dùng yêu cầu không để phiên nào ngừng) **Backlog tự phục vụ**: mỗi vai trò có hàng đợi việc kế tiếp trong `docs/tasks/BACKLOG.md`; báo DONE xong tự lấy việc tiếp, không chờ review. Tech Lead review/merge song song.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
