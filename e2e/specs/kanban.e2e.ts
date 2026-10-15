@@ -110,9 +110,14 @@ test('E2E-03: kéo bằng BÀN PHÍM (Space, mũi tên phải, Space) ⇒ Cần 
   const moved = page.waitForResponse(
     (res) => res.url().includes(`/tasks/${task.id}/move`) && res.request().method() === 'PATCH',
   );
-  await page.getByRole('button', { name: `Kéo ${task.key}` }).focus();
+  const handle = page.getByRole('button', { name: `Kéo ${task.key}` });
+  await expect(handle).toBeEnabled();
+  await handle.focus();
   await page.keyboard.press('Space');
+  // Chờ theo điều kiện từng bước (không đoán thời gian): đã nhấc ⇒ đích nhận ⇒ mới thả.
+  await expect(page.locator('[data-dnd-dragging]')).not.toHaveCount(0);
   await page.keyboard.press('ArrowRight');
+  await expect(column(page, 'IN_PROGRESS')).toHaveClass(/ring-2/);
   await page.keyboard.press('Space');
   expect((await moved).ok()).toBe(true);
   await expect(card(column(page, 'IN_PROGRESS'), 'Bàn phím')).toBeVisible();
