@@ -87,7 +87,7 @@ Domain (`User`, `RefreshToken`), RefreshSession, Logout, LogoutAll, ChangePasswo
   - `markRotated` / `revokeFamily` / `revokeAllForUser` phải là `updateMany` có điều kiện `revokedAt: null` và kiểm `count`.
   - `add` user phải map P2002 trên `email` ⇒ `EmailAlreadyExistsError`.
   - `save(user)` ghi `tokenVersion` tuyệt đối. Hai logout-all đồng thời có thể cùng ghi tv = n + 1 — vẫn an toàn (mọi token cũ có tv ≤ n đều bị từ chối), nhưng nếu muốn chặt hơn thì dùng `increment`.
-- **Test chập chờn:** `packages/config` (`depcruise-architecture`, `eslint-architecture`) từng timeout 10s một lần khi chạy cả suite dưới tải, chạy lại thì xanh (2s khi chạy riêng). Là test của A, báo để biết.
+- ~~Test chập chờn~~ **đã xử lý:** timeout hook 10s ở `packages/config` (depcruise/eslint-architecture) xảy ra trên base cũ trước khi dựng lại branch. A đã sửa bằng `hookTimeout: 60_000` (b98afbb), commit này đã nằm trong branch.
 - **ADR-097:** Origin mặc định khi dev là `http://localhost:3001`. Kiểm Origin cho `/auth/refresh` và `/auth/logout` dùng `requireAllowedOrigin` của core (A), gắn ở presentation Phase 3.
 
 ## Câu hỏi mở
