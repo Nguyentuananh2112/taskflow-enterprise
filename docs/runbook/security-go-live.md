@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 1.1 | Sinh **mới** mọi secret cho production, khác staging/local: `openssl rand -base64 48`. | So khớp thủ công: không giá trị nào trùng staging. App từ chối tiền tố `change-me` / `test-only` ở staging / production. | Danh sách tên secret + ngày sinh (không ghi giá trị) |
 | 1.2 | `JWT_ACCESS_SECRET` ≥ 32 byte UTF-8. `JWT_ACCESS_SECRET_PREVIOUS` **không đặt** khi không đang xoay khóa. | App từ chối khi < 32 byte hoặc khi `PREVIOUS` trùng secret hiện tại. | Log khởi động không có lỗi env |
-| 1.3 | `METRICS_TOKEN` ≥ 32 ký tự (bắt buộc ở production). | App từ chối nếu thiếu. | — |
+| 1.3 | `METRICS_TOKEN` ≥ 32 ký tự — bắt buộc ở **staging và production**. | API từ chối khởi động nếu thiếu. | — |
 | 1.4 | Secret chỉ nằm trong **GitHub Environment secrets** (`production`) hoặc env mã hóa của nền tảng. Không có file `.env` thật trên máy dev. Chỉ chủ dự án và Tech Lead đọc được. Agent không bao giờ nhận secret production trong prompt. | Kiểm cài đặt Environment: required reviewers bật. | Ảnh màn hình cài đặt (che giá trị) |
 | 1.5 | **Diễn tập xoay `JWT_ACCESS_SECRET` trên staging**: khóa mới làm hiện tại, khóa cũ sang `_PREVIOUS` → deploy → sau ≥ 15 phút bỏ `_PREVIOUS`. | Trong lúc xoay không ai bị đăng xuất (theo dõi tỉ lệ 401 / `TOKEN_EXPIRED`). | Ghi chép diễn tập |
 | 1.6 | Lịch xoay: JWT 6 tháng / lần; mật khẩu DB, Valkey, `METRICS_TOKEN` 12 tháng / lần; **ngay lập tức** khi nghi lộ (mục 9). | — | Lịch trong `docs/ops/` |
@@ -35,7 +35,7 @@
 
 | # | Việc | Cách kiểm | Bằng chứng |
 |---|---|---|---|
-| 3.1 | `TRUST_PROXY_HOPS` = **đúng số proxy** giữa Internet và app (load balancer, Caddy…), **đo thực tế**. Đặt thiếu ⇒ mọi người dùng chung một IP (rate limit thành DoS toàn cục). Đặt thừa ⇒ kẻ tấn công giả `X-Forwarded-For` để né rate limit. | (a) Gọi bình thường: access log ghi `ip` = IP thật của máy gọi. (b) Gọi kèm `X-Forwarded-For: 1.2.3.4` ⇒ `ip` trong log **không** đổi thành `1.2.3.4`. Làm cho cả HTTP lẫn socket handshake. | 2 dòng log |
+| 3.1 | `TRUST_PROXY_HOPS` = **đúng số proxy** giữa Internet và app (load balancer, Caddy…), **đo thực tế**. Đặt thiếu ⇒ mọi người dùng chung một IP (rate limit thành DoS toàn cục). Đặt thừa ⇒ kẻ tấn công giả `X-Forwarded-For` để né rate limit. | (a) Gọi bình thường: access log ghi `ip` = IP thật của máy gọi. (b) Gọi kèm `X-Forwarded-For: 1.2.3.4` ⇒ `ip` trong log **không** đổi thành `1.2.3.4`. Làm cho cả HTTP lẫn socket handshake. **Web cũng có `TRUST_PROXY_HOPS`** (mặc định 1, cùng quy tắc với API) — dùng cho rate limit của tunnel `/monitoring`; đặt theo số proxy đứng trước web, có thể khác API. | 2 dòng log + cấu hình web |
 | 3.2 | Cổng app **không** truy cập trực tiếp được từ Internet (chỉ qua proxy). Nếu lộ, `X-Forwarded-For` giả sẽ được tin. | `curl` thẳng IP:cổng của app từ ngoài ⇒ phải thất bại. | Output |
 | 3.3 | HTTPS cho `app.` và `api.`, HTTP → 301 HTTPS, TLS ≥ 1.2, chứng chỉ tự gia hạn + cảnh báo hết hạn. | `curl -sI http://api.<domain>` ⇒ 301; kiểm TLS bằng SSL Labs hoặc `testssl.sh`. | Kết quả quét |
 | 3.4 | **HSTS:** app gửi `max-age` 1 năm + `includeSubDomains` ở staging / production. **Chưa `preload`**. Chỉ cân nhắc preload khi (a) mọi subdomain hiện tại và tương lai đều chạy HTTPS, (b) đã chạy ổn ≥ 3 tháng, (c) chủ dự án đồng ý — gỡ khỏi danh sách preload mất hàng tháng. | `curl -sI https://api.<domain> \| grep -i strict-transport` | Output |
@@ -67,9 +67,17 @@
 |---|---|---|---|
 | 6.1 | Log không chứa mật khẩu / token / cookie / email ngoài chỗ được phép. Lỗi DB đi qua serializer allow-list (T-031 mục 0) — không có dòng dữ liệu, không có hash. | Sau E2E trên staging: `grep -E '\$argon2\|tf_rt=\|Bearer ' log` ⇒ rỗng (SEC-33). | Output grep |
 | 6.2 | Sự kiện bảo mật có `reqId` + `ip`: `auth.login_failed`, `auth.logout_all`, `auth.password_changed`, `auth.password_change_failed`, `auth.refresh_cookie_ambiguous`, `refresh.reuse_detected`, `member.added` / `role_changed` / `removed`, `workspace.deleted` / `restored` / `slug_changed`. Cảnh báo: `refresh.reuse_detected` tăng; `rate_limit_blocked_total{rule="login"}` > 50 / 5 phút. | Tạo một lần login sai trên staging ⇒ tìm được theo `reqId`. | Dòng log |
-| 6.3 | `SENTRY_DSN` đặt (app từ chối nếu thiếu); PII scrubbing dùng **cùng serializer allow-list** với log; tunnel (nếu có) **không** nới CSP của web. | Gửi lỗi thử ⇒ event có đúng `release`, không có email / token / body request. | Ảnh event |
-| 6.4 | `/metrics` chỉ ở **cổng nội bộ**; nếu nền tảng không cho cổng nội bộ thì bắt buộc `Authorization: Bearer METRICS_TOKEN`. | `curl https://api.<domain>/metrics` từ ngoài ⇒ 404 / 401. | Output |
+| 6.3 | **`SENTRY_DSN`** (API và web): thiếu ⇒ app vẫn chạy, chỉ **cảnh báo**; staging / production bắt buộc `https://`; thu thập tắt tại nguồn + `beforeSend` allow-list — chi tiết dưới bảng. | (a) Log khởi động API và web **không** có cảnh báo thiếu / sai DSN. (b) Gửi lỗi thử từ API và từ trình duyệt ⇒ event có đúng `release` / `environment`, **không** có email, token, cookie, body, query string. | Dòng log + ảnh event |
+| 6.4 | `/metrics` chạy trên **cổng riêng** `METRICS_PORT` (mặc định 9464, phải khác `PORT`), chỉ `GET /metrics`, **luôn** đòi `Authorization: Bearer METRICS_TOKEN` ở staging / production. `METRICS_HOST` mặc định **`127.0.0.1`** — chỉ đặt `0.0.0.0` khi bộ scrape nằm ngoài container, và khi đó cổng **không** được công bố ra Internet. | (a) `curl https://api.<domain>/metrics` ⇒ 404 (route không tồn tại trên cổng công khai). (b) Từ ngoài, kết nối `<host>:9464` ⇒ thất bại. (c) Trong mạng nội bộ, không kèm token ⇒ 401; kèm token ⇒ 200. | Output 3 lệnh |
 | 6.5 | `/healthz` không lộ `gitSha` / phiên bản; `/readyz` chỉ trả trạng thái, chặn ở edge nếu được (tránh flood vào pool DB). | `curl` 2 endpoint. | Output |
+| 6.6 | **Tunnel Sentry `/monitoring` của web** (cùng origin ⇒ không nới CSP `connect-src`): chỉ chuyển tiếp tới **DSN đã cấu hình** (envelope mang DSN khác ⇒ 403, không phải proxy mở / SSRF); đọc body theo luồng, trần 200 kB (chunked không có `Content-Length` vẫn bị cắt ⇒ 413); rate limit 30 / phút / IP + 300 / phút / instance; chỉ chuyển item loại `event`. Không có DSN ⇒ route trả 404. | (a) Gửi envelope có DSN khác ⇒ 403. (b) Gửi body chunked > 200 kB ⇒ 413. (c) 31 request / phút từ một IP ⇒ 429 `Retry-After`. | Output |
+
+
+**Chi tiết 6.3 — Sentry (T-035):**
+- **Thiếu DSN** ⇒ API và web vẫn chạy, chỉ **cảnh báo** lúc khởi động (giám sát không được làm sập app). App **không** tự chặn chỗ này ⇒ phải kiểm log khởi động.
+- Staging / production **bắt buộc `https://`**: API từ chối khởi động; web **tắt Sentry** và cảnh báo một lần (không làm hỏng mọi trang).
+- Thu thập tắt tại nguồn (`dataCollection`: user, cookie, header, body, query, biến cục bộ, dòng mã nguồn); không breadcrumb, không session.
+- `beforeSend` / `beforeSendTransaction` dựng event mới theo **allow-list**, cùng serializer với log (lỗi DB không mang dòng dữ liệu). Web: URL bỏ query (`?next=`, `?task=`), `tracePropagationTargets: []`, SDK chỉ nạp khi có DSN.
 
 ## 7. Repo public, CI, tài khoản
 
