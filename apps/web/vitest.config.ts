@@ -7,6 +7,9 @@ import { defineProject } from 'vitest/config';
 // Test web chạy jsdom (phía trình duyệt) nhưng Vitest giải gói theo điều kiện Node ⇒ `@sentry/nextjs`
 // ra bản SERVER. Trỏ thẳng bản client (điều kiện `browser` của gói) để test đúng SDK mà bundle trình
 // duyệt dùng (T-035, review E: header trace / patch).
+// ⚠ Alias này TOÀN CỤC cho project web: test nào import `sentry-server.ts` / `instrumentation.ts`
+// (register, onRequestError) sẽ chạy SDK CLIENT, không phải server. Khi cần test phía server, tách
+// project Vitest riêng (environment node, không alias) thay vì dựa vào alias này.
 const sentryClientEntry = path.join(
   path.dirname(createRequire(import.meta.url).resolve('@sentry/nextjs/package.json')),
   'build/esm/index.client.js',
