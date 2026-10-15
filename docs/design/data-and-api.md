@@ -551,7 +551,7 @@ Prefix: `/workspaces/:wsId/projects/:projectId/tasks`
 | `REFRESH_TOKEN_INVALID` | 401 | Refresh thiếu/hết hạn/thu hồi/reuse | null |
 | `ORIGIN_NOT_ALLOWED` | 403 | Origin không hợp lệ trên endpoint dùng cookie (`/auth/refresh`, `/auth/logout`) | null |
 | `FORBIDDEN_ACCESS` | 403 | Là thành viên nhưng thiếu quyền / policy chặn | `{ required?: permission }` |
-| `RESOURCE_NOT_FOUND` | 404 | Không tồn tại **hoặc** khác tenant (ADR-020) | `{ resource: "task"\|"project"\|"workspace"\|"user" }` |
+| `RESOURCE_NOT_FOUND` | 404 | Không tồn tại **hoặc** khác tenant (ADR-020); route API không xác định (`resource: "route"`, T-021) | `{ resource: "task"\|"project"\|"workspace"\|"user"\|"route" }` |
 | `VERSION_CONFLICT` | 409 | `expectedVersion` lệch (ADR-010) | `{ currentVersion, current: TaskDto }` |
 | `RESOURCE_CONFLICT` | 409 | Trùng unique (slug, keyPrefix, đã là thành viên), trùng rank sau retry | `{ field?, reason }` |
 | `EMAIL_ALREADY_EXISTS` | 409 | Register trùng email (ADR-049: giữ ở v1, bù bằng rate-limit) | null |
