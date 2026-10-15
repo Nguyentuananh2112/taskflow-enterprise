@@ -119,7 +119,7 @@ Lưu ý về Hetzner: ngày 2026-10-15, trang Cloud ghi dòng Cost-Optimized (CX
 | | local (Phase 1–4) | test (CI) | staging (Phase 5) | production (Phase 5) |
 |---|---|---|---|---|
 | Hạ tầng | `docker compose` (postgres, valkey, mailpit tùy chọn); app chạy `pnpm dev` trên máy | GitHub Actions `services` + compose prodlike cho E2E | 1 droplet: compose chạy **đúng image** sẽ lên prod + Caddy | Theo hosting chọn ở Phase 5 |
-| Domain | `localhost:3000` / `localhost:4000` | `localhost` | `staging.<domain>` / `api.staging.<domain>` | `app.<domain>` / `api.<domain>` (ADR-029). Domain chưa có (ADR-071) |
+| Domain | `localhost:3001` / `localhost:4000` (ADR-097) | `localhost` | `staging.<domain>` / `api.staging.<domain>` | `app.<domain>` / `api.<domain>` (ADR-029). Domain chưa có (ADR-071) |
 | `NODE_ENV` | `development` | `test` | `production` | `production` |
 | `APP_ENV` | `local` | `test` | `staging` | `production` |
 | Dữ liệu | seed giả | factory | seed giả cỡ lớn (cho k6) — **không bao giờ copy dữ liệu prod** | thật |
@@ -246,9 +246,9 @@ stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
 ### 3.4 `docker-compose.yml` cho local dev
 | Service | Image | Ghi chú |
 |---|---|---|
-| `postgres` | `postgres:18.6-bookworm` | port 5432; volume `pgdata:/var/lib/postgresql` (**PG18 đổi đường dẫn**; mount `/var/lib/postgresql/data` kiểu ≤17 sẽ mất dữ liệu khi tạo lại container); healthcheck `pg_isready`; `POSTGRES_DB=taskflow`; init script tạo role `taskflow_app` + `taskflow_migrator` (§4.1) |
-| `postgres-test` | cùng image | port 5433; `tmpfs: /var/lib/postgresql`; `-c fsync=off -c synchronous_commit=off -c full_page_writes=off` (chỉ dùng cho test) |
-| `valkey` | `valkey/valkey:9.1.2` | port 6379; không persistence (`--save "" --appendonly no`); `--maxmemory-policy noeviction` (§7.1) |
+| `postgres` | `postgres:18.6-bookworm` | cổng host 5433 (ADR-097); volume `pgdata:/var/lib/postgresql` (**PG18 đổi đường dẫn**; mount `/var/lib/postgresql/data` kiểu ≤17 sẽ mất dữ liệu khi tạo lại container); healthcheck `pg_isready`; `POSTGRES_DB=taskflow`; init script tạo role `taskflow_app` + `taskflow_migrator` (§4.1) |
+| `postgres-test` | cùng image | cổng host 5434; `tmpfs: /var/lib/postgresql`; `-c fsync=off -c synchronous_commit=off -c full_page_writes=off` (chỉ dùng cho test) |
+| `valkey` | `valkey/valkey:9.1.2` | cổng host 6380; không persistence (`--save "" --appendonly no`); `--maxmemory-policy noeviction` (§7.1) |
 | `mailpit` | `axllent/mailpit:v1.31.5` (+ digest) | **profile `mail`**, tắt mặc định. Xác minh email nằm sau v1 (ADR-049) |
 
 - Dùng image Debian thay alpine cho Postgres để collation theo glibc giống bản managed. Điều này ảnh hưởng `ORDER BY` trên các cột text không phải `rank`.

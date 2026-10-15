@@ -2,6 +2,7 @@
 #   pnpm infra:up      → postgres + postgres-test + valkey
 #   docker compose --profile mail up -d mailpit   → (tùy chọn) hộp thư giả
 # Mật khẩu dưới đây CHỈ dùng cho máy dev, cổng chỉ mở trên 127.0.0.1. Đổi được qua file .env ở gốc (xem .env.example).
+# Cổng HOST riêng cho TaskFlow (ADR-097 — máy dev có dự án khác chiếm 5432/6379/3000); trong mạng Docker vẫn 5432/6379.
 name: taskflow
 
 # Debian (không alpine): collation glibc giống bản managed (devops.md §3.4). Ghim tag + digest.
@@ -30,7 +31,7 @@ services:
       <<: *postgres-env
       POSTGRES_DB: taskflow
     ports:
-      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
     volumes:
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
       # PG18 đổi đường dẫn: mount /var/lib/postgresql (KHÔNG phải .../data như ≤17).
@@ -53,7 +54,7 @@ services:
       - -c
       - full_page_writes=off
     ports:
-      - '127.0.0.1:${POSTGRES_TEST_PORT:-5433}:5432'
+      - '127.0.0.1:${POSTGRES_TEST_PORT:-5434}:5432'
     tmpfs:
       - /var/lib/postgresql
 
@@ -72,7 +73,7 @@ services:
       - --maxmemory-policy
       - noeviction
     ports:
-      - '127.0.0.1:${VALKEY_PORT:-6379}:6379'
+      - '127.0.0.1:${VALKEY_PORT:-6380}:6379'
     healthcheck:
       test: ['CMD', 'valkey-cli', 'ping']
       interval: 5s
@@ -83,8 +84,8 @@ services:
     image: axllent/mailpit:v1.31.5@sha256:94f6b70c1436defae6799d9ac7ff0eeff9540465b842026d5cdb018f1c0234ea
     profiles: [mail]
     ports:
-      - '127.0.0.1:1025:1025'
-      - '127.0.0.1:8025:8025'
+      - '127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025'
+      - '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025'
 
 volumes:
   pgdata:

@@ -53,9 +53,10 @@ pnpm install              # cũng cài git hook (lefthook) qua script "prepare"
 ## 3. Hạ tầng local (Postgres 18.6 + Valkey 9.1.2)
 Mở Docker Desktop trước (biểu tượng cá voi chuyển xanh).
 ```powershell
-pnpm infra:up             # postgres :5432, postgres-test :5433 (RAM, cho test), valkey :6379 — đợi healthy
+pnpm infra:up             # postgres :5433, postgres-test :5434 (RAM, cho test), valkey :6380 — đợi healthy
 docker compose ps         # mọi service "healthy"
 ```
+- **Cổng host riêng (ADR-097)**: máy dev có thể chạy dự án khác chiếm 5432/6379/3000, nên TaskFlow dùng Postgres 5433, Postgres test 5434, Valkey 6380, web 3001, API 4000. Bên trong mạng Docker vẫn là 5432/6379. Đổi bằng file `.env` ở gốc. **Không** dừng/sửa container của dự án khác.
 - Lần đầu, script `docker/postgres/init/01-roles.sh` tạo 2 user: `taskflow_migrator` (DDL, chạy migrate) và `taskflow_app` (chỉ DML — app dùng). Mật khẩu mặc định chỉ cho máy dev, đổi được bằng file `.env` ở gốc (mẫu: `.env.example`).
 - **Postgres 18 lưu dữ liệu ở volume `/var/lib/postgresql`** (khác ≤17). Muốn làm lại từ đầu (xóa sạch DB + chạy lại init script): `pnpm infra:reset` rồi `pnpm infra:up`.
 - Hộp thư giả (chưa dùng ở v1): `docker compose --profile mail up -d mailpit` → http://localhost:8025.
@@ -82,7 +83,7 @@ Lệnh seed (`pnpm db:seed`) do T-010 bổ sung — xem README khi có.
 
 ## 6. Chạy ứng dụng
 ```powershell
-pnpm dev                  # api http://localhost:4000 (GET /healthz) + web http://localhost:3000
+pnpm dev                  # api http://localhost:4000 (GET /healthz) + web http://localhost:3001
 ```
 
 ## 7. Kiểm tra trước khi đẩy code (Definition of Done)
@@ -96,7 +97,7 @@ Commit sẽ tự chạy hook pre-commit: **gitleaks** (quét secret phần stage
 pnpm docker:build                     # taskflow-api:dev + taskflow-web:dev (build từ gốc repo)
 Get-Content docker/verify-argon2.mjs | docker run --rm -i taskflow-api:dev node --input-type=module -
 docker run --rm -p 4000:4000 taskflow-api:dev    # rồi mở http://localhost:4000/healthz
-docker run --rm -p 3000:3000 -e API_URL=http://localhost:4000/api/v1 taskflow-web:dev
+docker run --rm -p 3001:3000 -e API_URL=http://localhost:4000/api/v1 taskflow-web:dev   # mở http://localhost:3001
 ```
 (`pnpm docker:verify-argon2` dùng chuyển hướng `<` — chạy được trong Git Bash; PowerShell dùng dòng `Get-Content … |` ở trên.)
 
@@ -108,5 +109,5 @@ docker run --rm -p 3000:3000 -e API_URL=http://localhost:4000/api/v1 taskflow-we
 | `pnpm` không nhận lệnh | chưa `corepack enable pnpm` — mục 1.2, hoặc dùng `corepack pnpm` |
 | Commit bị chặn "Thiếu gitleaks" | cài gitleaks — mục 1.3 |
 | gitleaks báo leak ở file của bạn | **coi như secret đã lộ nếu đã push**: xoay secret, rồi xóa khỏi commit; giá trị giả cho mẫu thì đặt hậu tố `_local_only` |
-| Cổng 5432/6379 đã bị chiếm | đặt `POSTGRES_PORT` / `VALKEY_PORT` khác trong `.env` gốc, sửa URL tương ứng trong `apps/api/.env` |
+| `port is already allocated` | cổng host đã bị chiếm (`docker ps` để xem) — đặt `POSTGRES_PORT` / `POSTGRES_TEST_PORT` / `VALKEY_PORT` khác trong `.env` gốc và sửa URL tương ứng trong `apps/api/.env` |
 | Init script không chạy lại sau khi sửa | init chỉ chạy khi volume trống — `pnpm infra:reset` |
