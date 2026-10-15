@@ -39,6 +39,9 @@ function mapRankConflict(err: unknown): never {
  * Repository Task trên Prisma 7. Mọi truy vấn có phạm vi tenant và loại workspace đã xóa mềm
  * (ADR-020, ADR-047). Rank so sánh dưới collation "C" của cột (`gt`/`lt`/`ORDER BY`).
  */
+
+/** Chờ khóa cột tối đa (review B T-033 F3) — đủ cho rebalance cột ≤ RANK_REBALANCE_MAX_TASKS. */
+const LOCK_TIMEOUT = '2s';
 export class PrismaTaskRepository implements ITaskRepository {
   constructor(private readonly db: DbProvider) {}
 
@@ -89,6 +92,10 @@ export class PrismaTaskRepository implements ITaskRepository {
 
   /** `pg_advisory_xact_lock` trả `void` — Prisma không đọc được cột void ⇒ dùng `$executeRaw`. */
   async lockColumn(projectId: string, status: TaskStatus): Promise<void> {
+    // Review B T-033 F3: chờ khóa KHÔNG giới hạn ⇒ một rebalance dài làm request cùng cột giữ hết pool
+    // (ảnh hưởng chéo tenant). Giới hạn chờ (cả khóa dòng sau đó trong cùng transaction) ⇒ 55P03 ⇒
+    // `inTransactionWithRankRetry` chạy lại, quá giới hạn ⇒ 503.
+    await this.db().$executeRaw`SELECT set_config('lock_timeout', ${LOCK_TIMEOUT}, true)`;
     await this.db().$executeRaw`
       SELECT pg_advisory_xact_lock(hashtextextended(${`taskflow:rank:${projectId}:${status}`}, 0))`;
   }

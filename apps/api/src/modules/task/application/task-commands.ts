@@ -7,10 +7,12 @@ import {
   ProjectArchivedError,
   ResourceConflictError,
   ResourceNotFoundError,
+  ServiceUnavailableError,
   VersionConflictError,
 } from '../../../core/errors';
 import type { IEventBus } from '../../../core/events/event-bus';
 import type { ILogger } from '../../../core/logging/logger';
+import { transientDbErrorCode } from '../../../core/persistence/transient-db-error';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type { Task } from '../domain/task';
 import type { ITaskAuditLogRepository } from './ports/audit-log.port';
@@ -157,9 +159,13 @@ export class TaskCommands {
       try {
         return await this.d.uow.run(work);
       } catch (err) {
-        if (!(err instanceof RankConflictError)) throw err;
-        this.d.logger.warn({ attempt }, 'task.rank_conflict_retry');
+        // Review B T-033 F3/F5: chờ khóa cột quá `lock_timeout` (55P03), deadlock giữa hai rebalance
+        // chéo cột (40P01), serialization (40001) ⇒ transaction đã rollback, chạy lại là đủ.
+        const transient = transientDbErrorCode(err);
+        if (!(err instanceof RankConflictError) && !transient) throw err;
+        this.d.logger.warn({ attempt, sqlState: transient }, 'task.rank_conflict_retry');
         if (attempt >= RANK_RETRY_LIMIT) {
+          if (transient) throw new ServiceUnavailableError(undefined, err); // 503 — thử lại sau
           throw new ResourceConflictError({ field: 'rank', reason: 'RANK_COLLISION' });
         }
       }
