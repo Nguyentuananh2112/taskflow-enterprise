@@ -180,15 +180,22 @@ Claims:
 
 | Thuộc tính | Production | Development (localhost, HTTP) |
 |---|---|---|
-| Tên | `__Secure-tf_rt` | `tf_rt` |
+| Tên | `__Host-tf_rt` (ADR-109) | `tf_rt` |
 | `HttpOnly` | ✅ | ✅ |
 | `Secure` | ✅ | ❌ |
 | `SameSite` | `Strict` | `Strict` (`localhost:3000` và `localhost:4000` cùng site — cổng không tính) |
-| `Path` | `/api/v1/auth` | `/api/v1/auth` |
+| `Path` | `/` (tiền tố `__Host-` bắt buộc) | `/api/v1/auth` (trên localhost cookie không tách theo cổng — Path hẹp để không gửi sang web `:3000`) |
 | `Domain` | **không đặt** (host-only trên `api.example.com`) | không đặt |
 | `Max-Age` | = thời gian còn lại tới `expiresAt` | như prod |
 
-- Không dùng tiền tố `__Host-` vì nó bắt buộc `Path=/`.
+- **ADR-109 (ghi đè thuộc tính cookie của ADR-024): tiền tố `__Host-`** ở staging/production.
+  - `__Secure-` không cấm `Domain=` ⇒ subdomain anh em (`*.example.com` bị XSS / takeover) cài được `__Secure-tf_rt; Domain=example.com` ⇒ cookie tossing / login CSRF (T-028, F + B).
+  - `__Host-` buộc trình duyệt **từ chối** mọi cookie tên này có `Domain=`, thiếu `Secure` hoặc `Path` ≠ `/`.
+  - Server **chỉ đọc đúng tên `__Host-tf_rt`** ở prod. Cookie `tf_rt` / `__Secure-tf_rt` do ai khác đặt bị bỏ qua ⇒ `401 REFRESH_TOKEN_INVALID`.
+  - Đánh đổi `Path=/` được chấp nhận: cookie đi kèm mọi request tới **API origin riêng** (`api.example.com`), vẫn HttpOnly + SameSite=Strict. Header `Cookie` / `Set-Cookie` đã redact trong log (`REDACT_PATHS`, access log không ghi header). Route ngoài `/auth/{refresh,logout}` dùng Bearer, không đọc cookie.
+- **Nhiều cookie trùng tên** (chỉ có thể do bên thứ ba cài; lớp phòng thủ thứ hai sau `__Host-`) ⇒ `/auth/refresh` và `/auth/logout` **thu hồi family của MỌI giá trị** (như logout) rồi `401` / `204` + xóa cookie: cookie còn sót lại trong trình duyệt đều đã chết, không thể hoán đổi phiên.
+  - Quá **4** giá trị ⇒ `401` ngay, không thu hồi từng cái (chặn khuếch đại DB/Valkey) và **không** xóa cookie.
+  - Cái giá khi đang bị tấn công: nạn nhân phải đăng nhập lại.
 - Dev tắt `Secure` vì: Chrome nhận `Secure` trên localhost nhưng **từ chối tiền tố `__Secure-`/`__Host-`**, Safari từ chối cookie `Secure` trên localhost hoàn toàn. Cấu hình bằng `COOKIE_SECURE` + `COOKIE_NAME` suy ra từ `NODE_ENV`; **app không khởi động** nếu `NODE_ENV=production` mà `COOKIE_SECURE=false`.
 - Xóa cookie: `Set-Cookie` cùng tên/Path với `Max-Age=0`.
 - FE gọi các endpoint `/auth/*` với `credentials: 'include'`.
@@ -620,7 +627,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |
 | SEC-32 | Mật khẩu 11 ký tự; 257 ký tự; nằm trong danh sách phổ biến; chứa phần local của email | 400 VALIDATION_ERROR. Mật khẩu 12 ký tự và 256 ký tự (kể cả 100 ký tự tiếng Việt có dấu) hợp lệ ⇒ 201 |
 | SEC-33 | Log của login/refresh/register/change-password | không chứa password, access token, refresh token, header Cookie/Authorization |
-| SEC-34 | Cookie refresh ở prod | có `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, tên `__Secure-tf_rt`, không `Domain` |
+| SEC-34 | Cookie refresh ở prod | có `HttpOnly; Secure; SameSite=Strict; Path=/`, tên `__Host-tf_rt` (ADR-109), không `Domain`; server bỏ qua `tf_rt` / `__Secure-tf_rt` |
 | SEC-35 | Socket handshake không token / token sai / `tv` cũ | `connect_error` với `data.code` tương ứng |
 | SEC-36 | Bob `project:join` project của ws A (đúng và sai `workspaceId`) | ack `{ ok:false, code:'RESOURCE_NOT_FOUND' }`, không nhận event của phòng |
 | SEC-37 | Mia đang ở phòng project, bị xóa khỏi ws | rời phòng, nhận `workspace:access-revoked`, không nhận `task:*` tiếp theo |

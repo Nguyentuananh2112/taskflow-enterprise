@@ -51,15 +51,20 @@ describe('POST /auth/register', () => {
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
-  it('production (COOKIE_SECURE): tên __Secure-tf_rt + Secure', async () => {
+  it('production (COOKIE_SECURE, ADR-109): __Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/; không Domain', async () => {
     t = createTestApp({ cookieSecure: true });
     const res = await post('/register').send({
       email: 'a@example.com',
       password: PASSWORD,
       fullName: 'A',
     });
-    const cookie = setCookieOf(res, '__Secure-tf_rt') ?? '';
+    const cookie = setCookieOf(res, '__Host-tf_rt') ?? '';
+    expect(cookie).toMatch(/^__Host-tf_rt=[^;]+;/);
     expect(cookie).toContain('Secure');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Strict');
+    expect(cookie).toMatch(/Path=\/(;|$)/);
+    expect(cookie).not.toContain('Domain');
   });
 
   it('409 EMAIL_ALREADY_EXISTS khi trùng email (ADR-049)', async () => {
