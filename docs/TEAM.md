@@ -9,6 +9,7 @@
 | `taskflow-enterprise-d7` (thay `-ba` crash) | **Engineer C — Domain/Contracts** | Data model, API contract, sau này: Task domain. |
 | `taskflow-enterprise-a5` | **Engineer D — QA/DevOps** | Vận hành production, CI/CD, chiến lược test; sau này: test độc lập (bảo mật/IDOR/E2E), pipeline. |
 | `taskflow-enterprise-37` (thay `-b7` crash) | **Engineer E — Frontend** | Kiến trúc FE & UX; sau này: Kanban board, realtime phía client. |
+| (mở sau) | **Engineer F — QA/Tester độc lập** | Mutation testing, bộ test bảo mật đầu-cuối SEC-01..58, sau này E2E. Chỉ ghi thư mục test, không sửa code sản phẩm. |
 
 ## Nguồn sự thật (đọc theo thứ tự ưu tiên)
 1. `docs/blueprint/DECISIONS.md` (v1.1) — ghi đè mọi thứ khác.
