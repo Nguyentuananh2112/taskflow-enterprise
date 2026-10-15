@@ -94,3 +94,7 @@ docs/         thiết kế, quyết định (ADR), runbook, báo cáo review
 | Bảo mật                              | [docs/design/security.md](docs/design/security.md)                                                                                                         |
 | Frontend                             | [docs/design/frontend.md](docs/design/frontend.md)                                                                                                         |
 | Vận hành, deploy, giám sát           | [docs/design/devops.md](docs/design/devops.md), [docs/runbook/](docs/runbook/)                                                                             |
+
+## Bản quyền
+
+Mã nguồn được **công khai để tham khảo**; tác giả **giữ toàn quyền** (all rights reserved) — repo không kèm giấy phép mã nguồn mở (ADR-114). Muốn sử dụng, sao chép hay phân phối lại mã, vui lòng liên hệ xin phép trước. Báo lỗ hổng bảo mật theo [SECURITY.md](SECURITY.md).

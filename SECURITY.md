@@ -8,7 +8,7 @@ _English version below._
 
 Dùng kênh riêng của GitHub: tab **Security → Report a vulnerability** của repo này (GitHub private vulnerability reporting). Báo cáo chỉ người duy trì dự án đọc được.
 
-Nếu nút "Report a vulnerability" không có: mở một issue **chỉ** với tiêu đề "Xin kênh liên hệ bảo mật" — **không** kèm bất kỳ chi tiết nào về lỗ hổng; người duy trì sẽ liên hệ lại qua kênh riêng.
+Hoặc gửi email tới hộp thư bảo mật **toppdmtop@gmail.com** (tiêu đề bắt đầu bằng `[SECURITY]`). Nếu cả hai kênh đều không dùng được: mở một issue **chỉ** xin kênh liên hệ — **không** kèm chi tiết nào về lỗ hổng.
 
 > **Người duy trì:** tính năng _Private vulnerability reporting_ **tắt mặc định** — bật ở Settings → Code security → Private vulnerability reporting **trước khi** công khai repo (checklist: [docs/runbook/security-go-live.md](docs/runbook/security-go-live.md)).
 
@@ -18,13 +18,12 @@ Vui lòng gửi:
 - các bước tái hiện tối thiểu (request, payload, phiên bản / commit);
 - nếu có: đề xuất cách sửa.
 
-## Thời hạn xử lý và công bố phối hợp
+## Thời gian xử lý và công bố phối hợp
 
-| Mốc                            | Cam kết                              |
-| ------------------------------ | ------------------------------------ |
-| Xác nhận đã nhận báo cáo       | trong **5 ngày làm việc**            |
-| Đánh giá mức độ + hướng xử lý  | trong **10 ngày làm việc**           |
-| Bản vá cho mức High / Critical | mục tiêu **30 ngày** từ khi xác nhận |
+Đây là **mục tiêu, nỗ lực tốt nhất** (best effort) của một dự án nhỏ — không phải cam kết cứng (ADR-114):
+
+- phản hồi xác nhận đã nhận báo cáo: khoảng **5 ngày làm việc**;
+- sau đó đánh giá mức độ và báo hướng xử lý sớm nhất có thể; lỗi mức High / Critical được ưu tiên vá trước mọi việc khác.
 
 **Công bố phối hợp:** xin chờ bản vá được phát hành, tối đa **90 ngày** kể từ khi báo, trước khi công bố công khai — hoặc sớm hơn nếu hai bên thống nhất. Chúng tôi ghi công người báo (nếu bạn muốn) khi công bố.
 
@@ -46,7 +45,7 @@ Nghiên cứu **thiện chí, trong phạm vi** dưới đây và tuân thủ qu
 | Xác thực / phiên, phân quyền và cô lập tenant (IDOR), realtime, rate limit, CSP / XSS, rò dữ liệu qua log / Sentry / metrics | Thiếu header "best practice" không dẫn tới khai thác cụ thể                             |
 | Secret lọt trong lịch sử git                                                                                                 | Tấn công vật lý, lừa đảo người dùng                                                     |
 
-Tính năng chưa có ở v1 (vd xác minh email — ADR-049) là rủi ro đã chấp nhận có chủ đích, không tính là lỗ hổng.
+Rủi ro đã chấp nhận có chủ đích ở v1 (danh sách đầy đủ kèm ADR: [threat model §6](docs/design/threat-model.md) — vd chưa xác minh email ADR-049, các mục của ADR-113) không tính là lỗ hổng.
 
 ## Phiên bản được hỗ trợ
 
@@ -55,6 +54,7 @@ Chỉ nhánh `main` mới nhất. Bản vá được phát hành trên `main`.
 ## Tài liệu liên quan
 
 - Thiết kế bảo mật: [docs/design/security.md](docs/design/security.md)
+- Threat model STRIDE v1 + rủi ro chấp nhận: [docs/design/threat-model.md](docs/design/threat-model.md)
 - Checklist bảo mật trước khi go-live và quy trình xử lý sự cố (gồm lộ secret): [docs/runbook/security-go-live.md](docs/runbook/security-go-live.md)
 
 ---
@@ -67,13 +67,15 @@ Chỉ nhánh `main` mới nhất. Bản vá được phát hành trên `main`.
 
 Use GitHub's private channel: the **Security → Report a vulnerability** tab of this repository (private vulnerability reporting). Only maintainers can read the report.
 
-If the "Report a vulnerability" button is not available, open an issue titled **only** "Request for a security contact" — with **no** details about the vulnerability — and a maintainer will reach out privately.
+Or email the security inbox **toppdmtop@gmail.com** (subject starting with `[SECURITY]`). If neither channel works, open an issue that **only** asks for a contact channel — with **no** details about the vulnerability.
 
 Please include: a description and impact (who is affected, what can be read or changed), minimal reproduction steps (requests, payloads, version / commit), and a suggested fix if you have one.
 
-## Response timeline and coordinated disclosure
+## Response targets and coordinated disclosure
 
-- Acknowledgement within **5 business days**; assessment and plan within **10 business days**; fix for High / Critical issues targeted within **30 days** of acknowledgement.
+These are **best-effort targets** of a small project, not hard commitments:
+
+- acknowledgement of your report within about **5 business days**; assessment and a plan as soon as possible after that, with High / Critical issues fixed first.
 - Please allow up to **90 days** from your report (or until a fix is released, if sooner, or another date we agree on) before public disclosure. We will credit you if you wish.
 
 ## Safe harbor
@@ -84,7 +86,7 @@ We will not pursue legal action against **good-faith research within the scope b
 
 In scope: code in this repository (`apps/api`, `apps/web`, `packages/*`, Docker images, sample configuration) — authentication / sessions, authorization and tenant isolation (IDOR), realtime, rate limiting, CSP / XSS, data leaks through logs / Sentry / metrics, secrets in git history.
 
-Out of scope: vulnerabilities in third-party libraries with no demonstrated exploit through TaskFlow (report upstream), missing "best practice" headers without a concrete exploit, physical attacks, social engineering. Features deliberately absent from v1 (e.g. email verification — ADR-049) are accepted risks, not vulnerabilities.
+Out of scope: vulnerabilities in third-party libraries with no demonstrated exploit through TaskFlow (report upstream), missing "best practice" headers without a concrete exploit, physical attacks, social engineering. Risks deliberately accepted for v1 (full list with ADRs: [threat model §6](docs/design/threat-model.md), e.g. no email verification — ADR-049, items of ADR-113) are not vulnerabilities.
 
 ## Supported versions
 
