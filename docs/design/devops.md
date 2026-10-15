@@ -533,7 +533,7 @@ Thứ tự trong `main.ts` (composition root):
 ### 7.4 Job định kỳ
 | Job | Tần suất | Nguồn |
 |---|---|---|
-| Dọn refresh token hết hạn > 7 ngày | hằng ngày | T-002 §2.2 |
+| Dọn refresh token: phiên hết hạn tuyệt đối > 7 ngày (`purge-expired-refresh-tokens`, lượt đầu 90 s sau khởi động, jitter 30 phút) | hằng ngày | security.md §2.2 (G2 S2) |
 | **Purge workspace** đã xóa mềm quá 30 ngày (`purge_at <= now()`) | hằng giờ hoặc hằng ngày | ADR-047, ADR-050 |
 | Backup logical | hằng ngày | §4.3 — **chạy ngoài api** |
 | (Không có) purge task xóa mềm | — | ADR-042 |
