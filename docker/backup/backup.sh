@@ -45,11 +45,13 @@ s3=(aws s3)
 [ -n "${BACKUP_S3_ENDPOINT:-}" ] && s3+=(--endpoint-url "$BACKUP_S3_ENDPOINT")
 
 # Kiểm file dump đọc được TRƯỚC khi mã hóa (devops.md §4.4: "pg_restore --list sau mỗi lần dump")
-# mà không cần khóa giải mã trên máy này: một nhánh của luồng đi qua `pg_restore --list`.
+# mà không cần khóa giải mã trên máy này: một nhánh của luồng đi qua `pg_restore --file=/dev/null`.
+# Đọc HẾT archive (giải nén mọi khối dữ liệu) — mạnh hơn `--list` (chỉ đọc TOC rồi thoát, làm `tee`
+# nhận SIGPIPE ⇒ exit 141 dưới pipefail: lỗi thật ở lần diễn tập đầu tiên).
 fifo="$(mktemp -u /tmp/backup-check.XXXXXX)"
 mkfifo -m 600 "$fifo"
 trap 'rm -f "$fifo"' EXIT
-pg_restore --list <"$fifo" >/dev/null &
+pg_restore --file=/dev/null <"$fifo" &
 check_pid=$!
 
 pg_dump --format=custom --compress=6 --no-password "$BACKUP_DATABASE_URL" \
@@ -57,6 +59,6 @@ pg_dump --format=custom --compress=6 --no-password "$BACKUP_DATABASE_URL" \
   | age "${recipients[@]}" \
   | "${s3[@]}" cp --only-show-errors - "s3://${BACKUP_S3_BUCKET}/${key}"
 
-wait "$check_pid" || { echo "BACKUP FAIL: pg_restore --list không đọc được dump" >&2; exit 3; }
+wait "$check_pid" || { echo "BACKUP FAIL: pg_restore không đọc hết được dump" >&2; exit 3; }
 printf '%s\n' "$stamp" | "${s3[@]}" cp --only-show-errors - "s3://${BACKUP_S3_BUCKET}/${key}.ok"
 echo "$key"

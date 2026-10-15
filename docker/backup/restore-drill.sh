@@ -103,7 +103,7 @@ SELECT 'grant|' || grantee || '|' || table_name || '|' || privilege_type
  WHERE table_schema = 'public' AND grantee IN ('taskflow_app', 'taskflow_migrator') ORDER BY 1;
 SELECT 'enum|' || t.typname || '|' || string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder)
   FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid GROUP BY t.typname ORDER BY 1;
-SELECT 'defacl|' || pg_get_userbyid(defaclrole) || '|' || defaclobjtype || '|' || defaclacl::text
+SELECT 'defacl|' || pg_get_userbyid(defaclrole) || '|' || defaclobjtype::text || '|' || defaclacl::text
   FROM pg_default_acl ORDER BY 1;
 SQL
 }
@@ -118,7 +118,8 @@ if ! diff -u "$src_snap" "$dst_snap"; then fail "bản khôi phục KHÁC nguồ
 log "đối chiếu: ${tables} bảng, ${rows} dòng; index / constraint / collation / quyền / enum khớp"
 
 # 7. Toàn vẹn vật lý: heap + mọi btree index của bản khôi phục.
-pg_amcheck --install-missing --heapallindexed --no-password -d "${DRILL_SCRATCH_SUPERUSER_URL%/*}/${db}" ||
+# Chuỗi kết nối là tham số VỊ TRÍ (`-d` của pg_amcheck là mẫu tên database, không phải conninfo).
+pg_amcheck --install-missing --heapallindexed --no-password "${DRILL_SCRATCH_SUPERUSER_URL%/*}/${db}" ||
   fail "pg_amcheck phát hiện hỏng"
 log "pg_amcheck: OK"
 
