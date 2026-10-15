@@ -1,7 +1,7 @@
 import { SignJWT, decodeJwt, decodeProtectedHeader } from 'jose';
 import { describe, expect, it } from 'vitest';
 
-import type { IClock } from '../../application/ports/clock.port';
+import type { IClock } from '../../../../core/domain';
 import {
   JoseAccessTokenService,
   deriveKeyId,

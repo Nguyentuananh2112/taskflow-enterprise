@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AuthDomainError } from './auth-domain-error';
+import { ValidationError } from '../../../core/errors';
 import { Email } from './email';
 
 describe('Email', () => {
@@ -32,11 +32,11 @@ describe('Email', () => {
     ['alice@example.com.', 'domain kết thúc bằng dấu chấm'],
     ['alice@.example.com', 'domain bắt đầu bằng dấu chấm'],
   ])('từ chối %j (%s)', (raw) => {
-    expect(() => Email.create(raw)).toThrow(AuthDomainError);
+    expect(() => Email.create(raw)).toThrow(ValidationError);
   });
 
   it('từ chối phần local dài hơn 64 ký tự', () => {
-    expect(() => Email.create(`${'a'.repeat(65)}@example.com`)).toThrow(AuthDomainError);
+    expect(() => Email.create(`${'a'.repeat(65)}@example.com`)).toThrow(ValidationError);
     expect(Email.create(`${'a'.repeat(64)}@example.com`).localPart).toHaveLength(64);
   });
 
@@ -45,16 +45,19 @@ describe('Email', () => {
     const ok = `${'a'.repeat(64)}@${domain}`;
     expect(ok).toHaveLength(254);
     expect(Email.create(ok).value).toHaveLength(254);
-    expect(() => Email.create(`${ok}x`)).toThrow(AuthDomainError);
+    expect(() => Email.create(`${ok}x`)).toThrow(ValidationError);
   });
 
-  it('lỗi mang code INVALID_EMAIL và không chứa giá trị email (không lộ PII vào log)', () => {
+  it('lỗi là ValidationError (path email) và không chứa giá trị email (không lộ PII vào log)', () => {
     try {
       Email.create('secret-person');
       expect.unreachable();
     } catch (err) {
-      expect(err).toBeInstanceOf(AuthDomainError);
-      expect((err as AuthDomainError).code).toBe('INVALID_EMAIL');
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe('VALIDATION_ERROR');
+      expect((err as ValidationError).issues).toEqual([
+        { path: ['email'], code: 'invalid_format', message: 'Email không hợp lệ.' },
+      ]);
       expect((err as Error).message).not.toContain('secret-person');
     }
   });
