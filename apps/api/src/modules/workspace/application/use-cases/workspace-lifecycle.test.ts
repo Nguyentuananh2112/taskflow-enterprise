@@ -151,13 +151,13 @@ describe('PurgeDeletedWorkspacesJob (ADR-095)', () => {
   it('xóa cứng ws quá hạn (cùng member/project), bỏ qua ws còn hạn, idempotent', async () => {
     await deleteA();
     const job = new PurgeDeletedWorkspacesJob(h);
-    expect(await job.execute()).toEqual({ purged: 0, skipped: 0 });
+    expect(await job.execute()).toEqual({ purged: 0, skipped: 0, failed: 0 });
     h.clock.advance(30 * DAY);
-    expect(await job.execute()).toEqual({ purged: 1, skipped: 0 });
+    expect(await job.execute()).toEqual({ purged: 1, skipped: 0, failed: 0 });
     expect((await h.workspaces.rows()).map((w) => w.id)).toEqual([ctx.B]);
     expect((await h.memberships.rows()).every((m) => m.workspaceId === ctx.B)).toBe(true);
     expect(await h.projects.rows()).toEqual([]);
-    expect(await job.execute()).toEqual({ purged: 0, skipped: 0 });
+    expect(await job.execute()).toEqual({ purged: 0, skipped: 0, failed: 0 });
     expect(h.logger.messages('info')).toContain('workspace.purged');
   });
 
@@ -165,7 +165,11 @@ describe('PurgeDeletedWorkspacesJob (ADR-095)', () => {
     await deleteA();
     h.clock.advance(30 * DAY);
     h.purger.purge = () => Promise.resolve(false);
-    expect(await new PurgeDeletedWorkspacesJob(h).execute()).toEqual({ purged: 0, skipped: 1 });
+    expect(await new PurgeDeletedWorkspacesJob(h).execute()).toEqual({
+      purged: 0,
+      skipped: 1,
+      failed: 0,
+    });
   });
 
   it('xử lý theo lô (batchSize)', async () => {
@@ -177,6 +181,7 @@ describe('PurgeDeletedWorkspacesJob (ADR-095)', () => {
     expect(await new PurgeDeletedWorkspacesJob(h).execute({ batchSize: 1 })).toEqual({
       purged: 1,
       skipped: 0,
+      failed: 0,
     });
     expect(await h.workspaces.rows()).toHaveLength(1);
   });

@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeClock, FakeUnitOfWork, SpyLogger } from '../../test/support';
 import { PurgeRunBusyError } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
 import {
-  MaintenanceScheduler,
   maintenanceEnabled,
+  MaintenanceScheduler,
+  PurgeIncompleteError,
   purgeWorkspacesJob,
   type ScheduledJob,
 } from './maintenance-jobs';
@@ -131,9 +132,13 @@ describe('purgeWorkspacesJob', () => {
     expect(logger.messages('info')).toContain('maintenance.purge_skipped_busy');
   });
 
-  it('lỗi khác ⇒ ném tiếp (scheduler log run_failed)', async () => {
-    const { job: j } = deps(() => Promise.reject(new Error('db down')));
-    await expect(j.run()).rejects.toThrow('db down');
+  it('workspace lỗi ⇒ cả lô vẫn chạy hết, tổng kết có failed, rồi lượt bị coi là thất bại (scheduler log run_failed)', async () => {
+    const { job: j, logger } = deps(() => Promise.reject(new Error('db down')));
+    await expect(j.run()).rejects.toBeInstanceOf(PurgeIncompleteError);
+    expect(logger.entries.find((e) => e.msg === 'maintenance.purge_summary')?.data).toMatchObject({
+      purged: 0,
+      failed: 2,
+    });
   });
 });
 
