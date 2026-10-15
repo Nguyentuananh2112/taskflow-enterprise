@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface RequestContext {
   readonly requestId: string;
+  /** IP thật của client (Express `req.ip`, đã áp `trust proxy`). */
+  readonly ip?: string | undefined;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

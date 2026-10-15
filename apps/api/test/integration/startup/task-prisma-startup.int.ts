@@ -6,9 +6,8 @@ import { resolve } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { testEnvVars } from '../../support';
+import { productionEnvVars } from '../../support';
 import { testDatabaseUrl } from '../db';
-import { testValkeyUrl } from '../support/prisma-test-kit';
 
 const API_DIR = resolve(import.meta.dirname, '../../..');
 const PORT = 4900 + Math.floor(Math.random() * 90);
@@ -20,11 +19,13 @@ describe('khởi động main.ts với Prisma đầy đủ (T-023)', () => {
   it(
     'APP_ENV=staging, mặc định prisma cho mọi module ⇒ /readyz xanh, không cảnh báo module bộ nhớ',
     async () => {
-      const env = testEnvVars({
+      // T-031 (L1): staging bắt buộc cấu hình production đầy đủ (NODE_ENV=production, secret thật,
+      // rediss://…). Valkey `rediss://valkey.internal` không tới được ⇒ chỉ `degraded` (ADR-074),
+      // /readyz vẫn 200 — điều cần chứng minh là module Task chạy Prisma, không bị guard chặn.
+      const env = productionEnvVars({
         PORT: String(PORT),
         APP_ENV: 'staging',
         DATABASE_URL: testDatabaseUrl(),
-        REDIS_URL: testValkeyUrl(),
       });
       // Không đặt PERSISTENCE: khẳng định giá trị MẶC ĐỊNH là prisma.
       delete env.PERSISTENCE;

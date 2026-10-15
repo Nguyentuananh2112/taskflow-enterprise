@@ -73,6 +73,12 @@ export function createApp(deps: AppDependencies): Express {
   );
   app.use(requireJsonContentType);
   app.use(jsonBody(config.bodyLimit));
+  // L4 của T-028: mặc định KHÔNG cache mọi response API (dữ liệu có xác thực, PII như email thành
+  // viên). Route muốn cho cache tự đặt lại header sau middleware này.
+  app.use('/api/v1', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
   if (deps.rateLimit?.length) app.use(...deps.rateLimit);
   for (const { path, router } of deps.routers ?? []) app.use(`/api/v1${path}`, router);
   if (deps.apiRouter) app.use('/api/v1', deps.apiRouter);

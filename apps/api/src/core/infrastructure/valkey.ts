@@ -7,11 +7,23 @@ export function valkeyReconnectDelay(retries: number): number {
   return Math.min(100 * 2 ** retries, 5_000);
 }
 
+/**
+ * Valkey treo (TCP còn sống nhưng không trả lời — Info của T-028) không được giữ request mãi.
+ * `commandOptions.timeout` của node-redis 6.3 KHÔNG áp cho lệnh đã ghi xuống socket (đã thử), nên
+ * dùng timeout socket: không nhận byte nào trong `VALKEY_SOCKET_TIMEOUT_MS` ⇒ hủy socket, mọi lệnh
+ * đang chờ lỗi ngay (rate limit fail-open/closed, readyz degraded), rồi reconnect như thường.
+ * `PING` mỗi `VALKEY_PING_INTERVAL_MS` để kết nối khỏe nhưng nhàn rỗi không bị coi là treo.
+ */
+export const VALKEY_SOCKET_TIMEOUT_MS = 3_000;
+export const VALKEY_PING_INTERVAL_MS = 1_000;
+
 const buildClient = (url: string) =>
   createClient({
     url,
     disableOfflineQueue: true,
+    pingInterval: VALKEY_PING_INTERVAL_MS,
     socket: {
+      socketTimeout: VALKEY_SOCKET_TIMEOUT_MS,
       connectTimeout: 5_000,
       reconnectStrategy: valkeyReconnectDelay,
     },

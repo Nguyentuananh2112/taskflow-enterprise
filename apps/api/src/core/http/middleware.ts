@@ -14,6 +14,9 @@ import { errorSerializer } from '../logging/error-serializer';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const QUIET_PATHS = new Set(['/healthz', '/readyz']);
 
+/** Bỏ query string / fragment khỏi URL request. */
+export const pathOf = (url: string | undefined): string => (url ?? '').split(/[?#]/)[0] ?? '';
+
 /** `X-Request-Id` của client nếu là uuid hợp lệ, không thì sinh mới (devops.md §6.1). */
 export function resolveRequestId(header: string | string[] | undefined): string {
   const value = Array.isArray(header) ? header[0] : header;
@@ -48,21 +51,28 @@ export function requestLogging(logger: Logger): RequestHandler[] {
       res.setHeader('X-Request-Id', id);
       return id;
     },
-    autoLogging: { ignore: (req) => QUIET_PATHS.has((req.url ?? '').split('?')[0] ?? '') },
+    autoLogging: { ignore: (req) => QUIET_PATHS.has(pathOf(req.url)) },
     customLogLevel: (_req, res, err) =>
       err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+    // M3 (T-031): userId khi đã xác thực. pino-http gọi customProps cả lúc response xong ⇒ userId do
+    // `authenticate` gắn có mặt. `reqId` + `ip` đến từ mixin của logger (ngữ cảnh request).
+    customProps: (req) => {
+      const user = (req as IncomingMessage & { user?: { id: string } }).user;
+      return user ? { userId: user.id } : {};
+    },
     serializers: {
+      // L5: chỉ path, KHÔNG query string (vd `?q=<email>` của tìm thành viên).
       req: (req: { id: unknown; method: string; url: string }) => ({
         id: req.id,
         method: req.method,
-        url: req.url,
+        path: pathOf(req.url),
       }),
       res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
       err: inheritedErrSerializer(logger),
     },
   });
   const bindContext: RequestHandler = (req, _res, next) => {
-    requestContext.run({ requestId: req.id as string }, next);
+    requestContext.run({ requestId: req.id as string, ip: req.ip }, next);
   };
   return [httpLogger, bindContext];
 }
