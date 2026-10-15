@@ -61,10 +61,16 @@ adduser --disabled-password deploy && usermod -aG docker deploy      # user cho 
 install -d -m 700 -o deploy /opt/taskflow /opt/taskflow/postgres-init
 apt install unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades
 # sshd: PasswordAuthentication no, PermitRootLogin no
+# G1 M1 — deploy thuộc nhóm docker ≈ root ⇒ khóa của GitHub Actions bị ép forced command, không có shell:
+install -o root -g root -m 755 ci-entry.sh /usr/local/sbin/taskflow-ci-entry     # từ deploy/vps/ci-entry.sh
+install -d -m 700 -o deploy ~deploy/.ssh
+echo 'restrict,command="/usr/local/sbin/taskflow-ci-entry" ssh-ed25519 AAAA… github-actions-deploy' >> ~deploy/.ssh/authorized_keys
+chown deploy ~deploy/.ssh/authorized_keys && chmod 600 ~deploy/.ssh/authorized_keys
 ```
+Khóa CI chỉ chạy được `receive` (tar trên stdin; chỉ nhận `compose.prod.yml`, `Caddyfile`, các `.env*.example`, `postgres-init/01-roles.sh`), `deploy <sha40> <digest…>` (kiểm định dạng) và `rollback`. `deploy.sh`, `bootstrap.sh`, unit systemd và `ci-entry.sh` do **admin cài tay** (khóa SSH riêng của admin) khi chúng đổi. Rủi ro còn lại: `compose.prod.yml` vẫn đến từ CI mà Docker ≈ root — chấp nhận vì nó chỉ đến từ `main` qua job guard + required reviewers.
 DNS: bản ghi A `app.<domain>` và `api.<domain>` → IP VPS (Caddy xin chứng chỉ Let's Encrypt tự động khi có DNS).
 ### B.2 Bootstrap (1 lần)
-Copy `deploy/vps/*` (kể cả `.env.example`, `.env.api.example`) vào `/opt/taskflow/`, `docker/postgres/init/01-roles.sh` vào `/opt/taskflow/postgres-init/` (deploy.yml cũng tự đồng bộ mỗi lần deploy), rồi:
+Copy `deploy/vps/*` (kể cả `.env.example`, `.env.api.example`) vào `/opt/taskflow/`, `docker/postgres/init/01-roles.sh` vào `/opt/taskflow/postgres-init/` (deploy.yml tự đồng bộ compose/Caddyfile/mẫu env mỗi lần deploy; `deploy.sh`, `bootstrap.sh`, unit systemd thì admin copy tay khi đổi), rồi:
 ```bash
 cd /opt/taskflow && APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=<email> GHCR_OWNER=<owner> bash bootstrap.sh
 ```

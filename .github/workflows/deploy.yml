@@ -160,13 +160,15 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts # ghim host key — không StrictHostKeyChecking=no
+          # G1 M1: khóa CI bị ép forced command (deploy/vps/ci-entry.sh) — chỉ receive | deploy | rollback, không shell/scp.
           ssh_() { ssh -i ~/.ssh/deploy -o BatchMode=yes "$USER@$HOST" "$@"; }
-          scp -i ~/.ssh/deploy -o BatchMode=yes deploy/vps/compose.prod.yml deploy/vps/Caddyfile \
-            deploy/vps/deploy.sh deploy/vps/bootstrap.sh deploy/vps/.env.example deploy/vps/.env.api.example \
-            deploy/vps/.env.backup.example deploy/vps/taskflow-backup.service deploy/vps/taskflow-backup.timer \
-            "$USER@$HOST:/opt/taskflow/"
-          scp -i ~/.ssh/deploy -o BatchMode=yes docker/postgres/init/01-roles.sh "$USER@$HOST:/opt/taskflow/postgres-init/"
-          ssh_ "cd /opt/taskflow && bash deploy.sh '$GIT_SHA' '$API_DIGEST' '$WEB_DIGEST' '$MIGRATE_DIGEST' '$BACKUP_DIGEST'"
+          stage=$(mktemp -d) && mkdir -p "$stage/postgres-init"
+          cp deploy/vps/compose.prod.yml deploy/vps/Caddyfile deploy/vps/.env.example deploy/vps/.env.api.example \
+            deploy/vps/.env.backup.example "$stage/"
+          cp docker/postgres/init/01-roles.sh "$stage/postgres-init/"
+          tar -C "$stage" -cf - . | ssh_ receive
+          # deploy.sh / bootstrap.sh / unit systemd / ci-entry.sh: admin cài tay khi đổi (runbook deploy §B.1).
+          ssh_ deploy "$GIT_SHA" "$API_DIGEST" "$WEB_DIGEST" "$MIGRATE_DIGEST" ${BACKUP_DIGEST:+"$BACKUP_DIGEST"}
 
       # ---------------------------------------------------------------- smoke từ Internet (cả 2 phương án)
       - name: Smoke sau deploy (HTTPS thật)
@@ -198,4 +200,4 @@ jobs:
         env:
           HOST: ${{ vars.VPS_HOST }}
           USER: ${{ vars.VPS_USER }}
-        run: ssh -i ~/.ssh/deploy -o BatchMode=yes "$USER@$HOST" 'cd /opt/taskflow && bash deploy.sh --rollback'
+        run: ssh -i ~/.ssh/deploy -o BatchMode=yes "$USER@$HOST" rollback # forced command ⇒ deploy.sh --rollback
