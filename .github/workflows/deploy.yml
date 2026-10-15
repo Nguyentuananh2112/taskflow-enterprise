@@ -36,7 +36,33 @@ env:
   OWNER: ${{ github.repository_owner }}
 
 jobs:
+  # G1 M2: "chỉ main" và "staging trước production" không chỉ nằm ở runbook/cấu hình environment — kiểm bằng
+  # code TRƯỚC bước duyệt: workflow chạy từ main; production chỉ nhận SHA đã có deployment staging thành công.
+  guard:
+    name: guard (main · staging trước production)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      deployments: read
+    steps:
+      - name: Chỉ từ main; production ⇒ SHA đã deploy staging xanh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Deploy chỉ chạy từ main (đang ở $GITHUB_REF)"; exit 1; }
+          [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::git_sha phải là SHA đầy đủ 40 ký tự"; exit 1; }
+          [ "$TARGET_ENV" = production ] || exit 0
+          ok=false
+          for id in $(gh api "repos/$REPO/deployments?environment=staging&sha=$GIT_SHA&per_page=20" --jq '.[].id'); do
+            if gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state' | grep -qx success; then ok=true; break; fi
+          done
+          $ok || { echo "::error::$GIT_SHA chưa có deployment staging thành công — deploy staging trước (runbook deploy)"; exit 1; }
+          echo "staging đã xanh cho $GIT_SHA"
+
   deploy:
+    needs: guard
     name: ${{ inputs.environment }} · ${{ inputs.target }} · ${{ inputs.git_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
