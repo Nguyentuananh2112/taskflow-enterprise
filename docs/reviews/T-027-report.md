@@ -57,7 +57,7 @@ P95/P99 theo endpoint (toàn bộ lượt — gồm cả các bậc đã gãy, n
 | PATCH move (trong kịch bản này) | — | 12,5 | 29,4 | 51,1 | 200,8 | < 300 ✅ |
 
 Event mất: 0 · lỗi kết nối: 0 · 429: 0.
-\* Max 61 s là một mẫu đơn lẻ: k6 ghép event với lần PATCH theo `task.id`; task bị move lại trước khi event cũ tới ⇒ mẫu bị ghép nhầm. P99 150 ms cho thấy không phải hiện tượng chung — sửa cách ghép (theo `version`) ở lượt sau.
+\* Max 61 s là một mẫu đơn lẻ. Nghi (chưa xác minh) do k6 ghép event với lần PATCH theo `task.id`: task bị move lại trước khi event cũ tới ⇒ ghép nhầm. P99 150 ms cho thấy không phải hiện tượng chung — sửa cách ghép (theo `version`) ở lượt sau.
 
 **Lượt đầu realtime hỏng (đã sửa):** cả 20 socket bị từ chối `ORIGIN_NOT_ALLOWED` — gateway (SEC-56, chống CSWSH) chỉ nhận handshake có `Origin` trong `CORS_ORIGINS`, kịch bản k6 không gửi `Origin`. Sửa `load/scenarios/realtime.js` (gửi `Origin`, mặc định `http://localhost:3001` = `CORS_ORIGINS` của compose load) rồi chạy lại **riêng** realtime (`SCENARIOS=realtime`, cùng image). Đây là lỗi của kịch bản đo, không phải của app — app từ chối đúng như thiết kế.
 
