@@ -101,5 +101,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-107 ✅ Giữ nguyên cấu hình máy dev (người dùng chốt); giảm tải bằng quy trình: dùng lại worktree, giới hạn worker, không chạy song song việc nặng, commit WIP thường xuyên (TEAM.md).
 
+- ADR-108 ✅ Limiter đăng nhập theo email (chống khóa tài khoản từ xa — M4 của T-028): chỉ đếm `401 INVALID_CREDENTIALS`, chạy sau validate, ngưỡng email 100/giờ + bucket chặt theo cặp (IP, emailHash) 10/15 phút. Rủi ro còn lại (kẻ tấn công có rất nhiều IP vẫn khóa được tạm thời) được chấp nhận có chủ đích cho v1; CAPTCHA / backoff tăng dần đưa vào lộ trình sau v1. Limiter change-password fail-closed khi Valkey lỗi.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
