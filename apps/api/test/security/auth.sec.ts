@@ -1,0 +1,244 @@
+import { SignJWT, decodeJwt } from 'jose';
+import { describe, expect } from 'vitest';
+
+import { Actors, refreshCookieOf, type Actor } from './harness/actors';
+import { TEST_JWT_SECRET } from './harness/config';
+import { errorEnvelope } from './harness/http-client';
+import { outOfScope, pendingRoute, useApi } from './harness/suite';
+import { flushRateLimitCounters } from './harness/valkey';
+
+// Phiên & token (security.md §2–3, SEC-17..27, 32..34, 57). Chờ auth routes (Phase 3).
+
+const api = useApi();
+const actors = new Actors(api);
+const AUTH = 'auth routes (Phase 3)';
+
+const me = (token: string) => actors.json('GET', '/auth/me', token);
+
+/** Token giả mạo: bắt đầu từ claim THẬT của `actor`, đổi từng chỗ một. */
+async function forge(
+  actor: Actor,
+  mutate: (claims: Record<string, unknown>) => void,
+  secret = TEST_JWT_SECRET,
+) {
+  const claims: Record<string, unknown> = { ...decodeJwt(actor.accessToken) };
+  mutate(claims);
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: 'HS256' })
+    .sign(new TextEncoder().encode(secret));
+}
+
+function unsigned(claims: Record<string, unknown>) {
+  const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url');
+  return `${b64({ alg: 'none', typ: 'JWT' })}.${b64(claims)}.`;
+}
+
+describe('Refresh token rotation & reuse', () => {
+  pendingRoute(
+    'SEC-17',
+    'Refresh hợp lệ ⇒ 200, token cũ ROTATED, replacedById, cùng familyId',
+    AUTH,
+  );
+
+  pendingRoute(
+    'SEC-18',
+    'Dùng lại refresh cũ sau >10s ⇒ 401 + thu hồi cả family + access của sid bị từ chối',
+    AUTH,
+    async () => {
+      const alice = await actors.register('reuse');
+      const rotated = await actors.refresh(alice.refreshCookie);
+      expect(rotated.status).toBe(200);
+      const newest = refreshCookieOf(rotated);
+      await new Promise((r) => setTimeout(r, 10_500)); // ân hạn 10s (security.md §2.3)
+      const reuse = await actors.refresh(alice.refreshCookie);
+      expect(reuse.status).toBe(401);
+      expect(errorEnvelope(reuse).error.code).toBe('REFRESH_TOKEN_INVALID');
+      expect((await actors.refresh(newest)).status).toBe(401);
+      expect((await me(alice.accessToken)).status).toBe(401);
+    },
+  );
+
+  pendingRoute(
+    'SEC-19',
+    '2 refresh song song cùng token ⇒ đúng 1 cái 200, 1 cái 409, family không bị thu hồi',
+    AUTH,
+  );
+  pendingRoute('SEC-20', 'Refresh quá expiresAt / familyExpiresAt ⇒ 401', AUTH);
+  pendingRoute(
+    'SEC-29',
+    'Refresh với Origin lạ/thiếu ⇒ 403 ORIGIN_NOT_ALLOWED, token không bị xoay',
+    AUTH,
+    async () => {
+      const alice = await actors.register('origin');
+      for (const origin of ['https://evil.example', null]) {
+        const res = await actors.refresh(alice.refreshCookie, origin);
+        expect(res.status).toBe(403);
+        expect(errorEnvelope(res).error.code).toBe('ORIGIN_NOT_ALLOWED');
+      }
+      expect((await actors.refresh(alice.refreshCookie)).status).toBe(200);
+    },
+  );
+});
+
+describe('Thu hồi phiên', () => {
+  pendingRoute('SEC-21', 'Sau logout-all: access cũ ⇒ 401; mọi refresh ⇒ 401', AUTH, async () => {
+    const alice = await actors.register('logoutall');
+    expect((await actors.json('POST', '/auth/logout-all', alice.accessToken)).status).toBe(204);
+    expect((await me(alice.accessToken)).status).toBe(401);
+    expect((await actors.refresh(alice.refreshCookie)).status).toBe(401);
+  });
+  pendingRoute('SEC-22', 'Logout 1 thiết bị: phiên đó 401, phiên khác 200', AUTH);
+  pendingRoute('SEC-23', 'Đổi mật khẩu: phiên khác 401, phiên hiện tại token mới 200', AUTH);
+  pendingRoute(
+    'SEC-24',
+    'Logout-all khi Valkey tắt ⇒ access cũ vẫn bị từ chối (fallback DB)',
+    AUTH,
+  );
+  pendingRoute(
+    'SEC-24b',
+    'Findings A3: Valkey lỗi ĐÚNG LÚC ghi sau commit (logout-all/logout/đổi mật khẩu) rồi hồi phục ⇒ access cũ vẫn 401',
+    AUTH,
+  );
+
+  // Findings A4 — lost update trên users: login (đọc → argon2 → save) chạy song song với thao tác
+  // bảo mật không được ghi đè ngược passwordHash/tokenVersion. Bộ đếm rate limit (Valkey db 15)
+  // được xóa mỗi vòng để 20 lần login không bị 429.
+  pendingRoute(
+    'SEC-23b',
+    'Race login(mật khẩu cũ) ‖ đổi mật khẩu, 20 vòng ⇒ mật khẩu mới luôn đúng, mật khẩu cũ luôn sai',
+    AUTH,
+    async () => {
+      for (let round = 0; round < 20; round += 1) {
+        await flushRateLimitCounters();
+        const user = await actors.register(`race-pw-${round}`);
+        const newPassword = `brand-new-passphrase-${round}-xyz`;
+        await Promise.all([
+          actors.json('POST', '/auth/login', undefined, {
+            email: user.email,
+            password: user.password,
+          }),
+          actors.json('POST', '/auth/change-password', user.accessToken, {
+            currentPassword: user.password,
+            newPassword,
+          }),
+        ]);
+        const login = (password: string) =>
+          actors.json('POST', '/auth/login', undefined, { email: user.email, password });
+        expect((await login(newPassword)).status, `vòng ${round}: mật khẩu mới`).toBe(200);
+        expect((await login(user.password)).status, `vòng ${round}: mật khẩu cũ`).toBe(401);
+      }
+    },
+  );
+  pendingRoute(
+    'SEC-21c',
+    'Race login ‖ logout-all, 20 vòng ⇒ access token cấp TRƯỚC logout-all luôn 401',
+    AUTH,
+    async () => {
+      for (let round = 0; round < 20; round += 1) {
+        await flushRateLimitCounters();
+        const user = await actors.register(`race-tv-${round}`);
+        await Promise.all([
+          actors.json('POST', '/auth/login', undefined, {
+            email: user.email,
+            password: user.password,
+          }),
+          actors.json('POST', '/auth/logout-all', user.accessToken),
+        ]);
+        expect((await me(user.accessToken)).status, `vòng ${round}`).toBe(401);
+      }
+    },
+  );
+});
+
+describe('JWT giả mạo', () => {
+  pendingRoute(
+    'SEC-25',
+    'alg none / secret sai / sửa sub / thiếu tv / sai iss, aud ⇒ 401 UNAUTHORIZED',
+    AUTH,
+    async () => {
+      const [alice, bob] = [await actors.register('jwt-a'), await actors.register('jwt-b')];
+      const forged = [
+        unsigned({ ...decodeJwt(alice.accessToken) }),
+        await forge(alice, () => undefined, 'test-only-WRONG-secret-0123456789abcdef'),
+        await forge(alice, (c) => (c.sub = bob.userId), 'test-only-WRONG-secret-0123456789abcdef'),
+        await forge(alice, (c) => delete c.tv),
+        await forge(alice, (c) => (c.iss = 'https://evil.example')),
+        await forge(alice, (c) => (c.aud = 'someone-else')),
+      ];
+      for (const token of forged) {
+        const res = await me(token);
+        expect(res.status).toBe(401);
+        expect(errorEnvelope(res).error.code).toBe('UNAUTHORIZED');
+      }
+    },
+  );
+  pendingRoute('SEC-26', 'JWT hết hạn ⇒ 401 TOKEN_EXPIRED', AUTH);
+});
+
+describe('Đăng nhập & mật khẩu', () => {
+  pendingRoute(
+    'SEC-27',
+    'Login email lạ vs sai mật khẩu: cùng status/code/message, chênh trung vị < 50ms',
+    AUTH,
+  );
+  pendingRoute(
+    'SEC-32',
+    'Mật khẩu 11/257 ký tự, phổ biến, chứa email ⇒ 400; 12/256 (cả tiếng Việt) ⇒ 201',
+    AUTH,
+  );
+  pendingRoute(
+    'SEC-33',
+    'Log của login/refresh/register/change-password không chứa password/token/Cookie/Authorization',
+    AUTH,
+    async () => {
+      const alice = await actors.register('logs');
+      await actors.refresh(alice.refreshCookie);
+      const logs = api.logs().join('\n');
+      expect(logs).not.toContain(alice.password);
+      expect(logs).not.toContain(alice.accessToken);
+      expect(logs).not.toContain(alice.refreshCookie.split('=')[1] ?? '<none>');
+      expect(logs).not.toMatch(/"(authorization|cookie)":/i);
+    },
+  );
+  pendingRoute(
+    'SEC-34',
+    'Cookie refresh ở prod: HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; __Secure-tf_rt; không Domain',
+    AUTH,
+  );
+});
+
+describe('Mass assignment hồ sơ', () => {
+  pendingRoute(
+    'SEC-57',
+    'PATCH /auth/me có email/tokenVersion/id ⇒ 400, không trường nào đổi',
+    AUTH,
+    async () => {
+      const [alice, bob] = [await actors.register('mass-a'), await actors.register('mass-b')];
+      for (const extra of [{ email: 'x@evil.example' }, { tokenVersion: 0 }, { id: bob.userId }]) {
+        const res = await actors.json('PATCH', '/auth/me', alice.accessToken, {
+          fullName: 'Hacked',
+          ...extra,
+        });
+        expect(res.status).toBe(400);
+      }
+      const after = (await me(alice.accessToken)).json as {
+        data: { user: { email: string; fullName: string } };
+      };
+      expect(after.data.user).toMatchObject({ email: alice.email, fullName: 'Sec mass-a' });
+    },
+  );
+});
+
+describe('Ngoài phạm vi API (Playwright Phase 4/5)', () => {
+  outOfScope(
+    'SEC-48',
+    'CSP nonce khác nhau giữa 2 lần tải; không unsafe-inline/eval',
+    'E2E Playwright',
+  );
+  outOfScope('SEC-49', 'XSS trong title/description hiển thị dạng text', 'E2E Playwright');
+  outOfScope(
+    'SEC-50',
+    'Luồng chính không vi phạm CSP, không token trong storage/URL',
+    'E2E Playwright',
+  );
+});
