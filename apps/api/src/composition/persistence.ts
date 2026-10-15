@@ -8,7 +8,12 @@ import {
   type ValkeyCommands,
 } from '../modules/auth/infrastructure/cache/valkey-session-revocation.store';
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
+import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
+import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
+import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
+import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
+import type { TaskRepositories } from '../modules/task/task.module';
 import {
   createInMemoryWorkspaceRepositories,
   type WorkspaceRepositories,
@@ -19,6 +24,10 @@ import {
   PrismaProjectRepository,
   PrismaWorkspaceRepository,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-repositories';
+import {
+  PrismaAssigneeDirectory,
+  PrismaTaskProjectStore,
+} from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import { MirroringUserRepository } from './users';
 
@@ -30,6 +39,11 @@ export interface Persistence {
   modules: Readonly<Record<string, StorageKind>>;
   auth: AuthRepositories;
   workspace: WorkspaceRepositories;
+  /**
+   * Module Task (T-023: bản Prisma). Tùy chọn tạm thời: bản bộ nhớ (cầu nối dữ liệu với
+   * Workspace/Auth) do A gắn ở T-024 — khi đó đổi thành bắt buộc.
+   */
+  task?: TaskRepositories;
   uow: IUnitOfWork;
 }
 
@@ -74,7 +88,7 @@ export function createPrismaPersistence(d: {
   const db = () => uow.db();
   return {
     kind: 'prisma',
-    modules: { auth: 'prisma', workspace: 'prisma' },
+    modules: { auth: 'prisma', workspace: 'prisma', task: 'prisma' },
     auth: {
       users: new PrismaUserRepository(db),
       refreshTokens: new PrismaRefreshTokenRepository(db),
@@ -85,6 +99,15 @@ export function createPrismaPersistence(d: {
       memberships: new PrismaMembershipRepository(db),
       projects: new PrismaProjectRepository(db),
       queries: new PrismaWorkspaceQueries(db),
+    },
+    // Cùng `db` (một transaction) với Workspace/Auth: cấp số, khóa membership FOR SHARE, audit.
+    task: {
+      tasks: new PrismaTaskRepository(db),
+      readModel: new PrismaTaskReadModel(db),
+      projects: new PrismaTaskProjectStore(db),
+      assignees: new PrismaAssigneeDirectory(db),
+      users: new PrismaUserRefReader(db),
+      audit: new PrismaTaskAuditLogRepository(db),
     },
     uow,
   };

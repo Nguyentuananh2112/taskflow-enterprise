@@ -111,11 +111,16 @@ export class TaskCommands {
     task: Task,
     project: ProjectRef,
     meta: RealtimeEventMeta,
-    write: { kind: 'add' } | { kind: 'save'; expectedVersion: number },
+    write:
+      { kind: 'add' } | { kind: 'save'; expectedVersion: number; allowArchivedProject?: boolean },
   ): Promise<TaskDto> {
     if (write.kind === 'add') {
       await this.d.tasks.add(task);
-    } else if (!(await this.d.tasks.save(task, write.expectedVersion))) {
+    } else if (
+      !(await this.d.tasks.save(task, write.expectedVersion, {
+        allowArchivedProject: write.allowArchivedProject === true,
+      }))
+    ) {
       await this.conflictFromStore(task, project);
     }
     const events = task.pullDomainEvents();
@@ -161,8 +166,17 @@ export class TaskCommands {
     }
   }
 
-  /** `save` trả false: version trong DB đã khác lúc đọc (UC-MV24) ⇒ đọc lại và trả 409. */
+  /**
+   * `save` trả false: project vừa bị archive (T-028 L1) ⇒ 422, hoặc version trong DB đã khác lúc
+   * đọc (UC-MV24) ⇒ 409 kèm bản mới nhất. Đọc lại để phân biệt.
+   */
   private async conflictFromStore(task: Task, project: ProjectRef): Promise<never> {
+    const fresh = await this.d.projects.findInWorkspace({
+      workspaceId: task.workspaceId,
+      projectId: task.projectId,
+    });
+    if (!fresh) throw new ResourceNotFoundError('project');
+    if (fresh.isArchived && !project.isArchived) throw new ProjectArchivedError(project.id);
     const current = await this.d.tasks.findLive(task.workspaceId, task.projectId, task.id);
     if (!current) throw new ResourceNotFoundError('task');
     throw new VersionConflictError(current.version, await this.dto(current, project));

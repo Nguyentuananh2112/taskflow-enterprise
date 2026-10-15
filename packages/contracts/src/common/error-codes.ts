@@ -44,8 +44,9 @@ export type ValidationIssue = z.infer<typeof ValidationIssue>;
 export const ValidationErrorDetails = z.object({ issues: z.array(ValidationIssue).min(1) });
 export type ValidationErrorDetails = z.infer<typeof ValidationErrorDetails>;
 
+/** `route` = đường dẫn API không tồn tại (404 của router, T-021). */
 export const NotFoundDetails = z.object({
-  resource: z.enum(['task', 'project', 'workspace', 'user']),
+  resource: z.enum(['task', 'project', 'workspace', 'user', 'route']),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;
 

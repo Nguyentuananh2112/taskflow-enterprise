@@ -263,7 +263,7 @@ Cấu trúc chung mỗi use case: `execute({ workspaceId, projectId, taskId?, ac
 
 ### 3.2. MoveTaskUseCase (ADR-010/011)
 
-Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[D "b0", E "b1"]`, tất cả version 1. `rankGen` thật (`fractional-indexing`) ở tầng I, giả (trả chuỗi dự đoán được) ở tầng A.
+Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[D "a5", E "a6"]`, tất cả version 1 (mọi rank là khóa `fractional-indexing` hợp lệ — `"b0"` thì không: đầu `b` cần 2 chữ số, vd `"b00"`; T-023). `rankGen` thật (`fractional-indexing`) ở tầng I, giả (trả chuỗi dự đoán được) ở tầng A.
 
 | ID | Tầng | Given | When | Then |
 |---|---|---|---|---|

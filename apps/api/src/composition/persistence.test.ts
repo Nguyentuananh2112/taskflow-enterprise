@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { SpyLogger } from '../../test/support';
-import { assertPersistenceAllowed, createMemoryPersistence } from './persistence';
+import {
+  assertPersistenceAllowed,
+  createMemoryPersistence,
+  createPrismaPersistence,
+} from './persistence';
 
 describe('assertPersistenceAllowed (quyết định Tech Lead — T-020)', () => {
   it.each(['staging', 'production'] as const)(
@@ -27,5 +31,26 @@ describe('assertPersistenceAllowed (quyết định Tech Lead — T-020)', () =>
     expect(
       assertPersistenceAllowed('test', createMemoryPersistence(new SpyLogger()).modules),
     ).toEqual(['auth', 'workspace']);
+  });
+});
+
+describe('createPrismaPersistence (T-023)', () => {
+  it('wire đủ module task bằng Prisma ⇒ production khởi động được, không còn trạng thái lai', () => {
+    // Không kết nối DB: chỉ dựng đồ thị đối tượng (client Prisma lazy, Valkey không gọi tới).
+    const p = createPrismaPersistence({
+      prisma: {} as never,
+      valkey: {} as never,
+      logger: new SpyLogger(),
+    });
+    expect(p.modules).toEqual({ auth: 'prisma', workspace: 'prisma', task: 'prisma' });
+    expect(Object.keys(p.task ?? {}).sort()).toEqual([
+      'assignees',
+      'audit',
+      'projects',
+      'readModel',
+      'tasks',
+      'users',
+    ]);
+    expect(assertPersistenceAllowed('production', p.modules)).toEqual([]);
   });
 });

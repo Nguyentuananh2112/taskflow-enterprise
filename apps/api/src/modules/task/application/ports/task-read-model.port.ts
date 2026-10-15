@@ -37,5 +37,12 @@ export interface ITaskReadModel {
   ): Promise<TaskDto[]>;
   /** Task thuộc project, **kể cả đã xóa mềm** (R16: lịch sử vẫn đọc được). */
   taskExists(workspaceId: string, projectId: string, taskId: string): Promise<boolean>;
-  listAuditLogs(taskId: string, after: AuditLogKey | null, limit: number): Promise<AuditLogDto[]>;
+  /** Có phạm vi tenant ngay trong truy vấn (T-028 L3) — không chỉ dựa vào `taskExists` trước đó. */
+  listAuditLogs(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+    after: AuditLogKey | null,
+    limit: number,
+  ): Promise<AuditLogDto[]>;
 }

@@ -8,27 +8,26 @@ import {
   ResourceNotFoundError,
   VersionConflictError,
 } from '../../../../core/errors';
-import { createTaskHarness, P2, P3, U, type TaskHarness } from '../../testing/task-harness';
+import { createTaskHarness, P2, P3, U } from '../../testing/task-harness';
 
 // test-spec-task.md §3.2 (tầng A, rankGen thật). Bối cảnh: TODO [A a0, B a1, C a2], IN_PROGRESS [D a5, E a6].
 // Spec ghi D "b0", E "b1" — không phải khóa fractional-indexing hợp lệ (đầu "b" cần 2 chữ số) nên đổi.
-function board() {
-  const h = createTaskHarness();
+async function board() {
+  const h = await createTaskHarness();
   const t = {
-    A: h.seedTask({ rank: 'a0' }),
-    B: h.seedTask({ rank: 'a1' }),
-    C: h.seedTask({ rank: 'a2' }),
-    D: h.seedTask({ rank: 'a5', status: 'IN_PROGRESS' }),
-    E: h.seedTask({ rank: 'a6', status: 'IN_PROGRESS', createdById: U.Pam, assigneeId: U.Max }),
+    A: await h.seedTask({ rank: 'a0' }),
+    B: await h.seedTask({ rank: 'a1' }),
+    C: await h.seedTask({ rank: 'a2' }),
+    D: await h.seedTask({ rank: 'a5', status: 'IN_PROGRESS' }),
+    E: await h.seedTask({
+      rank: 'a6',
+      status: 'IN_PROGRESS',
+      createdById: U.Pam,
+      assigneeId: U.Max,
+    }),
   };
   return { h, t };
 }
-
-const column = (h: TaskHarness, status: string) =>
-  [...h.db.state.tasks.values()]
-    .filter((x) => x.status === status && x.deletedAt === null)
-    .sort((a, b) => (a.rank < b.rank ? -1 : 1))
-    .map((x) => x.id);
 
 const errorOf = (p: Promise<unknown>) =>
   p.then(
@@ -38,7 +37,7 @@ const errorOf = (p: Promise<unknown>) =>
 
 describe('MoveTaskUseCase', () => {
   it('UC-MV01: sang cột khác sau D ⇒ rank ∈ (D, E), v2, audit STATUS_CHANGED, realtime task:moved', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const dto = await h.move.execute({
       ...h.scope('Mia'),
       taskId: t.A.id,
@@ -46,7 +45,7 @@ describe('MoveTaskUseCase', () => {
     });
     expect(dto).toMatchObject({ status: 'IN_PROGRESS', version: 2 });
     expect(dto.rank > 'a5' && dto.rank < 'a6').toBe(true);
-    expect(h.auditOf(t.A.id)).toEqual([
+    expect(await h.auditOf(t.A.id)).toEqual([
       expect.objectContaining({
         action: 'STATUS_CHANGED',
         oldValue: { status: 'TODO', rank: 'a0' },
@@ -65,48 +64,50 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV02: cùng cột, C sau A ⇒ A, C, B; audit MOVED', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const dto = await h.move.execute({
       ...h.scope('Mia'),
       taskId: t.C.id,
       input: { expectedVersion: 1, afterId: t.A.id },
     });
-    expect(column(h, 'TODO')).toEqual([t.A.id, t.C.id, t.B.id]);
+    expect(await h.column('TODO')).toEqual([t.A.id, t.C.id, t.B.id]);
     expect(dto.version).toBe(2);
-    expect(h.auditOf(t.C.id).map((a) => a.action)).toEqual(['MOVED']);
+    expect((await h.auditOf(t.C.id)).map((a) => a.action)).toEqual(['MOVED']);
   });
 
   it('UC-MV03: A trước C ⇒ B, A, C', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     await h.move.execute({
       ...h.scope('Mia'),
       taskId: t.A.id,
       input: { expectedVersion: 1, beforeId: t.C.id },
     });
-    expect(column(h, 'TODO')).toEqual([t.B.id, t.A.id, t.C.id]);
+    expect(await h.column('TODO')).toEqual([t.B.id, t.A.id, t.C.id]);
   });
 
-  it('UC-MV04/MV05: không anchor ⇒ cuối cột đích; cột trống ⇒ between(null, null)', async () => {
-    const { h, t } = board();
+  it('UC-MV04: không anchor ⇒ cuối cột đích (rank > E)', async () => {
+    const { h, t } = await board();
     const dto = await h.move.execute({
       ...h.scope('Mia'),
       taskId: t.A.id,
       input: { expectedVersion: 1, status: 'IN_PROGRESS' },
     });
     expect(dto.rank > 'a6').toBe(true);
-    const fresh = createTaskHarness();
-    const x = fresh.seedTask({ rank: 'a0' });
-    const moved = await fresh.move.execute({
-      ...fresh.scope('Mia'),
+  });
+
+  it('UC-MV05: cột đích trống ⇒ rank = between(null, null)', async () => {
+    const h = await createTaskHarness();
+    const x = await h.seedTask({ rank: 'a0' });
+    const moved = await h.move.execute({
+      ...h.scope('Mia'),
       taskId: x.id,
       input: { expectedVersion: 1, status: 'IN_PROGRESS' },
     });
-    expect(moved.rank).toBe('a0');
-    expect(moved.version).toBe(2);
+    expect(moved).toMatchObject({ rank: 'a0', version: 2 });
   });
 
   it('UC-MV06: C lên đầu (trước A) ⇒ rank < A', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const dto = await h.move.execute({
       ...h.scope('Mia'),
       taskId: t.C.id,
@@ -116,9 +117,9 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV07: client cũ (afterId A, beforeId B nhưng B đã dời) ⇒ dùng hàng xóm thực tế của A', async () => {
-    const { h, t } = board();
-    h.row(t.B.id).status = 'DONE';
-    const x = h.seedTask({ rank: 'a9', status: 'IN_PROGRESS' });
+    const { h, t } = await board();
+    await h.patchTask(t.B.id, { status: 'DONE' });
+    const x = await h.seedTask({ rank: 'a9', status: 'IN_PROGRESS' });
     const dto = await h.move.execute({
       ...h.scope('Mia'),
       taskId: x.id,
@@ -128,9 +129,9 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV08..MV12: anchor sai ⇒ 422 INVALID_ANCHOR', async () => {
-    const { h, t } = board();
-    const f = h.seedTask({ rank: 'a0', projectId: P3 });
-    h.row(t.B.id).deletedAt = new Date();
+    const { h, t } = await board();
+    const f = await h.seedTask({ rank: 'a0', projectId: P3 });
+    await h.patchTask(t.B.id, { deletedAt: new Date() });
     for (const afterId of [t.D.id, t.A.id, f.id, t.B.id, h.randomId()]) {
       const err = await errorOf(
         h.move.execute({
@@ -142,11 +143,11 @@ describe('MoveTaskUseCase', () => {
       expect(err).toBeInstanceOf(BusinessRuleViolationError);
       expect((err as BusinessRuleViolationError).details).toMatchObject({ rule: 'INVALID_ANCHOR' });
     }
-    expect(h.auditOf(t.A.id)).toHaveLength(0);
+    expect(await h.auditOf(t.A.id)).toHaveLength(0);
   });
 
   it('UC-MV13: TODO → DONE ⇒ 422 INVALID_STATUS_TRANSITION kèm allowed', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const err = await errorOf(
       h.move.execute({
         ...h.scope('Mia'),
@@ -163,8 +164,8 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV14: version cũ ⇒ 409 kèm currentVersion + TaskDto hiện tại; không audit, không event', async () => {
-    const { h, t } = board();
-    h.row(t.A.id).version = 2;
+    const { h, t } = await board();
+    await h.patchTask(t.A.id, { version: 2 });
     const err = await errorOf(
       h.move.execute({
         ...h.scope('Mia'),
@@ -177,12 +178,12 @@ describe('MoveTaskUseCase', () => {
       currentVersion: 2,
       current: { id: t.A.id, key: 'TF-1', version: 2 },
     });
-    expect(h.auditOf(t.A.id)).toHaveLength(0);
+    expect(await h.auditOf(t.A.id)).toHaveLength(0);
     expect(h.emitted()).toHaveLength(0);
   });
 
   it('UC-MV15: về đúng chỗ cũ ⇒ no-op 200, v1, không audit/event (R15)', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const cases = [
       [t.A.id, { afterId: null, beforeId: t.B.id }],
       [t.B.id, { afterId: t.A.id }],
@@ -197,14 +198,14 @@ describe('MoveTaskUseCase', () => {
       });
       expect(dto.version).toBe(1);
     }
-    expect(column(h, 'TODO')).toEqual([t.A.id, t.B.id, t.C.id]);
-    expect(h.db.state.audit).toHaveLength(0);
+    expect(await h.column('TODO')).toEqual([t.A.id, t.B.id, t.C.id]);
+    expect(await h.allAudit()).toHaveLength(0);
     expect(h.emitted()).toHaveLength(0);
   });
 
   it('UC-MV16: no-op với version cũ vẫn 409 (ADR-091)', async () => {
-    const { h, t } = board();
-    h.row(t.A.id).version = 2;
+    const { h, t } = await board();
+    await h.patchTask(t.A.id, { version: 2 });
     await expect(
       h.move.execute({
         ...h.scope('Mia'),
@@ -215,8 +216,8 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV17..MV19: archived ⇒ 422; VIEWER ⇒ 403 trước 422/409; archived trước 409', async () => {
-    const h = createTaskHarness();
-    const arc = h.seedTask({ rank: 'a0', projectId: P2 });
+    const h = await createTaskHarness();
+    const arc = await h.seedTask({ rank: 'a0', projectId: P2 });
     const move = (who: 'Mia' | 'Vic', expectedVersion: number) =>
       h.move.execute({
         ...h.scope(who, P2),
@@ -229,9 +230,9 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV20/MV21: task của project khác trên URL / đã xóa mềm ⇒ 404', async () => {
-    const { h, t } = board();
-    const f = h.seedTask({ rank: 'a0', projectId: P3 });
-    h.row(t.B.id).deletedAt = new Date();
+    const { h, t } = await board();
+    const f = await h.seedTask({ rank: 'a0', projectId: P3 });
+    await h.patchTask(t.B.id, { deletedAt: new Date() });
     for (const taskId of [f.id, t.B.id]) {
       await expect(
         h.move.execute({
@@ -244,7 +245,7 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('UC-MV22: MEMBER move task người khác tạo, gán cho người khác ⇒ được', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const dto = await h.move.execute({
       ...h.scope('Mia'),
       taskId: t.E.id,
@@ -254,10 +255,10 @@ describe('MoveTaskUseCase', () => {
   });
 
   it('ghi bị ghi khác chen giữa (save có điều kiện version trả false) ⇒ 409 với bản mới nhất', async () => {
-    const { h, t } = board();
+    const { h, t } = await board();
     const save = h.deps.tasks.save.bind(h.deps.tasks);
-    h.deps.tasks.save = (task, expected) => {
-      h.row(task.id).version = 5;
+    h.deps.tasks.save = async (task, expected) => {
+      await h.patchTask(task.id, { version: 5 });
       return save(task, expected);
     };
     const err = await errorOf(
@@ -268,6 +269,6 @@ describe('MoveTaskUseCase', () => {
       }),
     );
     expect((err as VersionConflictError).details).toMatchObject({ currentVersion: 5 });
-    expect(h.auditOf(t.A.id)).toHaveLength(0);
+    expect(await h.auditOf(t.A.id)).toHaveLength(0);
   });
 });

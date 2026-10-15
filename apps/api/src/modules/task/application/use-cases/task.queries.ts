@@ -28,12 +28,15 @@ export interface TaskQueryDeps {
 // `kind` gắn cursor với endpoint — cursor của audit-logs dùng ở list task ⇒ 400 (UC-LS08).
 const TASKS_CURSOR = 'tasks';
 const AUDIT_CURSOR = 'task-audit-logs';
+// Khóa cursor đi thẳng vào câu SQL (cột @db.Uuid) ⇒ validate chặt: id không phải uuid phải ra 400,
+// không phải 500 từ Postgres (T-028 L4). Rank giới hạn độ dài như mọi đầu vào.
+const RANK_MAX = 1024;
 const TaskKeySchema = z.object({
   status: z.enum(TASK_STATUSES),
-  rank: z.string().min(1),
-  id: z.string(),
+  rank: z.string().min(1).max(RANK_MAX),
+  id: z.uuid(),
 });
-const AuditKeySchema = z.object({ createdAt: z.iso.datetime(), id: z.string() });
+const AuditKeySchema = z.object({ createdAt: z.iso.datetime(), id: z.uuid() });
 
 /** Lấy `limit + 1` dòng để biết còn trang sau; cursor = khóa của dòng cuối trang (opaque). */
 async function paginate<T, K extends Record<string, unknown>>(
@@ -96,7 +99,8 @@ export class TaskQueries {
       : null;
     return paginate(
       limit,
-      (n) => this.d.readModel.listAuditLogs(scope.taskId, after, n),
+      (n) =>
+        this.d.readModel.listAuditLogs(scope.workspaceId, scope.projectId, scope.taskId, after, n),
       (a) => ({ createdAt: a.createdAt, id: a.id }),
       AUDIT_CURSOR,
     );

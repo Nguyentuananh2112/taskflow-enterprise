@@ -94,6 +94,7 @@ describe('error.details (data-and-api §3.2)', () => {
     expect(BusinessRuleDetails.safeParse({ rule: 'LAST_OWNER' }).success).toBe(true);
     expect(BusinessRuleDetails.safeParse({ rule: 'SOMETHING' }).success).toBe(false);
     expect(NotFoundDetails.safeParse({ resource: 'task' }).success).toBe(true);
+    expect(NotFoundDetails.safeParse({ resource: 'route' }).success).toBe(true);
     expect(NotFoundDetails.safeParse({ resource: 'comment' }).success).toBe(false);
     expect(ResourceConflictDetails.safeParse({ field: 'slug', reason: 'taken' }).success).toBe(
       true,

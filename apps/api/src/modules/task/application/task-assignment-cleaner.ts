@@ -39,10 +39,8 @@ export class TaskAssignmentCleaner implements ITaskAssignmentCleaner {
         task,
         project,
         { actorId: input.actorId, originClientId: null },
-        {
-          kind: 'save',
-          expectedVersion,
-        },
+        // ADR-092: bỏ gán do hệ thống được chạy cả trong project archived.
+        { kind: 'save', expectedVersion, allowArchivedProject: true },
       );
     }
     return { unassignedTaskCount: tasks.length };

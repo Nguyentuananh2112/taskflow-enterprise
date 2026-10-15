@@ -27,7 +27,7 @@ const envelope = (h: TaskHarness, i = 0) => {
 };
 
 async function lifecycle() {
-  const h = createTaskHarness();
+  const h = await createTaskHarness();
   const scope = h.scope('Pam', undefined, { clientId: '0199e5a2-0000-7000-8000-00000000c001' });
   const t = await h.create.execute({ ...scope, input: { title: 'Vòng đời' } });
   await h.update.execute({
@@ -46,7 +46,7 @@ async function lifecycle() {
     taskId: t.id,
     input: { expectedVersion: 3, status: 'IN_PROGRESS', beforeId: null },
   });
-  const other = h.seedTask({ rank: 'Zz', status: 'IN_PROGRESS' });
+  const other = await h.seedTask({ rank: 'Zz', status: 'IN_PROGRESS' });
   await h.move.execute({
     ...scope,
     taskId: t.id,
@@ -102,7 +102,7 @@ describe('domain event → realtime (RT-*)', () => {
 
   it('RT-08 + UC-AU08: rollback/no-op/lỗi ⇒ không event, 0 audit; thay đổi thật ⇒ đúng 1 audit', async () => {
     const { h, t } = await lifecycle();
-    expect(h.auditOf(t.id).map((a) => a.action)).toEqual([
+    expect((await h.auditOf(t.id)).map((a) => a.action)).toEqual([
       'CREATED',
       'UPDATED',
       'STATUS_CHANGED',
@@ -118,7 +118,7 @@ describe('domain event → realtime (RT-*)', () => {
       'TaskAssigneeChanged',
       'TaskDeleted',
     ]);
-    const live = h.seedTask({ rank: 'a5', assigneeId: U.Max });
+    const live = await h.seedTask({ rank: 'a5', assigneeId: U.Max });
     const before = h.emitted().length;
     await h.assign.execute({
       ...h.scope('Pam'),
@@ -133,11 +133,11 @@ describe('domain event → realtime (RT-*)', () => {
       })
       .catch(() => undefined);
     expect(h.emitted()).toHaveLength(before);
-    expect(h.auditOf(live.id)).toHaveLength(0);
+    expect(await h.auditOf(live.id)).toHaveLength(0);
   });
 
   it('notifier lỗi ⇒ lệnh vẫn thành công, log task.realtime_failed, domain event vẫn publish', async () => {
-    const h = createTaskHarness();
+    const h = await createTaskHarness();
     h.deps.notifier = { emitToProject: () => Promise.reject(new Error('socket down')) };
     await expect(
       h.create.execute({ ...h.scope('Mia'), input: { title: 'Mất mạng' } }),
