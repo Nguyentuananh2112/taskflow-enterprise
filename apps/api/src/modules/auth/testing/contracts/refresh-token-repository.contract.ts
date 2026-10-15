@@ -79,9 +79,13 @@ export function describeRefreshTokenRepositoryContract(
     it('listRevokedSessionsSince: chỉ LOGOUT/REUSE_DETECTED của user này, revokedAt ≥ since, một dòng mỗi family (X3)', async () => {
       const other = newUser();
       await p.users.add(other);
-      const [early, loggedOut, reused, rotated, foreign] = Array.from({ length: 5 }, () =>
+      const [early, loggedOut, reused, rotated, foreign] = [
         randomUUID(),
-      );
+        randomUUID(),
+        randomUUID(),
+        randomUUID(),
+        randomUUID(),
+      ];
       await p.refreshTokens.add(newToken(userId, early));
       await p.refreshTokens.revokeFamily(early, 'LOGOUT', T0); // trước `since`
       for (const family of [loggedOut, loggedOut])
