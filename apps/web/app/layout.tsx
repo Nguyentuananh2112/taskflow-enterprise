@@ -3,7 +3,7 @@ import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
 
 import { readPublicRuntimeConfig, readSentryConfig } from '@/app/config/server-env';
-import { SENTRY_META } from '@/app/observability/sentry-client';
+import { SENTRY_META } from '@/app/observability/sentry-meta';
 import { AppProviders } from '@/app/providers';
 
 // Font Inter tự host qua @font-face trong globals.css (không next/font/google: build không phụ thuộc mạng).

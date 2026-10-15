@@ -41,11 +41,16 @@ const SentryEnv = z.object({
   ),
   GIT_SHA: z.string().min(1).optional(),
   APP_ENV: AppEnv.default('production'),
+  // Số proxy tin cậy trước web (CÙNG quy tắc TRUST_PROXY_HOPS của API): IP client = phần tử thứ `hops`
+  // từ cuối X-Forwarded-For — dùng cho hạn mức tunnel /monitoring. 0 ⇒ không tin XFF.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
 });
 
 export interface SentryRuntimeConfig {
   /** Không có ⇒ Sentry tắt (cả client lẫn tunnel `/monitoring` — 404). */
   dsn?: string;
+  /** Proxy tin cậy trước web — xác định IP client cho hạn mức tunnel. */
+  trustProxyHops: number;
   environment: string;
   release?: string;
 }
@@ -65,6 +70,7 @@ export function readSentryConfig(source: EnvSource = process.env): SentryRuntime
   if (insecure) warnInsecureDsnOnce();
   return {
     environment: env.APP_ENV,
+    trustProxyHops: env.TRUST_PROXY_HOPS,
     ...(env.SENTRY_DSN && !insecure ? { dsn: env.SENTRY_DSN } : {}),
     ...(env.GIT_SHA ? { release: env.GIT_SHA } : {}),
   };

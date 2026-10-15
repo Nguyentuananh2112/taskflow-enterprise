@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readSentryConfig } from '@/app/config/server-env';
 
 import { POST } from '../../../app/monitoring/route';
-import { initClientSentry, readSentryMeta, SENTRY_META } from './sentry-client';
+import { initClientSentry } from './sentry-client';
+import { readSentryMeta, SENTRY_META } from './sentry-meta';
 import { sanitizeWebEvent, scrubUrl } from './sentry-shared';
 import { decideTunnel, ingestUrlOf, MAX_ENVELOPE_BYTES } from './sentry-tunnel';
 
@@ -115,11 +116,13 @@ describe('cấu hình Sentry web', () => {
   it('readSentryConfig: DSN trống ⇒ tắt; release = GIT_SHA; environment = APP_ENV', () => {
     expect(readSentryConfig({ API_URL: 'http://a.test', SENTRY_DSN: '' })).toEqual({
       environment: 'production',
+      trustProxyHops: 1,
     });
     expect(readSentryConfig({ SENTRY_DSN: DSN, GIT_SHA: 'abc', APP_ENV: 'staging' })).toEqual({
       dsn: DSN,
       environment: 'staging',
       release: 'abc',
+      trustProxyHops: 1,
     });
   });
 
@@ -145,7 +148,38 @@ describe('cấu hình Sentry web', () => {
         );
         return Promise.resolve({ statusCode: 200 });
       });
+    // Review E: fetch tới API (localhost) / đường dẫn tương đối KHÔNG được gắn header trace của Sentry
+    // (preflight CORS của API sẽ từ chối). Stub đặt TRƯỚC init — SDK bọc fetch lúc init.
+    const outgoing: Headers[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, requestInit?: RequestInit) => {
+        outgoing.push(new Headers(requestInit?.headers));
+        return Promise.resolve(new Response('{}'));
+      }),
+    );
     initClientSentry(document, transport);
+    // eslint-disable-next-line no-restricted-properties -- kiểm chính fetch gốc mà SDK bọc
+    await globalThis.fetch('http://localhost:4000/api/v1/auth/me', {
+      headers: { Authorization: 'Bearer x' },
+    });
+    // eslint-disable-next-line no-restricted-properties -- kiểm chính fetch gốc mà SDK bọc
+    await globalThis.fetch('/api/healthz');
+    expect(outgoing).toHaveLength(2);
+    for (const headers of outgoing) {
+      expect(headers.has('sentry-trace')).toBe(false);
+      expect(headers.has('baggage')).toBe(false);
+    }
+    // Không tracing / breadcrumbs / session: không patch fetch-history-console để gắn trace.
+    const active =
+      Sentry.getClient()
+        ?.getOptions()
+        .integrations.map((i) => i.name) ?? [];
+    expect(active).toContain('GlobalHandlers'); // vẫn bắt lỗi không xử lý
+    for (const name of ['BrowserSession', 'BrowserTracing', 'Breadcrumbs']) {
+      expect(active).not.toContain(name);
+    }
+    vi.unstubAllGlobals();
     Sentry.captureException(new Error(`save failed for ${EMAIL}`));
     await Sentry.flush(2_000);
     const all = envelopes.join('\n');

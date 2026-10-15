@@ -36,3 +36,15 @@ Branch `feat/T-035`.
 ## DoD
 
 See the DONE message (exit codes after rebasing onto main).
+
+## Review round 2 (B, E, TL)
+
+| Source | Point | Fix |
+|---|---|---|
+| B (Low) | `TunnelRateLimiter` Map grew when IPs rotated while the instance-wide cap was saturated | A rejected IP is **not** added to the Map. Cleanup runs on every path. Hard cap of 10,000 keys, evicting the least recently used. Test: pump 25,000 different IPs ⇒ size ≤ 10,000; when saturated, only 1 key remains. |
+| B / TL | `clientIpOf` always took the last element | Uses **`TRUST_PROXY_HOPS`** on the web side (same rule as the API, default 1, 0 = don't trust XFF), plus IPv6 grouped by /56 like `ipKeyGenerator`. `apps/web/.env.example` updated. |
+| E (required) | By default the SDK attaches `sentry-trace` + `baggage` to same-origin and relative requests, **regardless of sampling**. That breaks the API's CORS preflight and leaks the trace id. | `tracePropagationTargets: []` on client and server. The `BrowserTracing`, `Breadcrumbs` and `BrowserSession` integrations are turned off (so fetch/history/console aren't patched). Test: real fetch calls through the wrapped SDK carry neither header, and the integration list confirms it. |
+| Discovered while testing E's point | Under Vitest, `@sentry/nextjs` resolved to the **SERVER** build (Node conditions), so the "browser SDK" tests were really testing the server SDK. Probe: the server build added no headers, while the browser build added `baggage` + `sentry-trace` to `/rel`. | `apps/web/vitest.config.ts`: alias `@sentry/nextjs` to the client entry (the package's `browser` condition) + `server.deps.inline` for `@sentry/` (the client build imports `next/router` without an extension). Web unit tests run in jsdom, so this is the correct build. |
+| E (suggested) | Bundle size | Measured on the prod build: Sentry adds **+229 kB raw / +74 kB gzip** to client JS. Now **dynamic import only when the DSN `<meta>` exists**. The instrumentation chunk (11 kB gzip) has no SDK, and the SDK lives in its own chunk (76 kB gzip) that doesn't block hydration. **Trade-off:** errors that happen before the SDK chunk loads are not reported. |
+| E (suggested) | Does the SDK patch anything when not initialized? | With no DSN, the SDK is **not loaded at all** (dynamic import). Browser integrations only install on `init`, and init only runs when there is a DSN. F's SEC-48 / console check on builds with and without a DSN will confirm. |
+| TL | `HealthzResponse` still required `gitSha` | Contract is `strictObject({status:'ok'})`. Web `/api/healthz` updated. API app test parses `/healthz` against the contract (parity). |

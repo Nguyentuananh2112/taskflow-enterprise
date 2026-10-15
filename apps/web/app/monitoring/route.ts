@@ -14,9 +14,9 @@ export const dynamic = 'force-dynamic';
 const limiter = new TunnelRateLimiter();
 
 export async function POST(request: Request): Promise<Response> {
-  const { dsn } = readSentryConfig();
+  const { dsn, trustProxyHops } = readSentryConfig();
   if (!dsn) return new Response(null, { status: 404 });
-  if (!limiter.tryHit(clientIpOf(request.headers), Date.now())) {
+  if (!limiter.tryHit(clientIpOf(request.headers, trustProxyHops), Date.now())) {
     return new Response(null, { status: 429, headers: { 'Retry-After': '60' } });
   }
   if (Number(request.headers.get('content-length') ?? '0') > MAX_ENVELOPE_BYTES) {

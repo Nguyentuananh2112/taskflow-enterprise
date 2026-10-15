@@ -6,6 +6,7 @@ import { sanitizeWebTransaction } from './sentry-shared';
 import {
   clientIpOf,
   decideTunnel,
+  ipv6Prefix56,
   MAX_ENVELOPE_BYTES,
   readCapped,
   TUNNEL_LIMITS,
@@ -117,11 +118,32 @@ describe('L1 (review B): chỉ chuyển tiếp item lỗi; hạn mức theo IP +
     expect(limiter.tryHit('a', 1_002)).toBe(true);
   });
 
-  it('clientIpOf: phần tử CUỐI của X-Forwarded-For (proxy gắn); không có ⇒ unknown', () => {
-    expect(clientIpOf(new Headers({ 'x-forwarded-for': '6.6.6.6, 203.0.113.9' }))).toBe(
-      '203.0.113.9',
-    );
+  it('clientIpOf: phần tử thứ TRUST_PROXY_HOPS tính từ cuối X-Forwarded-For (cùng quy tắc API)', () => {
+    const xff = new Headers({ 'x-forwarded-for': '6.6.6.6, 203.0.113.9, 198.51.100.1' });
+    expect(clientIpOf(xff, 1)).toBe('198.51.100.1'); // 1 proxy (LB)
+    expect(clientIpOf(xff, 2)).toBe('203.0.113.9'); // CDN + LB ⇒ áp chót
+    expect(clientIpOf(xff, 0)).toBe('unknown'); // không tin XFF ⇒ chỉ còn trần tổng
+    expect(clientIpOf(xff, 9)).toBe('unknown'); // chuỗi ngắn hơn số hops
     expect(clientIpOf(new Headers())).toBe('unknown');
+  });
+
+  it('IPv6 gom theo /56 (như ipKeyGenerator của API) — xoay địa chỉ trong một dải không né được hạn mức', () => {
+    expect(ipv6Prefix56('2001:db8:aa:bbcc::1')).toBe('2001:0db8:00aa:bb00::/56');
+    expect(ipv6Prefix56('2001:db8:aa:bbff:1:2:3:4')).toBe('2001:0db8:00aa:bb00::/56');
+    expect(ipv6Prefix56('203.0.113.9')).toBe('203.0.113.9');
+    expect(ipv6Prefix56('::ffff:203.0.113.9')).toBe('::ffff:203.0.113.9');
+    const xff = new Headers({ 'x-forwarded-for': '2001:db8:aa:bb01::9' });
+    expect(clientIpOf(xff)).toBe('2001:0db8:00aa:bb00::/56');
+  });
+
+  it('Map của limiter bị chặn: bơm 25 000 IP khác nhau (kể cả lúc trần tổng bão hòa) ⇒ không vượt trần số khóa', () => {
+    const limiter = new TunnelRateLimiter({ windowMs: 60_000, perIp: 30, perInstance: 1_000_000 });
+    for (let i = 0; i < 25_000; i++) limiter.tryHit(`ip-${i}`, i);
+    expect(limiter.trackedIps).toBeLessThanOrEqual(TunnelRateLimiter.MAX_TRACKED_IPS);
+    const saturated = new TunnelRateLimiter({ windowMs: 60_000, perIp: 30, perInstance: 1 });
+    saturated.tryHit('first', 0);
+    for (let i = 0; i < 25_000; i++) expect(saturated.tryHit(`rot-${i}`, i)).toBe(false);
+    expect(saturated.trackedIps).toBe(1); // IP bị từ chối KHÔNG được thêm vào Map
   });
 });
 
@@ -172,7 +194,7 @@ describe('L3 (review B): DSN http ở staging/production ⇒ Sentry tắt (khôn
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     expect(
       readSentryConfig({ SENTRY_DSN: 'http://public@sentry.test/1', APP_ENV: appEnv }),
-    ).toEqual({ environment: appEnv });
+    ).toEqual({ environment: appEnv, trustProxyHops: 1 });
     warn.mockRestore();
   });
 
@@ -182,6 +204,7 @@ describe('L3 (review B): DSN http ở staging/production ⇒ Sentry tắt (khôn
     ).toEqual({
       dsn: 'http://public@sentry.test/1',
       environment: 'local',
+      trustProxyHops: 1,
     });
   });
 });

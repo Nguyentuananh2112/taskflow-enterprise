@@ -17,6 +17,7 @@ export function initServerSentry(): boolean {
     ...(config.release ? { release: config.release } : {}),
     dataCollection: DATA_COLLECTION,
     tracesSampleRate: 0,
+    tracePropagationTargets: [], // server Next không gắn header trace vào request ra ngoài
     maxBreadcrumbs: 0,
     beforeBreadcrumb: () => null,
     beforeSend: sanitizeWebEvent,
