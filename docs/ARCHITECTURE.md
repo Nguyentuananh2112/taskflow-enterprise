@@ -141,3 +141,4 @@ Chi tiết: [frontend.md](design/frontend.md).
 | Thu hồi phiên fail-closed | ADR-105 |
 | Repo public: gitleaks, không secret | ADR-072 |
 | Máy dev: giảm tải bằng quy trình | ADR-107 |
+| Threat model STRIDE v1 + rủi ro chấp nhận có chủ đích | [design/threat-model.md](design/threat-model.md), ADR-113 |
