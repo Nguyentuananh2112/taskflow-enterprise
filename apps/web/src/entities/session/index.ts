@@ -3,4 +3,4 @@ export { authApi } from './api/auth.api';
 export { session, type EndReason } from './model/session';
 export type { SessionState, SessionStatus } from './model/session-store';
 export { sessionKeys, useMe } from './model/use-me';
-export { useSession } from './model/use-session';
+export { useLogoutPending, useSession } from './model/use-session';

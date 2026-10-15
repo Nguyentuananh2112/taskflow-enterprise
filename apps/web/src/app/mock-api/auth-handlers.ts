@@ -12,6 +12,7 @@ import {
 import { http, type HttpHandler } from 'msw';
 
 import type { MockDb } from './mock-db';
+import { rejectsOrigin } from './request-guards';
 import { fail, noContent, ok, parseBody, ruleViolation } from './respond';
 
 // Handler /auth/* của mock API — hành vi theo data-and-api.md §2.4 và security.md §1, §2.3, §6.4–6.5.
@@ -32,7 +33,11 @@ const readCookie = (request: Request): string | undefined =>
 const cookieHeader = (basePath: string, token: string | null) =>
   `${COOKIE}=${token ?? ''}; Path=${basePath}/auth; HttpOnly; SameSite=Strict; Max-Age=${token ? 30 * 86_400 : 0}`;
 
-export function createAuthHandlers(baseUrl: string, db: MockDb): HttpHandler[] {
+export function createAuthHandlers(
+  baseUrl: string,
+  db: MockDb,
+  allowedOrigins: ReadonlySet<string>,
+): HttpHandler[] {
   const url = (path: string) => `${baseUrl}${path}`;
   const basePath = new URL(baseUrl).pathname;
   const setCookie = (token: string | null) => ({ 'Set-Cookie': cookieHeader(basePath, token) });
@@ -98,6 +103,8 @@ export function createAuthHandlers(baseUrl: string, db: MockDb): HttpHandler[] {
     }),
 
     http.post(url('/auth/refresh'), ({ request }) => {
+      const badOrigin = rejectsOrigin(request, allowedOrigins);
+      if (badOrigin) return badOrigin;
       const result = db.rotateRefresh(readCookie(request));
       if (result.status === 'in-progress') return fail(409, 'REFRESH_IN_PROGRESS');
       const user = result.status === 'ok' ? db.getUser(result.userId) : undefined;
@@ -108,6 +115,8 @@ export function createAuthHandlers(baseUrl: string, db: MockDb): HttpHandler[] {
     }),
 
     http.post(url('/auth/logout'), ({ request }) => {
+      const badOrigin = rejectsOrigin(request, allowedOrigins);
+      if (badOrigin) return badOrigin;
       db.revokeRefresh(readCookie(request));
       return noContent({ headers: setCookie(null) });
     }),

@@ -32,6 +32,7 @@ function setup(api: Partial<SessionDeps['api']> = {}) {
   const controller = createSessionController({
     api: deps,
     installHooks: (h) => (hooks = h),
+    sleep: () => Promise.resolve(),
     openChannel: (onMessage) => {
       deliver = onMessage;
       return channel;
@@ -119,12 +120,50 @@ describe('đăng nhập / kết thúc phiên', () => {
     await expect(hooks.refresh()).resolves.toBe(false);
   });
 
-  it('logout: request lỗi mạng vẫn kết thúc phiên', async () => {
-    const { controller, ended } = setup({ logout: () => Promise.reject(offline()) });
+  it('logout OK ⇒ true, không có gì chờ xác nhận', async () => {
+    const { controller } = setup();
     controller.signIn(TOKEN, USER);
-    await controller.logout();
+    await expect(controller.logout()).resolves.toBe(true);
+    expect(controller.isLogoutPending()).toBe(false);
+  });
+
+  it('logout lỗi (T-029 H2): thử lại 1 lần, vẫn kết thúc phiên LOCAL nhưng trả false + pending', async () => {
+    const logout = vi.fn(() => Promise.reject(offline()));
+    const { controller, ended } = setup({ logout });
+    controller.signIn(TOKEN, USER);
+    await expect(controller.logout()).resolves.toBe(false);
+    expect(logout).toHaveBeenCalledTimes(2);
     expect(sessionStore.get().status).toBe('anonymous');
     expect(ended).toHaveBeenCalledWith('logout');
+    expect(controller.isLogoutPending()).toBe(true);
+  });
+
+  it('đang chờ xác nhận đăng xuất ⇒ bootstrap KHÔNG tự đăng nhập lại bằng cookie', async () => {
+    const refresh = vi.fn(() => Promise.resolve(TOKEN));
+    const { controller } = setup({ refresh, logout: () => Promise.reject(offline()) });
+    controller.signIn(TOKEN, USER);
+    await controller.logout();
+    refresh.mockClear();
+    sessionStore.set({ status: 'idle', user: null }); // tải lại trang /login trong cùng phiên JS
+    await controller.bootstrap();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(sessionStore.get().status).toBe('anonymous');
+  });
+
+  it('retryLogout thành công ⇒ hết pending', async () => {
+    const logout = vi
+      .fn<() => Promise<undefined>>()
+      .mockRejectedValueOnce(offline())
+      .mockRejectedValueOnce(offline())
+      .mockResolvedValueOnce(undefined);
+    const { controller } = setup({ logout });
+    controller.signIn(TOKEN, USER);
+    await controller.logout();
+    const changed = vi.fn();
+    controller.onLogoutPendingChange(changed);
+    await expect(controller.retryLogout()).resolves.toBe(true);
+    expect(controller.isLogoutPending()).toBe(false);
+    expect(changed).toHaveBeenCalled();
   });
 
   it('logoutAll lỗi ⇒ ném lỗi, phiên GIỮ NGUYÊN để thử lại', async () => {

@@ -4,11 +4,19 @@ import { readPublicRuntimeConfig } from './server-env';
 
 describe('readPublicRuntimeConfig', () => {
   it('đọc API_URL, bỏ / cuối, WS_URL mặc định là origin của API_URL', () => {
-    expect(readPublicRuntimeConfig({ API_URL: 'http://localhost:4000/api/v1/' })).toEqual({
+    expect(
+      readPublicRuntimeConfig({ API_URL: 'http://localhost:4000/api/v1/', APP_ENV: 'local' }),
+    ).toEqual({
       apiUrl: 'http://localhost:4000/api/v1',
       wsUrl: 'http://localhost:4000',
       appEnv: 'local',
     });
+  });
+
+  it('KHÔNG đặt APP_ENV ⇒ production (an toàn mặc định — T-029)', () => {
+    expect(readPublicRuntimeConfig({ API_URL: 'https://api.example.com/api/v1' }).appEnv).toBe(
+      'production',
+    );
   });
 
   it('dùng WS_URL và APP_ENV khi có', () => {

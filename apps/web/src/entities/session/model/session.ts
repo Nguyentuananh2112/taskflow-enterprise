@@ -12,6 +12,9 @@ import { tokenStore } from './token-store';
 
 export type EndReason = 'logout' | 'expired' | 'revoked';
 
+export const LOGOUT_RETRY_DELAY_MS = 500;
+const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export type SessionDeps = Readonly<{
   api: Pick<AuthApi, 'refresh' | 'me' | 'logout' | 'logoutAll'>;
   locks?: LockRequester | undefined;
@@ -28,6 +31,31 @@ export function createSessionController(deps: SessionDeps) {
   });
   const endedListeners = new Set<(reason: EndReason) => void>();
   let channel: AuthChannel | null = null;
+  /**
+   * T-029 H2: đăng xuất ở server CHƯA được xác nhận (lỗi mạng/5xx/403) — cookie refresh có thể còn
+   * sống. Trong lúc này không tự khôi phục phiên bằng refresh; UI báo và cho thử lại.
+   */
+  let logoutPending = false;
+  const pendingListeners = new Set<() => void>();
+  const setLogoutPending = (value: boolean) => {
+    if (value === logoutPending) return;
+    logoutPending = value;
+    pendingListeners.forEach((listener) => listener());
+  };
+  /** POST /auth/logout, thử lại 1 lần nếu lỗi. `true` = server đã xác nhận. */
+  async function serverLogout(): Promise<boolean> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await deps.api.logout();
+        setLogoutPending(false);
+        return true;
+      } catch {
+        if (attempt === 0) await (deps.sleep ?? defaultSleep)(LOGOUT_RETRY_DELAY_MS);
+      }
+    }
+    setLogoutPending(true);
+    return false;
+  }
 
   const set = (status: 'authenticated' | 'anonymous' | 'unreachable', user: UserDto | null) =>
     sessionStore.set({ status, user });
@@ -73,6 +101,10 @@ export function createSessionController(deps: SessionDeps) {
       controller.start();
       const { status } = sessionStore.get();
       if (status !== 'idle' && status !== 'unreachable') return;
+      if (logoutPending) {
+        set('anonymous', null); // người dùng đã chọn đăng xuất — không đăng nhập lại im lặng
+        return;
+      }
       sessionStore.set({ status: 'bootstrapping', user: null });
       try {
         if (!(await renew())) {
@@ -103,10 +135,26 @@ export function createSessionController(deps: SessionDeps) {
       if (sessionStore.get().status === 'authenticated') set('authenticated', user);
     },
 
-    /** Đăng xuất thiết bị này: luôn kết thúc phiên kể cả khi request lỗi (frontend.md §3.3). */
-    async logout(): Promise<void> {
-      await deps.api.logout().catch(() => undefined);
+    /**
+     * Đăng xuất thiết bị này: luôn kết thúc phiên LOCAL kể cả khi request lỗi (frontend.md §3.3),
+     * nhưng KHÔNG nuốt lỗi (T-029 H2): trả `false` khi server chưa xác nhận để UI báo người dùng;
+     * `retryLogout()` thử lại (cookie refresh HttpOnly vẫn được trình duyệt gửi).
+     */
+    async logout(): Promise<boolean> {
+      const confirmed = await serverLogout();
       end('logout');
+      return confirmed;
+    },
+
+    retryLogout: (): Promise<boolean> => serverLogout(),
+
+    /** Đăng xuất ở server đang chờ xác nhận (UI: cảnh báo + "Thử lại"). */
+    isLogoutPending: (): boolean => logoutPending,
+    onLogoutPendingChange(listener: () => void): () => void {
+      pendingListeners.add(listener);
+      return () => {
+        pendingListeners.delete(listener);
+      };
     },
 
     /** Đăng xuất mọi thiết bị: request lỗi ⇒ ném lỗi, phiên giữ nguyên để người dùng thử lại. */
@@ -128,6 +176,8 @@ export function createSessionController(deps: SessionDeps) {
       channel?.close();
       channel = null;
       endedListeners.clear();
+      pendingListeners.clear();
+      logoutPending = false;
       tokenStore.clear();
       sessionStore.resetForTest();
     },

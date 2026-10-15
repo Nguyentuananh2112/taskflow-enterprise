@@ -67,7 +67,12 @@ export function createHttpClient(deps: HttpDeps) {
     await refresh?.inflight()?.catch(() => undefined); // hàng đợi: chờ refresh đang chạy
     const token = deps.auth?.getAccessToken() ?? null;
     const headers = new Headers({ Accept: 'application/json' });
-    if (opts.body !== undefined) headers.set('Content-Type', 'application/json');
+    // T-029 H2: API bắt buộc Content-Type JSON cho MỌI POST/PATCH, kể cả không có body (ép trình
+    // duyệt preflight — một lớp chống CSRF, security.md §6.3). Thiếu ⇒ 415: refresh/logout/logout-all
+    // hỏng mà UI vẫn tưởng thành công. Không có body ⇒ gửi `{}`.
+    const hasBodyMethod = method === 'POST' || method === 'PATCH';
+    const body = opts.body === undefined ? (hasBodyMethod ? {} : undefined) : opts.body;
+    if (body !== undefined) headers.set('Content-Type', 'application/json');
     if (token) headers.set('Authorization', `Bearer ${token}`);
     if (method !== 'GET') headers.set('X-Client-Id', deps.clientId());
 
@@ -77,7 +82,7 @@ export function createHttpClient(deps: HttpDeps) {
       response = await doFetch(url, {
         method,
         headers,
-        body: opts.body === undefined ? null : JSON.stringify(opts.body),
+        body: body === undefined ? null : JSON.stringify(body),
         // Cookie refresh chỉ sống ở Path=/api/v1/auth (security.md §2.3).
         credentials: path.startsWith('/auth/') ? 'include' : 'omit',
         signal: opts.signal ?? null,

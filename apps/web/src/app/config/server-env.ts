@@ -14,7 +14,8 @@ const ServerEnv = z.object({
     .url({ protocol: /^https?$/ })
     .transform(trimSlash)
     .optional(),
-  APP_ENV: AppEnv.default('local'),
+  // T-029: không đặt ⇒ production (an toàn mặc định: HSTS, tắt mock); chỉ local/test khi đặt tường minh.
+  APP_ENV: AppEnv.default('production'),
 });
 
 type EnvSource = Readonly<Record<string, string | undefined>>;

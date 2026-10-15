@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { applyServerErrors } from '@/shared/lib/form-errors';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
+import { ClientForm } from '@/shared/ui/client-form';
 import { Input } from '@/shared/ui/input';
 
 import { useRegister } from '../model/use-register';
@@ -36,7 +37,7 @@ export function RegisterForm() {
   });
 
   return (
-    <form noValidate onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
+    <ClientForm onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
       {errors.root?.server && <Alert>{errors.root.server.message}</Alert>}
       <Input
         label="Họ tên"
@@ -65,6 +66,6 @@ export function RegisterForm() {
       <Button type="submit" loading={isSubmitting}>
         {isSubmitting ? 'Đang tạo tài khoản…' : 'Tạo tài khoản'}
       </Button>
-    </form>
+    </ClientForm>
   );
 }

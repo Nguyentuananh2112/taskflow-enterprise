@@ -99,6 +99,19 @@ describe('http — request', () => {
     expect(call(1).headers.get('Content-Type')).toBeNull();
   });
 
+  it('POST/PATCH KHÔNG body vẫn gửi Content-Type JSON + body {} (T-029 H2: API trả 415 nếu thiếu)', async () => {
+    const { http, call } = setup([ok({ id: 'a' }), ok({ id: 'b' }), ok({ id: 'c' })]);
+    await http.post('/auth/logout', { schema: Item });
+    await http.patch('/x', { schema: Item });
+    await http.delete('/y', { schema: Item });
+    expect(call(0).headers.get('Content-Type')).toBe('application/json');
+    expect(call(0).init.body).toBe('{}');
+    expect(call(1).headers.get('Content-Type')).toBe('application/json');
+    // DELETE không có body: API không đòi Content-Type (requireJsonContentType chỉ cho POST/PUT/PATCH).
+    expect(call(2).headers.get('Content-Type')).toBeNull();
+    expect(call(2).init.body).toBeNull();
+  });
+
   it('credentials: include CHỈ cho /auth/* (cookie refresh), còn lại omit', async () => {
     const { http, call } = setup([ok({ id: 'a' }), ok({ id: 'b' })]);
     await http.post('/auth/refresh', { schema: Item });

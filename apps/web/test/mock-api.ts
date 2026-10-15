@@ -1,6 +1,6 @@
 import { setupServer } from 'msw/node';
 
-import { createMockApi, type MockDbOptions } from '@/app/mock-api';
+import { createMockApi, type MockApiOptions } from '@/app/mock-api';
 import { resetRuntimeConfigForTest, setRuntimeConfig } from '@/shared/config';
 
 // Mock API cho test (T-019): CÙNG bộ handler MSW với chế độ dev (`APP_MOCK_API=1`), request được
@@ -20,6 +20,8 @@ export function installCookieJar() {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const credentialed = init?.credentials === 'include';
     const headers = new Headers(init?.headers);
+    // Trình duyệt tự gửi Origin cho request cross-origin (trang :3000 → API :4000) — Node fetch thì không.
+    if (typeof window !== 'undefined') headers.set('origin', window.location.origin);
     if (credentialed) {
       const sent = [...jar].filter(([, c]) => url.pathname.startsWith(c.path));
       if (sent.length > 0)
@@ -48,8 +50,9 @@ export function installCookieJar() {
 /* eslint-enable no-restricted-properties */
 
 /** Bật mock API + cookie jar + runtime config cho cả file test. Gọi `stop()` ở afterAll. */
-export function startMockApi(options: MockDbOptions = {}) {
-  const api = createMockApi(API_BASE, options);
+export function startMockApi(options: MockApiOptions = {}) {
+  // CORS_ORIGINS của "server" = origin của trang jsdom (cookie endpoint kiểm Origin như API thật).
+  const api = createMockApi(API_BASE, { allowedOrigins: [window.location.origin], ...options });
   const server = setupServer(...api.handlers);
   server.listen({ onUnhandledFrame: 'error' }); // MSW 3: tên mới của onUnhandledRequest
   const jar = installCookieJar();
