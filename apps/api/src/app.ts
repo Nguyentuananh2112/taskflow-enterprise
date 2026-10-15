@@ -1,4 +1,4 @@
-import express, { type Express, type Router } from 'express';
+import express, { type Express, type RequestHandler, type Router } from 'express';
 import type { Logger } from 'pino';
 
 import type { Env } from './config/env';
@@ -39,6 +39,8 @@ export interface AppDependencies {
   responder?: HttpResponder;
   probes: readonly ReadinessProbe[];
   isShuttingDown: () => boolean;
+  /** Rate limit toàn cục (security.md §6.4) — sau body parser, trước route. */
+  rateLimit?: readonly RequestHandler[];
   /** Router nghiệp vụ, gắn dưới `/api/v1` (Phase 2: auth, workspaces, …). */
   apiRouter?: Router;
 }
@@ -66,7 +68,7 @@ export function createApp(deps: AppDependencies): Express {
   );
   app.use(requireJsonContentType);
   app.use(jsonBody(config.bodyLimit));
-  // TODO(Phase 2, B): rate limit toàn cục (Valkey store) đặt tại đây — security.md §6.4.
+  if (deps.rateLimit?.length) app.use(...deps.rateLimit);
   if (deps.apiRouter) app.use('/api/v1', deps.apiRouter);
 
   app.use(notFoundHandler);

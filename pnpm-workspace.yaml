@@ -10,6 +10,7 @@ catalog:
   '@node-rs/argon2': 2.2.2
   '@prisma/adapter-pg': 7.10.0
   '@prisma/client': 7.10.0
+  '@socket.io/redis-adapter': 8.3.0
   '@tailwindcss/postcss': 4.3.3
   '@testing-library/dom': 10.4.2
   '@testing-library/react': 16.3.3
@@ -28,6 +29,7 @@ catalog:
   eslint-config-prettier: 10.1.8
   eslint-plugin-react-hooks: 7.1.1
   express: 5.3.0
+  express-rate-limit: 8.7.1
   globals: 17.13.0
   helmet: 8.3.0
   jose: 6.2.12
@@ -40,9 +42,12 @@ catalog:
   prettier: 3.9.10
   # Prisma pin CHÍNH XÁC 7.10.0 (ADR-060); chỉ chạy CLI bằng `pnpm exec prisma` (ADR-061).
   prisma: 7.10.0
+  rate-limit-redis: 6.0.1
   react: 19.3.1
   react-dom: 19.3.1
   redis: 6.3.0
+  socket.io: 4.8.4
+  socket.io-client: 4.8.4
   supertest: 7.3.1
   tailwindcss: 4.3.3
   tsdown: 0.23.1
