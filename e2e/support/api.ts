@@ -228,3 +228,36 @@ export function apiRestoreWorkspace(request: APIRequestContext, owner: Seeded): 
     200,
   );
 }
+
+export interface TaskFull extends TaskRef {
+  title: string;
+  status: string;
+  rank: string;
+}
+
+export function apiGetTask(
+  request: APIRequestContext,
+  s: Seeded,
+  taskId: string,
+): Promise<TaskFull> {
+  return call(request, 'GET', taskPath(s, taskId), s.accessToken, undefined, 200);
+}
+
+/** Move tới vị trí giữa `afterId` và `beforeId` trong cùng cột; version lấy mới từ server (rebalance đổi version). */
+export async function apiMoveBetween(
+  request: APIRequestContext,
+  s: Seeded,
+  taskId: string,
+  afterId: string | null,
+  beforeId: string | null,
+): Promise<TaskFull> {
+  const current = await apiGetTask(request, s, taskId);
+  return call(
+    request,
+    'PATCH',
+    `${taskPath(s, taskId)}/move`,
+    s.accessToken,
+    { expectedVersion: current.version, afterId, beforeId },
+    200,
+  );
+}
