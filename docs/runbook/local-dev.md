@@ -86,6 +86,8 @@ Cách xử lý (**không tự đổi cấu hình máy**):
 
 ## 3. Hạ tầng local (Postgres 18.6 + Valkey 9.1.2)
 
+> **Compose `taskflow` PHẢI chạy từ repo chính `D:TaskFlow_Enterprise`, KHÔNG BAO GIỜ từ một git worktree.** Compose bind-mount `docker/postgres/init` theo đường dẫn thư mục lúc `up`: chạy từ worktree thì không xóa được worktree đó (Docker giữ file), và nếu thư mục biến mất thì container dùng chung không khởi động lại được. Kiểm tra: `docker inspect taskflow-postgres-1 --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'` phải là repo chính. Recreate compose (postgres-test chạy trên RAM ⇒ **mất mọi DB test riêng**) chỉ khi Tech Lead báo.
+
 Mở Docker Desktop trước (biểu tượng cá voi chuyển xanh).
 
 ```powershell
