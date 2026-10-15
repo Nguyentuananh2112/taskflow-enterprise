@@ -103,3 +103,7 @@ Chỉ sửa `docs/design/frontend.md`; chưa commit.
 2. **Có viết API chưa kiểm không?** Có một lần: tôi viết tên option `activationConstraints` mà agent không xác nhận. Đã gỡ và đổi thành "chưa kiểm". Chữ ký generic của `useForm` cũng hạ xuống mức "chưa kiểm".
 3. **Thiết kế cũ còn đúng với API mới không?** Mô hình "preview cục bộ khi kéo" khớp mẫu `move()` của @dnd-kit/react. Rollback có điều kiện không phụ thuộc thư viện. Riêng `scope` của mutation buộc phải làm rõ cách lấy `expectedVersion` (phát hiện 4).
 4. **Có sinh lỗi mới không?** Tôi sửa thêm `retry` của QueryClient: bản cũ retry lỗi mạng vô hạn vì điều kiện `count < 2` chỉ áp cho nhánh 5xx. Rule dependency-cruiser đã viết lại theo cú pháp `path`/`pathNot` + `$1` có tài liệu.
+
+**Bổ sung sau khi gửi DONE T-005b** (phát hiện lúc đọc trước T-012): §3.6 đã được chỉnh lại cho khớp security.md §6.8.
+- Bỏ phần policy CSP chép tay (thiếu `upgrade-insecure-requests`, thiếu header W-CSP-4), thay bằng tham chiếu tới W-CSP-1..4.
+- **Nonce dùng 16 byte `getRandomValues`.** Mẫu `Buffer.from(randomUUID())` trong docs Next không đạt W-CSP-1: UUID v4 chỉ có 122 bit ngẫu nhiên, W-CSP-1 yêu cầu ≥ 128 bit.
