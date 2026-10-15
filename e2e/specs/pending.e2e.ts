@@ -19,11 +19,7 @@ const pending: [id: string, title: string, blockedBy: string][] = [
     'Access token hết hạn ⇒ refresh trong suốt',
     'API chưa có biến env TTL access token ngắn',
   ],
-  [
-    'E2E-12',
-    'axe: không vi phạm serious/critical (sáng/tối)',
-    'devDependency @axe-core/playwright — hỏi TL',
-  ],
+  ['E2E-12b', 'axe trên board, drawer, trang thành viên (sáng/tối)', TASK_API],
   ['E2E-13', 'Offline rồi online ⇒ board tự refetch', TASK_API],
   ['E2E-14', 'Xóa workspace khi B mở board; khôi phục ⇒ B vào lại', TASK_API],
   ['E2E-15', 'Hạ B xuống VIEWER ⇒ mất kéo, 2 task "Chưa giao"', TASK_API],
