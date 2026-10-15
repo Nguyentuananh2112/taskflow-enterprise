@@ -55,3 +55,51 @@
 2. **Rollback có an toàn khi đồng thời không?** Bản nháp đầu khôi phục snapshot cả board, sẽ ghi đè event người khác. Đã sửa thành revert theo task, kèm điều kiện version.
 3. **Có chia được cho 2 người không đụng file?** Bản nháp đầu có barrel `shared/ui/index.ts` và `vi.ts` chung, cả hai người đều phải sửa. Đã tách theo component/miền và chỉ định chủ sở hữu cho file ghép provider.
 4. **Có đoán API thư viện mới không?** Đã rà lại: mọi tên option cụ thể (gcTime, `auth` dạng hàm, `useDroppable({disabled})`, `z.config` locale, cách cấu hình Tailwind, `next/font`) đều gắn `TODO(T-001)`. Bảng dependency-cruiser có một rule viết regex sai, đã sửa thành mô tả ý định và để cú pháp cho T-001.
+
+---
+
+# T-005b — Đồng bộ frontend.md theo quyết định Phase 0 (Engineer E, 2026-10-15)
+
+## Đã làm
+Chỉ sửa `docs/design/frontend.md`; chưa commit.
+
+1. Đồng bộ theo các ADR:
+   - **ADR-044**: picker chỉ hiện người có role ≥ MEMBER (`useAssignableMembers`). Hạ xuống VIEWER có dialog cảnh báo bỏ giao task, kèm toast `unassignedTaskCount`.
+   - **ADR-047/050**: dialog xóa workspace nói rõ ân hạn 30 ngày; trang `/w` có khu "Đã xóa — khôi phục được"; thêm feature `workspace-restore` và query key `['workspaces','deleted']`.
+   - **ADR-049/065**: mật khẩu 12–256 ký tự, bỏ luật 72 byte.
+   - **ADR-060/064**: chuyển sang `@dnd-kit/react`, ESLint 10. Bỏ `react/no-danger`, thay bằng `no-restricted-syntax`. Không có jsx-a11y nên a11y dựa vào axe trong E2E.
+   - **ADR-074/084**: thêm **§3.6 cấu hình runtime**. Root layout đọc `API_URL`/`WS_URL` lúc chạy rồi truyền xuống `RuntimeConfigBoot`; bỏ mọi `NEXT_PUBLIC_*`. Đã sửa luôn dòng `io(env.NEXT_PUBLIC_WS_URL…)` mà Engineer D phát hiện. Đặc tả CSP nonce trong `proxy.ts`. Socket chỉ dùng `transports: ['websocket']`, `autoConnect: false`.
+   - **SEC-56**: nếu handshake bị từ chối vì Origin thì coi là lỗi transport, không kết thúc phiên, có log lên Sentry.
+   - **ADR-080**: `ROLE_PERMISSIONS` và `TASK_STATUS_TRANSITIONS` import từ contracts, FE không giữ bản sao.
+   - **ADR-081**: Zod locale `vi` ở cả FE và API.
+   - **ADR-082**: FE vốn đã theo contract T-003, không cần sửa.
+   - **ADR-083**: màn Tài khoản sửa được họ tên (feature `profile-edit`); thành viên và picker tìm qua server bằng `?q=`.
+2. Đóng V1–V11 và thêm V12 (mục 10 viết lại thành bảng "đã đóng", có nguồn từng mục). Những gì stack-versions chưa trả lời, tôi giao một sub-agent kiểm trên docs chính thức, `.d.ts` đã publish trên unpkg và npm registry.
+3. Viết lại theo API đã kiểm chứng:
+   - §4.2: dùng `DragDropProvider`, `useSortable({ group })`, `move()`, `Accessibility.configure`. Chặn cột sai state machine ở 3 lớp: `disabled`, `preventDefault` ở `onDragOver`, kiểm lại ở `onDragEnd`.
+   - §4.4: theo chữ ký callback mutation mới của TanStack (từ v5.89). Sửa trong drawer dùng `scope: { id: 'task:'+taskId }`.
+4. Thêm test E2E-14/15/16 (xóa/khôi phục workspace, hạ xuống VIEWER, một image dùng hai `API_URL`) và unit test cho runtime config. Ước lượng gói nền tăng từ 3 lên 4 ngày, tổng từ 18 lên 19 ngày.
+
+## Phát hiện quan trọng
+1. ⚠️ **Đặt `apps/web/src/pages/` cạnh `app/` ở gốc sẽ làm Next lỗi build** ("pages and app directories should be under the same folder"). Nguồn: `find-pages-dir.ts` của Next. Layer "pages" của FSD vì thế tên là `views`.
+2. ⚠️ **Sơ đồ ở stack-versions §10 đặt `apps/web/src/app/globals.css`**, tức coi `src/app` là router Next. Điều này mâu thuẫn với frontend.md §2.1 (router ở `apps/web/app/`, `src/app` là layer FSD). **Cần báo Engineer A cho T-008**, nếu không khung web sẽ phải dời lại ở T-012.
+3. **TanStack Query 5.89+ đổi chữ ký callback mutation**: kết quả trả về của `onMutate` giờ là tham số thứ 3. Code mẫu cũ trên mạng sẽ sai kiểu.
+4. **`expectedVersion` phải lấy tại thời điểm thả thẻ**, không đọc lại cache lúc gửi. Nếu đọc lại, thay đổi của người khác vừa đến qua socket sẽ bị ghi đè mà không phát hiện xung đột. Đã ghi rõ ở §4.4.
+5. **CSP `style-src` dùng nonce sẽ chặn thuộc tính `style="…"` trong HTML do server render.** Landing/shell không được dùng prop `style`; T-012 phải đo trên build prod (mục 10, phần rủi ro).
+
+## Còn chưa kiểm (ghi rõ trong doc là việc của T-012, không đoán)
+- Tên option ràng buộc kích hoạt của `PointerSensor` ở `@dnd-kit/react` 0.5.0.
+- Cách khai generic kiểu output cho `useForm` khi schema có transform.
+- MSW 3 có chạy cùng vitest 5 / jsdom 30 không (docs không nói). Dự phòng: msw 2.x.
+- Ghép "biến ngữ nghĩa + `@theme inline`" cho dark mode là suy luận từ docs Tailwind; T-012 cần smoke test.
+- Selector `no-restricted-syntax` cho JSX là suy ra từ AST, chưa chạy thử; bắt buộc có test fixture.
+
+## Phụ thuộc vào người khác
+- **Engineer C**: contract chưa có `PATCH /auth/me` và `q` (ADR-083), chưa chốt dạng `details` cho issue `code` + `path` (ADR-081), và `data-and-api.md:449` vẫn ghi giới hạn "≤ 72 byte" (trái ADR-065). FE tạm dùng giả định ghi ở §1.2 và §7.3.
+- **Engineer A (T-008)**: vị trí router web, xem phát hiện 2.
+
+## Tự phản biện (4 vòng)
+1. **Còn chỗ nào mâu thuẫn ADR không?** Đã grep `NEXT_PUBLIC`, `15 ký tự`, `72 byte`, `Hỏi-TL`, `TODO(T-001)`, `useAllMembers`, `DndContext`, `react/no-danger`: không còn chỗ nào.
+2. **Có viết API chưa kiểm không?** Có một lần: tôi viết tên option `activationConstraints` mà agent không xác nhận. Đã gỡ và đổi thành "chưa kiểm". Chữ ký generic của `useForm` cũng hạ xuống mức "chưa kiểm".
+3. **Thiết kế cũ còn đúng với API mới không?** Mô hình "preview cục bộ khi kéo" khớp mẫu `move()` của @dnd-kit/react. Rollback có điều kiện không phụ thuộc thư viện. Riêng `scope` của mutation buộc phải làm rõ cách lấy `expectedVersion` (phát hiện 4).
+4. **Có sinh lỗi mới không?** Tôi sửa thêm `retry` của QueryClient: bản cũ retry lỗi mạng vô hạn vì điều kiện `count < 2` chỉ áp cho nhánh 5xx. Rule dependency-cruiser đã viết lại theo cú pháp `path`/`pathNot` + `$1` có tài liệu.

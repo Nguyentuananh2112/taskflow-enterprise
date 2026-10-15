@@ -1,8 +1,8 @@
 # Kiến trúc Frontend & đặc tả UX (T-005)
 
-> Ticket: T-005 · Tác giả: Engineer E (`taskflow-enterprise-b7`) · Trạng thái: **Chờ Tech Lead duyệt**
+> Ticket: T-005 (+ T-005b đồng bộ) · Tác giả: Engineer E (`taskflow-enterprise-b7`) · Trạng thái: **Đã duyệt (c3d8fbf); T-005b đồng bộ theo ADR-044/047/049/050/060–065/074/080–084 và đóng V1–V12 (mục 10)**
 > Nguồn ưu tiên: `docs/blueprint/DECISIONS.md` (v1.1) > `docs/design/data-and-api.md` (T-003) & `docs/design/security.md` (T-002) > tài liệu này > blueprint v1.0.
-> Ký hiệu: `TODO(T-001)` = cú pháp/phiên bản thư viện chờ `docs/research/stack-versions.md` xác nhận, **không được code theo phỏng đoán** · `ĐỀ XUẤT` = quyết định tôi tự đưa ra, Tech Lead có thể bác · `Hỏi-TL` = cần Tech Lead quyết (tổng hợp ở báo cáo).
+> Ký hiệu: `ĐỀ XUẤT` = quyết định Engineer E tự đưa ra (đã được duyệt cùng T-005) · "Đã kiểm (Vn)" = phiên bản/API đã kiểm chứng, nguồn ở mục 10 · "chưa kiểm" = chi tiết API phải tra `.d.ts` khi code ở T-012, **không code theo phỏng đoán**.
 
 ## Mục lục
 0. Nguyên tắc nền
@@ -45,7 +45,7 @@
 | `/` | Landing | Server (tĩnh) | Public |
 | `/login` | Đăng nhập | Client | Chưa đăng nhập (đã đăng nhập ⇒ chuyển `/w`) |
 | `/register` | Đăng ký | Client | Chưa đăng nhập |
-| `/w` | Chọn workspace (tự chuyển tới workspace gần nhất nếu có) | Client | Đã đăng nhập |
+| `/w` | Chọn workspace (tự chuyển tới workspace gần nhất nếu có); khu "Workspace đã xóa — khôi phục được" cho OWNER (ADR-050) | Client | Đã đăng nhập |
 | `/w/new` | Tạo workspace | Client | Đã đăng nhập |
 | `/w/[wsId]` | Chuyển hướng → `/w/[wsId]/projects` | Client | VIEWER |
 | `/w/[wsId]/projects` | Danh sách project (tab Đang hoạt động / Đã lưu trữ) | Client | VIEWER (nút tạo: PM) |
@@ -54,7 +54,7 @@
 | `/w/[wsId]/p/[projectId]/settings` | Cài đặt project (tên, mô tả, lưu trữ) | Client | PM (VIEWER/MEMBER xem chỉ đọc) |
 | `/w/[wsId]/settings` | Cài đặt workspace (tên, slug, xóa) | Client | VIEWER xem; OWNER sửa/xóa |
 | `/w/[wsId]/settings/members` | **Thành viên** | Client | VIEWER xem; PM thêm/xóa; OWNER đổi role |
-| `/account` | Hồ sơ, đổi mật khẩu, đăng xuất mọi thiết bị | Client | Đã đăng nhập |
+| `/account` | Hồ sơ (sửa họ tên — ADR-083), đổi mật khẩu, đăng xuất mọi thiết bị | Client | Đã đăng nhập |
 | (mọi route lạ) | 404 chung | — | — |
 
 **Chi tiết task: Drawer phải, không phải modal, không phải trang riêng** (ĐỀ XUẤT). Lý do: (1) người dùng vẫn thấy board → thấy thẻ di chuyển realtime khi đang đọc; (2) URL `?task=` chia sẻ được, nút Back đóng drawer; (3) modal che board và chặn tương tác. Màn hẹp (< 768px) drawer chiếm toàn màn.
@@ -67,17 +67,17 @@
 |---|---|---|---|---|
 | Landing | Giới thiệu, nút Đăng nhập/Đăng ký | — (tĩnh) | — | — |
 | Đăng nhập | Email + mật khẩu → `/w` hoặc `?next=` | Nút "Đang đăng nhập…" khóa form | — | `INVALID_CREDENTIALS` → thông báo chung dưới form; `RATE_LIMITED` → "Thử lại sau N giây" (đếm ngược từ `retryAfterSec`) |
-| Đăng ký | Email, họ tên, mật khẩu (≥ 15 ký tự) → vào thẳng board project mặc định của `defaultWorkspaceId` | Khóa form | — | `EMAIL_ALREADY_EXISTS` → lỗi tại trường email; `VALIDATION_ERROR` → lỗi theo field (vd mật khẩu phổ biến) |
-| Chọn workspace | Danh sách workspace của tôi + role; nút Tạo | Skeleton 3 thẻ | "Bạn chưa thuộc workspace nào" + nút Tạo | Khối lỗi + Thử lại |
+| Đăng ký | Email, họ tên, mật khẩu (12–256 ký tự, ADR-049/065) → vào thẳng board project mặc định của `defaultWorkspaceId` | Khóa form | — | `EMAIL_ALREADY_EXISTS` → lỗi tại trường email; `VALIDATION_ERROR` → lỗi theo field (vd mật khẩu phổ biến) |
+| Chọn workspace | Danh sách workspace của tôi + role; nút Tạo. Khu thu gọn "Đã xóa" (`GET /workspaces?deleted=true`, chỉ có dữ liệu khi tôi là OWNER): tên, "Xóa vĩnh viễn sau N ngày" (`purgeAt`), nút **Khôi phục** | Skeleton 3 thẻ | "Bạn chưa thuộc workspace nào" + nút Tạo; khu "Đã xóa" ẩn khi rỗng | Khối lỗi + Thử lại; khôi phục `404` (quá hạn/đã purge) ⇒ "Không thể khôi phục workspace này" + refetch danh sách |
 | Danh sách project | Thẻ project (tên, key, mô tả); tab lưu trữ | Skeleton lưới | PM: "Chưa có dự án" + Tạo dự án · MEMBER/VIEWER: "Chưa có dự án nào" | 404 → màn Không tìm thấy; khác → Thử lại |
 | **Board** | 4 cột, kéo thả, lọc theo người phụ trách/ưu tiên, tạo nhanh task | Skeleton 4 cột × 3 thẻ | Cột rỗng: vùng thả viền đứt "Thả task vào đây"; cả board rỗng: "Chưa có task" + Tạo task (nếu có quyền) | 404 → Không tìm thấy; mất socket → chấm trạng thái vàng "Đang kết nối lại…" (board vẫn dùng được); lỗi tải → Thử lại |
 | **Drawer task** | Xem/sửa tiêu đề, mô tả, ưu tiên, hạn, người phụ trách; xóa; tab Lịch sử | Skeleton trong drawer | Lịch sử rỗng không xảy ra (luôn có CREATED) | 404 (task bị xóa) → "Task không còn tồn tại", đóng drawer; 409 → khối hòa giải (mục 4.6) |
 | Cài đặt project | Sửa tên/mô tả, lưu trữ/khôi phục | Skeleton form | — | `PROJECT_ARCHIVED` khi sửa → báo "Khôi phục trước khi sửa" |
-| Cài đặt workspace | Sửa tên/slug; vùng nguy hiểm: xóa (gõ lại slug) | Skeleton form | — | `RESOURCE_CONFLICT field=slug` → lỗi tại slug |
+| Cài đặt workspace | Sửa tên/slug (slug: chữ thường/số/gạch nối 3–50, FE **không** tự lowercase — khớp R19); vùng nguy hiểm: xóa (gõ lại slug). Dialog nói rõ: "Workspace sẽ bị ẩn với mọi thành viên và xóa vĩnh viễn sau 30 ngày. Chủ sở hữu có thể khôi phục trong thời gian này." (ADR-047) | Skeleton form | — | `RESOURCE_CONFLICT field=slug` → lỗi tại slug ("đã được dùng hoặc là tên dành riêng"); xóa thành công ⇒ về `/w` |
 | **Thành viên** | Danh sách, thêm theo email, đổi role, xóa, tự rời | Skeleton bảng 5 dòng | Không xảy ra (luôn có ≥1 OWNER) | `LAST_OWNER` → "Workspace phải còn ít nhất một Chủ sở hữu"; thêm user không hợp lệ → thông báo chung (security §6.5) |
-| Tài khoản | Xem email/họ tên; đổi mật khẩu; đăng xuất mọi thiết bị | Skeleton | — | `INVALID_CURRENT_PASSWORD` → lỗi tại trường mật khẩu hiện tại |
+| Tài khoản | Xem email; sửa họ tên (`PATCH /auth/me`, ADR-083); đổi mật khẩu; đăng xuất mọi thiết bị | Skeleton | — | `INVALID_CURRENT_PASSWORD` → lỗi tại trường mật khẩu hiện tại |
 
-Ghi chú: API v1.1 **không có endpoint sửa họ tên** ⇒ màn Tài khoản chỉ hiển thị họ tên (ghi ở báo cáo).
+Ghi chú: `PATCH /auth/me` và tham số `q` của `GET members` đã được duyệt (ADR-083) nhưng **chưa có trong `data-and-api.md`** lúc viết T-005b. FE giả định: `PATCH /auth/me` body `{ fullName }` → `UserDto`; `GET members?q=` lọc theo họ tên/email (chứa, không phân biệt hoa thường), giữ phân trang cursor. Engineer C chốt chính thức — lệch thì FE theo contract.
 
 ### 1.3. Ma trận màn × role (hành động hiển thị)
 
@@ -85,13 +85,13 @@ Ghi chú: API v1.1 **không có endpoint sửa họ tên** ⇒ màn Tài khoản
 |---|:-:|:-:|:-:|:-:|
 | Tạo/sửa/lưu trữ project | ✅ | ✅ | ẩn | ẩn |
 | Tạo task, sửa nội dung, kéo thả | ✅ | ✅ | ✅ | ẩn (thẻ không có tay kéo) |
-| Đổi người phụ trách | mọi task | mọi task | task mình tạo · tự nhận task trống · tự bỏ nhận | ẩn |
+| Đổi người phụ trách (người nhận phải role ≥ MEMBER — ADR-044) | mọi task | mọi task | task mình tạo · tự nhận task trống · tự bỏ nhận | ẩn |
 | Xóa task | mọi task | mọi task | task mình tạo | ẩn |
 | Thêm thành viên | role bất kỳ | chỉ MEMBER/VIEWER | ẩn | ẩn |
 | Đổi role | ✅ | ẩn | ẩn | ẩn |
 | Xóa thành viên | bất kỳ (trừ OWNER cuối) | MEMBER/VIEWER | ẩn | ẩn |
 | Rời workspace | ✅ (trừ OWNER cuối) | ✅ | ✅ | ✅ |
-| Sửa/xóa workspace | ✅ | ẩn | ẩn | ẩn |
+| Sửa/xóa workspace, khôi phục workspace đã xóa | ✅ | ẩn | ẩn | ẩn |
 
 Project **đã lưu trữ**: mọi hành động ghi task **hiện nhưng khóa** kèm tooltip "Dự án đã lưu trữ — chỉ đọc" và banner trên board (khác "ẩn" theo role: người dùng cần biết vì sao không làm được).
 
@@ -173,7 +173,7 @@ Project **đã lưu trữ**: mọi hành động ghi task **hiện nhưng khóa*
 │ Email [ten@congty.vn________________]  Vai trò [Thành viên ▾]   [Thêm]           │
 │   (PM chỉ thấy Thành viên / Người xem trong danh sách vai trò)                   │
 │──────────────────────────────────────────────────────────────────────────────────│
-│ 🔍 Lọc theo tên/email (lọc phía client trên trang đã tải)                        │
+│ 🔍 Tìm theo tên/email (server `?q=`, debounce 300ms — ADR-083)                   │
 │ ┌──────────────────────────────────┬──────────────────┬────────────┬───────────┐ │
 │ │ Thành viên                       │ Vai trò          │ Tham gia   │           │ │
 │ ├──────────────────────────────────┼──────────────────┼────────────┼───────────┤ │
@@ -189,6 +189,8 @@ Project **đã lưu trữ**: mọi hành động ghi task **hiện nhưng khóa*
  "Xóa": Dialog xác nhận "Xóa Mai Hoa khỏi workspace? Các task đang giao cho người này sẽ
   bị bỏ giao." → sau thành công hiển thị toast "Đã xóa. 7 task được bỏ giao" (unassignedTaskCount).
  "Rời" (chính mình): Dialog xác nhận → thành công ⇒ về /w.
+ Đổi role xuống "Người xem": Dialog xác nhận "Người xem không được giao việc — các task đang giao cho
+  Mai Hoa sẽ bị bỏ giao." (ADR-044) → toast "Đã đổi vai trò. N task được bỏ giao" (unassignedTaskCount).
  Hạ OWNER cuối cùng / OWNER cuối tự rời: nút vẫn bấm được, server trả LAST_OWNER → toast lỗi
   (FE không tự đếm OWNER vì danh sách phân trang có thể chưa tải hết).
 ```
@@ -202,6 +204,7 @@ Project **đã lưu trữ**: mọi hành động ghi task **hiện nhưng khóa*
 ```
 apps/web/
 ├── app/                  ← Next App Router: CHỈ file định tuyến mỏng (page/layout/error/not-found)
+├── proxy.ts              ← CSP nonce (Next 16 đổi middleware → proxy); đặt ở GỐC vì app/ ở gốc
 ├── src/
 │   ├── app/              ← FSD layer "app": providers, AuthGate, global CSS, cấu hình QueryClient
 │   ├── views/            ← FSD layer "pages" (đổi tên "views" để không đụng Pages Router của Next)
@@ -212,7 +215,9 @@ apps/web/
 └── e2e/                  ← Playwright
 ```
 
-- Route Next ở `apps/web/app/` (gốc) để FSD dùng `src/`. TODO(T-001): xác nhận Next 16 bỏ qua `src/app` khi có `app/` ở gốc (theo tài liệu "src directory" của Next) — nếu không, đổi layer FSD `src/app` thành `src/application`.
+- Route Next ở `apps/web/app/` (gốc) để FSD dùng `src/`. **Đã kiểm chứng (V1):** Next bỏ qua `src/app` khi có `app/` ở gốc ("`src/app` or `src/pages` will be ignored if `app` or `pages` are present in the root directory" — nextjs.org/docs/app/api-reference/file-conventions/src-folder).
+- ⚠️ **Cấm tạo `apps/web/src/pages/`** (kể cả rỗng): Next tìm `pages` và `app` độc lập (ưu tiên gốc, rồi `src/`) và báo lỗi build "`pages` and `app` directories should be under the same folder" khi chúng khác thư mục cha (nguồn: `packages/next/src/lib/find-pages-dir.ts`). Đây là lý do layer "pages" của FSD tên là `views`. Rule dependency-cruiser/CI kiểm thư mục này không tồn tại.
+- `globals.css` (`@import "tailwindcss"` + `@theme`) nằm ở `src/app/styles/globals.css`, import từ `app/layout.tsx` gốc — **khác** sơ đồ `src/app/globals.css` ở stack-versions §10 (sơ đồ đó giả định Next router trong `src/app`).
 - File route chỉ làm 1 việc: render view. Ví dụ `app/(app)/w/[wsId]/p/[projectId]/page.tsx` → `export { BoardPage as default } from '@/views/board'`. View đọc params bằng `useParams()` (client). Không fetch dữ liệu ở server component (ADR-026).
 - Nhóm route: `app/(marketing)/page.tsx` (landing, server), `app/(auth)/{login,register}` (layout có `GuestGate`), `app/(app)/…` (layout client có `AuthGate` + `AppShell`).
 
@@ -225,7 +230,7 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 | Segment | Nội dung | Public API |
 |---|---|---|
 | `shared/api` | `http` client (fetch + envelope + `ApiError`), `refreshCoordinator` interface hook-in, `withClientId` | `http`, `ApiError`, `isApiError(code)` |
-| `shared/config` | `env.ts` (Zod parse `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` lúc khởi động), `routes.ts` (hàm dựng URL kiểu an toàn) | `env`, `routes` |
+| `shared/config` | `runtime-config.ts` (store module `{ apiUrl, wsUrl, appEnv }` nhận lúc chạy — mục 3.6, ADR-074; **không** dùng `NEXT_PUBLIC_*` cho URL), `routes.ts` (hàm dựng URL kiểu an toàn) | `getRuntimeConfig`, `RuntimeConfigBoot`, `routes` |
 | `shared/lib` | `client-id.ts` (uuid theo tab), `rank.ts` (so sánh byte `a < b`), `date-only.ts` (YYYY-MM-DD, quá hạn), `lru-set.ts`, `cn.ts`, `safe-next-path.ts` (chống open redirect) | từng file một `index.ts` con |
 | `shared/socket` | Tạo client Socket.io có kiểu `ServerToClientEvents/ClientToServerEvents` từ contracts; **nơi duy nhất** import `socket.io-client` | `createRealtimeClient`, `RealtimeClient` (interface) |
 | `shared/query` | `createQueryClient()` (mặc định mục 3.1) | `createQueryClient` |
@@ -238,10 +243,10 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 |---|---|---|---|
 | `session` | `token-store.ts` (biến module + subscribe), `session-store.ts` (status: `bootstrapping \| authenticated \| anonymous`, user), `refresh.ts` (single-flight + Web Locks), `auth-channel.ts` (BroadcastChannel) | `auth.api.ts` (refresh, me, logout, logout-all) | — |
 | `user` | — | — | `UserAvatar`, `UserName` |
-| `workspace` | `query-keys`, `useWorkspaces`, `useWorkspace(wsId)`, `useCurrentWorkspaceId`, **`permissions.ts` + `usePermission`** (mục 5) | `workspace.api.ts` | `RoleBadge`, `WorkspaceCard` |
-| `member` | `useMembers(wsId)` (infinite), `useAllMembers` (cho picker) | `member.api.ts` | `MemberRow` (chỉ hiển thị) |
+| `workspace` | `query-keys`, `useWorkspaces`, `useDeletedWorkspaces`, `useWorkspace(wsId)`, `useCurrentWorkspaceId`, **`usePermission`** (bảng quyền import từ contracts — mục 5) | `workspace.api.ts` | `RoleBadge`, `WorkspaceCard`, `DeletedWorkspaceRow` |
+| `member` | `useMembers(wsId, q)` (infinite, tìm server), `useAssignableMembers(wsId, q)` (picker: lọc role ≥ MEMBER — ADR-044) | `member.api.ts` | `MemberRow` (chỉ hiển thị) |
 | `project` | `useProjects`, `useProject` | `project.api.ts` | `ProjectCard`, `ArchivedBadge` |
-| `task` | `query-keys`, `board-cache.ts` (kiểu `BoardData`, hàm thuần upsert/remove/sort), `transitions.ts`, `policy.ts` (canDelete/canAssign dạng hàm thuần), `useBoard`, `useTask` | `task.api.ts` | `TaskCard` (memo, không biết dnd), `PriorityBadge`, `StatusBadge`, `DueDate` |
+| `task` | `query-keys`, `board-cache.ts` (kiểu `BoardData`, hàm thuần upsert/remove/sort), `transitions.ts` (bọc `TASK_STATUS_TRANSITIONS` từ contracts — ADR-080), `policy.ts` (canDelete/canAssign dạng hàm thuần), `useBoard`, `useTask` | `task.api.ts` | `TaskCard` (memo, không biết dnd), `PriorityBadge`, `StatusBadge`, `DueDate` |
 | `audit-log` | `useTaskAuditLogs` (infinite) | `audit.api.ts` | `AuditEntry` |
 
 **features/** (hành động của người dùng — mỗi slice 1 use case)
@@ -251,7 +256,8 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 | `auth-login`, `auth-register` | Form + mutation, chuyển hướng sau thành công |
 | `auth-logout` | Đăng xuất / đăng xuất mọi thiết bị (kèm dialog xác nhận) |
 | `change-password` | Form đổi mật khẩu |
-| `workspace-create`, `workspace-edit`, `workspace-delete`, `workspace-switch` | |
+| `workspace-create`, `workspace-edit`, `workspace-delete`, `workspace-restore`, `workspace-switch` | |
+| `profile-edit` | Sửa họ tên (`PATCH /auth/me`), cập nhật `['me']` |
 | `member-add`, `member-change-role`, `member-remove` (gồm tự rời) | |
 | `project-create`, `project-edit`, `project-archive` | |
 | `task-create` | Dialog tạo + "Thêm nhanh" cuối cột TODO |
@@ -263,7 +269,7 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 | `board-realtime` | `applyRealtimeEvent` (reducer thuần), `useBoardRealtime(ws, project)` (join phòng, merge cache, refetch khi reconnect) |
 | `realtime-session` | Lắng nghe `workspace:access-revoked`, `member:role-changed`, `auth:expired` (cấp ứng dụng) |
 
-**widgets/**: `app-header` (logo, workspace switcher, trạng thái kết nối, menu người dùng) · `project-sidebar` · `kanban-board` (DndContext + cột + overlay) · `task-detail-drawer` · `member-table` · `project-grid` · `board-toolbar`.
+**widgets/**: `app-header` (logo, workspace switcher, trạng thái kết nối, menu người dùng) · `project-sidebar` · `kanban-board` (DragDropProvider + cột + overlay) · `task-detail-drawer` · `member-table` · `project-grid` · `board-toolbar`.
 
 **views/**: `login`, `register`, `workspace-picker`, `workspace-new`, `project-list`, `board`, `project-settings`, `workspace-settings`, `members`, `account`, `not-found`.
 
@@ -275,7 +281,7 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 2. **Cùng layer, khác slice: cấm import nhau** (`features/task-move` không import `features/task-edit`). Ngoại lệ duy nhất: entities được tham chiếu nhau qua API chéo tường minh `entities/A/@x/B.ts` (quy ước FSD), dùng cho kiểu (vd `task` cần `UserRef` của `user`). Cần ghép 2 feature ⇒ làm ở widget.
 3. Import từ slice khác **chỉ qua `index.ts`** (`@/entities/task`), cấm đường sâu (`@/entities/task/model/board-cache`). Trong cùng slice dùng đường tương đối.
 4. `shared/` không import layer nào phía trên; `shared/ui` không import `@tanstack/react-query`, `shared/api`, `shared/socket`.
-5. Thư viện bị khoanh vùng: `socket.io-client` chỉ trong `shared/socket`; `@dnd-kit/*` chỉ trong `widgets/kanban-board` và `features/task-move`; Radix (hoặc headless lib được chốt) chỉ trong `shared/ui`; `fractional-indexing` chỉ trong `entities/task` (rank tạm cho optimistic).
+5. Thư viện bị khoanh vùng: `socket.io-client` chỉ trong `shared/socket`; `@dnd-kit/*` (gồm `@dnd-kit/react`, `/helpers`, `/dom`) chỉ trong `widgets/kanban-board` và `features/task-move`; `radix-ui` và `sonner` chỉ trong `shared/ui`; `fractional-indexing` chỉ trong `entities/task` (rank tạm cho optimistic).
 6. `packages/contracts` được import ở mọi layer (là "shared" cấp monorepo). Cấm import `apps/api`.
 7. Cấm `fetch`/`axios` ngoài `shared/api` và cấm tuyệt đối trong `.tsx`. Gọi mạng chỉ trong segment `api/` của slice, thông qua `http`.
 
@@ -290,20 +296,21 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 | `fsd-no-upward-features` | `^src/features/` | `^src/(widgets\|views\|app)/` |
 | `fsd-no-upward-widgets` | `^src/widgets/` | `^src/(views\|app)/` |
 | `fsd-no-upward-views` | `^src/views/` | `^src/app/` |
-| `fsd-no-cross-slice` | `^src/(features\|widgets\|views)/([^/]+)/` | `^src/$1/(?!$2/)` (cùng layer, slice khác) |
-| `fsd-entities-cross-via-x` | `^src/entities/([^/]+)/` | `^src/entities/(?!$1/)[^/]+/(?!@x/)` |
-| `fsd-public-api-only` | mọi file **ngoài** slice đích (`pathNot` = cùng slice) | `^src/(entities\|features\|widgets\|views)/[^/]+/.+` trừ `index.ts` và `@x/*` |
+| `fsd-no-cross-slice` | `path: ^src/(features\|widgets\|views)/([^/]+)/` | `path: ^src/$1/[^/]+/` · `pathNot: ^src/$1/$2/` (cùng layer, slice khác) |
+| `fsd-entities-cross-via-x` | `path: ^src/entities/([^/]+)/` | `path: ^src/entities/[^/]+/` · `pathNot: ^src/entities/($1/\|[^/]+/@x/$1\.ts$)` (sang entity khác chỉ qua `@x/<tên-mình>.ts`) |
+| `fsd-public-api-only` | `path: ^(src\|app)/` · `pathNot: ^src/(entities\|features\|widgets\|views)/([^/]+)/` cùng slice — viết 4 rule, mỗi layer một rule với nhóm `$1` | `path: ^src/<layer>/[^/]+/.+` · `pathNot: ^src/<layer>/[^/]+/index\.ts$` |
 | `route-files-thin` | `^app/` | `^src/(widgets\|features\|entities)/` (route chỉ import `views` và `src/app`) |
 | `no-api-app` | `^(app\|src)/` | `^(\.\./)*apps/api/` |
 | `no-circular` | mọi | vòng lặp |
 
-(Cú pháp nhóm `$1` trong `pathNot` của dependency-cruiser: TODO(T-001) xác nhận; phương án dự phòng là sinh rule theo danh sách slice. Cân nhắc thêm `steiger` — linter chính thức của FSD — chạy song song, không bắt buộc.)
+**Đã kiểm chứng (V11a):** dependency-cruiser 18 hỗ trợ "group matching" — nhóm bắt trong `from.path` dùng lại bằng `$1`, `$2`… trong `to.path`/`to.pathNot` (doc/rules-reference.md). Mỗi rule phải có test fixture (1 import hợp lệ + 1 vi phạm) trong `packages/config` để chắc regex đúng ý. Cân nhắc thêm `steiger` (linter FSD) chạy song song, không bắt buộc.
 
-**ESLint** (flat config, `packages/config/eslint/web.js`):
+**ESLint 10** (flat config tự ghép — ADR-064, không dùng `eslint-config-next`; `packages/config/eslint/next.js`):
 - `max-lines`: `{ max: 150, skipBlankLines: true, skipComments: true }` cho `src/**/*.tsx`; `max-lines: 200` cho `src/**/*.ts`.
 - `no-restricted-globals`: `fetch`, `XMLHttpRequest`, `localStorage`, `sessionStorage` — **bật cho `src/**`**, tắt riêng cho `src/shared/api/**` (fetch) và `src/shared/lib/storage.ts` (wrapper localStorage cho dữ liệu không nhạy cảm như workspace gần nhất).
 - `no-restricted-imports`: `axios` (mọi nơi); `socket.io-client` ngoài `src/shared/socket/**`; `@dnd-kit/*` ngoài 2 slice ở 2.3-5; `@tanstack/react-query` trong `src/shared/ui/**`; mẫu `@/*/*/*/**` (cấm đường sâu, bổ trợ dependency-cruiser).
-- `react/no-danger` (cấm `dangerouslySetInnerHTML`) — vì XSS = mất phiên (security §6.2).
+- Cấm `dangerouslySetInnerHTML` bằng rule core `no-restricted-syntax` với selector `JSXAttribute[name.name='dangerouslySetInnerHTML']` — vì XSS = mất phiên (security §6.2). Không dùng `react/no-danger` vì `eslint-plugin-react` chưa hỗ trợ ESLint 10 (stack-versions §5). Cùng rule cấm `CallExpression[callee.name='fetch']` trong `**/*.tsx` (khớp T-008). Selector suy ra từ đặc tả AST của typescript-eslint, chưa chạy thử ⇒ test fixture (1 vi phạm phải đỏ) là bắt buộc.
+- Không có `eslint-plugin-jsx-a11y` (ADR-064) ⇒ a11y được ép bằng `@axe-core/playwright` trong E2E (mục 8) + review.
 - **Rule tự viết `taskflow/max-use-state`** (plugin local trong `packages/config`, ~40 dòng): đếm lời gọi `useState` trong mỗi function component, > 3 ⇒ lỗi. Áp cho mọi `.tsx` (đơn giản hơn phân loại "presentational"; component cần nhiều state hơn ⇒ chuyển sang `useReducer` trong `model/`).
 - `react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`: error.
 
@@ -325,12 +332,12 @@ Mỗi slice có **public API duy nhất** là `index.ts`; segment chuẩn: `ui/`
 Mặc định `QueryClient` (`shared/query`):
 
 ```ts
-// phác thảo — tên option theo TanStack Query v5, TODO(T-001) xác nhận major
+// @tanstack/react-query 5.104.2 (V5 đã kiểm: `gcTime` là tên đúng, mặc định 5 phút)
 defaultOptions: {
   queries: {
     staleTime: 30_000,
     gcTime: 5 * 60_000,
-    retry: (count, err) => !isApiError(err) || (err.status >= 500 && count < 2), // không retry 4xx
+    retry: (count, err) => count < 2 && (!isApiError(err) || err.status >= 500), // tối đa 2 lần, không retry 4xx
     refetchOnWindowFocus: true,
   },
   mutations: { retry: false },  // ghi không tự retry (409/422 cần người quyết)
@@ -345,9 +352,10 @@ Mọi key thuộc workspace bắt đầu bằng `['ws', wsId]` ⇒ khi mất quy
 |---|---|---|---|
 | `['me']` | `MeResponse` | 5 phút | invalidate khi tạo/rời workspace, đổi role |
 | `['workspaces']` | `WorkspaceDto[]` | 60s | |
+| `['workspaces', 'deleted']` | `DeletedWorkspaceDto[]` | 60s | invalidate sau xóa/khôi phục |
 | `['ws', wsId]` | `WorkspaceDto` (có `myRole`) | 60s | nguồn của `usePermission` |
-| `['ws', wsId, 'members', 'list']` | infinite `MemberDto[]` | 60s | bảng thành viên |
-| `['ws', wsId, 'members', 'all']` | `MemberDto[]` (tải hết các trang) | 5 phút | picker người phụ trách |
+| `['ws', wsId, 'members', 'list', { q }]` | infinite `MemberDto[]` | 60s | bảng thành viên, `q` từ ô tìm (ADR-083) |
+| `['ws', wsId, 'members', 'assignable', { q }]` | `MemberDto[]` trang đầu (limit 20) lọc role ≥ MEMBER | 60s | picker người phụ trách (gõ để tìm, không tải hết) |
 | `['ws', wsId, 'projects', { archived }]` | infinite `ProjectDto[]` | 60s | |
 | `['ws', wsId, 'project', projectId]` | `ProjectDto` | 60s | cập nhật bởi `project:updated` |
 | `['ws', wsId, 'project', projectId, 'board']` | `BoardData` | **Infinity** | giữ tươi bằng socket; refetch khi reconnect/join lại; `refetchOnWindowFocus: false` |
@@ -380,7 +388,7 @@ refresh()  (single-flight, xem dưới)
 
 **Single-flight refresh** (`entities/session/model/refresh.ts`):
 1. Trong tab: giữ 1 promise `inflight`; mọi lời gọi `refresh()` trong lúc đó nhận cùng promise.
-2. Xuyên tab: bọc trong `navigator.locks.request('tf-refresh', …)` (security §1.4). Trình duyệt không có Web Locks ⇒ chỉ single-flight trong tab (dựa vào 409 bên dưới).
+2. Xuyên tab: bọc trong `navigator.locks.request('tf-refresh', …)` (security §1.4). Web Locks và `BroadcastChannel` có từ Chrome 69/54, Firefox 96/38, Safari 15.4 (MDN BCD — V12) ⇒ đủ cho trình duyệt tối thiểu của Tailwind 4 (Safari 16.4/Chrome 111/Firefox 128). Web Locks **chỉ có trong secure context** (HTTPS; `localhost` cũng tính) ⇒ `navigator.locks` vắng mặt thì chỉ single-flight trong tab (dựa vào 409 bên dưới), không throw.
 3. `409 REFRESH_IN_PROGRESS` ⇒ đợi 300ms, thử lại **1 lần**.
 4. Thành công ⇒ `token-store.set`, phát `auth:renew` lên socket nếu đang mở (mục 3.5), lên lịch lần kế.
 
@@ -424,14 +432,34 @@ Mỗi route có `error.tsx` (error boundary) hiển thị khối lỗi + Thử l
 ### 3.5. Socket client
 
 - Một kết nối cho mỗi phiên, tạo bởi `RealtimeProvider` (layer `src/app`) **sau** khi `status = 'authenticated'`; hủy khi `sessionEnded`.
-- `io(env.NEXT_PUBLIC_WS_URL, { auth: (cb) => cb({ token: tokenStore.get(), clientId }), withCredentials: false })` — token không trong query string (security §5.1). TODO(T-001): xác nhận chữ ký `auth` dạng hàm ở socket.io-client 4.x.
+- `io(getRuntimeConfig().wsUrl, { transports: ['websocket'], autoConnect: false, auth: (cb) => cb({ token: tokenStore.get(), clientId }), withCredentials: false })` — URL lấy từ runtime config (mục 3.6, ADR-074), **không** `NEXT_PUBLIC_*`. Chỉ transport websocket (ADR-074: không cần sticky session; server từ chối `polling` — SEC-56). Token không trong query string (security §5.1). Callback `auth` được gọi lại **mỗi lần (re)connect** ⇒ luôn lấy token mới nhất (stack-versions §3, socket.io-client 4.8.4). `autoConnect: false` ⇒ `RealtimeProvider` gọi `connect()` sau khi có token.
+- Server kiểm `Origin` ở handshake (`allowRequest`, security §5.1 / SEC-56) — trình duyệt tự gửi `Origin` của trang, FE không làm gì thêm. Bị từ chối ở bước này (cấu hình whitelist sai) ⇒ `connect_error` **không có** `err.data.code` ⇒ coi là lỗi transport: để socket.io tự kết nối lại theo backoff, header hiện "Mất kết nối thời gian thực", **không** kết thúc phiên; log lên Sentry (một lần mỗi phiên) để vận hành thấy cấu hình sai.
 - `connect_error` với `err.data.code === 'TOKEN_EXPIRED'` ⇒ `refresh()` rồi `socket.connect()`; `UNAUTHORIZED` ⇒ `sessionEnded('revoked')`.
+- Mạng chặn WebSocket (proxy doanh nghiệp cũ): không có fallback polling — board vẫn dùng được qua REST, chỉ mất cập nhật tự động; header giữ trạng thái "Mất kết nối thời gian thực" kèm nút "Tải lại bảng" (refetch thủ công). Đánh đổi đã chấp nhận ở ADR-074.
 - Sau mỗi `refresh()` thành công ⇒ `emit('auth:renew', { token }, ack)`; `ack.ok === false` ⇒ server sẽ ngắt ⇒ để cơ chế kết nối lại chạy.
 - `auth:expired` ⇒ `refresh()`; socket bị server ngắt ⇒ tự kết nối lại bằng token mới.
 - Trạng thái kết nối (`connected | reconnecting | offline`) hiển thị ở `app-header` (chấm màu + chữ, không chỉ màu).
 - Sự kiện cấp ứng dụng (`features/realtime-session`):
-  - `workspace:access-revoked { workspaceId }` ⇒ `removeQueries(['ws', workspaceId])`, invalidate `['workspaces']`, `['me']`; nếu đang ở workspace đó ⇒ về `/w` + toast "Bạn không còn là thành viên của workspace này".
-  - `member:role-changed { workspaceId, role }` ⇒ `setQueryData(['ws', workspaceId], …myRole = role)` ⇒ `usePermission` cập nhật tức thì; toast "Vai trò của bạn đã đổi thành …".
+  - `workspace:access-revoked { workspaceId }` (bị xóa/tự rời, **hoặc workspace bị xóa mềm** — phát cho mọi thành viên) ⇒ `removeQueries(['ws', workspaceId])`, invalidate `['workspaces']`, `['workspaces', 'deleted']`, `['me']`; nếu đang ở workspace đó ⇒ về `/w` + toast trung tính "Bạn không còn truy cập được workspace này" (payload không phân biệt hai lý do — không đoán).
+  - `member:role-changed { workspaceId, role }` ⇒ `setQueryData(['ws', workspaceId], …myRole = role)` ⇒ `usePermission` cập nhật tức thì; toast "Vai trò của bạn đã đổi thành …". Hạ xuống VIEWER: các task của mình bị bỏ giao — đến qua `task:updated` bình thường (ADR-044), FE không cần xử lý riêng.
+
+### 3.6. Cấu hình runtime (ADR-074, ADR-084)
+
+Một image web cho mọi môi trường ⇒ URL API/WS **không** nhúng lúc build.
+- Server Next đọc `API_URL`, `WS_URL` (mặc định = `API_URL`), `APP_ENV`, `SENTRY_DSN` từ `process.env` **lúc chạy**, parse bằng Zod trong `src/app/config/server-env.ts` (thiếu/sai ⇒ throw — fail fast, lộ ngay ở readiness).
+- Root layout (server component, vốn đã render động vì CSP nonce — ADR-084) truyền object đã lọc **chỉ gồm giá trị công khai** xuống client component `RuntimeConfigBoot` qua props. `RuntimeConfigBoot` ghi vào store module của `shared/config` một lần, **trước** khi render con ⇒ `http` client và socket (code không phải React) đọc đồng bộ qua `getRuntimeConfig()`. Gọi `getRuntimeConfig()` trước khi boot ⇒ throw (lỗi lập trình, không im lặng dùng mặc định).
+- Không có secret nào ở web (ADR-026): server-env schema chỉ khai báo khóa công khai; test khẳng định object truyền xuống client đúng bằng tập khóa đó.
+- Cùng giá trị `API_URL`/`WS_URL` được `proxy.ts` dùng để dựng `connect-src` của CSP lúc chạy (`WS_URL` đổi `http(s)` → `ws(s)`).
+
+**CSP nonce trong `proxy.ts`** (security §6.2, ADR-084; cơ chế đã kiểm — V2, nextjs.org/docs/app/guides/content-security-policy):
+- **Policy và header là của security.md §6.8 (W-CSP-1..4) — nguồn sự thật, không chép lại ở đây** để tránh lệch. FE chỉ thêm cách hiện thực.
+- Nonce mỗi request: **16 byte từ `crypto.getRandomValues(new Uint8Array(16))` → base64** (128 bit, đạt W-CSP-1). **Không** dùng mẫu trong docs Next `Buffer.from(crypto.randomUUID()).toString('base64')`: UUID v4 chỉ có 122 bit ngẫu nhiên, dưới ngưỡng ≥ 128 bit của W-CSP-1.
+- `connect-src` dựng từ host của `API_URL`/`WS_URL` lúc chạy (`https://{API_HOST} wss://{API_HOST}`, không wildcard); dev nới theo W-CSP-3. Header W-CSP-4 (`nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS chỉ prod) đặt cùng chỗ trong `proxy.ts`.
+- Gắn `x-nonce` + `Content-Security-Policy` vào **request headers** (`NextResponse.next({ request: { headers } })`) để Next tự đọc nonce và gắn cho script framework, bundle trang và script/style inline nó sinh ra; đặt cùng CSP lên **response**. Server component đọc nonce bằng `(await headers()).get('x-nonce')` (script chọn theme, mục 6.1).
+- Hệ quả: mọi trang render động (static/ISR tắt, PPR không dùng được) — đã chấp nhận ở ADR-084. Không dùng SRI experimental (`experimental.sri`) vì đã đi đường nonce.
+- `matcher` của proxy bỏ qua `_next/static`, `_next/image`, `favicon.ico` (không cần nonce cho file tĩnh).
+- Test: unit test hàm dựng CSP (nonce 16 byte, đủ directive W-CSP-2, prod không có `unsafe-inline`/`unsafe-eval`, dev có nới W-CSP-3); E2E kiểm header trên build prod (khớp checklist devops §8 mục 8).
+- Dev local: `.env.local` của `apps/web` có `API_URL=http://localhost:4000/api/v1`, `WS_URL=http://localhost:4000` (không tiền tố `NEXT_PUBLIC_`).
 
 ---
 
@@ -443,10 +471,11 @@ Mỗi route có `error.tsx` (error boundary) hiển thị khối lỗi + Thử l
 views/board/ui/BoardPage.tsx                 (~60 dòng) đọc params, useBoardRealtime, layout
 └─ widgets/board-toolbar                      bộ lọc + nút tạo
 └─ widgets/kanban-board
-   ├─ ui/KanbanBoard.tsx                      (~120) DndContext, sensors, announcements, 4 cột
-   ├─ ui/BoardColumn.tsx                      (~90)  useDroppable + SortableContext + danh sách
-   ├─ ui/SortableTaskCard.tsx                 (~50)  useSortable bọc entities/task TaskCard
-   ├─ ui/BoardDragOverlay.tsx                 (~30)
+   ├─ ui/KanbanBoard.tsx                      (~120) DragDropProvider, sensors, plugins (Accessibility vi), 4 cột
+   ├─ ui/BoardColumn.tsx                      (~90)  useDroppable (cột, disabled theo state machine) + danh sách
+   ├─ ui/SortableTaskCard.tsx                 (~50)  useSortable({ id, index, group: status }) bọc entities/task TaskCard
+   ├─ ui/BoardDragOverlay.tsx                 (~30)  DragOverlay
+   ├─ model/a11y-announcements.ts             chuỗi tiếng Việt cho Accessibility plugin
    ├─ ui/ArchivedBanner.tsx                   (~30)
    ├─ model/use-board-columns.ts              cột suy ra từ cache + filter + preview kéo
    ├─ model/drag-reducer.ts                   state kéo tạm (activeId, overStatus, overIndex)
@@ -456,16 +485,33 @@ views/board/ui/BoardPage.tsx                 (~60 dòng) đọc params, useBoard
 
 ### 4.2. Kéo thả (dnd-kit)
 
-Thư viện: dnd-kit — `@dnd-kit/core` + `@dnd-kit/sortable` (bản ổn định lâu năm) hay `@dnd-kit/react` (API mới) — **TODO(T-001) chốt gói và phiên bản**, kiểm tra tương thích React của Next 16. Thiết kế dưới đây độc lập gói.
+Thư viện (ADR-060, stack-versions §3): **`@dnd-kit/react` 0.5.0 + `@dnd-kit/helpers` 0.5.0 + `@dnd-kit/dom` 0.5.0** — pin **chính xác** (bản 0.x). `@dnd-kit/dom` phải khai báo trực tiếp trong `apps/web/package.json` vì ta import `Accessibility` từ đó (pnpm không cho import gói gián tiếp). Phương án dự phòng nếu 0.x gặp lỗi chặn: `@dnd-kit/core` 6.3.1 + `@dnd-kit/sortable` 10.0.0 (thiết kế dưới đây không đổi, chỉ đổi lớp `widgets/kanban-board`).
 
-**Sensors**: Pointer (kích hoạt sau 5px để click vẫn mở drawer), Touch (giữ 200ms), **Keyboard** (Space/Enter nhấc, mũi tên di chuyển trong/giữa cột, Space thả, Esc hủy) với bộ tọa độ cho sortable.
+API đã kiểm chứng trên `.d.ts` 0.5.0 và dndkit.com (V6):
 
-**Trong lúc kéo**: không ghi vào Query cache. `drag-reducer` giữ `{ activeId, fromStatus, overStatus, overIndex }`; `use-board-columns` trả cột = cột server + phần tử đang kéo đặt ở vị trí preview. Nhờ vậy event socket trong lúc kéo vẫn merge bình thường vào cache mà không đánh nhau với UI kéo.
+| Nhu cầu | API |
+|---|---|
+| Provider | `DragDropProvider` (`@dnd-kit/react`) với `onDragStart`, `onDragOver`, `onDragEnd`, `onBeforeDragStart` |
+| Thẻ sắp xếp được giữa nhiều cột | `useSortable({ id, index, group: status, disabled })` từ `@dnd-kit/react/sortable` |
+| Cột (kể cả rỗng) | `useDroppable({ id: status, disabled })` |
+| Di chuyển phần tử giữa các danh sách | `move(items, event)` từ `@dnd-kit/helpers` — nhận `Record<status, id[]>` |
+| Bàn phím | `KeyboardSensor` **có sẵn** trong preset mặc định (cùng `PointerSensor`): nhấc Space/Enter, hủy Escape, thả Space/Enter/Tab |
+| Cấu hình sensor | prop `sensors={(defaults) => [...]}`; `PointerSensor.configure(...)`, `KeyboardSensor.configure({ keyboardCodes, offset, preventActivation })` |
+| Screen reader | `plugins={(defaults) => [...defaults, Accessibility.configure({ announcements, screenReaderInstructions })]}` (`Accessibility` từ `@dnd-kit/dom`) |
+| Overlay | `DragOverlay` (`dropAnimation={null}` khi `prefers-reduced-motion`) |
+| Hủy | `onDragEnd` có `event.canceled`; `event.preventDefault()` dùng được ở `onBeforeDragStart` và `onDragOver` (không ở `dragstart`) |
 
-**Cột không cho thả (state machine)**: `allowedTargets(from) = TASK_STATUS_TRANSITIONS[from] ∪ {from}`. Khi `onDragStart`, cột không thuộc tập này: droppable `disabled`, mờ đi + biểu tượng ⊘ + tooltip/announcement "Không thể chuyển từ Cần làm sang Hoàn thành". Thả vào đó = không có gì xảy ra, **không gửi request**. Bảng chuyển trạng thái lấy từ `packages/contracts` nếu Tech Lead chấp nhận Q3 của T-003 (dữ liệu thuần + test parity ở API); nếu không, FE giữ bản sao trong `entities/task/model/transitions.ts` + test snapshot so với bảng 6.1 của T-003. `Hỏi-TL`.
+**Sensors**: Pointer với ràng buộc kích hoạt khoảng cách ~5px để click vẫn mở drawer (cấu hình qua `PointerSensor.configure(...)`; **tên option ràng buộc kích hoạt chưa kiểm ở T-005b** — tra `.d.ts` 0.5.0 khi code, không đoán; viết test E2E click-mở-drawer để khóa hành vi). Bàn phím dùng mặc định.
+
+**Trong lúc kéo**: không ghi vào Query cache. `onDragStart` chụp `preview = Record<status, id[]>` từ cột hiện tại; `onDragOver` áp `move(preview, event)` lên **bản preview cục bộ** (`drag-reducer`); `use-board-columns` render từ preview khi đang kéo, từ cache khi không. Event socket trong lúc kéo vẫn merge vào cache bình thường, không đánh nhau với UI kéo. `onDragEnd`: `event.canceled` ⇒ bỏ preview; ngược lại tính `computeMoveIntent(preview)` rồi bỏ preview và gọi mutation (optimistic ghi vào cache). Task đang kéo đã bị xóa (tombstone) lúc thả ⇒ bỏ qua + toast. Không dùng API dừng kéo theo chương trình (`manager.actions.stop` chỉ có trong types, chưa có tài liệu).
+
+**Cột không cho thả (state machine)**: `allowedTargets(from) = TASK_STATUS_TRANSITIONS[from] ∪ {from}` (`TASK_STATUS_TRANSITIONS` import từ `packages/contracts` — ADR-080; `entities/task/model/transitions.ts` chỉ bọc hàm). Chặn 3 lớp:
+1. Cột không hợp lệ: `useDroppable({ disabled: true })`, thẻ trong cột đó `useSortable({ disabled: … })` cho vai trò đích; cột mờ + ⊘ + tooltip "Không thể chuyển từ Cần làm sang Hoàn thành".
+2. `onDragOver`: đích thuộc cột không hợp lệ ⇒ `event.preventDefault()` (chặn plugin sắp xếp lạc quan mặc định) và **không** gọi `move` ⇒ preview không đổi.
+3. `onDragEnd`: kiểm lại `allowedTargets`; sai ⇒ không gửi request, announcement lý do.
 
 **Accessibility** (WCAG 2.2):
-- Announcements tiếng Việt cho screen reader: "Đã nhấc WEB-112 ở cột Cần làm, vị trí 1/12" · "WEB-112 ở cột Đang làm, vị trí 3/5" · "Đã thả…" · "Đã hủy kéo".
+- Announcements tiếng Việt qua `Accessibility.configure({ announcements: { dragstart, dragover, dragend } , screenReaderInstructions: { draggable: 'Nhấn Space để nhấc thẻ, mũi tên để di chuyển, Space để thả, Escape để hủy.' } })`: "Đã nhấc WEB-112 ở cột Cần làm, vị trí 1/12" · "WEB-112 ở cột Đang làm, vị trí 3/5" · "Đã thả…" · "Đã hủy kéo" · "Không thể chuyển sang Hoàn thành".
 - **Có đường thay thế không cần kéo** (SC 2.5.7 Dragging Movements): menu "⋯" trên thẻ → "Chuyển tới ▸ [chỉ cột hợp lệ]" (đặt cuối cột), "Lên đầu cột", "Xuống cuối cột"; và Select "Trạng thái" trong drawer. Mọi đường đều đi qua cùng `useMoveTask`.
 - Thẻ là phần tử focus được; Enter mở drawer; focus quay về thẻ khi đóng drawer.
 - `prefers-reduced-motion` ⇒ tắt animation sắp xếp.
@@ -486,20 +532,24 @@ Thư viện: dnd-kit — `@dnd-kit/core` + `@dnd-kit/sortable` (bản ổn đị
 
 ### 4.4. Optimistic update & rollback
 
-`useMoveTask` (TanStack `useMutation`):
+`useMoveTask` (TanStack `useMutation`, **chữ ký callback từ v5.89** — V5: giá trị trả về của `onMutate` là tham số thứ 3 `onMutateResult`, tham số cuối là `context = { client, meta, mutationKey }`):
 
 ```
-onMutate(intent):
-  cancelQueries(boardKey)
-  base = board.byId[taskId]                         // ảnh chụp CHỈ của task này
-  setQueryData(boardKey, upsert({...base, status: to, rank: tempRank}))   // KHÔNG tăng version
-  pendingTaskIds.add(taskId)
-  return { base }
-mutationFn: PATCH …/move { expectedVersion: base.version, status?, afterId, beforeId }
-onSuccess(task):    mergeIfNewer(task)               // task.version > cached.version ⇒ thay
-onError(err, _, { base }): xem bảng
-onSettled:          pendingTaskIds.delete(taskId)
+variables = { taskId, base /* TaskDto lúc thả */, intent: { status?, afterId, beforeId }, tempRank }
+mutationFn(v):  PATCH …/move { expectedVersion: v.base.version, ...v.intent }
+                // expectedVersion lấy từ LÚC THẢ, không đọc lại cache lúc gửi — đọc lại sẽ
+                // "nuốt" thay đổi của người khác vừa đến qua socket (mất phát hiện xung đột)
+onMutate(v, ctx):
+  await ctx.client.cancelQueries({ queryKey: boardKey })
+  ctx.client.setQueryData(boardKey, upsert({ ...v.base, status: to, rank: v.tempRank }))  // KHÔNG tăng version
+  pendingTaskIds.add(v.taskId)
+  return { base: v.base }
+onSuccess(task, v, r, ctx):        mergeIfNewer(task)            // task.version > cached.version ⇒ thay
+onError(err, v, r, ctx):           xem bảng (dùng r.base)
+onSettled(data, err, v, r, ctx):   pendingTaskIds.delete(v.taskId)
 ```
+
+Sửa trong drawer (`useUpdateTask`, `useAssignTask`) dùng `scope: { id: 'task:' + taskId }` (có từ v5.31) để các lần lưu liên tiếp của **cùng task** chạy tuần tự; lần sau mang version cũ sẽ 409 với chính lần trước và được rebase 3 chiều (mục 4.6) tự gửi lại — xác định, không phụ thuộc thứ tự mạng. Move không cần `scope` vì thẻ đang chờ đã bị khóa kéo.
 
 **Rollback có điều kiện, theo từng task — không khôi phục snapshot cả board.** Lý do: trong lúc request bay, event socket của người khác có thể đã cập nhật board (kể cả chính task này với version lớn hơn); khôi phục snapshot toàn board sẽ xóa mất các thay đổi đó.
 
@@ -561,11 +611,11 @@ Ngân sách: board 500 task (4 cột) render lần đầu < 300ms trên laptop t
 
 Biện pháp (theo thứ tự, chỉ leo bậc khi đo thấy thiếu):
 1. Chuẩn hóa `byId` + giữ tham chiếu; `React.memo(TaskCard)` so sánh `task` (tham chiếu) + vài prop nguyên thủy; callback ổn định (`useCallback`, hoặc truyền `taskId` thay closure).
-2. `BoardColumn` memo theo mảng id (so sánh nông); context của dnd-kit không làm render lại toàn bộ thẻ — **đo** bằng React Profiler vì `useSortable` có thể render lại mọi item trong `SortableContext` khi kéo; nếu có, tách phần tử kéo bằng `DragOverlay` và giữ thẻ gốc tĩnh.
+2. `BoardColumn` memo theo mảng id (so sánh nông); **đo** bằng React Profiler xem `useSortable` của @dnd-kit/react có render lại mọi thẻ cùng `group` khi kéo không; nếu có, tách phần tử kéo bằng `DragOverlay` và giữ thẻ gốc tĩnh.
 3. Cột **Hoàn thành** mặc định hiện 50 thẻ đầu + "Hiện thêm" (cột tích lũy lớn nhất, ít khi kéo).
 4. Bậc cuối: ảo hóa cột (`@tanstack/react-virtual`) khi cột > 150 thẻ. Ảo hóa xung đột với sortable (item chưa mount không đo được) ⇒ chỉ làm nếu bước 1–3 không đạt, ước lượng +3 ngày.
 5. Không parse Zod danh sách 500 task ở prod nếu đo thấy > 10ms.
-6. React Compiler (nếu Next 16 hỗ trợ ổn định) — TODO(T-001); không phụ thuộc vào nó.
+6. React Compiler: stable nhưng tắt mặc định ở Next 16.4 (stack-versions §3). **Không bật ở Phase 4**; chỉ xem xét nếu bước 1–3 không đạt và đo thấy có lợi.
 
 Kiểm chứng: test hiệu năng Playwright (mục 8.4) với 500 task seed.
 
@@ -574,9 +624,8 @@ Kiểm chứng: test hiệu năng Playwright (mục 8.4) với 500 task seed.
 ## 5. Ẩn/hiện theo quyền — `usePermission()`
 
 ```ts
-// entities/workspace/model/permissions.ts — bản sao bảng security §3.2 (dữ liệu thuần)
-type Permission = 'workspace:update' | 'member:add' | 'task:move' | 'task:delete:any' | /* … đủ bảng */;
-const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>>;
+// Bảng quyền KHÔNG viết lại ở FE — import từ contracts (ADR-080: dữ liệu thuần, parity test với domain API)
+import { ROLE_PERMISSIONS, type Permission, type WorkspaceRole } from '@taskflow/contracts';
 
 // entities/workspace/model/use-permission.ts
 function usePermission(): {
@@ -589,12 +638,13 @@ function usePermission(): {
 - Workspace hiện tại lấy từ `useParams().wsId`; role từ `['ws', wsId].myRole` (cập nhật realtime qua `member:role-changed`, mục 3.5).
 - Luật cần ngữ cảnh tài nguyên là **hàm thuần** trong `entities/task/model/policy.ts`, nhận `can`, `viewerId`, `task`:
   - `canDeleteTask = can('task:delete:any') || (can('task:delete:own') && task.createdBy?.id === viewerId)`
-  - `canAssignTask(target)` = `:any` ⇒ true; `:own` ⇒ task do mình tạo, hoặc tự nhận khi `assignee === null && target === viewerId`, hoặc tự bỏ khi `assignee.id === viewerId && target === null`.
+  - `canAssignTask(target)` = `:any` ⇒ true; `:own` ⇒ task do mình tạo, hoặc tự nhận khi `assignee === null && target === viewerId`, hoặc tự bỏ khi `assignee.id === viewerId && target === null` (ADR-041). Khi **tạo** task, MEMBER chỉ được để trống hoặc tự gán.
+  - Người nhận (`target ≠ null`) phải có role ≥ MEMBER (ADR-044): picker chỉ liệt kê `useAssignableMembers`; VIEWER không có nút "Nhận việc". Server vẫn là chốt chặn (`422 ASSIGNEE_NOT_MEMBER` ⇒ toast + refetch picker).
   - `canEditBoard = can('task:update') && !project.isArchived`.
 - Thành viên: `canChangeRole = can('member:update-role')`; `rolesAssignable` = OWNER: cả 4, PM: MEMBER/VIEWER; `canRemove(member)` theo security §3.2.
 - Quy ước hiển thị: **không bao giờ** có quyền theo role ⇒ **ẩn**; có quyền nhưng ngữ cảnh chặn (archived) ⇒ **khóa + tooltip lý do**.
 - **UI không phải lớp bảo vệ**: mọi lỗi 403 vẫn xử lý êm (mục 3.4). Không có test FE nào thay thế được SEC-05…SEC-14 phía API.
-- Bảng `ROLE_PERMISSIONS` FE và domain API có thể lệch. ĐỀ XUẤT (`Hỏi-TL`): xuất bảng dạng dữ liệu thuần ở `packages/contracts` (cùng cách với Q3 của T-003), `apps/api` test parity với domain; FE import thẳng. Nếu không chấp nhận, FE giữ bản sao + test snapshot.
+- `ROLE_PERMISSIONS` và `TASK_STATUS_TRANSITIONS` lấy từ `packages/contracts` (ADR-080); parity với domain do CI của `apps/api` kiểm. FE không giữ bản sao.
 
 ---
 
@@ -602,7 +652,23 @@ function usePermission(): {
 
 ### 6.1. Token (CSS variables, Tailwind đọc từ biến)
 
-Cách khai báo token trong Tailwind phiên bản mới (cấu hình bằng CSS thay vì `tailwind.config.js`) — TODO(T-001). Dưới đây là **giá trị**; cách nối vào Tailwind theo kết quả T-001.
+Tailwind 4.3.3, cấu hình CSS-first, **không có `tailwind.config.*`** (stack-versions §3, V4). Cách nối, trong `src/app/styles/globals.css`:
+
+```css
+@import "tailwindcss";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));   /* V4: tailwindcss.com/docs/dark-mode */
+
+:root               { --surface: #FFFFFF; --text: #14161B; /* … bảng dưới, cột Sáng */ }
+[data-theme=dark]   { --surface: #1A1E27; --text: #E8EAEE; /* … cột Tối */ }
+
+@theme inline {                      /* utility `bg-surface`, `text-text`… đọc biến ngữ nghĩa ở trên */
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --font-sans: var(--font-inter);    /* biến do next/font sinh */
+}
+```
+
+Biến ngữ nghĩa (`--surface`) đổi theo theme; token Tailwind (`--color-surface`) chỉ tham chiếu nên dùng `@theme inline` (V4: tailwindcss.com/docs/theme). **Không** override trực tiếp `--color-*` theo theme (giá trị `inline` đã được nhúng vào utility nên override sẽ không có tác dụng). Cách ghép "biến ngữ nghĩa + `@theme inline`" là suy luận từ docs (docs không có ví dụ dark mode cho trường hợp này) ⇒ T-012 phải có smoke test: đổi `data-theme` thì màu `bg-surface` đổi.
 
 | Token | Sáng | Tối | Dùng cho |
 |---|---|---|---|
@@ -621,11 +687,11 @@ Cách khai báo token trong Tailwind phiên bản mới (cấu hình bằng CSS 
 
 Mọi cặp chữ/nền phải đạt WCAG AA (4.5:1 chữ thường) — kiểm tự động bằng axe trong E2E (mục 8). Giá trị trên là điểm xuất phát, chỉnh khi axe báo.
 
-Chế độ tối: mặc định theo `prefers-color-scheme`, người dùng chọn tay (Sáng/Tối/Hệ thống) lưu localStorage (không nhạy cảm); áp `data-theme` lên `<html>` bằng script nhỏ trước khi paint (có nonce — CSP) để tránh nháy.
+Chế độ tối: người dùng chọn Sáng/Tối/Hệ thống (lưu localStorage — không nhạy cảm). Script nhỏ chạy trước khi paint (inline, có nonce lấy từ `(await headers()).get('x-nonce')` ở root layout — V2) **luôn** đặt `data-theme="light|dark"` lên `<html>`; chế độ Hệ thống thì tính từ `prefers-color-scheme` và nghe `change`. Một cơ chế duy nhất (`data-theme`) cho cả variant `dark:` lẫn biến CSS.
 
 ### 6.2. Typography & khoảng cách
 
-- Font: **Inter** tự host qua `next/font` với subset `vietnamese` + `latin` (không gọi Google Fonts lúc chạy — hợp CSP, không lộ IP người dùng). TODO(T-001): xác nhận API `next/font` ở Next 16.
+- Font: **Inter** qua `next/font/google`: `Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-inter', display: 'swap' })`. Đã kiểm (V3): Inter có subset `vietnamese` (font-data.json của Next); CSS + file font **tải lúc build và tự host**, trình duyệt không gửi request tới Google — hợp CSP, không lộ IP người dùng. ⚠️ Build cần mạng ra Google Fonts (CI/Docker build stage).
 - Thang chữ: 12 / 14 (mặc định UI) / 16 / 20 / 24 px; `line-height` ≥ 1.5 cho chữ thân (dấu tiếng Việt chồng tầng cần khoảng thở). Đậm: 400/500/600.
 - Khoảng cách: thang 4px (4, 8, 12, 16, 24, 32, 48). Bo góc: 6px (input, nút), 10px (thẻ, dialog). Bóng: 2 mức (thẻ, nổi khi kéo).
 - Ngày: `Intl.DateTimeFormat('vi-VN')` → `15/10/2026`; thời gian tương đối "2 phút trước" bằng `Intl.RelativeTimeFormat('vi')`. `dueDate` là chuỗi `YYYY-MM-DD` — **không** `new Date('YYYY-MM-DD')` (bị hiểu là UTC); so quá hạn bằng so sánh chuỗi với ngày hôm nay theo giờ địa phương (`shared/lib/date-only.ts`).
@@ -643,7 +709,7 @@ Chế độ tối: mặc định theo `prefers-color-scheme`, người dùng ch�
 | React Aria (Adobe) | A11y rất mạnh, có i18n | API hook dài dòng hơn; ít mẫu sẵn cho Tailwind |
 | MUI/Ant | Đầy đủ | Nặng, theme runtime, khó ép design token, khó giữ 150 dòng khi tùy biến |
 
-Lý do chọn: drawer/dialog/menu/combobox là phần a11y khó nhất của app này; Radix giải nó, còn shadcn cho mẫu Tailwind sẵn mà code vẫn là của ta. Toast dùng `sonner` (mẫu shadcn dùng). TODO(T-001): gói Radix hiện hành (gói gộp `radix-ui` hay `@radix-ui/react-*`), tương thích React của Next 16, phiên bản `sonner`. Radix chỉ được import trong `shared/ui` (luật 2.3-5) ⇒ thay thư viện sau này chỉ đụng 1 layer.
+Lý do chọn: drawer/dialog/menu/combobox là phần a11y khó nhất của app này; Radix giải nó, còn shadcn cho mẫu Tailwind sẵn mà code vẫn là của ta. Toast dùng `sonner` (mẫu shadcn dùng). Đã kiểm (V8): dùng **gói gộp `radix-ui` 1.8.1** (peer react `^16.8–^19`) — shadcn/ui đã chuyển sang gói này (changelog 2026-02), không dùng `@radix-ui/react-*`; **`sonner` 2.0.8** (peer react `^18 || ^19`). Pin chính xác qua `catalog:`; phiên bản cuối do T-012 chạy `npm view` lại lúc cài (tôn trọng `minimumReleaseAge`). Radix chỉ được import trong `shared/ui` (luật 2.3-5) ⇒ thay thư viện sau này chỉ đụng 1 layer.
 
 ---
 
@@ -652,15 +718,15 @@ Lý do chọn: drawer/dialog/menu/combobox là phần a11y khó nhất của app
 ### 7.1. Thư viện — ĐỀ XUẤT: **react-hook-form + `@hookform/resolvers` (zodResolver)**
 
 - Uncontrolled ⇒ không render lại cả form mỗi phím gõ; state form nằm ngoài `useState` ⇒ dễ giữ luật ≤ 3 `useState`.
-- `zodResolver` dùng thẳng schema `packages/contracts` ⇒ FE và BE cùng một luật (title 3–150, password 15 ký tự/72 byte, keyPrefix regex…).
+- `zodResolver` dùng thẳng schema `packages/contracts` ⇒ FE và BE cùng một luật (title 3–150, password 12–256 ký tự theo ADR-049/065, keyPrefix regex, slug R19…).
 - Phương án khác: TanStack Form (trẻ hơn, ít mẫu) · tự viết (không đáng).
-- TODO(T-001): phiên bản `@hookform/resolvers` hỗ trợ **Zod 4** và kiểu input/output của schema có `.trim()`/transform.
+- Đã kiểm (V7a): **`react-hook-form` 7.90.0**, **`@hookform/resolvers` 5.9.1** (peer `zod ^3.25 || ^4`, `react-hook-form ^7.55`; hỗ trợ Zod 4 từ 5.1.0). `zodResolver` từ `@hookform/resolvers/zod`. Schema có `.trim()`/transform ⇒ giá trị submit phải là kiểu **output** của schema (sau trim/transform), không phải kiểu input. Cách khai generic tương ứng của `useForm` chưa kiểm ở T-005b — tra `.d.ts` khi code; T-012 viết 1 test kiểu (`expectTypeOf`) khóa hành vi này.
 
 ### 7.2. Dùng schema contracts
 
 - Form dùng schema Body trực tiếp khi khớp 1-1 (`LoginBody`, `RegisterBody`, `CreateProjectBody`, `AddMemberBody`).
 - Khi giá trị form khác body (vd `dueDate` input rỗng `''` ⇒ body `undefined`/`null`; `expectedVersion` không phải field người dùng): định nghĩa **schema form** trong `features/*/model/form-schema.ts` bằng cách *dẫn xuất* từ contracts (`CreateTaskBody.pick(...)`/`.extend(...)` — không viết lại luật), kèm hàm `toBody(values, ctx)`.
-- Thông báo lỗi tiếng Việt: contracts không chứa nhãn UI (T-003 §5.3). FE bật locale tiếng Việt toàn cục của Zod (`z.config(...)` với locale `vi`) khi khởi động — TODO(T-001) xác nhận Zod 4 có locale `vi` và cách gọi; nếu không có, viết `customError` map theo `issue.code` trong `shared/i18n/zod-vi.ts`. ĐỀ XUẤT gửi Tech Lead: API cũng bật cùng locale để `fieldErrors` server trả về là tiếng Việt và nhất quán với FE.
+- Thông báo lỗi tiếng Việt: contracts không chứa nhãn UI (T-003 §5.3). Zod 4 **có** locale `vi` (V7b, zod.dev/error-customization). FE gọi một lần khi khởi động client (`src/app/providers`): `import { vi } from 'zod/locales'; z.config(vi());` (cú pháp đúng như docs). API bật cùng locale (ADR-081) ⇒ `fieldErrors` từ server cũng tiếng Việt, nhất quán với FE. Thông báo riêng cho vài luật nghiệp vụ (vd "Mật khẩu quá phổ biến") đến từ server; FE không dịch lại.
 - Mật khẩu: luật độ dài ở client; danh sách mật khẩu phổ biến **chỉ ở server** (không tải 10k mục xuống trình duyệt) ⇒ lỗi về qua `VALIDATION_ERROR.fieldErrors.password`.
 
 ### 7.3. Hiển thị lỗi server theo field
@@ -669,7 +735,7 @@ Lý do chọn: drawer/dialog/menu/combobox là phần a11y khó nhất của app
 
 | `error.code` | Ánh xạ |
 |---|---|
-| `VALIDATION_ERROR` | `details.fieldErrors[f][0]` ⇒ `setError(f)`; `formErrors` ⇒ lỗi gốc của form (`root.server`) |
+| `VALIDATION_ERROR` | `details.fieldErrors[f][0]` ⇒ `setError(f)`; `formErrors` ⇒ lỗi gốc của form (`root.server`). ADR-081 nói `details` giữ issue `code` + `path`: nếu contract bổ sung danh sách issue có `path` đầy đủ thì FE ưu tiên nó (đặt lỗi đúng field lồng, vd `path: ['dueDate']`), `fieldErrors` là phương án dự phòng — chờ C chốt dạng `details` |
 | `RESOURCE_CONFLICT` có `details.field` | `setError(details.field, "Giá trị đã tồn tại")` (slug, keyPrefix) |
 | `EMAIL_ALREADY_EXISTS` | `setError('email')` |
 | `INVALID_CURRENT_PASSWORD` | `setError('currentPassword')` |
@@ -682,7 +748,7 @@ Field không tồn tại trong form (server trả field lạ) ⇒ gộp vào l�
 
 ## 8. Kế hoạch test FE
 
-Công cụ (ADR-003): **Vitest** (unit + component, môi trường jsdom), **Testing Library**, **MSW** (giả lập HTTP ở tầng mạng), **Playwright** (E2E, chạy API + Postgres + Redis thật qua Docker), `@axe-core/playwright` (a11y). TODO(T-001): phiên bản MSW/jsdom tương thích.
+Công cụ (ADR-003): **Vitest** (unit + component, môi trường jsdom), **Testing Library**, **MSW** (giả lập HTTP ở tầng mạng), **Playwright** (E2E, chạy API + Postgres + Redis thật qua Docker), `@axe-core/playwright` (a11y). Phiên bản (stack-versions §4 + V11): vitest 5.0.4, `@testing-library/react` 16.3.3, jsdom 30.1.2, `@playwright/test` 1.64.1, **`msw` 3.0.3** (major mới: chỉ ESM, Node ≥ 22.12, TS ≥ 5.9 — ta dùng TS 6.0.3; setup Node vẫn `setupServer` từ `msw/node`; **MSW 3 không còn tự xử lý fake timers** ⇒ test có `vi.useFakeTimers()` phải tự `advanceTimers`), **`@axe-core/playwright` 4.13.0**. Docs MSW chưa ghi rõ tương thích vitest 5/jsdom 30 ⇒ T-012 chạy smoke test 1 handler trước khi viết test thật; lỗi thì báo Tech Lead (dự phòng: msw 2.x).
 
 ### 8.1. Unit (logic thuần — ưu tiên số 1, phủ ≥ 90% nhánh)
 
@@ -698,6 +764,8 @@ Công cụ (ADR-003): **Vitest** (unit + component, môi trường jsdom), **Tes
 | `http` + `refresh` | `TOKEN_EXPIRED` ⇒ refresh + retry đúng 1 lần; 10 request song song ⇒ đúng 1 lần gọi refresh; `UNAUTHORIZED` ⇒ không refresh, `sessionEnded`; `409 REFRESH_IN_PROGRESS` ⇒ chờ + thử lại 1 lần; request xếp hàng khi đang refresh |
 | `safe-next-path`, `date-only` | `//evil.com`, `https://…`, `/\evil`; quá hạn theo múi giờ (ép TZ trong test) |
 | `applyServerErrors` | đủ bảng 7.3 |
+| `runtime-config` / `server-env` | thiếu `API_URL` ⇒ throw; object gửi xuống client chỉ gồm khóa công khai; `getRuntimeConfig()` trước boot ⇒ throw |
+| `canAssignTask` + picker | VIEWER không xuất hiện trong danh sách người nhận; MEMBER tạo task chỉ có lựa chọn trống/chính mình |
 
 ### 8.2. Component (Testing Library + MSW + socket giả)
 
@@ -722,6 +790,9 @@ Công cụ (ADR-003): **Vitest** (unit + component, môi trường jsdom), **Tes
 | E2E-11 | Access token hết hạn (API test chạy TTL ngắn qua env) ⇒ thao tác vẫn thành công (refresh trong suốt) |
 | E2E-12 | a11y: axe không có vi phạm `serious`/`critical` trên login, board, drawer, thành viên (cả sáng và tối) |
 | E2E-13 | Mất mạng giả lập (`context.setOffline`) rồi online ⇒ board tự refetch, thay đổi người khác trong lúc offline xuất hiện |
+| E2E-14 | A (OWNER) xóa workspace khi B đang mở board ⇒ B về `/w` + toast; A thấy workspace ở khu "Đã xóa" và khôi phục ⇒ B vào lại được (ADR-047/050) |
+| E2E-15 | A hạ B (MEMBER, đang được giao 2 task) xuống VIEWER ⇒ B mất tay kéo ngay, 2 task hiện "Chưa giao" trên board của cả hai (ADR-044) |
+| E2E-16 | Cùng image web chạy với `API_URL` khác (2 lần khởi động container trong CI) ⇒ request đi đúng host (ADR-074) |
 
 ### 8.4. Hiệu năng
 
@@ -736,19 +807,19 @@ Công cụ (ADR-003): **Vitest** (unit + component, môi trường jsdom), **Tes
 
 Đơn vị: ngày-người (đã gồm test). Giả định Phase 1 đã tạo `apps/web` khung (Next chạy được, ESLint/dependency-cruiser/Vitest cấu hình theo mục 2.4) và Phase 3 đã có API + socket chạy thật.
 
-### 9.0. Gói nền (tuần tự, 1 người, làm trước) — **3 ngày**
+### 9.0. Gói nền (tuần tự, 1 người, làm trước) — **4 ngày** (T-005b: +1 ngày cho runtime config, `proxy.ts` CSP nonce, locale Zod; phần lớn sẽ làm sớm ở T-012 Phase 1b)
 
-`src/app/providers` (khung), `shared/api` (http + ApiError), `entities/session` (token store, refresh, bootstrap) + `AuthGate`/`GuestGate`, `shared/query`, `shared/config`, token CSS + font + theme, `shared/ui`: Button, Input, Field, Skeleton, Spinner, Toast. Lý do tuần tự: mọi thứ khác phụ thuộc; làm song song sẽ đụng file.
+`src/app/providers` (khung), `shared/api` (http + ApiError), `entities/session` (token store, refresh, bootstrap) + `AuthGate`/`GuestGate`, `shared/query`, `shared/config` + `RuntimeConfigBoot` + `server-env` (mục 3.6), `proxy.ts` (CSP nonce), token CSS + font + theme, `shared/ui`: Button, Input, Field, Skeleton, Spinner, Toast. Lý do tuần tự: mọi thứ khác phụ thuộc; làm song song sẽ đụng file.
 
-Kết thúc gói nền: **công bố interface** (chỉ chữ ký + stub trả dữ liệu MSW) cho: `usePermission`, `useWorkspace`, `useAllMembers`, `useProject`, `Dialog`, `Drawer`, `DropdownMenu`, `Combobox`, `Tooltip`, `Badge`, `Avatar` — để Gói B làm việc với stub trong khi Gói A làm bản thật.
+Kết thúc gói nền: **công bố interface** (chỉ chữ ký + stub trả dữ liệu MSW) cho: `usePermission`, `useWorkspace`, `useAssignableMembers`, `useProject`, `Dialog`, `Drawer`, `DropdownMenu`, `Combobox`, `Tooltip`, `Badge`, `Avatar` — để Gói B làm việc với stub trong khi Gói A làm bản thật.
 
-### 9.1. Gói A — Shell, Auth, Quản trị (người 1) — **≈ 10 ngày**
+### 9.1. Gói A — Shell, Auth, Quản trị (người 1) — **≈ 10.5 ngày**
 
 | Phạm vi sở hữu (chỉ người 1 ghi) | Ngày |
 |---|---|
 | `features/auth-*`, `change-password`, `views/login`, `register`, `account` | 2 |
 | `entities/user`, `workspace` (gồm `permissions`, `usePermission`), `member`, `project` | 2 |
-| `features/workspace-*`, `member-*`, `project-*` | 2.5 |
+| `features/workspace-*` (gồm `workspace-restore`), `member-*`, `project-*`, `profile-edit` | 3 |
 | `widgets/app-header`, `project-sidebar`, `member-table`, `project-grid`; `views/workspace-picker`, `workspace-new`, `project-list`, `workspace-settings`, `members`, `project-settings`, `not-found`; `src/app/app-shell.tsx`; route `app/(auth)`, `app/(marketing)`, `app/(app)/w/**` trừ board | 2 |
 | `shared/ui`: Dialog, ConfirmDialog, Select, DropdownMenu, Tooltip, Badge, Avatar, Tabs, EmptyState, ErrorState, Banner | 1.5 |
 
@@ -774,24 +845,29 @@ Kết thúc gói nền: **công bố interface** (chỉ chữ ký + stub trả d
 ### 9.4. Tích hợp & E2E (2 người cùng làm, sau 9.1/9.2) — **≈ 3 ngày**
 E2E-01…13, axe, test hiệu năng 500 task, sửa lỗi tích hợp.
 
-**Tổng ≈ 3 + max(10, 12) + 3 ≈ 18 ngày lịch** với 2 người (≈ 28 ngày-người). Đệm rủi ro +20% cho dnd-kit/ảo hóa và CSP nonce (mục 10).
+**Tổng ≈ 4 + max(10.5, 12) + 3 ≈ 19 ngày lịch** với 2 người (≈ 29.5 ngày-người). Nếu T-012 (Phase 1b) đã làm xong gói nền thì Phase 4 còn ≈ 15 ngày. Đệm rủi ro +20% cho `@dnd-kit/react` 0.x/ảo hóa và CSP nonce (mục 10).
 
 ---
 
-## 10. Danh sách cần T-001 xác nhận trước khi code
+## 10. Kiểm chứng phiên bản & API (đã đóng ở T-005b, 2026-10-15)
 
-| # | Mục | Ảnh hưởng nếu khác |
-|---|---|---|
-| V1 | Next 16: `app/` ở gốc + FSD ở `src/` (Next bỏ qua `src/app`?) | Đổi tên layer `src/app` |
-| V2 | Next 16: CSP nonce (cơ chế proxy/middleware đặt header + nonce cho script của Next); hệ quả mọi trang thành dynamic rendering | Chi phí render shell; phối hợp T-004 (cache CDN) |
-| V3 | Next 16: `next/font` subset `vietnamese`; React version kèm theo; React Compiler | Font, tối ưu render |
-| V4 | Tailwind mới: cấu hình token bằng CSS, dark mode theo `data-theme` | Cách viết mục 6.1 |
-| V5 | TanStack Query: major (v5?), tên `gcTime`, `useMutation` `onMutate` context, `scope` của mutation | Mục 3.1, 4.4 |
-| V6 | dnd-kit: `@dnd-kit/core`+`sortable` vs `@dnd-kit/react`, KeyboardSensor, `useDroppable({ disabled })`, announcements | Mục 4.2 |
-| V7 | `@hookform/resolvers` + Zod 4; Zod 4 locale `vi` (`z.config`) | Mục 7 |
-| V8 | Radix (gói gộp hay tách), `sonner`, tương thích React mới | Mục 6.4 |
-| V9 | `socket.io-client` 4.x: `auth` dạng hàm, sự kiện `connect_error.data` | Mục 3.5 |
-| V10 | `fractional-indexing` bản ESM dùng chung FE/BE | Mục 4.3 |
-| V11 | MSW, Playwright, `@axe-core/playwright`, dependency-cruiser (cú pháp nhóm regex) | Mục 2.4, 8 |
+Nguồn ưu tiên: `docs/research/stack-versions.md` (T-001). Mục nào stack-versions chưa trả lời thì Engineer E tự kiểm trên docs chính thức / `.d.ts` đã publish / npm registry (ghi nguồn bên dưới). Không còn `TODO(T-001)` trong tài liệu này; chỗ còn "chưa kiểm" được ghi rõ là việc của T-012 khi code.
 
-**Biến môi trường `NEXT_PUBLIC_*` được nhúng lúc build** ⇒ mỗi môi trường (staging/prod) cần build riêng, hoặc chuyển sang cấu hình runtime (endpoint `/config.json` phục vụ bởi Next). Ghi cho T-004 quyết.
+| # | Câu hỏi | Kết luận | Nguồn | Mục |
+|---|---|---|---|---|
+| V1 | `app/` ở gốc + FSD `src/` | ✅ Next bỏ qua `src/app` khi có `app/` ở gốc. ⚠️ **Cấm `src/pages/`** (build lỗi "pages and app directories should be under the same folder"). `proxy.ts` đặt ở gốc `apps/web/` | nextjs.org/docs/app/api-reference/file-conventions/src-folder · github.com/vercel/next.js `packages/next/src/lib/find-pages-dir.ts` | 2.1 |
+| V2 | CSP nonce Next 16 | ✅ `proxy.ts` đặt `x-nonce` + CSP lên request headers, Next tự gắn nonce; **bắt buộc dynamic rendering** (đã chấp nhận ADR-084). SRI là experimental, không dùng | nextjs.org/docs/app/guides/content-security-policy · stack-versions §3 (middleware → proxy) | 3.6 |
+| V3 | Font tiếng Việt | ✅ Inter có subset `vietnamese`; tự host lúc build. React 19.3.1; React Compiler không bật | nextjs.org/docs/app/api-reference/components/font · next.js `packages/font/src/google/font-data.json` · stack-versions §3 | 6.2, 4.7 |
+| V4 | Tailwind token + dark mode | ✅ 4.3.3 CSS-first, không config JS; `@theme` / `@theme inline`; `@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *))`. Ghép biến ngữ nghĩa + `@theme inline` là suy luận ⇒ smoke test ở T-012 | tailwindcss.com/docs/theme · tailwindcss.com/docs/dark-mode · stack-versions §3 | 6.1 |
+| V5 | TanStack Query | ✅ 5.104.2; `gcTime`; `scope: { id }` từ 5.31.0; **chữ ký callback mutation đổi từ 5.89.0**: `onMutate(variables, context)`, `onError(error, variables, onMutateResult, context)`… với `context = { client, meta, mutationKey }` | tanstack.com/query/latest/docs/framework/react/reference/useMutation · GitHub releases v5.31.0, v5.89.0 | 3.1, 4.4 |
+| V6 | Kéo thả | ✅ `@dnd-kit/react` + `/helpers` + `/dom` 0.5.0 (pin chính xác). `DragDropProvider`, `useSortable({ id, index, group })`, `move()`, KeyboardSensor mặc định, `disabled` trên droppable/sortable, `Accessibility.configure`, `DragOverlay`, `event.canceled`. **Chưa kiểm:** tên option ràng buộc kích hoạt của `PointerSensor` | dndkit.com/react/guides/multiple-sortable-lists · dndkit.com/extend/plugins/accessibility · unpkg.com/@dnd-kit/{react,dom,abstract}@0.5.0/index.d.ts · stack-versions §3 | 4.2 |
+| V7 | Form + Zod locale | ✅ `react-hook-form` 7.90.0, `@hookform/resolvers` 5.9.1 (Zod 4 từ 5.1.0); Zod 4 có locale `vi`: `import { vi } from 'zod/locales'; z.config(vi())`. **Chưa kiểm:** cách khai generic output của `useForm` | npm registry · github.com/react-hook-form/resolvers/releases/tag/v5.1.0 · zod.dev/error-customization | 7.1, 7.2 |
+| V8 | Headless UI | ✅ gói gộp `radix-ui` 1.8.1 (shadcn đã chuyển sang), `sonner` 2.0.8, cả hai hỗ trợ React 19 | npm registry · ui.shadcn.com/docs/changelog/2026-02-radix-ui | 6.4 |
+| V9 | socket.io-client | ✅ 4.8.4; `auth` dạng callback gọi lại mỗi lần reconnect; `err.data` tới được `connect_error`; `transports: ['websocket']` (ADR-074) | socket.io/docs/v4/middlewares · socket.io/docs/v4/client-options · stack-versions §3 | 3.5 |
+| V10 | fractional-indexing | ✅ 4.0.0 ESM, `generateKeyBetween(a, b)`, khóa so sánh byte | stack-versions §2 | 4.3 |
+| V11 | Tooling test & lint | ✅ dependency-cruiser 18.6.0 hỗ trợ `$1` group matching; ESLint 10 `no-restricted-syntax`/`no-restricted-globals` còn nguyên; `msw` 3.0.3 (ESM, Node ≥ 22.12, TS ≥ 5.9; fake timers tự advance); `@axe-core/playwright` 4.13.0; Playwright 1.64.1; vitest 5.0.4; jsdom 30.1.2. **Chưa kiểm:** MSW 3 × vitest 5/jsdom 30 (docs không nói) ⇒ smoke test T-012 | github.com/sverweij/dependency-cruiser `doc/rules-reference.md` · eslint.org/docs/latest/rules/no-restricted-syntax · github.com/mswjs/msw/releases/tag/v3.0.0 · npm registry · stack-versions §4–5 | 2.4, 8 |
+| V12 | Web Locks, BroadcastChannel | ✅ Chrome 69/54, Firefox 96/38, Safari 15.4 — Baseline từ 03/2022; Web Locks chỉ trong secure context | developer.mozilla.org (LockManager/request, BroadcastChannel) · mdn/browser-compat-data | 3.3 |
+
+Cấu hình URL: đã chốt nhận lúc runtime, không dùng `NEXT_PUBLIC_*` (ADR-074) — mục 3.6.
+
+**Rủi ro còn mở cho T-012:** CSP `style-src` theo nonce chặn **thuộc tính `style="…"` trong HTML do server render** (trình duyệt chặn lúc parse; style gán bằng JS qua CSSOM thì không bị chặn). Dashboard render ở client nên ít ảnh hưởng, nhưng landing và shell server-render không được dùng prop `style`. Nếu thư viện nào (Radix portal, `next/font`) cần, T-012 đo trên build prod và báo Tech Lead trước khi nới CSP (vd `style-src-attr`).
