@@ -126,6 +126,9 @@ jobs:
           path: apps/api/coverage
           if-no-files-found: ignore
           retention-days: 7
+      # Ngưỡng contracts ≥ 80% (devops.md §8.2) nằm ở packages/contracts/vitest.config.ts.
+      - name: Coverage contracts (ngưỡng ⇒ đỏ)
+        run: pnpm --filter @taskflow/contracts test:coverage
 
   # ---------------------------------------------------------------- integration
   # Postgres 18.6 + Valkey 9.1.2 thật (ADR-003). Tách 2 user DB như compose (ADR-074).
