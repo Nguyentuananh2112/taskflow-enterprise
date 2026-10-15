@@ -125,7 +125,7 @@ Lưu ý về Hetzner: ngày 2026-10-15, trang Cloud ghi dòng Cost-Optimized (CX
 | Dữ liệu | seed giả | factory | seed giả cỡ lớn (cho k6) — **không bao giờ copy dữ liệu prod** | thật |
 | Deploy | — | — | tự động khi merge `main` | thủ công, cùng image digest đã qua staging, có required reviewers |
 
-Staging đặt `NODE_ENV=production` là cố ý: staging phải chạy giống prod (cookie `__Secure-`, `COOKIE_SECURE=true`, log JSON).
+Staging đặt `NODE_ENV=production` là cố ý: staging phải chạy giống prod (cookie `__Host-tf_rt` — ADR-109, `COOKIE_SECURE=true`, log JSON).
 
 ### 2.2 Biến môi trường — `apps/api`
 
@@ -590,7 +590,7 @@ Coverage không thay được việc kiểm tra test có assert ý nghĩa; PR re
 
 ### 8.5 Playwright & k6
 **Playwright** chạy ở 3 nơi:
-1. CI, trên stack `docker-compose.prodlike.yml` (đúng image prod, Caddy TLS nội bộ để test cookie `__Secure-`). ⚠ KIỂM CHỨNG Phase 4: tin cậy CA tự ký trong container Playwright.
+1. CI, trên stack `docker-compose.prodlike.yml` (đúng image prod, Caddy TLS nội bộ để test cookie `__Host-tf_rt` — ADR-109). ⚠ KIỂM CHỨNG Phase 4: tin cậy CA tự ký trong container Playwright.
 2. Staging sau mỗi deploy (`@smoke`).
 3. Prod sau deploy: chỉ `@smoke-readonly` với tài khoản canary.
 
@@ -622,7 +622,7 @@ Mỗi mục phải có người ký xác nhận và bằng chứng (link log/ả
 4. ☐ `TRUST_PROXY_HOPS` đã **đo**: `req.ip` khớp IP thật; `X-Forwarded-For` giả không đổi được `req.ip`.
 
 **Bảo mật ứng dụng**
-5. ☐ Cookie refresh ở prod: `__Secure-tf_rt; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, không có `Domain` (SEC-34 trên staging).
+5. ☐ Cookie refresh ở staging/prod (ADR-109, ghi đè ADR-024): `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/`, **không** có `Domain` (SEC-34 trên staging). Dev giữ `tf_rt; Path=/api/v1/auth`.
 6. ☐ `CORS_ORIGINS` chỉ chứa `https://app.<domain>` (SEC-30).
 7. ☐ Rate limit bật, dùng Valkey store. Login sai 6 lần → 429 (SEC-28). Tắt Valkey → login/register fail-closed.
 8. ☐ helmet header có mặt; CSP của web dùng nonce, không có `unsafe-inline`.
