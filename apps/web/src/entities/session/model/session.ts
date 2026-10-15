@@ -163,6 +163,31 @@ export function createSessionController(deps: SessionDeps) {
       end('logout');
     },
 
+    /**
+     * Cổng xác thực cho socket (frontend.md §3.5, security.md §5.1) — ngoài `http`, đây là nơi DUY
+     * NHẤT đọc access token: callback `auth` của handshake và `auth:renew`. Không vào React state.
+     */
+    realtimeAuth: {
+      token: (): string | null => tokenStore.get(),
+      /** Refresh ngay (`auth:expired`, `connect_error TOKEN_EXPIRED`). Lỗi tạm ⇒ `false`, phiên giữ. */
+      async renew(): Promise<boolean> {
+        try {
+          const ok = await renew();
+          if (!ok) end('expired');
+          return ok;
+        } catch {
+          return false;
+        }
+      },
+      /** Có access token mới (refresh, đổi mật khẩu) ⇒ socket gửi `auth:renew`. */
+      onTokenRenewed: (listener: () => void): (() => void) =>
+        tokenStore.subscribe(() => {
+          if (tokenStore.get() !== null) listener();
+        }),
+      /** Server từ chối token của socket (`UNAUTHORIZED`) ⇒ kết thúc phiên như `http`. */
+      revoked: (): void => end('revoked'),
+    },
+
     /** `listener(reason)` khi phiên đang hoạt động bị kết thúc (dọn cache, toast…). */
     onEnded(listener: (reason: EndReason) => void): () => void {
       endedListeners.add(listener);

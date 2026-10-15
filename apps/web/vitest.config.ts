@@ -14,6 +14,7 @@ export default defineProject({
   test: {
     name: 'web',
     environment: 'jsdom',
+    setupFiles: ['./test/setup-dom.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'app/**/*.test.{ts,tsx}', 'test/**/*.test.{ts,tsx}'],
   },
 });

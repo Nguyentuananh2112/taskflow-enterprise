@@ -7,7 +7,7 @@ export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'children'>
   Readonly<{
     /** Bắt buộc: mọi ô nhập phải có nhãn nhìn thấy được (a11y). */
     label: string;
-    hint?: string;
+    hint?: string | undefined;
     /** Thông báo lỗi (client hoặc server — frontend.md §7.3). Có ⇒ aria-invalid. */
     error?: string | undefined;
     ref?: Ref<HTMLInputElement>;

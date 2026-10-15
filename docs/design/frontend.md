@@ -527,7 +527,7 @@ API đã kiểm chứng trên `.d.ts` 0.5.0 và dndkit.com (V6):
   - `status` chỉ gửi khi khác cột cũ.
   - Vị trí không đổi (cùng cột, cùng hàng xóm) ⇒ không gửi gì.
 - **Khi đang lọc** (board-filter), hàng xóm *hiển thị* có thể không phải hàng xóm *thật*. Vẫn gửi theo hàng xóm hiển thị: server đặt task ngay sau `afterId` (giữa `afterId` và task kế tiếp thực tế) — kết quả hợp lý, đúng ngữ nghĩa T-003.
-- **Rank tạm cho optimistic**: `generateKeyBetween(after?.rank ?? null, before?.rank ?? null)` (`fractional-indexing`, cùng thư viện với server). Ném lỗi (rank hàng xóm lệch do dữ liệu cũ) ⇒ bỏ qua optimistic vị trí, chỉ đổi cột + đặt cuối; server trả rank thật ngay sau đó.
+- **Rank tạm cho optimistic**: `generateKeyBetween(after?.rank ?? null, before?.rank ?? null)` (`fractional-indexing`, cùng thư viện với server). Rank hàng xóm lệch do dữ liệu cũ (`after ≥ before`) ⇒ bỏ qua optimistic vị trí, chỉ đổi cột + đặt cuối; server trả rank thật ngay sau đó. ⚠️ **fractional-indexing 4.0.0 KHÔNG ném lỗi** khi `after ≥ before` (`generateKeyBetween('a2','a1')` trả `'a1V'`, nằm ngoài khoảng) — FE phải tự so thứ tự trước khi gọi (`entities/task/model/temp-rank.ts`, đã kiểm ở T-025); thư viện chỉ ném với khóa sai định dạng.
 - Sắp xếp: `(a, b) => a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : 1` — so sánh code unit, khớp collation "C" với chuỗi ASCII của fractional-indexing; **cấm `localeCompare`**.
 
 ### 4.4. Optimistic update & rollback
@@ -871,3 +871,16 @@ Nguồn ưu tiên: `docs/research/stack-versions.md` (T-001). Mục nào stack-v
 Cấu hình URL: đã chốt nhận lúc runtime, không dùng `NEXT_PUBLIC_*` (ADR-074) — mục 3.6.
 
 **Rủi ro còn mở cho T-012:** CSP `style-src` theo nonce chặn **thuộc tính `style="…"` trong HTML do server render** (trình duyệt chặn lúc parse; style gán bằng JS qua CSSOM thì không bị chặn). Dashboard render ở client nên ít ảnh hưởng, nhưng landing và shell server-render không được dùng prop `style`. Nếu thư viện nào (Radix portal, `next/font`) cần, T-012 đo trên build prod và báo Tech Lead trước khi nới CSP (vd `style-src-attr`).
+
+### 10.1. Kiểm chứng khi code (T-019, T-025)
+
+| # | Điểm | Kết luận (đã chạy thử, không suy đoán) | Nơi dùng |
+|---|---|---|---|
+| V13 | MSW 3.0.3 × vitest 5 × jsdom 30 | Chạy tốt. `onUnhandledRequest` đã đổi tên thành **`onUnhandledFrame`** — tên cũ bị bỏ qua âm thầm khi chạy, chỉ `tsc` bắt được. MSW 3 **không giữ cookie** của response giả (`Set-Cookie` vẫn đọc được) ⇒ test dùng cookie jar nhỏ (`test/mock-api.ts`). (T-019) | `test/mock-api.ts` |
+| V14 | `PointerSensor` 0.5.0 — ràng buộc kích hoạt (V6 "chưa kiểm") | Mặc định (`PointerSensor.defaults.activationConstraints`): chuột bấm **trên handle** ⇒ không ràng buộc (kéo ngay); ngoài handle ⇒ `Delay 200ms (tol 10)` + `Distance 5`; cảm ứng ⇒ `Delay 250ms (tol 5)`. Board dùng **nút tay kéo riêng** ⇒ click tiêu đề luôn mở drawer, không cần cấu hình sensor. | `widgets/kanban-board` |
+| V15 | Plugin `Accessibility` 0.5.0 | Gắn `role="button"`, `tabindex`, `aria-roledescription="draggable"` (tiếng Anh) và `aria-describedby` lên activator **nếu thiếu**. Không có handle ⇒ activator là chính phần tử ⇒ `<article>` thành "button". Cách làm: handle là `<button>` có sẵn `aria-roledescription` tiếng Việt; thẻ không kéo được (VIEWER/lưu trữ) **không gắn ref sortable**. Cấu hình qua `plugins={(defaults) => [...defaults, Accessibility.configure({...})]}` — descriptor sau ghi đè tùy chọn của plugin cùng lớp. | `widgets/kanban-board` |
+| V16 | `CollisionPriority` | Chỉ export từ `@dnd-kit/abstract` (gói gián tiếp, pnpm không cho import) ⇒ truyền số (`Low = 1`), `collisionPriority` nhận `number`. | `board-column.tsx` |
+| V17 | jsdom + `@dnd-kit/dom` | `@dnd-kit/dom` dùng `ResizeObserver` khi có DOM ⇒ jsdom cần stub (`test/setup-dom.ts`). Server (SSR) tự dùng bản giả (`canUseDOM = false`) ⇒ không ảnh hưởng build. | `vitest.config.ts` |
+| V18 | TanStack Query `setQueryData` | Structural sharing giữ tham chiếu task KHÔNG đổi (memo thẻ hoạt động) nhưng task vừa đổi/được rollback là **bản sao** ⇒ test so bằng giá trị (`toEqual`), không `toBe`. | test `use-move-task` |
+| V19 | Memo board 500 task | Đo (jsdom, React dev): mount 500 thẻ ≈ 610–690ms, commit khi 1 event đến ≈ 9ms. Truyền callback **không ổn định** (`onOpen={() => …}`) làm commit 1 event lên ≈ 223ms (mọi thẻ render lại) ⇒ callback xuống board phải `useCallback`/hằng. | `views/board`, `test/board-perf.test.tsx` |
+

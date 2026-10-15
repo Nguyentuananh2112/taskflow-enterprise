@@ -10,6 +10,7 @@ import { cleanupApp } from '@test/render';
 
 import { AppShell, AuthGate, GuestGate } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
+import { createOfflineRealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
 import { LoginPage } from '@/views/login';
 import { RegisterPage } from '@/views/register';
@@ -47,6 +48,10 @@ const ROUTES: Record<string, () => ReactNode> = {
   ),
 };
 
+// Luồng phiên không cần socket thật (realtime có test riêng với socket giả).
+const offline = createOfflineRealtimeClient(crypto.randomUUID());
+const offlineRealtime = () => offline;
+
 function App() {
   const pathname = useSyncExternalStore(testRouter.subscribe, testRouter.pathname);
   const route = ROUTES[pathname] ?? (() => <p>404 {pathname}</p>);
@@ -54,6 +59,7 @@ function App() {
     <AppProviders
       config={{ apiUrl: API_BASE, wsUrl: 'http://localhost:4000', appEnv: 'test' }}
       nonce={undefined}
+      realtime={offlineRealtime}
     >
       {route()}
     </AppProviders>

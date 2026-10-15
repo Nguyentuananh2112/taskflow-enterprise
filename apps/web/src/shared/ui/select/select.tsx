@@ -14,7 +14,7 @@ export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'childre
     options: readonly SelectOption[];
     /** Dòng đầu không chọn được, vd "Chọn vai trò…". */
     placeholder?: string;
-    hint?: string;
+    hint?: string | undefined;
     error?: string | undefined;
     ref?: Ref<HTMLSelectElement>;
   }>;
