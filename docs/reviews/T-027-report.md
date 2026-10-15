@@ -101,8 +101,8 @@ Top theo tổng thời gian:
 
 ## 6. 3 điểm chậm nhất & đề xuất (chỉ đề xuất, không sửa code module của người khác)
 
-1. **Thông lượng trần ~150–200 RPS là ở tầng API, không phải DB.** Truy vấn TB < 2 ms, cache hit 100 %, nhưng P95 nhảy từ 14 ms lên 800 ms giữa 100 và 150 RPS mà không có lỗi ⇒ hàng đợi ở event loop Node / pool 20 kết nối. *Lưu ý:* `docker stats` của lượt này chụp **sau** khi board xong (API 0,65 % CPU) nên không chứng minh được CPU bão hòa — lượt sau cần chụp CPU/event-loop lag **trong** bậc 150. Đề xuất (A/Tech Lead quyết): (a) đo lại với `DATABASE_POOL_MAX` 10/20/40 để tách pool khỏi CPU; (b) production chạy ≥ 2 instance sau LB (App Platform tự scale ngang) — với ~150 RPS/instance trên máy dev, NFR của v1 dư nhiều; (c) theo dõi `http_request_duration_seconds` P95 theo route (devops.md §7) để cảnh báo sớm.
-2. **Move kích hoạt rebalance cột 500 task: 5,6–8 s khi 40 cột rebalance cùng lúc.** Cần đo một rebalance đơn lẻ (`REBAL_COLUMNS=1`) trước khi kết luận; nếu một rebalance đơn lẻ cũng > 300 ms thì đề xuất cho chủ T-033: rebalance theo lô `UPDATE … FROM (VALUES …)` thay vì từng dòng, hoặc dời sang job nền sau commit (move vẫn thành công với rank 65 ký tự).
+1. **Thông lượng trần ~150–200 RPS là ở tầng API, không phải DB.** Truy vấn TB < 2 ms, cache hit 100 %, nhưng P95 nhảy từ 14 ms lên 800 ms giữa 100 và 150 RPS mà không có lỗi ⇒ hàng đợi ở event loop Node / pool 20 kết nối. **Đã xác nhận ở T-027b (§8.2):** API 71 % CPU ở 100 RPS → 103 % (một lõi) ở 150 RPS, Postgres 54 %. Đề xuất (A/Tech Lead quyết): (a) đo lại với `DATABASE_POOL_MAX` 10/20/40 để tách pool khỏi CPU; (b) production chạy ≥ 2 instance sau LB (App Platform tự scale ngang) — với ~150 RPS/instance trên máy dev, NFR của v1 dư nhiều; (c) theo dõi `http_request_duration_seconds` P95 theo route (devops.md §7) để cảnh báo sớm.
+2. **Move kích hoạt rebalance cột 500 task: 5,6–8 s khi 40 cột rebalance cùng lúc.** **T-027b (§8.1): một rebalance đơn lẻ ~0,8 s** (P95 874 ms) — vượt 300 ms cho đúng lần move kích hoạt, không ảnh hưởng cột khác. Đề xuất cho chủ T-033 (nếu muốn move kích hoạt cũng đạt NFR): rebalance theo lô `UPDATE … FROM (VALUES …)` thay vì từng dòng, hoặc dời sang job nền sau commit (move vẫn thành công với rank 65 ký tự).
 3. **Cấp số task (`UPDATE projects next_task_number`) 1,83 ms TB — chậm nhất theo trung bình**, vì mọi lệnh tạo task trong một project tuần tự hóa trên một dòng. Ổn với tải đo; chỉ đáng xử lý nếu tạo task hàng loạt (import) — khi đó cấp một khoảng số trong 1 lệnh.
 
 `pg_advisory_xact_lock` tổng thời gian cao (18,8 s / 17481 lượt, TB 1,08 ms) là chi phí chờ khóa cột khi move cùng cột — đúng thiết kế T-033, P95 move vẫn 12 ms ở cột nóng.
@@ -123,10 +123,41 @@ SCENARIOS=realtime API_IMAGE=taskflow-api:load \
 docker volume ls --filter label=com.docker.compose.project=taskflow-load -q   # rỗng sau mỗi lượt
 ```
 
+## 8. T-027b — rebalance ĐƠN LẺ và CPU trong bậc gãy (đo bổ sung 01:16–01:22)
+
+Cùng image `taskflow-api:load` (main không đổi `apps/api/src`/`prisma` từ 3b5e9e0), hạ tầng `taskflow-load` mới, seed như trên. Script: `load/single-rebalance-and-cpu.sh`. Dọn 01:22: 0 container/volume/network theo filter label.
+
+### 8.1 Rebalance đơn lẻ trong lúc board chạy nền 50 RPS
+
+`REBAL_SERIAL=1 REBAL_COLUMNS=10`: 1 VU rebalance **lần lượt** 10 cột (mỗi lúc chỉ một rebalance, nghỉ 1 s giữa các lần); cùng lúc board chạy nền 50 RPS trên các cột khác (150 s).
+
+| Move | Mẫu | P50 | P95 | P99 | Max (ms) |
+|---|---|---|---|---|---|
+| kích hoạt rebalance (cột 500 task, rank 64 ký tự) | 10 | **812** | **874** | 889 | 893 |
+| move thường ngay sau rebalance (cùng cột) | 10 | 10 | 12 | 12 | 12 |
+
+Board nền trong lúc đó: 9795 request, đọc P95 10,3 ms, ghi P95 12,7 ms, max 48 ms, 0 lỗi ⇒ **một rebalance không làm chậm các cột khác**.
+
+Kết luận:
+- **Một rebalance cột 500 task tốn ~0,8 s** — vượt NFR ghi 300 ms cho đúng lần move kích hoạt (hiếm: chỉ khi rank vượt 64 ký tự).
+- Số 5,6–8 s ở §4 là **40 rebalance đồng thời xếp hàng**, không phải chi phí một lần.
+- Move thường ngay sau rebalance về lại ~10 ms; đủ 10/10 mẫu (mất mẫu ở §4 chỉ xảy ra khi 40 VU cùng chạy).
+
+### 8.2 CPU trong lúc chạy bậc 100 → 150 RPS (`docker stats` mỗi ~4 s)
+
+| Bậc | Đọc P95 | Ghi P95 | API CPU TB | Postgres CPU TB | Valkey CPU TB |
+|---|---|---|---|---|---|
+| 100 RPS | 13,8 | 21,3 | **71 %** | 28 % | 3 % |
+| 150 RPS | 271,8 | 334,8 | **103 %** (đỉnh 124 %) | 54 % | 3,5 % |
+
+(100 % = một lõi. Bậc 150 lượt này vượt NFR ít hơn lượt đầu — 272/335 ms so với 824/776 ms — nhưng vẫn gãy ở cùng bậc.)
+
+Kết luận: **API (một tiến trình Node) chạm trần một lõi CPU ở 150 RPS** — event loop là nút cổ chai; Postgres còn dư (54 %), Valkey gần như không tải. Khớp với giả thuyết ở §6.1 — nay có số đo trong lúc tải.
+
 ## Việc mở
 
-- Chụp CPU/event-loop lag **trong** bậc gãy; đo lại với pool 10/20/40.
-- Rebalance đơn lẻ (`REBAL_COLUMNS=1`); log 11 VU thiếu mẫu.
+- Đo lại với pool 10/20/40 và ≥ 2 instance API để xem thông lượng tăng tuyến tính.
+- Log 11 VU thiếu mẫu khi 40 rebalance đồng thời (§4).
 - Ghép event realtime theo `version` thay vì `task.id` (loại mẫu 61 s).
 - `environment.md` của lượt này ghi dòng `git:` rỗng (chưa rõ nguyên nhân) — commit đo ghi tay ở trên; sửa `run.sh` lượt sau.
 - Đo trên staging thật (devops.md §8 mục 28) khi đã chọn hosting.
