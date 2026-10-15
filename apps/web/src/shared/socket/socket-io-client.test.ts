@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createSocketIoClient, type SocketAuthHooks } from './socket-io-client';
 
@@ -61,7 +61,7 @@ vi.mock('socket.io-client', () => ({
 
 const CLIENT_ID = '0199e5a2-0000-7000-8000-00000000c1e1';
 
-function setup(overrides: Partial<SocketAuthHooks> = {}) {
+function setup(overrides: Partial<SocketAuthHooks> = {}, random = () => 0) {
   const auth: SocketAuthHooks = {
     token: vi.fn(() => 'access-1'),
     renew: vi.fn(() => Promise.resolve(true)),
@@ -72,6 +72,7 @@ function setup(overrides: Partial<SocketAuthHooks> = {}) {
     url: 'https://api.example.com',
     clientId: CLIENT_ID,
     auth,
+    random,
   });
   return { client, auth };
 }
@@ -174,6 +175,62 @@ describe('createSocketIoClient', () => {
     await flush();
     expect(fake.state.connectCalls).toBe(1);
     expect(client.status()).toBe('offline');
+  });
+
+  describe('nối lại sau khi server ngắt: jitter + backoff (review B, L3)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('chờ random × min(30s, 2s × 2^n) rồi mới refresh; n tăng khi chưa nối lại được, trần 30s', async () => {
+      vi.useFakeTimers();
+      const { client, auth } = setup({}, () => 1);
+      client.connect();
+      fake.fire('connect');
+      const waits: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const before = vi.mocked(auth.renew).mock.calls.length;
+        fake.fire('disconnect', 'io server disconnect');
+        let waited = 0;
+        while (vi.mocked(auth.renew).mock.calls.length === before && waited < 60_000) {
+          await vi.advanceTimersByTimeAsync(1_000);
+          waited += 1_000;
+        }
+        waits.push(waited);
+      }
+      expect(waits).toEqual([2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+    });
+
+    it('nối lại thành công ⇒ backoff về lại 2s', async () => {
+      vi.useFakeTimers();
+      const { client, auth } = setup({}, () => 1);
+      client.connect();
+      fake.fire('connect');
+      fake.fire('disconnect', 'io server disconnect');
+      await vi.advanceTimersByTimeAsync(2_000);
+      fake.fire(
+        'connect_error',
+        Object.assign(new Error('x'), { data: { code: 'TOKEN_EXPIRED' } }),
+      );
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(auth.renew).toHaveBeenCalledTimes(2);
+      fake.fire('connect');
+      fake.fire('disconnect', 'io server disconnect');
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(auth.renew).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(auth.renew).toHaveBeenCalledTimes(3);
+    });
+
+    it('client tự disconnect (đăng xuất) khi đang chờ ⇒ hủy, không refresh/connect', async () => {
+      vi.useFakeTimers();
+      const { client, auth } = setup({}, () => 1);
+      client.connect();
+      fake.fire('connect');
+      fake.fire('disconnect', 'io server disconnect');
+      client.disconnect();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(auth.renew).not.toHaveBeenCalled();
+      expect(fake.state.connectCalls).toBe(1);
+    });
   });
 
   it('project:join / auth:renew gửi qua emitWithAck với payload contracts', async () => {

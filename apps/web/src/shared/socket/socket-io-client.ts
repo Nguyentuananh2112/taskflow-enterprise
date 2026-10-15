@@ -33,9 +33,18 @@ type Options = Readonly<{
    * bắt buộc (allowRequest). Trình duyệt tự gửi Origin của trang — app không truyền tùy chọn này.
    */
   extraHeaders?: Readonly<Record<string, string>>;
+  /** Nguồn ngẫu nhiên cho jitter (test truyền hàm cố định). */
+  random?: () => number;
 }>;
 
 const ACK_TIMEOUT_MS = 5_000;
+/**
+ * Nối lại sau khi SERVER ngắt / từ chối handshake (socket.io không tự thử lại): full jitter
+ * `random × min(MAX, BASE × 2^n)`, n = số lần liên tiếp chưa nối lại được. Một lần DB chập chờn làm server
+ * ngắt hàng loạt socket thì các tab không cùng lúc POST /auth/refresh + handshake (review B, L3).
+ */
+export const RECONNECT_BASE_MS = 2_000;
+export const RECONNECT_MAX_MS = 30_000;
 const UNAVAILABLE: SocketAck = { ok: false, code: 'SERVICE_UNAVAILABLE' };
 
 export function createSocketIoClient({
@@ -43,6 +52,7 @@ export function createSocketIoClient({
   clientId,
   auth,
   extraHeaders,
+  random = Math.random,
 }: Options): RealtimeClient {
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(url, {
     transports: ['websocket'],
@@ -64,13 +74,23 @@ export function createSocketIoClient({
     set.add(item);
     return () => void set.delete(item);
   };
-  const refreshThenConnect = () =>
-    void auth.renew().then((ok) => {
-      if (ok) socket.connect();
-      else setStatus('offline');
-    });
+  let attempts = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshThenConnect = () => {
+    clearTimeout(retryTimer);
+    const delay = random() * Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** attempts);
+    attempts += 1;
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      void auth.renew().then((ok) => {
+        if (ok) socket.connect();
+        else setStatus('offline');
+      });
+    }, delay);
+  };
 
   socket.on('connect', () => {
+    attempts = 0;
     setStatus('connected');
     if (connectedBefore) reconnectListeners.forEach((l) => l());
     connectedBefore = true;
@@ -107,6 +127,8 @@ export function createSocketIoClient({
       socket.connect();
     },
     disconnect: () => {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
       socket.disconnect();
       setStatus('offline');
     },
