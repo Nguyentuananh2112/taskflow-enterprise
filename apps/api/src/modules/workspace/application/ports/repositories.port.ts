@@ -1,0 +1,45 @@
+import type { Membership } from '../../domain/membership';
+import type { Project } from '../../domain/project';
+import type { Workspace } from '../../domain/workspace';
+
+/**
+ * Hợp đồng chung cho mọi repository của module (bản Prisma ở ticket sau phải tuân theo):
+ * - Truy vấn tài nguyên tenant LUÔN có `workspaceId` (ADR-020) — không có `findById` trần cho
+ *   project/membership.
+ * - Vi phạm unique ⇒ `ResourceConflictError({ reason: 'taken', field })` (slug, keyPrefix) hoặc
+ *   `ResourceConflictError({ reason: 'already_member' })`.
+ */
+export interface IWorkspaceRepository {
+  /** Trả cả workspace đã xóa mềm — use case quyết định 404. */
+  findById(id: string): Promise<Workspace | null>;
+  add(workspace: Workspace): Promise<void>;
+  save(workspace: Workspace): Promise<void>;
+  /**
+   * `UPDATE … SET deleted_at = NULL, purge_at = NULL, deleted_by_id = NULL WHERE id = ? AND
+   * deleted_at IS NOT NULL AND purge_at > now` — `false` khi không thỏa (đã purge/quá hạn/chưa xóa).
+   */
+  restoreIfWithinGrace(id: string, now: Date): Promise<boolean>;
+  /** Id workspace có `purge_at <= now`, tối đa `limit` (job purge, ADR-095). */
+  listPurgeable(now: Date, limit: number): Promise<string[]>;
+}
+
+export interface IMembershipRepository {
+  find(workspaceId: string, userId: string): Promise<Membership | null>;
+  add(membership: Membership): Promise<void>;
+  save(membership: Membership): Promise<void>;
+  remove(workspaceId: string, userId: string): Promise<void>;
+  /**
+   * ADR-046: `SELECT user_id … WHERE workspace_id = ? AND role = 'OWNER' ORDER BY id FOR UPDATE`
+   * — gọi TRONG transaction, TRƯỚC khi đọc/đổi dòng mục tiêu. Trả userId của các OWNER.
+   */
+  lockOwners(workspaceId: string): Promise<string[]>;
+  listUserIds(workspaceId: string): Promise<string[]>;
+}
+
+export interface IProjectRepository {
+  findInWorkspace(workspaceId: string, projectId: string): Promise<Project | null>;
+  add(project: Project): Promise<void>;
+  save(project: Project): Promise<void>;
+  /** MỌI project của ws, kể cả archived (socket: rời mọi phòng). */
+  listIds(workspaceId: string): Promise<string[]>;
+}
