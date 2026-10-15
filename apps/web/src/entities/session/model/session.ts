@@ -60,14 +60,22 @@ export function createSessionController(deps: SessionDeps) {
   const set = (status: 'authenticated' | 'anonymous' | 'unreachable', user: UserDto | null) =>
     sessionStore.set({ status, user });
 
+  /** Tăng mỗi lần `end()` — refresh đang bay từ phiên cũ không được đặt lại token (G1 W1). */
+  let generation = 0;
+
   /** Token mới hay chưa: `true` = đã có token, `false` = phiên không còn; ném lỗi = tạm thời. */
   async function renew(): Promise<boolean> {
+    const started = generation;
     const token = await refresher.run();
+    // Phiên kết thúc trong lúc chờ (đăng xuất ở tab này / tin 'logout' từ tab khác) ⇒ bỏ token
+    // (W-TOKEN-1: sau end() không còn access token trong bộ nhớ).
+    if (started !== generation) return false;
     if (token) tokenStore.set(token);
     return token !== null;
   }
 
   function end(reason: EndReason, broadcast = true): void {
+    generation += 1;
     const wasActive = sessionStore.get().status === 'authenticated' || tokenStore.get() !== null;
     tokenStore.clear();
     set('anonymous', null);

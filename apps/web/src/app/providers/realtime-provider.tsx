@@ -44,7 +44,8 @@ export function RealtimeProvider({
     client.connect();
     const offRenew = session.realtimeAuth.onTokenRenewed(() => {
       const token = session.realtimeAuth.token();
-      // ack.ok=false ⇒ server tự ngắt ⇒ nhánh disconnect của client refresh + nối lại.
+      // ack.ok=false: token lỗi ⇒ server tự ngắt ⇒ nhánh disconnect refresh + nối lại; RATE_LIMITED
+      // (auth:renew 5/phút/socket, T-030) KHÔNG ngắt — socket giữ token cũ tới exp rồi tự hồi phục.
       if (token && client.status() === 'connected') void client.renewAuth(token);
     });
     const onVisible = () => {
