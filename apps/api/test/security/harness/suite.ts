@@ -1,36 +1,19 @@
 import { afterAll, beforeAll, beforeEach, it } from 'vitest';
 
 import { API_DIR, startApi, type RunningApi } from './api-process';
-import { loadHarnessConfig, TEST_JWT_SECRET } from './config';
+import { loadHarnessConfig } from './config';
 import { prepareSuiteDatabase, type SuiteDatabase } from './database';
-import { flushRateLimitCounters } from './valkey';
 import { rawRequest, type RawRequest, type RawResponse } from './http-client';
+import { baseEnv } from './suite-env';
+import { flushRateLimitCounters } from './valkey';
+
+export { baseEnv } from './suite-env';
 
 export interface ApiUnderTest {
   readonly baseUrl: string;
   readonly webOrigin: string;
   request(req: RawRequest): Promise<RawResponse>;
   logs(): readonly string[];
-}
-
-/** Env tối thiểu hợp lệ cho NODE_ENV=test; `overrides` để dựng biến thể (vd production). */
-export function baseEnv(dbUrl: string, overrides: Record<string, string> = {}) {
-  const config = loadHarnessConfig();
-  return {
-    NODE_ENV: 'test',
-    APP_ENV: 'test',
-    DATABASE_URL: dbUrl,
-    REDIS_URL: config.redisUrl,
-    JWT_ACCESS_SECRET: TEST_JWT_SECRET,
-    CORS_ORIGINS: config.webOrigin,
-    COOKIE_SECURE: 'false',
-    // 1 hop: harness gán X-Forwarded-For riêng cho mỗi request chưa xác thực (né rate limit
-    // register 5/giờ/IP khi seed nhiều user). rate-limit.sec.ts ghi đè lại 0.
-    TRUST_PROXY_HOPS: '1',
-    GIT_SHA: 'security-suite',
-    LOG_LEVEL: 'info',
-    ...overrides,
-  };
 }
 
 /**
@@ -59,9 +42,10 @@ export function useApi(
   let skipReason: string | undefined;
 
   beforeAll(async () => {
-    // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
-    await flushRateLimitCounters();
     db = await prepareSuiteDatabase(config, API_DIR);
+    // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
+    // Chỉ SAU khi giữ khóa (prepareSuiteDatabase) — trước đó sẽ xóa giữa chừng của lần chạy khác.
+    await flushRateLimitCounters();
     try {
       api = await startApi(baseEnv(db.appUrl, envOverrides));
     } catch (err) {
@@ -70,7 +54,7 @@ export function useApi(
       if (!pending || forced || !pending.startupRefusal.test(message)) throw err;
       skipReason = `[${pending.label}] build này từ chối khởi động (đúng thiết kế) — đặt ${pending.requiredEnv}=1 để bắt buộc chạy`;
     }
-  }, 180_000);
+  }, 600_000);
 
   beforeEach((ctx) => {
     if (skipReason) ctx.skip(skipReason);
@@ -103,7 +87,7 @@ export function useApi(
  * Case SEC chưa chạy được vì route/tính năng chưa có. Tên luôn mang nhãn `PENDING-ROUTE` để báo
  * cáo đếm được; bị skip (KHÔNG xanh giả). Phase 3: đổi `pendingRoute` → `it` khi route merge.
  */
-function runPending(blockedBy: string): boolean {
+export function runPending(blockedBy: string): boolean {
   const raw = process.env.SEC_RUN_PENDING ?? '';
   if (raw === 'all') return true;
   const tags = raw
