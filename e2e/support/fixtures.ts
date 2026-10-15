@@ -6,7 +6,7 @@ import { createClient } from 'redis';
 import { API_URL, E2E_REDIS_URL } from './env';
 
 /** Xóa bộ đếm rate limit (Valkey db riêng của E2E): mọi user đăng ký từ cùng IP 127.0.0.1. */
-async function flushValkey(): Promise<void> {
+export async function flushValkey(): Promise<void> {
   if (!/\/(?:[1-9]|1[0-5])$/.test(E2E_REDIS_URL)) {
     throw new Error(`Từ chối FLUSHDB trên ${E2E_REDIS_URL}: E2E chỉ dùng db 1–15 riêng`);
   }

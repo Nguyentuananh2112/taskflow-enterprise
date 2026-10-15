@@ -10,14 +10,15 @@ test('@main E2E-01: đăng ký → workspace → project mặc định → tạo
 }) => {
   await registerViaUi(page, newUser('e2e01'));
   // /w ⇒ workspace mặc định ⇒ danh sách project ⇒ project mặc định (chỉ bấm, không goto).
-  await page.getByRole('main').getByRole('link').first().click();
-  await expect(page).toHaveURL(/\/w\/[^/]+\/projects/);
+  // Thẻ workspace (tên gồm vai trò) — từ T-034 trang /w còn có link "Tạo workspace".
   await page
     .getByRole('main')
-    .getByRole('link')
-    .filter({ hasNotText: /lưu trữ|đang hoạt động/i })
+    .getByRole('link', { name: /Chủ sở hữu/ })
     .first()
     .click();
+  await expect(page).toHaveURL(/\/w\/[^/]+\/projects/);
+  // Thẻ dự án (href /p/…) — header trang còn link "Thành viên" / "Cài đặt" (T-034).
+  await page.locator('main a[href*="/p/"]').first().click();
   await expect(page).toHaveURL(/\/w\/[^/]+\/p\/[^/]+/);
   await waitBoardReady(page);
 

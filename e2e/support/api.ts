@@ -243,23 +243,41 @@ export function apiGetTask(
   return call(request, 'GET', taskPath(s, taskId), s.accessToken, undefined, 200);
 }
 
-/** Move tới vị trí giữa `afterId` và `beforeId` trong cùng cột; version lấy mới từ server (rebalance đổi version). */
+/**
+ * Move tới vị trí giữa `afterId` và `beforeId` trong cùng cột. `known` = version đang biết (từ response
+ * trước) ⇒ không GET mỗi lần (GET + PATCH gấp đôi request ⇒ 429 ở bucket 1000/phút). Rebalance đổi
+ * version các thẻ khác ⇒ 409 ⇒ lấy version mới rồi thử lại một lần.
+ */
 export async function apiMoveBetween(
   request: APIRequestContext,
   s: Seeded,
   taskId: string,
   afterId: string | null,
   beforeId: string | null,
+  known?: number,
 ): Promise<TaskFull> {
-  const current = await apiGetTask(request, s, taskId);
-  return call(
-    request,
-    'PATCH',
-    `${taskPath(s, taskId)}/move`,
-    s.accessToken,
-    { expectedVersion: current.version, afterId, beforeId },
-    200,
-  );
+  const send = (expectedVersion: number) =>
+    request.fetch(`${API_URL}${taskPath(s, taskId)}/move`, {
+      method: 'PATCH',
+      headers: {
+        origin: WEB_ORIGIN,
+        'content-type': 'application/json',
+        authorization: `Bearer ${s.accessToken}`,
+      },
+      data: JSON.stringify({ expectedVersion, afterId, beforeId }),
+    });
+  let res = await send(known ?? (await apiGetTask(request, s, taskId)).version);
+  if (res.status() === 409) res = await send((await apiGetTask(request, s, taskId)).version);
+  // Kịch bản cần vài trăm move/phút > hạn mức `api-user` 300/phút (đúng thiết kế). Valkey db của E2E là
+  // riêng ⇒ xóa bộ đếm rồi thử lại — CHỈ để dựng dữ liệu, không phải kiểm rate limit.
+  if (res.status() === 429) {
+    await (await import('./fixtures')).flushValkey();
+    res = await send((await apiGetTask(request, s, taskId)).version);
+  }
+  if (res.status() !== 200) {
+    throw new Error(`PATCH move — ${String(res.status())}: ${(await res.text()).slice(0, 300)}`);
+  }
+  return ((await res.json()) as { data: TaskFull }).data;
 }
 
 export function apiGetWorkspace(

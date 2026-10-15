@@ -72,10 +72,11 @@ test('T-034: hạ thành viên xuống Người xem ⇒ hộp xác nhận, task 
     .click();
   await expect(toast(page, 'Đã đổi vai trò')).toBeVisible();
   await expect(page.getByText('1 task được bỏ giao').first()).toBeVisible();
+  // TaskDto: `assignee: UserRefDto | null` (contracts task.schemas.ts).
   const after = (await apiGetTask(request, sa, task.id)) as unknown as {
-    assigneeId: string | null;
+    assignee: { id: string } | null;
   };
-  expect(after.assigneeId).toBeNull();
+  expect(after.assignee).toBeNull();
 });
 
 test('T-034: OWNER duy nhất tự hạ quyền ⇒ LAST_OWNER, vai trò giữ nguyên', async ({

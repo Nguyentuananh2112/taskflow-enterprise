@@ -5,7 +5,6 @@ import { test } from '../support/fixtures';
 
 const TASK_API = 'kịch bản Kanban đang viết (T-024 đã merge)';
 const pending: [id: string, title: string, blockedBy: string][] = [
-  ['E2E-14b', 'Khôi phục workspace qua UI khu "Đã xóa"', 'màn quản trị T-034 (E)'],
   [
     'E2E-REBAL',
     'Kéo nhiều lần vào giữa 2 thẻ ⇒ thứ tự đúng sau rebalance (T-033)',

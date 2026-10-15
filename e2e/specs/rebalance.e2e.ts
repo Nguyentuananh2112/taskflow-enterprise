@@ -1,6 +1,7 @@
 import {
   apiAddMember,
   apiCreateTask,
+  apiLogin,
   apiMoveBetween,
   apiRegister,
   boardPath,
@@ -43,8 +44,19 @@ test('E2E-REBAL: chèn lặp giữa 2 thẻ cố định ⇒ rebalance ⇒ thứ
   let rebalancedAt = -1;
   let front = p; // thẻ đang đứng ngay sau L
   let back = q;
+  const versions = new Map<string, number>([
+    [p.id, p.version],
+    [q.id, q.version],
+  ]);
+  // Suite chạy access token TTL 10s (E2E-11) ⇒ vòng lặp dài tự đăng nhập lại qua API mỗi 7s.
+  let tokenAt = Date.now();
   for (let i = 0; i < MAX_MOVES && rebalancedAt < 0; i += 1) {
-    const moved = await apiMoveBetween(request, sa, back.id, l.id, front.id);
+    if (Date.now() - tokenAt > 7_000) {
+      sa.accessToken = (await apiLogin(request, a)).accessToken;
+      tokenAt = Date.now();
+    }
+    const moved = await apiMoveBetween(request, sa, back.id, l.id, front.id, versions.get(back.id));
+    versions.set(moved.id, moved.version);
     if (moved.rank.length < longest / 2) rebalancedAt = i;
     longest = Math.max(longest, moved.rank.length);
     [front, back] = [back, front];
@@ -53,7 +65,8 @@ test('E2E-REBAL: chèn lặp giữa 2 thẻ cố định ⇒ rebalance ⇒ thứ
     rebalancedAt,
     `không thấy rebalance sau ${String(MAX_MOVES)} lần (rank dài nhất ${String(longest)})`,
   ).toBeGreaterThan(0);
-  expect(longest, 'rank phải đã vượt ngưỡng 64 trước khi rebalance').toBeGreaterThan(64);
+  // Server rebalance khi rank MỚI dài hơn 64 ⇒ rank dài nhất client nhận được đúng bằng ngưỡng.
+  expect(longest, 'rank phải chạm ngưỡng 64 trước khi rebalance').toBeGreaterThanOrEqual(64);
 
   // Thứ tự đúng theo server: L, front, back, R (front vừa được chèn sát sau L ở bước cuối = `back` trước khi đổi).
   const expected = [
