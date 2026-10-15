@@ -1,0 +1,202 @@
+import express, { type Request } from 'express';
+import { MemoryStore, type Store } from 'express-rate-limit';
+import request from 'supertest';
+import { describe, expect, it } from 'vitest';
+
+import { errorOf, FakeClock, SpyLogger } from '../../../../test/support';
+import { HttpResponder } from '../envelope';
+import { globalErrorHandler } from '../error-handler';
+import {
+  createGlobalRateLimit,
+  createHitLimiter,
+  createRateLimit,
+  createRateLimits,
+  hashEmail,
+  ipKey,
+  type RateLimitDeps,
+} from './rate-limit';
+import { RATE_LIMIT_RULES, type RateLimitRule } from './rules';
+
+/** Store luôn lỗi — mô phỏng Valkey chết. */
+const deadStore = (): Store => ({
+  increment: () => Promise.reject(new Error('ECONNREFUSED')),
+  decrement: () => Promise.reject(new Error('ECONNREFUSED')),
+  resetKey: () => Promise.resolve(),
+});
+
+function deps(overrides: Partial<RateLimitDeps> = {}): RateLimitDeps & { logger: SpyLogger } {
+  return {
+    storeFor: () => new MemoryStore(),
+    logger: new SpyLogger(),
+    userIdOf: (req: Request) => req.header('x-test-user') ?? undefined,
+    ...overrides,
+  } as RateLimitDeps & { logger: SpyLogger };
+}
+
+function appWith(handlers: express.RequestHandler[], status = 200) {
+  const app = express();
+  app.set('trust proxy', 1);
+  app.use(express.json());
+  app.post('/t', ...handlers, (_req, res) => {
+    res.status(status).json({ ok: true });
+  });
+  app.use(
+    globalErrorHandler({
+      responder: new HttpResponder(new FakeClock()),
+      logger: new SpyLogger(),
+      exposeInternalErrors: false,
+    }),
+  );
+  return app;
+}
+
+const rule = (r: Partial<RateLimitRule>): RateLimitRule => ({
+  id: 'r',
+  windowMs: 60_000,
+  limit: 2,
+  key: 'ip',
+  failMode: 'open',
+  ...r,
+});
+
+describe('createRateLimit', () => {
+  it('vượt ngưỡng ⇒ 429 RATE_LIMITED + Retry-After + header RateLimit draft-8', async () => {
+    const app = appWith([createRateLimit(rule({ limit: 2 }), deps())]);
+    await request(app).post('/t').send({});
+    const second = await request(app).post('/t').send({});
+    expect(second.headers['ratelimit-policy']).toContain('q=2');
+    expect(second.headers['ratelimit']).toContain('r=0');
+    const third = await request(app).post('/t').send({});
+    expect(third.status).toBe(429);
+    expect(errorOf(third)).toMatchObject({ code: 'RATE_LIMITED', details: { retryAfterSec: 60 } });
+    expect(third.headers['retry-after']).toBe('60');
+  });
+
+  it('key theo IP thật sau trust proxy: IP khác ⇒ bộ đếm khác; IPv6 cùng /56 ⇒ chung bộ đếm', async () => {
+    const app = appWith([createRateLimit(rule({ limit: 1 }), deps())]);
+    const from = (ip: string) => request(app).post('/t').set('X-Forwarded-For', ip).send({});
+    expect((await from('203.0.113.1')).status).toBe(200);
+    expect((await from('203.0.113.1')).status).toBe(429);
+    expect((await from('203.0.113.2')).status).toBe(200);
+    expect((await from('2001:db8:aa:bb01::1')).status).toBe(200);
+    expect((await from('2001:db8:aa:bbff::9')).status).toBe(429); // cùng /56
+  });
+
+  it('key theo user (đã xác thực) và rơi về IP khi chưa xác thực', async () => {
+    const app = appWith([createRateLimit(rule({ key: 'user', limit: 1 }), deps())]);
+    expect((await request(app).post('/t').set('x-test-user', 'mia').send({})).status).toBe(200);
+    expect((await request(app).post('/t').set('x-test-user', 'mia').send({})).status).toBe(429);
+    expect((await request(app).post('/t').set('x-test-user', 'pam').send({})).status).toBe(200);
+    expect((await request(app).post('/t').send({})).status).toBe(200);
+    expect((await request(app).post('/t').send({})).status).toBe(429);
+  });
+
+  it('login: chỉ đếm lần SAI, theo (IP, email băm) — email khác hoa/thường vẫn chung bộ đếm', async () => {
+    const d = deps();
+    const failing = appWith(
+      createRateLimits([rule({ key: 'ip+email', limit: 2, countFailedOnly: true })], d),
+      401,
+    );
+    const ok = appWith(
+      createRateLimits([rule({ key: 'ip+email', limit: 2, countFailedOnly: true })], d),
+      200,
+    );
+    for (let i = 0; i < 5; i++)
+      expect((await request(ok).post('/t').send({ email: 'mia@example.com' })).status).toBe(200);
+    await request(failing).post('/t').send({ email: 'Mia@Example.com ' });
+    await request(failing).post('/t').send({ email: 'mia@example.com' });
+    expect((await request(failing).post('/t').send({ email: 'mia@example.com' })).status).toBe(429);
+    expect((await request(failing).post('/t').send({ email: 'pam@example.com' })).status).toBe(401);
+  });
+
+  it('fail-closed (login/register/refresh): Valkey chết ⇒ 503 SERVICE_UNAVAILABLE, handler không chạy', async () => {
+    const d = deps({ storeFor: deadStore });
+    const app = appWith(createRateLimits(RATE_LIMIT_RULES.login, d));
+    const res = await request(app).post('/t').send({ email: 'mia@example.com', password: 'x' });
+    expect(res.status).toBe(503);
+    expect(errorOf(res).code).toBe('SERVICE_UNAVAILABLE');
+    expect(d.logger.messages('error')).toContain('rate_limit.store_unavailable_fail_closed');
+  });
+
+  it('fail-open (phần còn lại): Valkey chết ⇒ cho qua, cảnh báo tối đa 1 lần/30s', async () => {
+    const clock = new FakeClock();
+    const d = deps({ storeFor: deadStore, now: () => clock.now().getTime() });
+    const app = appWith(
+      [createRateLimit(rule({ failMode: 'open', limit: 1, countFailedOnly: true }), d)],
+      400,
+    );
+    for (let i = 0; i < 3; i++) expect((await request(app).post('/t').send({})).status).toBe(400);
+    expect(d.logger.messages('warn')).toEqual(['rate_limit.store_unavailable_fail_open']);
+    clock.advance(30_001);
+    await request(app).post('/t').send({});
+    expect(d.logger.messages('warn')).toHaveLength(2);
+  });
+
+  it('mỗi route chọn rule từ bảng security §6.4; register/refresh cũng fail-closed', () => {
+    expect(RATE_LIMIT_RULES.login.map((r) => [r.id, r.limit, r.windowMs])).toEqual([
+      ['login-fail-ip-email', 5, 900_000],
+      ['login-ip', 20, 900_000],
+      ['login-fail-email', 50, 3_600_000],
+    ]);
+    for (const name of ['login', 'register', 'refresh'] as const) {
+      expect(RATE_LIMIT_RULES[name].every((r) => r.failMode === 'closed')).toBe(true);
+    }
+    const others = Object.entries(RATE_LIMIT_RULES).filter(
+      ([n]) => !['login', 'register', 'refresh'].includes(n),
+    );
+    expect(others.flatMap(([, rules]) => rules).every((r) => r.failMode === 'open')).toBe(true);
+    const ids = Object.values(RATE_LIMIT_RULES).flatMap((rules) => rules.map((r) => r.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('createGlobalRateLimit & helpers', () => {
+  it('chỉ giới hạn request chưa xác thực (có Authorization ⇒ để rule theo user sau authenticate)', async () => {
+    const app = appWith([createGlobalRateLimit(rule({ limit: 1 }), deps())]);
+    expect((await request(app).post('/t').send({})).status).toBe(200);
+    expect((await request(app).post('/t').send({})).status).toBe(429);
+    expect((await request(app).post('/t').set('Authorization', 'Bearer x').send({})).status).toBe(
+      200,
+    );
+  });
+
+  it('hashEmail: SHA-256 của email chuẩn hóa, không lộ email; thiếu email ⇒ hằng số', () => {
+    expect(hashEmail(' Mia@Example.COM ')).toBe(hashEmail('mia@example.com'));
+    expect(hashEmail('mia@example.com')).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashEmail(undefined)).toBe('no-email');
+    expect(hashEmail(42)).toBe('no-email');
+  });
+
+  it('ipKey: IPv4 giữ nguyên, IPv6 gom /56, thiếu IP ⇒ 0.0.0.0', () => {
+    expect(ipKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(ipKey('2001:db8:aa:bb01::1')).toBe(ipKey('2001:db8:aa:bbff::2'));
+    expect(ipKey(undefined)).toBe('0.0.0.0');
+  });
+});
+
+describe('createHitLimiter (handshake Socket.io)', () => {
+  it('đếm theo key, vượt ngưỡng ⇒ allowed=false kèm retryAfter', async () => {
+    const limiter = createHitLimiter(rule({ limit: 2 }), {
+      storeFor: () => new MemoryStore(),
+      logger: new SpyLogger(),
+    });
+    expect((await limiter.hit('1.1.1.1')).allowed).toBe(true);
+    expect((await limiter.hit('1.1.1.1')).allowed).toBe(true);
+    expect(await limiter.hit('1.1.1.1')).toMatchObject({ allowed: false });
+    expect((await limiter.hit('1.1.1.1')).retryAfterSec).toBeGreaterThan(0);
+    expect((await limiter.hit('2.2.2.2')).allowed).toBe(true);
+  });
+
+  it('store lỗi: open ⇒ cho qua; closed ⇒ ném 503', async () => {
+    const open = createHitLimiter(rule({ failMode: 'open' }), {
+      storeFor: deadStore,
+      logger: new SpyLogger(),
+    });
+    expect((await open.hit('k')).allowed).toBe(true);
+    const closed = createHitLimiter(rule({ failMode: 'closed' }), {
+      storeFor: deadStore,
+      logger: new SpyLogger(),
+    });
+    await expect(closed.hit('k')).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+  });
+});
