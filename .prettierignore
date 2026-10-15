@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+docs/
+**/dist/
+**/.next/
+**/coverage/
+**/generated/
+**/next-env.d.ts
+# Fixture vi phạm cố ý — số dòng có ý nghĩa với test max-lines
+**/test/fixtures/

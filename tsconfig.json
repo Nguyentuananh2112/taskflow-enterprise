@@ -1,0 +1,8 @@
+{
+  "extends": "@taskflow/config/tsconfig/node.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["*.ts", "*.js"]
+}

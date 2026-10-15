@@ -1,0 +1,60 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Một nơi duy nhất chốt phiên bản dùng chung (docs/research/stack-versions.md, ADR-060).
+# package.json tham chiếu bằng "catalog:". Pin chính xác, không dùng ^/~.
+catalog:
+  '@eslint/js': 10.0.1
+  '@next/eslint-plugin-next': 16.4.1
+  '@tailwindcss/postcss': 4.3.3
+  '@testing-library/react': 16.3.3
+  '@testing-library/dom': 10.4.2
+  '@types/express': 5.0.6
+  '@types/node': 24.19.2
+  '@types/react': 19.3.0
+  '@types/react-dom': 19.3.0
+  '@vitejs/plugin-react': 6.1.2
+  dependency-cruiser: 18.6.0
+  eslint: 10.12.0
+  eslint-config-prettier: 10.1.8
+  eslint-plugin-react-hooks: 7.1.1
+  express: 5.3.0
+  globals: 17.13.0
+  jsdom: 30.1.2
+  next: 16.4.1
+  postcss: 8.5.30
+  prettier: 3.9.10
+  react: 19.3.1
+  react-dom: 19.3.1
+  tailwindcss: 4.3.3
+  tsdown: 0.23.1
+  tsx: 4.23.15
+  typescript: 6.0.3
+  typescript-eslint: 8.71.2
+  vite: 8.3.4
+  vitest: 5.0.4
+  zod: 4.6.7
+
+# pnpm 11 chặn install script mặc định — chỉ cho phép gói cần build/tải binary.
+allowBuilds:
+  esbuild: true
+  '@tailwindcss/oxide': true
+  sharp: true
+  unrs-resolver: true
+
+# Mặc định của pnpm 11 (chống supply-chain): không cài bản phát hành < 24h.
+minimumReleaseAge: 1440
+
+engineStrict: true
+
+# Ngoại lệ có chủ đích: bản vá bảo mật phát hành 2026-10-14 (< 24h) phải dùng ngay.
+#  - react/react-dom 19.3.1: GHSA-xqc2-xf4c-x3h3 (critical, RCE trong React Server Components)
+#  - next 16.4.1: GHSA-673q-mjm6-r5xr, GHSA-2464-fhr4-w9xw (critical, RCE), GHSA-p3m5-59mp-jv5r (high)
+# Xóa khỏi danh sách khi các bản trên đã > 24h tuổi.
+minimumReleaseAgeExclude:
+  - react
+  - react-dom
+  - scheduler
+  - next
+  - '@next/*'

@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+
+/* Design token do T-012 (Engineer E) hoàn thiện theo frontend.md §6. */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+}

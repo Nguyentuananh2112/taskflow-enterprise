@@ -1,9 +1,33 @@
+# deps
 node_modules/
+
+# env & secret (ADR-072: repo public)
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+
+# build output
 dist/
 .next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+**/src/generated/
+
+# test
 coverage/
+.vitest/
+playwright-report/
+test-results/
+
+# misc
 *.log
 .DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Next 16.4 tự sinh mỗi lần `next dev` (hướng dẫn cho AI agent, trỏ tới docs trong node_modules/next)
+apps/web/AGENTS.md
