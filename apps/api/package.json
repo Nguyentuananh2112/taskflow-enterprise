@@ -14,7 +14,14 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:check-drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
-    "test:integration": "prisma generate --no-hints && vitest run --config vitest.integration.config.ts"
+    "test:integration": "prisma generate --no-hints && vitest run --config vitest.integration.config.ts",
+    "mutation:core-errors": "stryker run stryker/core-errors.config.mjs",
+    "mutation:core-http": "stryker run stryker/core-http.config.mjs",
+    "mutation:core-runtime": "stryker run stryker/core-runtime.config.mjs",
+    "mutation:auth-domain": "stryker run stryker/auth-domain.config.mjs",
+    "mutation:auth-application": "stryker run stryker/auth-application.config.mjs",
+    "mutation:auth-infrastructure": "stryker run stryker/auth-infrastructure.config.mjs",
+    "test:security": "vitest run --config test/security/vitest.config.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "catalog:",
@@ -36,6 +43,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "10.0.0",
     "@taskflow/config": "workspace:*",
     "@types/cors": "catalog:",
     "@types/express": "catalog:",
