@@ -84,6 +84,7 @@ sequenceDiagram
   C->>A: POST /auth/refresh (Cookie rt)
   A->>A: hash = sha256(rt)
   A->>DB: SELECT refresh_tokens JOIN users WHERE token_hash = hash
+  Note over A,DB: trước khi cấp: SELECT … FROM users FOR SHARE (T-032 X4 — chặn đổi mật khẩu / logout-all chen giữa)
   alt không tìm thấy
     A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
   else đã thu hồi với reason ≠ ROTATED (LOGOUT, LOGOUT_ALL, REUSE…)
@@ -92,7 +93,7 @@ sequenceDiagram
     A-->>C: 409 REFRESH_IN_PROGRESS (không cấp, không thu hồi)
   else revokedReason = ROTATED và cũ hơn 10s  ⇒ REUSE
     A->>DB: UPDATE refresh_tokens SET revoked_at=now, reason=REUSE_DETECTED WHERE family_id=? AND revoked_at IS NULL
-    A->>R: SET auth:sid-revoked:{familyId} 1 EX 900 (TRƯỚC commit — lỗi ⇒ 503 + rollback, ADR-105)
+    A->>R: SET auth:sid-revoked:{familyId} 1 EX 905 (TRƯỚC commit — lỗi ⇒ 503 + rollback, ADR-105)
     A->>A: log cảnh báo security (userId, familyId, ip, ua — không log token)
     A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
   else hết hạn (expiresAt hoặc familyExpiresAt) / user deletedAt
@@ -114,9 +115,9 @@ sequenceDiagram
 
 ### 1.5 Logout 1 thiết bị — `POST /api/v1/auth/logout`
 
-Cookie + kiểm tra `Origin`. Không cần access token (có thể đã hết hạn). **Luôn `204`** (idempotent), luôn xóa cookie.
+Cookie + kiểm tra `Origin`. Không cần access token (có thể đã hết hạn). `204` (idempotent) và xóa cookie — **trừ** khi request mang > 4 cookie refresh trùng tên ⇒ `401`, không xóa (xem 2.3).
 1. Có cookie và tìm thấy token → thu hồi **cả family** (`reason = LOGOUT`, chỉ các dòng `revokedAt IS NULL`).
-2. **Trong transaction, TRƯỚC commit** (ADR-105): `SET auth:sid-revoked:{familyId} 1 EX 900` → access token đang lưu hành của phiên này chết ngay (không đợi 15 phút). Ghi lỗi ⇒ `503 SERVICE_UNAVAILABLE` + rollback (family **không** bị thu hồi nửa vời; client thử lại). Sau commit ghi lại lần nữa (best-effort).
+2. **Trong transaction, TRƯỚC commit** (ADR-105): `SET auth:sid-revoked:{familyId} 1 EX 905` (TTL access token + `clockTolerance`) → access token đang lưu hành của phiên này chết ngay (không đợi 15 phút). Ghi lỗi ⇒ `503 SERVICE_UNAVAILABLE` + rollback (family **không** bị thu hồi nửa vời; client thử lại). Sau commit ghi lại lần nữa (best-effort).
 3. Socket: `io.in('session:{familyId}').disconnectSockets(true)`.
 
 ### 1.6 Logout mọi thiết bị — `POST /api/v1/auth/logout-all` (Bearer)
@@ -153,7 +154,7 @@ Quên mật khẩu / xác minh email (cần hạ tầng email), MFA, danh sách 
 | Mục | Giá trị |
 |---|---|
 | Thuật toán | **HS256** (một service vừa ký vừa xác minh, không cần khóa công khai). Thư viện **jose 6** (ADR-060): ký bằng `new SignJWT(claims).setProtectedHeader({ alg: 'HS256', kid })`, verify bằng `jwtVerify(token, key, { algorithms: ['HS256'], issuer, audience, clockTolerance: 5 })` — **phải** truyền whitelist `algorithms` (chống `alg: none` / nhầm thuật toán). Khóa = `new TextEncoder().encode(secret)`. |
-| Khóa | `JWT_ACCESS_SECRET` ≥ 32 byte ngẫu nhiên (base64), kiểm tra độ dài bằng Zod lúc khởi động; dev và prod khác nhau. Header có `kid`; env cho phép `JWT_ACCESS_SECRET_PREVIOUS` để xoay khóa không làm rớt phiên (verify thử theo `kid`). |
+| Khóa | `JWT_ACCESS_SECRET` ≥ 32 byte **của chuỗi UTF-8** (khóa HS256 = `TextEncoder().encode(secret)`, Zod kiểm lúc khởi động). Chuỗi base64 32 ký tự chỉ có 24 byte entropy ⇒ sinh bằng `openssl rand -base64 48` (64 ký tự, 48 byte ngẫu nhiên); dev và prod khác nhau. Header có `kid`; env cho phép `JWT_ACCESS_SECRET_PREVIOUS` để xoay khóa không làm rớt phiên (verify thử theo `kid`). |
 | TTL | 15 phút (`expiresIn: 900` trong response). `clockTolerance` 5s. Riêng `APP_ENV=test`: `JWT_ACCESS_TTL_SECONDS` (5–900) rút ngắn TTL cho test hết hạn hộp đen (T-031); đặt biến này ở môi trường khác ⇒ app từ chối khởi động. |
 | Lưu trữ FE | Chỉ trong bộ nhớ (ADR-026). Gửi bằng `Authorization: Bearer`. Không bao giờ ở localStorage/cookie/URL. |
 
@@ -180,7 +181,7 @@ Claims:
 | Sinh | `crypto.randomBytes(32)` → base64url (43 ký tự), 256 bit entropy |
 | Lưu DB | `tokenHash = sha256(token)` dạng hex (64 ký tự), `@unique`. SHA-256 (không dùng hàm băm mật khẩu chậm như argon2) vì token đã có entropy cao và cần tra cứu theo hash (ADR-024). So khớp bằng tra cứu index nên không có vấn đề timing. |
 | Hạn | Trượt 7 ngày, tuyệt đối 30 ngày (1.3) |
-| Dọn dẹp | Job hằng ngày xóa dòng có `expiresAt < now − 7 ngày` (giữ 7 ngày để điều tra) |
+| Dọn dẹp | **Chưa có** (G2 S2 — chờ Tech Lead quyết): thiết kế là job hằng ngày xóa dòng có `expiresAt < now − 7 ngày` (giữ 7 ngày để điều tra). Hiện `refresh_tokens` (có `ip`, `user_agent`) tăng mãi — khoảng trống lưu giữ dữ liệu, không khai thác được |
 
 ### 2.3 Cookie
 
@@ -189,7 +190,7 @@ Claims:
 | Tên | `__Host-tf_rt` (ADR-109) | `tf_rt` |
 | `HttpOnly` | ✅ | ✅ |
 | `Secure` | ✅ | ❌ |
-| `SameSite` | `Strict` | `Strict` (`localhost:3000` và `localhost:4000` cùng site — cổng không tính) |
+| `SameSite` | `Strict` | `Strict` (`localhost:3001` và `localhost:4000` cùng site — cổng không tính; ADR-097) |
 | `Path` | `/` (tiền tố `__Host-` bắt buộc) | `/api/v1/auth` (trên localhost cookie không tách theo cổng — Path hẹp để không gửi sang web `:3000`) |
 | `Domain` | **không đặt** (host-only trên `api.example.com`) | không đặt |
 | `Max-Age` | = thời gian còn lại tới `expiresAt` | như prod |
@@ -202,7 +203,7 @@ Claims:
 - **Nhiều cookie trùng tên** (chỉ có thể do bên thứ ba cài; lớp phòng thủ thứ hai sau `__Host-`) ⇒ `/auth/refresh` và `/auth/logout` **thu hồi family của MỌI giá trị** (như logout) rồi `401` / `204` + xóa cookie: cookie còn sót lại trong trình duyệt đều đã chết, không thể hoán đổi phiên.
   - Quá **4** giá trị ⇒ `401` ngay, không thu hồi từng cái (chặn khuếch đại DB/Valkey) và **không** xóa cookie.
   - Cái giá khi đang bị tấn công: nạn nhân phải đăng nhập lại.
-- Dev tắt `Secure` vì: Chrome nhận `Secure` trên localhost nhưng **từ chối tiền tố `__Secure-`/`__Host-`**, Safari từ chối cookie `Secure` trên localhost hoàn toàn. Cấu hình bằng `COOKIE_SECURE` + `COOKIE_NAME` suy ra từ `NODE_ENV`; **app không khởi động** nếu `NODE_ENV=production` mà `COOKIE_SECURE=false`.
+- Dev tắt `Secure` vì: Chrome nhận `Secure` trên localhost nhưng **từ chối tiền tố `__Secure-`/`__Host-`**, Safari từ chối cookie `Secure` trên localhost hoàn toàn. Tên và `Path` suy ra từ `COOKIE_SECURE` (`true` ⇒ `__Host-tf_rt`, `Path=/`; `false` ⇒ `tf_rt`, `Path=/api/v1/auth`) — không có biến `COOKIE_NAME`. **App không khởi động** nếu `APP_ENV` ∈ {staging, production} mà `COOKIE_SECURE=false` (staging = production; mọi hardening dựa trên `APP_ENV`, không phải `NODE_ENV`).
 - Xóa cookie: `Set-Cookie` cùng tên/Path với `Max-Age=0`.
 - FE gọi các endpoint `/auth/*` với `credentials: 'include'`.
 
@@ -316,7 +317,7 @@ Tiền tố `/api/v1`. `ws` = `/workspaces/:wsId`, `p` = `/projects/:projectId`,
 | `POST /workspaces` | `authenticate` | người tạo thành OWNER (cùng transaction); rate limit 10/giờ/user |
 | `GET ws` | `workspace:read` | |
 | `PATCH ws` | `workspace:update` | |
-| `DELETE ws` | `workspace:delete` | xóa mềm (3.6) |
+| `DELETE ws` | `workspace:delete` | xóa mềm (3.6); body **strict** `{ confirmSlug }` phải trùng slug |
 | `POST ws/restore` (ADR-050) | `requireMembership(includeDeleted, OWNER)` — không qua `loadMembership` | điều kiện `deleted_at IS NOT NULL AND purge_at > now()` (3.6) |
 | `GET ws/members` (có `q`, ADR-083) | `member:read` | `q` chỉ tìm trong member của ws này (6.7) |
 | `POST ws/members` | `member:add` | role được cấp ≤ quyền người mời |
@@ -371,7 +372,7 @@ SELECT id, user_id FROM workspace_members
 - Không có cache membership ở v1 (3.3). Nếu sau này thêm cache thì phải xóa cache của mọi member khi workspace bị xóa **hoặc** được khôi phục.
 
 **Khôi phục — `POST /workspaces/:wsId/restore`** (ADR-050; contract ở `data-and-api.md` 1.7). Bắt buộc:
-- Route nằm **ngoài** `loadMembership`, dùng middleware riêng `requireMembership(wsId, { includeDeleted: true, minRole: OWNER })`. Đây là chỗ duy nhất được dùng `includeDeleted: true`; có lint/test chặn dùng ở route khác.
+- Route nằm **ngoài** `loadMembership`, dùng middleware riêng `requireMembership(wsId, { includeDeleted: true, minRole: OWNER })`. Đây là chỗ duy nhất được dùng `includeDeleted: true` (ADR-103). Không có lint chặn; SEC-55 kiểm hành vi (route khác trên ws đã xóa ⇒ `404`).
 - Mọi thất bại (không phải member, là PM/MEMBER/VIEWER, ws chưa xóa, đã quá `purgeAt`, ws không tồn tại) ⇒ **cùng một** `404 RESOURCE_NOT_FOUND`. Không trả 403 cho member không phải OWNER: với họ ws đang "không tồn tại".
 - UseCase chạy trong transaction: `UPDATE workspaces SET deleted_at = NULL WHERE id = $ws AND deleted_at IS NOT NULL AND purge_at > now()` rồi kiểm `count`. `count = 0` ⇒ 404. Job purge cũng chỉ xóa với điều kiện `purge_at <= now()`. Hai điều kiện loại trừ nhau nên restore và purge không thể cùng thành công.
 - Role OWNER được đọc **trong** transaction. Trong thời gian ws bị xóa mọi route đổi role đều trả 404, nên OWNER lúc khôi phục chính là OWNER lúc xóa.
@@ -407,11 +408,11 @@ SELECT id, user_id FROM workspace_members
 | Member, thấy được tài nguyên, nhưng role không đủ | `403 FORBIDDEN_ACCESS` |
 | Member, role đủ, Policy từ chối (MEMBER xóa task người khác) | `403 FORBIDDEN_ACCESS` |
 | Project archived khi ghi (gồm cả xóa task, ADR-045) | `422 PROJECT_ARCHIVED` |
-| Workspace đã xóa mềm / task đã xóa mềm | `404 RESOURCE_NOT_FOUND` |
+| Workspace đã xóa mềm / task đã xóa mềm | `404 RESOURCE_NOT_FOUND` — **ngoại lệ:** `GET …/tasks/:id/audit-logs` của task đã xóa mềm trả `200` (đọc lịch sử, data-and-api) |
 | Sai version | `409 VERSION_CONFLICT`, `details: { currentVersion, current: TaskDto }` — an toàn vì 409 chỉ tới sau khi đã qua 404/403 (người gọi đọc được task) |
 | Param id sai định dạng uuid | `400 VALIDATION_ERROR` (không lộ sự tồn tại) |
 
-Nguyên tắc: **chỉ trả 403 khi người gọi đã được phép biết tài nguyên tồn tại** (mọi member đều đọc được mọi thứ trong ws nên 403 không lộ gì thêm). Thứ tự kiểm tra cố định: 401 → 404 → 403 → 422 → 409. Body 404 phải **giống hệt** nhau giữa "không tồn tại" và "không có quyền" (cùng message, không `details`).
+Nguyên tắc: **chỉ trả 403 khi người gọi đã được phép biết tài nguyên tồn tại** (mọi member đều đọc được mọi thứ trong ws nên 403 không lộ gì thêm). Thứ tự kiểm tra cố định: 401 → 404 → 403 → 422 → 409. Body 404 phải **giống hệt** nhau giữa "không tồn tại" và "không có quyền" (cùng message, cùng `details.resource` — chỉ nêu loại tài nguyên theo URL, không lộ gì thêm).
 
 ### 4.3 Ví dụ
 - Alice là OWNER ws A. Bob là MEMBER ws B. Bob gọi `GET /workspaces/A/projects/P1/tasks` → `404` (Bob không phải member A).
@@ -428,7 +429,7 @@ Socket là kênh **chỉ đọc** (server → client). Mọi thao tác ghi đi q
 
 ### 5.1 Handshake
 - Client: `io(WS_URL, { transports: ['websocket'], auth: (cb) => cb({ token: getAccessToken(), clientId }), withCredentials: false })` — **chỉ websocket** (ADR-074), không long-polling. Token **không** đặt trong query string (bị ghi vào log proxy). `clientId` = uuid theo tab (giống header REST `X-Client-Id`), Zod validate uuid, lưu `socket.data.clientId`.
-- Server: `transports: ['websocket']`. **Trình duyệt không áp dụng CORS cho WebSocket**, nên phải tự kiểm `Origin` trong `allowRequest`: Origin không thuộc whitelist (hoặc thiếu) ⇒ từ chối handshake. Đây là chặn tấn công cross-site WebSocket hijacking. Rủi ro vốn đã thấp vì xác thực bằng token trong `auth` chứ không bằng cookie, nhưng vẫn bắt buộc (phòng thủ nhiều lớp). Sau đó `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' }` → client nhận ở `connect_error`, refresh rồi kết nối lại.
+- Server: `transports: ['websocket']`. **Trình duyệt không áp dụng CORS cho WebSocket**, nên phải tự kiểm `Origin` trong `allowRequest`: Origin không thuộc whitelist (hoặc thiếu) ⇒ từ chối handshake. Đây là chặn tấn công cross-site WebSocket hijacking. Rủi ro vốn đã thấp vì xác thực bằng token trong `auth` chứ không bằng cookie, nhưng vẫn bắt buộc (phòng thủ nhiều lớp). Sau đó `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' | 'RATE_LIMITED' | … }` (danh sách đầy đủ: data-and-api) → client nhận ở `connect_error`, refresh rồi kết nối lại.
 - Thành công: `socket.data.user = { id, sid, exp }`; tự join `user:{userId}` và `session:{sid}` (dùng cho logout / logout-all).
 - **Xác thực lại sau khi vào phòng cá nhân** (G1 realtime M1): logout / logout-all / đổi mật khẩu commit **trong lúc** handshake đang verify thì lệnh thu hồi không thấy socket (chưa ở phòng `user` / `session`). Vì vậy: vào phòng `user` + `session` **trước**, rồi verify token **lần nữa**; thất bại hoặc lỗi ⇒ ngắt (fail-closed). `project:join` chờ kết quả lần verify này. Thu hồi commit trước lần verify thứ hai ⇒ lần đó thất bại; commit sau ⇒ socket đã ở phòng nên bị ngắt.
 - Rate limit kết nối: 20 handshake/phút/IP. Tối đa **20 socket đồng thời/user/instance** — vượt ⇒ handshake `RATE_LIMITED` (G1 realtime M2: mỗi socket có hạn mức join / renew riêng, nhiều socket nhân hạn mức lên và làm cạn pool DB dùng chung).
@@ -460,7 +461,7 @@ Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`i
 | Sự kiện | Hành động socket |
 |---|---|
 | Member bị xóa / tự rời ws | Lấy danh sách projectId của ws → `io.in('user:{uid}').socketsLeave(projectIds.map(id => 'project:'+id))`; `io.to('user:{uid}').emit('workspace:access-revoked', { workspaceId })` |
-| Workspace bị xóa (mềm, ADR-047) | Sau commit đặt `deleted_at`: emit `workspace:access-revoked` vào các phòng project của ws rồi `io.in(projectRooms).socketsLeave(...)`. Lần join sau ⇒ `RESOURCE_NOT_FOUND`. Purge không cần làm gì thêm |
+| Workspace bị xóa (mềm, ADR-047) | Sau commit đặt `deleted_at`: emit `workspace:access-revoked` vào phòng `user:{uid}` của **từng thành viên** (kể cả người không ở phòng project nào) rồi `io.in(projectRooms).socketsLeave(...)` + rời theo `socket.data.joined` lọc theo workspace (bắt cả project không có trong ảnh chụp — fix/realtime-g1). Lần join sau ⇒ `RESOURCE_NOT_FOUND`. Purge không cần làm gì thêm |
 | Hạ role xuống VIEWER | Không rời phòng (VIEWER vẫn đọc được). Gửi `member:role-changed` + các event `task:*` của những task bị bỏ gán (3.5) |
 | Đổi role | Không cần rời phòng (mọi role đều đọc được); `io.to('user:{uid}').emit('member:role-changed', { workspaceId, role })` để FE cập nhật UI. UI chỉ là hiển thị — server vẫn kiểm role mỗi request |
 | Logout 1 thiết bị | `io.in('session:{sid}').disconnectSockets(true)` |
@@ -479,23 +480,23 @@ Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`i
 ## 6. Hardening (ADR-028, ADR-029)
 
 ### 6.1 Thứ tự middleware Express
-`requestId (pino-http)` → `helmet` → `cors` → kiểm tra Content-Type → `express.json({ limit })` → rate limit toàn cục → routes (rate limit riêng, auth, rbac) → 404 → error handler.
+`requestLogging` (pino-http, requestId) → metrics → `helmet` + `cors` → **health router** (`/healthz`, `/readyz` — trước kiểm Content-Type và rate limit toàn cục; `/readyz` có hạn mức riêng) → kiểm tra Content-Type → `express.json({ limit })` → `Cache-Control: no-store` cho `/api/v1` → rate limit toàn cục → `/api/docs` (chỉ local/test) → routes (rate limit riêng, auth, rbac) → 404 → error handler (`app.ts`).
 
 `app.set('trust proxy', <số hop chính xác>)` (cấu hình bằng `TRUST_PROXY_HOPS`) — **bắt buộc** đúng, nếu không IP dùng cho rate limit sẽ là IP proxy (khóa mọi người) hoặc bị giả mạo qua `X-Forwarded-For`.
 
 ### 6.2 Helmet / header
 API chỉ trả JSON:
 - `contentSecurityPolicy`: `default-src 'none'; frame-ancestors 'none'`.
-- `strictTransportSecurity`: `max-age=31536000; includeSubDomains` — **chỉ prod**.
+- `strictTransportSecurity`: `max-age=31536000; includeSubDomains` — khi `APP_ENV` ∈ {staging, production} (ADR-101).
 - `crossOriginResourcePolicy: same-site`, `referrerPolicy: no-referrer`, `xPoweredBy` tắt, `noSniff` (mặc định helmet).
-- Response chứa token (`/auth/*`) thêm `Cache-Control: no-store`.
+- **Mọi** response dưới `/api/v1` mặc định `Cache-Control: no-store` (dữ liệu có xác thực, PII — T-028 L4); route muốn cho cache tự đặt lại.
 
 Header của web (Next.js) và CSP nonce: xem **6.8** (yêu cầu cho ticket Phase 4).
 
 ### 6.3 CORS & CSRF
 - `origin`: so khớp **chính xác** với danh sách `CORS_ORIGINS` (env, phân cách dấu phẩy). Không regex wildcard, không phản chiếu Origin. `credentials: true`.
 - `methods`: GET, POST, PATCH, DELETE. `allowedHeaders`: `Content-Type, Authorization, X-Request-Id, X-Client-Id`. `exposedHeaders`: `X-Request-Id, Retry-After, RateLimit-Policy, RateLimit`. `maxAge`: 600.
-- CSRF cho endpoint cookie (`/auth/refresh`, `/auth/logout`): SameSite=Strict + **kiểm tra header `Origin` ∈ whitelist** (thiếu Origin cũng từ chối) → `403 ORIGIN_NOT_ALLOWED`. Mọi POST/PATCH bắt buộc `Content-Type: application/json` (`415 UNSUPPORTED_MEDIA_TYPE`), buộc trình duyệt preflight.
+- CSRF cho endpoint cookie (`/auth/refresh`, `/auth/logout`): SameSite=Strict + **kiểm tra header `Origin` ∈ whitelist** (thiếu Origin cũng từ chối) → `403 ORIGIN_NOT_ALLOWED`. Mọi POST/PUT/PATCH bắt buộc `Content-Type: application/json` (`415 UNSUPPORTED_MEDIA_TYPE`), buộc trình duyệt preflight; request có body với charset khác UTF-8 hoặc khai charset trùng ⇒ `415` ở mọi method.
 
 ### 6.4 Rate limit (Valkey store, ADR-028)
 Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-limit` 8, `standardHeaders: "draft-8"`, store `rate-limit-redis` qua node-redis). Key tính theo IP thật (sau `trust proxy`). `keyGenerator` tự viết có dùng IP **phải** đi qua `ipKeyGenerator(ip)` — IPv6 được gom theo /56, nếu không kẻ tấn công xoay địa chỉ trong một dải IPv6 để né giới hạn.
@@ -532,7 +533,7 @@ Các hạn mức đếm trong **bộ nhớ** (socket, `/readyz`, tunnel) không 
 Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register/refresh/change-password** (`503 SERVICE_UNAVAILABLE`) — tránh brute force tự do khi Valkey chết. `/readyz` **không** đỏ khi chỉ Valkey lỗi (ADR-074): API vẫn phục vụ người đã đăng nhập (fallback DB, 2.4), chỉ login/register tạm từ chối. Phải có cảnh báo vận hành riêng cho Valkey vì readyz không báo.
 
 ### 6.5 Mật khẩu & chống user enumeration
-- Chính sách (ADR-049, ADR-065): **tối thiểu 12 ký tự**, **tối đa 256 ký tự** (chống DoS — argon2 không có giới hạn đầu vào như bcrypt; đếm theo code point sau chuẩn hóa NFC), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ ~10k mục, không gọi dịch vụ ngoài), không được chứa phần local của email. Body limit 100kb (6.7) vẫn chặn trước ở tầng HTTP.
+- Chính sách (ADR-049, ADR-065): **tối thiểu 12 ký tự**, **tối đa 256 ký tự** (chống DoS — argon2 không có giới hạn đầu vào như bcrypt; đếm theo code point sau chuẩn hóa NFC), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ 46.146 mục — SecLists xato 1M lọc 12–256 ký tự, không gọi dịch vụ ngoài), không được chứa phần local của email (bỏ qua khi phần local < 3 ký tự). Body limit 100kb (6.7) vẫn chặn trước ở tầng HTTP.
 - **Chuẩn hóa NFC trước khi băm VÀ trước khi verify** (register, login, change-password), không chỉ khi đếm độ dài. Nếu thiếu, cùng một mật khẩu có dấu gửi ở dạng NFD (thường gặp từ macOS/iOS) sẽ không khớp với hash tạo từ dạng NFC ⇒ người dùng tiếng Việt bị khóa ngoài. Việc chuẩn hóa nằm **bên trong** `Argon2idPasswordHasher` (cả `hash` lẫn `verify`) để không use case nào quên được; có test NFC vs NFD. Không áp dụng chuẩn hóa nào khác (không trim, không đổi hoa thường) — khoảng trắng là một phần của mật khẩu. *(Phát hiện bởi Engineer C khi rà T-003.)*
 - **Lệch NIST có chủ đích:** NIST SP 800-63B-4 yêu cầu tối thiểu 15 ký tự cho mật khẩu dùng làm yếu tố duy nhất (hệ thống chưa có MFA). Người dùng chọn 12 vì trải nghiệm (ADR-049). Bù lại bằng danh sách mật khẩu phổ biến, rate limit login đa khóa (6.4) và argon2id. Xem lại khi có MFA hoặc khi có yêu cầu tuân thủ.
 - **Băm (ADR-065):** argon2id qua `@node-rs/argon2`, `memoryCost: 47104` (46 MiB), `timeCost: 1`, `parallelism: 1` (mức OWASP; ≈27 ms/hash đo trên máy dev, T-001 §9). Chuỗi lưu dạng PHC `$argon2id$v=19$…`. Rehash khi tham số đổi (1.2 bước 5). Không pre-hash.
@@ -550,9 +551,9 @@ Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dị
 ### 6.7 Body, input, lỗi, log
 - `express.json({ limit: '100kb' })`; không bật `urlencoded`. Vượt → `413 PAYLOAD_TOO_LARGE`. Socket: `maxHttpBufferSize: 100_000`.
 - Zod `.strict()` cho body (từ chối field lạ — chặn mass assignment như gửi `role`, `createdById`, `version`).
-- **Tìm kiếm `q` (`GET ws/members`, ADR-083):** luôn kết hợp với điều kiện `workspaceId` của URL (không bao giờ tìm trên toàn bảng users); trim, tối đa 100 ký tự; dùng truy vấn tham số hóa của Prisma (`contains`, `mode: 'insensitive'`) và escape `%`/`_`/`\` để ký tự đại diện được hiểu theo nghĩa đen; tối thiểu 1 ký tự sau trim, chuỗi rỗng ⇒ coi như không lọc.
+- **Tìm kiếm `q` (`GET ws/members`, ADR-083):** luôn kết hợp với điều kiện `workspaceId` của URL (không bao giờ tìm trên toàn bảng users); trim, tối đa 100 ký tự; dùng `$queryRaw` tagged template tham số hóa `ILIKE … ESCAPE '\'` kèm `escapeLike` (escape `%`/`_`/`\` để ký tự đại diện được hiểu theo nghĩa đen; `prisma-queries.ts`); tối thiểu 1 ký tự sau trim, chuỗi rỗng ⇒ coi như không lọc.
 - Error handler prod: không trả stack/message nội bộ; lỗi không xác định → `500 INTERNAL_ERROR` + `requestId`.
-- pino `redact`: `req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.currentPassword`, `*.newPassword`, `*.token`, `*.accessToken`, `*.refreshToken`. Log sự kiện bảo mật (login thất bại, reuse, logout-all, đổi role, xóa member) ở mức `warn`/`info` có `userId`, `ip`, `requestId`.
+- pino `redact`: danh sách đầy đủ ở `REDACT_PATHS` (`pino-logger.ts`) — header `authorization` / `cookie` / `set-cookie`, các trường mật khẩu / token ở mọi cấp (kể cả tên ở cấp cao nhất), `passwordHash`, `meta.driverAdapterError`. Access log bỏ query string; serializer `err` là allow-list (chỉ tên / mã lỗi an toàn — T-031). Log sự kiện bảo mật (login thất bại, reuse, logout-all, đổi role, xóa member) ở mức `warn`/`info` có `userId`, `ip`, `requestId`.
 - Env được validate bằng Zod lúc khởi động; thiếu/yếu → không chạy.
 
 ---
@@ -583,7 +584,7 @@ upgrade-insecure-requests
 
 **W-CSP-3 — Development.** Chỉ khi `NODE_ENV=development` mới được nới cho HMR: thêm `'unsafe-eval'` vào `script-src`, thêm `ws://localhost:*` và `http://localhost:4000` vào `connect-src`. Build production có test khẳng định header không chứa `unsafe-eval`.
 
-**W-CSP-4 — Header khác cho web:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, HSTS 1 năm + `includeSubDomains` (chỉ prod).
+**W-CSP-4 — Header khác cho web:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, HSTS 1 năm + `includeSubDomains` (`APP_ENV` staging / production, ADR-101).
 
 **W-CSP-5 — Giám sát:** thu báo cáo vi phạm (`report-to`/`report-uri`) về một endpoint riêng có rate limit. Endpoint này làm ở Phase 5, cần ticket và cập nhật contract. Trước khi có endpoint đó vẫn enforce CSP, chỉ chưa thu báo cáo.
 
@@ -601,7 +602,7 @@ upgrade-insecure-requests
 
 Mã nguồn và cả tài liệu này đều công khai. Thiết kế **không** dựa vào việc giấu code (rate limit, tham số băm, cấu trúc token được phép công khai). Bắt buộc:
 - **Không bao giờ commit:** `.env*` (trừ `.env.example`), `JWT_ACCESS_SECRET*`, mật khẩu DB/Valkey, khóa, dump DB, dữ liệu người dùng thật, file log. `.gitignore` chặn sẵn; gitleaks chạy ở pre-commit **và** CI (CI đỏ = không merge).
-- `.env.example` chỉ chứa placeholder rõ ràng (`JWT_ACCESS_SECRET=change-me-min-32-bytes`). App **từ chối khởi động** khi `NODE_ENV=production` mà secret trùng placeholder hoặc ngắn hơn 32 byte.
+- `.env.example` chỉ chứa placeholder rõ ràng (`JWT_ACCESS_SECRET=change-me-min-32-bytes`). Secret ngắn hơn 32 byte bị từ chối ở **mọi** môi trường; giá trị mẫu / test (`change-me…`, `test-only-…`) bị từ chối khi `APP_ENV` ∈ {staging, production}, áp cho cả `JWT_ACCESS_SECRET_PREVIOUS` (`env.ts`).
 - Secret cho test/CI sinh ngẫu nhiên lúc chạy (hoặc giá trị test cố định có tiền tố `test-only-`) và **không bao giờ** được chấp nhận ở production (cùng kiểm tra trên).
 - `DUMMY_HASH` sinh lúc khởi động, không commit. Danh sách mật khẩu phổ biến được commit (dữ liệu công khai, ghi rõ nguồn và giấy phép của danh sách).
 - Seed/fixture chỉ dùng email `@example.com` và mật khẩu giả.
