@@ -59,9 +59,13 @@ export function createGracefulShutdown(options: GracefulShutdownOptions): Gracef
 
     await sleep(drainMs);
     const httpClosed = new Promise<void>((resolve) => server.close(() => resolve()));
+    // `close()` chỉ đóng kết nối keep-alive đang nhàn rỗi TẠI thời điểm gọi; kết nối vừa trả xong
+    // request đang chạy sẽ nhàn rỗi sau đó và giữ server mở tới keepAliveTimeout (65s) ⇒ quét lại.
     server.closeIdleConnections();
+    const sweeper = setInterval(() => server.closeIdleConnections(), 50);
     await closeAll(realtime);
     await httpClosed; // chờ request đang chạy trả xong
+    clearInterval(sweeper);
     await closeAll(resources);
 
     clearTimeout(deadline);
