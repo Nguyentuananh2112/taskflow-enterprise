@@ -1,29 +1,11 @@
-/** Danh mục `error.code` (data-and-api.md §3.2). Thêm code mới ⇒ thêm lớp lỗi + test catalog. */
-export const ERROR_CODES = [
-  'VALIDATION_ERROR',
-  'UNAUTHORIZED',
-  'TOKEN_EXPIRED',
-  'INVALID_CREDENTIALS',
-  'INVALID_CURRENT_PASSWORD',
-  'REFRESH_TOKEN_INVALID',
-  'ORIGIN_NOT_ALLOWED',
-  'FORBIDDEN_ACCESS',
-  'RESOURCE_NOT_FOUND',
-  'VERSION_CONFLICT',
-  'RESOURCE_CONFLICT',
-  'EMAIL_ALREADY_EXISTS',
-  'REFRESH_IN_PROGRESS',
-  'PAYLOAD_TOO_LARGE',
-  'UNSUPPORTED_MEDIA_TYPE',
-  'INVALID_STATUS_TRANSITION',
-  'PROJECT_ARCHIVED',
-  'BUSINESS_RULE_VIOLATION',
-  'RATE_LIMITED',
-  'INTERNAL_ERROR',
-  'SERVICE_UNAVAILABLE',
-] as const;
+import type { ErrorCode } from '@taskflow/contracts';
 
-export type ErrorCode = (typeof ERROR_CODES)[number];
+/**
+ * `error.code` lấy từ contracts (data-and-api.md §3.2) — một nguồn duy nhất cho FE/BE.
+ * Import **type-only**: bị xóa khi biên dịch ⇒ domain (ném AppError) không phụ thuộc contracts
+ * lúc chạy (ADR-043). Thêm code ⇒ sửa contracts + thêm lớp lỗi; test parity giữ hai bên khớp.
+ */
+export type { ErrorCode };
 
 export type ErrorDetails = Readonly<Record<string, unknown>> | null;
 

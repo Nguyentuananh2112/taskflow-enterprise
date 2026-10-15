@@ -1,3 +1,5 @@
+import { applyVietnameseZodLocale } from '@taskflow/contracts';
+
 import { appConfigFromEnv, createApp } from './app';
 import { EnvValidationError, loadEnv, type Env } from './config/env';
 import { ServiceUnavailableError } from './core/errors';
@@ -9,7 +11,6 @@ import {
 } from './core/http/rate-limit/rate-limit';
 import { RATE_LIMIT_RULES } from './core/http/rate-limit/rules';
 import { createValkeyStore } from './core/http/rate-limit/store';
-import { configureZodLocale } from './core/http/zod';
 import { SystemClock, UuidV7Generator } from './core/infrastructure/system';
 import { connectInBackground, createValkeyClient } from './core/infrastructure/valkey';
 import { createGracefulShutdown, type GracefulShutdown } from './core/lifecycle/graceful-shutdown';
@@ -32,7 +33,7 @@ function readEnvOrExit(): Env {
 
 async function main(): Promise<void> {
   const env = readEnvOrExit();
-  configureZodLocale();
+  applyVietnameseZodLocale();
   const logger = createLogger({ level: env.LOG_LEVEL, gitSha: env.GIT_SHA, appEnv: env.APP_ENV });
 
   const pool = createPgPool(

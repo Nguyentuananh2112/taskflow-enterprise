@@ -1,3 +1,4 @@
+import { applyVietnameseZodLocale } from '@taskflow/contracts';
 import { Router } from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -10,7 +11,6 @@ import { requestContext } from './core/context/request-context';
 import { VersionConflictError } from './core/errors';
 import type { ReadinessProbe } from './core/http/health';
 import { validate } from './core/http/validate';
-import { configureZodLocale } from './core/http/zod';
 import { createLogger } from './core/logging/pino-logger';
 
 const ORIGIN = 'http://localhost:3000';
@@ -72,7 +72,7 @@ function build(
 
 const TASK = '/api/v1/tasks/0199e5a2-7c1e-7cc3-9a3b-1f2e3d4c5b6a';
 
-beforeAll(() => configureZodLocale());
+beforeAll(() => applyVietnameseZodLocale());
 
 describe('appConfigFromEnv', () => {
   it('suy cấu hình HTTP từ Env đã validate (body limit 100kb cố định — ADR-028)', () => {
