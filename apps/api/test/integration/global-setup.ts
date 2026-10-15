@@ -54,11 +54,15 @@ function target(raw: string): string {
  * giữa chừng lượt kia. Khóa advisory chỉ thấy nhau trong một database ⇒ lấy trên DB `postgres` của
  * cùng cluster. Lấy cả hai hoặc không (như harness security, T-017 findings D3).
  */
+let lockLost: string | undefined;
+
 async function acquireRunLock(dbUrl: string, valkeyUrl: string): Promise<pg.Client> {
   const lockUrl = new URL(dbUrl);
   lockUrl.pathname = '/postgres';
-  const client = new pg.Client({ connectionString: lockUrl.toString() });
+  const client = new pg.Client({ connectionString: lockUrl.toString(), keepAlive: true });
   client.on('error', (err) => {
+    // Postgres restart / mất mạng ⇒ khóa đã nhả, lượt khác có thể đã chen vào: teardown làm ĐỎ lượt này.
+    lockLost = err.message;
     console.error(`[hạ tầng test] mất kết nối giữ khóa integration (${err.message})`);
   });
   await client.connect();
@@ -115,7 +119,12 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const runDir = mkdtempSync(join(tmpdir(), 'taskflow-it-'));
   const teardown = async () => {
     rmSync(runDir, { recursive: true, force: true });
-    await lock.end();
+    await lock.end().catch(() => undefined);
+    if (lockLost) {
+      throw new Error(
+        `Lượt integration MẤT khóa giữa chừng (${lockLost}) — lượt khác có thể đã đụng DB/Valkey; kết quả không đáng tin, chạy lại.`,
+      );
+    }
   };
   try {
     await flushValkey(valkeyUrl);
