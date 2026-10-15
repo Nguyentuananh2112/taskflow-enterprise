@@ -7,11 +7,11 @@ title = "taskflow"
 useDefault = true
 
 [[allowlists]]
-description = "Giá trị mẫu công khai trong *.env.example và docker-compose.yml (chỉ cho máy dev)"
+description = "Giá trị mẫu công khai trong *.env.example, docker-compose.yml, CI và test (chỉ cho máy dev/CI)"
 regexTarget = "line"
 regexes = [
-  # JWT_ACCESS_SECRET mẫu = base64("change-me-local-only-not-a-real-secret-32bytes")
-  '''Y2hhbmdlLW1lLWxvY2FsLW9ubHktbm90LWEtcmVhbC1zZWNyZXQtMzJieXRlcw==''',
+  # Secret mẫu: env.ts từ chối tiền tố change-me / test-only ở production (ADR-098)
+  '''(change-me|test-only)-[a-z0-9-]+''',
   # Mật khẩu local có hậu tố _local_only
-  '''[a-z]+_local_only''',
+  '''[a-z]+_(local|ci|smoke)_only''',
 ]

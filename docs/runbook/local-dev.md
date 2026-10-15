@@ -53,10 +53,10 @@ pnpm install              # cũng cài git hook (lefthook) qua script "prepare"
 ## 3. Hạ tầng local (Postgres 18.6 + Valkey 9.1.2)
 Mở Docker Desktop trước (biểu tượng cá voi chuyển xanh).
 ```powershell
-pnpm infra:up             # postgres :5433, postgres-test :5434 (RAM, cho test), valkey :6380 — đợi healthy
+pnpm infra:up             # postgres :5435, postgres-test :5434 (RAM, cho test), valkey :6380 — đợi healthy
 docker compose ps         # mọi service "healthy"
 ```
-- **Cổng host riêng (ADR-097)**: máy dev có thể chạy dự án khác chiếm 5432/6379/3000, nên TaskFlow dùng Postgres 5433, Postgres test 5434, Valkey 6380, web 3001, API 4000. Bên trong mạng Docker vẫn là 5432/6379. Đổi bằng file `.env` ở gốc. **Không** dừng/sửa container của dự án khác.
+- **Cổng host riêng (ADR-097)**: máy dev có thể chạy dự án khác chiếm 5432/6379/3000, nên TaskFlow dùng Postgres 5435, Postgres test 5434, Valkey 6380, web 3001, API 4000. Bên trong mạng Docker vẫn là 5432/6379. Đổi bằng file `.env` ở gốc. **Không** dừng/sửa container của dự án khác.
 - Lần đầu, script `docker/postgres/init/01-roles.sh` tạo 2 user: `taskflow_migrator` (DDL, chạy migrate) và `taskflow_app` (chỉ DML — app dùng). Mật khẩu mặc định chỉ cho máy dev, đổi được bằng file `.env` ở gốc (mẫu: `.env.example`).
 - **Postgres 18 lưu dữ liệu ở volume `/var/lib/postgresql`** (khác ≤17). Muốn làm lại từ đầu (xóa sạch DB + chạy lại init script): `pnpm infra:reset` rồi `pnpm infra:up`.
 - Hộp thư giả (chưa dùng ở v1): `docker compose --profile mail up -d mailpit` → http://localhost:8025.
@@ -73,7 +73,7 @@ Luôn `pnpm exec prisma …`, **không** `npx` (ADR-061 — `npx` kéo Prisma 8 
 Migrate phải chạy bằng user `taskflow_migrator`. Vì `prisma.config.ts` chỉ đọc `DATABASE_URL`, đặt tạm biến này cho lệnh migrate:
 ```powershell
 cd apps/api
-$env:DATABASE_URL = (Select-String -Path .env -Pattern '^MIGRATOR_DATABASE_URL=(.*)$').Matches[0].Groups[1].Value
+$env:DATABASE_URL = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5435/taskflow'   # mật khẩu theo .env gốc nếu đã đổi
 pnpm exec prisma migrate dev          # phát triển schema (tạo migration mới)
 pnpm exec prisma migrate deploy       # chỉ áp migration có sẵn
 Remove-Item Env:DATABASE_URL

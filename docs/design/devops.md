@@ -128,6 +128,9 @@ Lưu ý về Hetzner: ngày 2026-10-15, trang Cloud ghi dòng Cost-Optimized (CX
 Staging đặt `NODE_ENV=production` là cố ý: staging phải chạy giống prod (cookie `__Secure-`, `COOKIE_SECURE=true`, log JSON).
 
 ### 2.2 Biến môi trường — `apps/api`
+
+> **Nguồn sự thật là `apps/api/src/config/env.ts`** (T-009). `apps/api/.env.example` phải khớp 1-1 — CI kiểm bằng `.github/scripts/check-env-example.mjs`. Bảng dưới là giải thích.
+
 | Biến | Secret? | Bắt buộc | Validate (Zod) | Ghi chú |
 |---|---|---|---|---|
 | `NODE_ENV` | | ✔ | enum `development\|test\|production` | |
@@ -136,10 +139,9 @@ Staging đặt `NODE_ENV=production` là cố ý: staging phải chạy giống 
 | `DATABASE_URL` | **✔** | ✔ | url `postgresql://` | Container app: user `taskflow_app`. **Job migrate dùng cùng tên biến** nhưng trỏ tới user `taskflow_migrator` và luôn kết nối thẳng. Vì `prisma.config.ts` chỉ đọc `process.env.DATABASE_URL ?? ""` (ADR-061), nên **không** có biến `DIRECT_DATABASE_URL` riêng |
 | `DATABASE_POOL_MAX` | | | int 1–50, mặc định 10 | §4.5 |
 | `REDIS_URL` | **✔** | ✔ | url `redis://` hoặc `rediss://`; prod bắt buộc `rediss://` | Trỏ tới **Valkey** (ADR-063). Giữ tên `REDIS_URL` vì đây là giao thức RESP và là tên quen thuộc của client node-redis |
-| `JWT_ACCESS_SECRET` | **✔** | ✔ | base64, giải mã ra ≥ 32 byte | T-002 §2.1 |
-| `JWT_ACCESS_KID` | | ✔ | string ngắn | `kid` của khóa hiện tại |
-| `JWT_ACCESS_SECRET_PREVIOUS` / `JWT_ACCESS_KID_PREVIOUS` | **✔** / | | như trên | chỉ có trong cửa sổ xoay khóa |
-| `CORS_ORIGINS` | | ✔ | danh sách URL, phân cách dấu phẩy; prod cấm `http://` và `*` | T-002 §6.3 |
+| `JWT_ACCESS_SECRET` | **✔** | ✔ | chuỗi **UTF-8 ≥ 32 byte** (không phải base64); production từ chối tiền tố `change-me`/`test-only` | T-002 §2.1, ADR-098. `kid` **suy ra từ secret** — không có biến `JWT_ACCESS_KID` |
+| `JWT_ACCESS_SECRET_PREVIOUS` | **✔** | | như trên, phải khác secret hiện tại | chỉ có trong cửa sổ xoay khóa |
+| `CORS_ORIGINS` | | ✔ | danh sách origin (không path), phân cách dấu phẩy; mặc định `http://localhost:3001` (ADR-097); prod chỉ `https://` | T-002 §6.3 |
 | `COOKIE_SECURE` | | ✔ | boolean; **prod mà `false` → không khởi động** | T-002 §2.3 |
 | `TRUST_PROXY_HOPS` | | ✔ | int ≥ 0; local = 0 | **phải đo thực tế** ở mỗi môi trường (§9) |
 | `LOG_LEVEL` | | | enum pino, mặc định `info` | |
@@ -147,6 +149,7 @@ Staging đặt `NODE_ENV=production` là cố ý: staging phải chạy giống 
 | `GIT_SHA` | | ✔ | string | nhúng lúc build image (build-arg). Local đặt `dev` |
 | `SOCKET_REDIS_ADAPTER` | | | boolean, mặc định `false` | bật khi ≥ 2 instance (§7) |
 | `SHUTDOWN_TIMEOUT_MS` | | | int, mặc định 20000 | §7.3 |
+| `READINESS_DRAIN_MS` | | | int, mặc định 5000 | §7.3 bước 2 |
 | `METRICS_TOKEN` | **✔** | prod | ≥ 32 ký tự | bảo vệ `/metrics` nếu không tách được cổng nội bộ (§6.4) |
 
 Thay đổi so với T-004:
@@ -188,7 +191,7 @@ Thay đổi so với T-004:
 - Staging/prod (Phase 5): lưu trong env vars dạng encrypted của nền tảng, hoặc file `.env` quyền `600` trên droplet staging. Workflow deploy ghi chúng từ **GitHub Environment secrets** (`staging`, `production`). Environment secrets không lộ cho workflow chạy từ fork PR.
 - Sinh secret: `openssl rand -base64 48`. Mỗi môi trường một bộ, không dùng lại.
 - **Xoay vòng:**
-  - `JWT_ACCESS_SECRET`: đặt khóa mới làm hiện tại, chuyển khóa cũ sang `_PREVIOUS` kèm `kid` cũ → deploy → sau ≥ 15 phút (TTL access token) bỏ `_PREVIOUS`. Không rớt phiên. Làm 6 tháng một lần, hoặc ngay khi nghi lộ.
+  - `JWT_ACCESS_SECRET`: đặt khóa mới làm hiện tại, chuyển khóa cũ sang `JWT_ACCESS_SECRET_PREVIOUS` (`kid` tự suy ra từ mỗi secret — ADR-098) → deploy → sau ≥ 15 phút (TTL access token) bỏ `_PREVIOUS`. Không rớt phiên. Làm 6 tháng một lần, hoặc ngay khi nghi lộ.
   - Mật khẩu DB/Valkey: tạo credential mới → cập nhật env → deploy → xóa credential cũ.
   - Nghi lộ phiên hàng loạt: tăng `token_version` của mọi user và thu hồi mọi refresh token (runbook, cần lệnh admin — Phase 2).
 - Chỉ người dùng (chủ dự án) và Tech Lead có quyền đọc secret prod. Agent không bao giờ nhận secret prod trong prompt.
@@ -246,7 +249,7 @@ stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
 ### 3.4 `docker-compose.yml` cho local dev
 | Service | Image | Ghi chú |
 |---|---|---|
-| `postgres` | `postgres:18.6-bookworm` | cổng host 5433 (ADR-097); volume `pgdata:/var/lib/postgresql` (**PG18 đổi đường dẫn**; mount `/var/lib/postgresql/data` kiểu ≤17 sẽ mất dữ liệu khi tạo lại container); healthcheck `pg_isready`; `POSTGRES_DB=taskflow`; init script tạo role `taskflow_app` + `taskflow_migrator` (§4.1) |
+| `postgres` | `postgres:18.6-bookworm` | cổng host 5435 (ADR-097); volume `pgdata:/var/lib/postgresql` (**PG18 đổi đường dẫn**; mount `/var/lib/postgresql/data` kiểu ≤17 sẽ mất dữ liệu khi tạo lại container); healthcheck `pg_isready`; `POSTGRES_DB=taskflow`; init script tạo role `taskflow_app` + `taskflow_migrator` (§4.1) |
 | `postgres-test` | cùng image | cổng host 5434; `tmpfs: /var/lib/postgresql`; `-c fsync=off -c synchronous_commit=off -c full_page_writes=off` (chỉ dùng cho test) |
 | `valkey` | `valkey/valkey:9.1.2` | cổng host 6380; không persistence (`--save "" --appendonly no`); `--maxmemory-policy noeviction` (§7.1) |
 | `mailpit` | `axllent/mailpit:v1.31.5` (+ digest) | **profile `mail`**, tắt mặc định. Xác minh email nằm sau v1 (ADR-049) |

@@ -31,7 +31,7 @@ services:
       <<: *postgres-env
       POSTGRES_DB: taskflow
     ports:
-      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5435}:5432'
     volumes:
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
       # PG18 đổi đường dẫn: mount /var/lib/postgresql (KHÔNG phải .../data như ≤17).
