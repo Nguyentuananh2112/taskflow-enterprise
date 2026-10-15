@@ -62,7 +62,10 @@ export default function (data) {
   let column = [];
   let timer = null;
 
-  const ws = new WebSocket(WS_URL, null, { headers: { 'X-Forwarded-For': listener.ip } });
+  // Gateway chỉ nhận Origin trong CORS_ORIGINS (SEC-56, chống CSWSH) — thiếu Origin ⇒ ORIGIN_NOT_ALLOWED.
+  const ws = new WebSocket(WS_URL, null, {
+    headers: { 'X-Forwarded-For': listener.ip, Origin: __ENV.ORIGIN || 'http://localhost:3001' },
+  });
 
   const moveOnce = () => {
     if (column.length < 2) {

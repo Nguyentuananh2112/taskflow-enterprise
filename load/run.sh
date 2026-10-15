@@ -5,7 +5,7 @@
 #   KEEP=1 bash load/run.sh          # giữ container để soi tiếp (tự dọn bằng: bash load/run.sh down)
 # CHỈ chạy khi Tech Lead báo "máy rảnh" (số đo local chỉ để so sánh tương đối).
 # Biến: STAGES, STAGE_SECONDS, RT_VUS, RT_SECONDS, HOT_STAGES, RPROJ/RTASKS (cột rebalance),
-#       API_IMAGE/MIGRATE_IMAGE (đặt ⇒ dùng image có sẵn, không build).
+#       API_IMAGE/MIGRATE_IMAGE (đặt ⇒ dùng image có sẵn, không build), SCENARIOS (mặc định cả 4: "board realtime hot-column rebalance").
 set -euo pipefail
 export MSYS_NO_PATHCONV=1 # Git Bash trên Windows: không đổi đường dẫn /load, /docker-entrypoint-initdb.d
 
@@ -54,14 +54,25 @@ dc up -d --wait api
 dc exec -T pg psql -U postgres -d taskflow_load -qc 'SELECT pg_stat_statements_reset()' >/dev/null
 
 k6() { dc --profile tools run --rm k6 run --quiet "/load/scenarios/$1.js"; }
+SCENARIOS="${SCENARIOS:-board realtime hot-column rebalance}"
+BOARD_RC=- RT_RC=- HOT_RC=- REBAL_RC=-
 set +e
-echo "[load] k6 board (bậc RPS: ${STAGES:-mặc định})"; k6 board; BOARD_RC=$?
-# shellcheck disable=SC2046 # danh sách id container, tách theo khoảng trắng là đúng ý
-docker stats --no-stream --format '{{.Name}} CPU {{.CPUPerc}} MEM {{.MemUsage}}' $(dc ps -q api pg valkey) \
-  > "$RESULTS_DIR/stats-after-board.txt"
-echo "[load] k6 realtime"; k6 realtime; RT_RC=$?
-echo "[load] k6 cột nóng"; k6 hot-column; HOT_RC=$?
-echo "[load] k6 move kích hoạt rebalance"; k6 rebalance; REBAL_RC=$?
+for sc in $SCENARIOS; do
+  echo "[load] k6 $sc"
+  k6 "$sc"
+  rc=$?
+  case "$sc" in
+    board)
+      BOARD_RC=$rc
+      # shellcheck disable=SC2046 # danh sách id container, tách theo khoảng trắng là đúng ý
+      docker stats --no-stream --format '{{.Name}} CPU {{.CPUPerc}} MEM {{.MemUsage}}' $(dc ps -q api pg valkey) \
+        > "$RESULTS_DIR/stats-after-board.txt"
+      ;;
+    realtime) RT_RC=$rc ;;
+    hot-column) HOT_RC=$rc ;;
+    rebalance) REBAL_RC=$rc ;;
+  esac
+done
 set -e
 echo "[load] phân tích truy vấn"
 dc exec -T pg psql -U postgres -d taskflow_load < "$ROOT/load/sql/analyze.sql" > "$RESULTS_DIR/analyze.txt" 2>&1
