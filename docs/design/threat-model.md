@@ -144,13 +144,13 @@ flowchart LR
 |---|---|---|---|
 | **E / T** — App bị chiếm chạy DDL / xóa schema | Tách role: app = `taskflow_app` (chỉ DML), migrate = `taskflow_migrator` | `verify-grants.sh` (CI); drill bước 8 | — |
 | **I** — Lộ bản sao lưu | Mã hóa phía client bằng age; máy backup chỉ có public key; storage khác nhà cung cấp; không bản rõ trên đĩa | Drill: không có `PGDMP` trên storage, sai khóa / sửa 1 byte bị từ chối | — |
-| **T / D** — Xóa / ghi đè / mã hóa tống tiền bản sao lưu | Credential PutObject-only; xóa bằng lifecycle; **versioning + object lock bắt buộc** (PutObject ghi đè được khóa đoán được) | Runbook backup §3 (cấu hình thủ công) | Phụ thuộc cấu hình bucket |
-| **S / T** — Máy backup bị chiếm dựng bản "mới nhất" hợp lệ (age chỉ bảo đảm toàn vẹn, không bảo đảm nguồn gốc) | Sự cố bảo mật ⇒ khôi phục bản trước thời điểm bị chiếm; kiểm TOC so với DB dựng sạch; không khôi phục bằng superuser | Runbook backup §5.1 | R22 |
-| **I** — Mật khẩu DB lộ qua argv của `pg_dump` | `backup.sh` từ chối URL có mật khẩu; dùng `PGPASSWORD` / `PGPASSFILE` | Drill kiểm từ chối (exit 2) | — |
+| **T / D** — Xóa / ghi đè / mã hóa tống tiền bản sao lưu | Credential PutObject-only; xóa bằng lifecycle; **versioning + object lock bắt buộc** (PutObject ghi đè được khóa đoán được) | Runbook backup §3 (cấu hình thủ công) | **Đã sửa trên `fix/B2-backup-review`, CHƯA merge — chờ diễn tập được người dùng duyệt**. Trên `main` runbook vẫn ghi object lock là tùy chọn. Sau merge: phụ thuộc cấu hình bucket |
+| **S / T** — Máy backup bị chiếm dựng bản "mới nhất" hợp lệ (age chỉ bảo đảm toàn vẹn, không bảo đảm nguồn gốc) | Sự cố bảo mật ⇒ khôi phục bản trước thời điểm bị chiếm; kiểm TOC so với DB dựng sạch; không khôi phục bằng superuser | Runbook backup §5.1 | **Đã sửa trên `fix/B2-backup-review`, CHƯA merge — chờ diễn tập được người dùng duyệt**; R22 |
+| **I** — Mật khẩu DB lộ qua argv của `pg_dump` | `backup.sh` từ chối URL có mật khẩu; dùng `PGPASSWORD` / `PGPASSFILE` | Drill kiểm từ chối (exit 2) — diễn tập chưa chạy lại | **Đã sửa trên `fix/B2-backup-review`, CHƯA merge — chờ diễn tập được người dùng duyệt** |
 | **D** — Backup có nhưng không khôi phục được | Diễn tập tự động hằng tuần: đối chiếu dữ liệu / index / constraint / quyền + `pg_amcheck` | `backup-drill.yml`; kiểm đột biến (đỏ đúng chỗ) | R16 |
 | **I** — Secret lọt vào repo public | gitleaks pre-commit + CI toàn lịch sử; push protection | CI job gitleaks | Lộ = xoay ngay (go-live §9) |
 | **T** — Dependency / action / image độc | Lockfile frozen; action pin theo SHA; image pin version; `pnpm audit`; Trivy | CI | Rủi ro chuỗi cung ứng nền tảng (không loại bỏ được) |
-| **T / E** — Image do người ngoài build lên registry chính thức (`workflow_run` của PR fork có nhánh tên `main`) | Release chỉ chạy cho `push` từ chính repo trên `main`; deploy theo digest + required reviewers | Review G1-D3 H1 (chờ D sửa, kiểm trước khi bật `ENABLE_RELEASE`) | Chưa sửa |
+| **T / E** — Image do người ngoài build lên registry chính thức (`workflow_run` của PR fork có nhánh tên `main`) | Release chỉ chạy cho `push` từ chính repo trên `main`; deploy theo digest + required reviewers | Review G1-D3 H1; go-live: không bật `ENABLE_RELEASE` trước khi sửa | **D đã sửa trên `feat/D3-deploy-prep` @ `7027b06`, CHƯA merge** |
 | **E** — Khóa SSH deploy (VPS) = root qua nhóm `docker` | `authorized_keys` `restrict,command=` chỉ nhận gói file + `deploy <sha> <digest>…` | Review G1-D3 M1 (chờ D) | Chưa sửa |
 | **T** — Hợp đồng / mock / server lệch nhau | Contract test event parity; real-API suites | `realtime-event-parity.test.ts` | — |
 
@@ -168,7 +168,7 @@ Các lớp mới được thêm **sau khi** rà soát tìm ra lỗ hổng thật
 - **Log và Sentry không mang dữ liệu dòng DB:** T-031 mục 0, H4 của T-028.
 - **Redis-adapter không làm sập process:** T-030, H3.
 - **Mock web phải khắt khe như server:** H2 → T-029; contract test event parity.
-- **Sao lưu mã hóa có diễn tập tự động:** B2; sau G1 B2: object lock bắt buộc, khôi phục bản trước thời điểm bị chiếm, không mật khẩu trong argv.
+- **Sao lưu mã hóa có diễn tập tự động:** B2. Sửa sau G1 B2 (object lock bắt buộc, khôi phục bản trước thời điểm bị chiếm, không mật khẩu trong argv) nằm trên `fix/B2-backup-review`, **chưa merge** — chờ diễn tập.
 - **Realtime sau G1:** xác thực lại sau handshake, trần socket / join theo user, renew kiểm lại lỗi ⇒ ngắt, thu hồi theo `joined`, thu hồi đăng ký trước hook phụ; client nối lại có jitter.
 - **Bảo trì sau G1 T-033:** rank `~` kẹt (High) đã sửa; purge một workspace lỗi không dừng cả lô; shutdown dừng purge giữa các workspace (F7).
 
@@ -194,7 +194,7 @@ Các lớp mới được thêm **sau khi** rà soát tìm ra lỗ hổng thật
 | R19 | XSS trên một subdomain anh em vẫn nguy hiểm cho người dùng (dù không còn tossing được cookie) | Phụ thuộc vệ sinh DNS (go-live §2.5) | ADR-029, ADR-109 | Có subdomain do bên thứ ba vận hành |
 | R20 | Workspace xóa mềm giữ dữ liệu 30 ngày trước khi purge | Chủ đích để khôi phục | ADR-047 | Yêu cầu xóa ngay (GDPR-like) |
 | R21 | Hạn mức realtime theo user (20 socket, 60 join / phút, renew) đếm theo instance ⇒ nhiều instance thì nhân lên; Valkey lỗi ⇒ rơi về hạn mức cục bộ (fail-open) | Hạn mức chống lạm dụng, không phải kiểm quyền; fail-closed làm mất realtime mỗi lần Valkey chập chờn | **ADR-115** | Chạy > 1 instance (`SOCKET_REDIS_ADAPTER=true`) ⇒ đếm dùng chung qua Valkey |
-| R22 | Ai có public key age (gồm máy backup) đều tạo được bản backup hợp lệ ⇒ không chứng minh được nguồn gốc | Ký bằng khóa trên máy riêng tăng độ phức tạp vận hành v1 | Runbook backup §1, §5.1 | Có máy ký riêng hoặc storage kéo (pull) từ phía nhà cung cấp |
+| R22 | Ai có public key age (gồm máy backup) đều tạo được bản backup hợp lệ ⇒ không chứng minh được nguồn gốc | Ký bằng khóa trên máy riêng tăng độ phức tạp vận hành v1 | Runbook backup §1, §5.1 (trên `fix/B2-backup-review`, chưa merge) | Có máy ký riêng hoặc storage kéo (pull) từ phía nhà cung cấp |
 
 R11 (Valkey không persistence) đã khắc phục bằng X3 nên không còn trong danh sách; phần còn lại thuộc R5. R14 (image GHCR public) không phải rủi ro vì image không chứa secret (Trivy secret scan).
 
