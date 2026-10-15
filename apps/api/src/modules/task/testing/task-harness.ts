@@ -117,12 +117,14 @@ export async function createTaskHarness(backend: TaskBackend = inMemoryTaskBacke
     seq += 1;
     const projectId = over.projectId ?? P1;
     const project = (await backend.projectRow(projectId))!;
+    // Số mặc định = bộ đếm của project (như dữ liệu thật) — không trùng số use case đã cấp.
+    const number = over.number ?? project.nextTaskNumber;
     const props: TaskProps = {
       id: id(1000 + seq),
       workspaceId: project.workspaceId,
       projectId,
-      number: over.number ?? seq,
-      title: `Task ${over.number ?? seq}`,
+      number,
+      title: `Task ${number}`,
       description: null,
       status: 'TODO',
       priority: 'MEDIUM',
