@@ -14,11 +14,6 @@ const pending: [id: string, title: string, blockedBy: string][] = [
   ['E2E-07', 'VIEWER: không tạo, không kéo, drawer chỉ đọc', TASK_API],
   ['E2E-08', 'Lưu trữ project khi B đang mở board ⇒ banner chỉ đọc', TASK_API],
   ['E2E-09', 'A xóa B khỏi workspace khi B mở board ⇒ về /w + toast', TASK_API],
-  [
-    'E2E-11',
-    'Access token hết hạn ⇒ refresh trong suốt',
-    'API chưa có biến env TTL access token ngắn',
-  ],
   ['E2E-12b', 'axe trên board, drawer, trang thành viên (sáng/tối)', TASK_API],
   ['E2E-13', 'Offline rồi online ⇒ board tự refetch', TASK_API],
   ['E2E-14', 'Xóa workspace khi B mở board; khôi phục ⇒ B vào lại', TASK_API],

@@ -62,6 +62,9 @@ export default defineConfig({
         TRUST_PROXY_HOPS: '0',
         GIT_SHA: 'e2e',
         LOG_LEVEL: 'warn',
+        // E2E-11: access token sống ngắn ⇒ mọi kịch bản dài đều đi qua refresh trong suốt. API chỉ nhận
+        // biến này khi APP_ENV=test (T-031); bản API chưa có thì bỏ qua (E2E-11 tự skip có nhãn).
+        JWT_ACCESS_TTL_SECONDS: process.env.E2E_ACCESS_TTL ?? '10',
       },
     },
     {
