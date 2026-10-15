@@ -9,7 +9,7 @@ import type {
   IAccessTokenService,
   SignedAccessToken,
 } from '../../application/ports/access-token-service.port';
-import type { IClock } from '../../application/ports/clock.port';
+import type { IClock } from '../../../../core/domain';
 
 const ALG = 'HS256';
 const MIN_SECRET_BYTES = 32;

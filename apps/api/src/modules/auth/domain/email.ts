@@ -1,4 +1,4 @@
-import { AuthDomainError } from './auth-domain-error';
+import { ValidationError } from '../../../core/errors';
 
 const MAX_LENGTH = 254; // khớp users.email VarChar(254)
 const MAX_LOCAL_LENGTH = 64;
@@ -15,7 +15,9 @@ export class Email {
     const value = raw.trim().normalize('NFC').toLowerCase();
     if (!Email.isWellFormed(value)) {
       // Không đưa giá trị vào message: email là PII, message có thể vào log.
-      throw new AuthDomainError('INVALID_EMAIL', 'Email không hợp lệ');
+      throw new ValidationError([
+        { path: ['email'], code: 'invalid_format', message: 'Email không hợp lệ.' },
+      ]);
     }
     return new Email(value);
   }
