@@ -34,6 +34,7 @@ catalog:
   helmet: 8.3.0
   jose: 6.2.12
   jsdom: 30.1.2
+  lefthook: 2.2.2
   next: 16.4.1
   pg: 8.23.1
   pino: 10.4.0
@@ -66,6 +67,8 @@ allowBuilds:
   '@tailwindcss/oxide': true
   sharp: true
   unrs-resolver: true
+  # postinstall của lefthook bị từ chối có chủ đích: hook được cài bằng script "prepare" (bỏ qua khi không có .git, vd trong Docker)
+  lefthook: false
 
 # Mặc định của pnpm 11 (chống supply-chain): không cài bản phát hành < 24h.
 minimumReleaseAge: 1440
@@ -82,3 +85,11 @@ minimumReleaseAgeExclude:
   - scheduler
   - next
   - '@next/*'
+
+# `pnpm audit --prod --audit-level high` chạy trong CI (T-011). Ngoại lệ phải có lý do + ngày xét lại.
+auditConfig:
+  ignoreGhsas:
+    # braces <=3.0.3 (high, DoS khi glob lồng sâu), CHƯA có bản vá. Chỉ đi qua công cụ lint:
+    # packages/config > @next/eslint-plugin-next > fast-glob > micromatch > braces — không có trong image runtime,
+    # pattern do repo tự viết. Xét lại 2026-11-15 hoặc khi braces có bản vá.
+    - GHSA-vfj7-8cjw-p6xm

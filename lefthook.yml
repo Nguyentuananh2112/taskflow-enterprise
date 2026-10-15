@@ -1,0 +1,23 @@
+# Git hooks (ADR-072: repo public → quét secret TRƯỚC khi commit). Cài tự động bởi script "prepare" khi `pnpm install`.
+# Chọn lefthook (không phải husky + lint-staged): 1 file cấu hình, chạy song song, tự lọc file staged
+# và tự `git add` lại file đã format (stage_fixed) — không cần thêm lint-staged.
+# Tài liệu: https://lefthook.dev/configuration/
+pre-commit:
+  parallel: true
+  jobs:
+    - name: gitleaks
+      # Cần binary gitleaks v8.30.1 trên PATH — cách cài: docs/runbook/local-dev.md. Không có ⇒ chặn commit.
+      # Lưu ý: lefthook coi {...} là placeholder → không dùng khối { } của shell ở đây.
+      run: >-
+        if ! command -v gitleaks >/dev/null 2>&1; then
+        echo 'Thiếu gitleaks (bắt buộc — ADR-072). Cài theo docs/runbook/local-dev.md' >&2; exit 1; fi;
+        gitleaks git --pre-commit --staged --redact --no-banner --verbose
+
+    - name: prettier
+      glob: '*.{js,cjs,mjs,ts,tsx,json,md,yml,yaml,css}'
+      run: pnpm exec prettier --write --ignore-unknown --log-level warn {staged_files}
+      stage_fixed: true
+
+    - name: eslint
+      glob: '*.{js,cjs,mjs,ts,tsx}'
+      run: pnpm exec eslint --max-warnings=0 --no-warn-ignored {staged_files}

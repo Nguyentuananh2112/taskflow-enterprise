@@ -15,13 +15,21 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepare": "node -e \"if(require('node:fs').existsSync('.git'))require('node:child_process').execSync('lefthook install',{stdio:'inherit'})\"",
+    "infra:up": "docker compose up -d --wait postgres postgres-test valkey",
+    "infra:down": "docker compose down",
+    "infra:reset": "docker compose down --volumes",
+    "infra:logs": "docker compose logs -f",
+    "docker:build": "docker build -f apps/api/Dockerfile --target runtime -t taskflow-api:dev . && docker build -f apps/web/Dockerfile -t taskflow-web:dev .",
+    "docker:verify-argon2": "docker run --rm -i taskflow-api:dev node --input-type=module - < docker/verify-argon2.mjs"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
     "@types/node": "catalog:",
     "dependency-cruiser": "catalog:",
     "eslint": "catalog:",
+    "lefthook": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
