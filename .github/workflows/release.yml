@@ -80,20 +80,32 @@ jobs:
           provenance: true
           sbom: true
           cache-from: type=gha,scope=web
+      - name: Build + push backup (B2 — có docker/backup/Dockerfile)
+        id: backup
+        if: hashFiles('docker/backup/Dockerfile') != ''
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: docker/backup
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/taskflow-backup:sha-${{ env.GIT_SHA }}
+          provenance: true
+          sbom: true
       - name: Ghi digest (artifact + summary)
         env:
           API_DIGEST: ${{ steps.api.outputs.digest }}
           WEB_DIGEST: ${{ steps.web.outputs.digest }}
           MIGRATE_DIGEST: ${{ steps.migrate.outputs.digest }}
+          BACKUP_DIGEST: ${{ steps.backup.outputs.digest }}
         run: |
-          printf '{"gitSha":"%s","api":"%s","web":"%s","migrate":"%s"}\n' \
-            "$GIT_SHA" "$API_DIGEST" "$WEB_DIGEST" "$MIGRATE_DIGEST" > release.json
+          printf '{"gitSha":"%s","api":"%s","web":"%s","migrate":"%s","backup":"%s"}\n' \
+            "$GIT_SHA" "$API_DIGEST" "$WEB_DIGEST" "$MIGRATE_DIGEST" "$BACKUP_DIGEST" > release.json
           {
             echo "### Release sha-$GIT_SHA"
             echo '| Image | Digest |'; echo '|---|---|'
             echo "| taskflow-api | \`$API_DIGEST\` |"
             echo "| taskflow-web | \`$WEB_DIGEST\` |"
             echo "| taskflow-api-migrate | \`$MIGRATE_DIGEST\` |"
+            if [ -n "$BACKUP_DIGEST" ]; then echo "| taskflow-backup | \`$BACKUP_DIGEST\` |"; fi
             echo; echo "Deploy: Actions → **Deploy** → git_sha = \`$GIT_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

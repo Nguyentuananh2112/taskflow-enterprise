@@ -59,6 +59,31 @@ jobs:
       - { key: CHECKPOINT_DISABLE, value: '1', scope: RUN_TIME }
       - { key: PRISMA_HIDE_UPDATE_MESSAGE, value: '1', scope: RUN_TIME }
 
+  # Backup logic hằng ngày ra storage NGOÀI DigitalOcean (ADR-074, devops.md §4.3; script của B — docs/runbook/backup-restore.md).
+  # PITR 7 ngày của Managed PG vẫn là lớp chính; bản này chống mất cả tài khoản/cụm.
+  - name: backup
+    kind: SCHEDULED
+    schedule: { cron: '0 19 * * *', time_zone: UTC } # 02:00 giờ Việt Nam
+    image:
+      registry_type: GHCR
+      registry: ghcr.io
+      repository: __GHCR_OWNER__/taskflow-backup
+      digest: __BACKUP_DIGEST__
+    run_command: sh -c 'backup.sh && if [ -n "$BACKUP_HEARTBEAT_URL" ]; then wget -qO- "$BACKUP_HEARTBEAT_URL" >/dev/null; fi'
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+    envs:
+      # taskflow_backup: CHỈ SELECT (runbook deploy §A.2) — không dùng taskflow_app/migrator/doadmin
+      - { key: BACKUP_DATABASE_URL, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
+      - { key: BACKUP_AGE_RECIPIENTS, value: CHANGE_ME, scope: RUN_TIME } # public key age — không phải secret
+      - { key: BACKUP_S3_BUCKET, value: CHANGE_ME, scope: RUN_TIME }
+      - { key: BACKUP_S3_ENDPOINT, value: CHANGE_ME, scope: RUN_TIME }
+      - { key: AWS_ACCESS_KEY_ID, value: CHANGE_ME, scope: RUN_TIME, type: SECRET } # PutObject-only
+      - { key: AWS_SECRET_ACCESS_KEY, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
+      - { key: AWS_DEFAULT_REGION, value: auto, scope: RUN_TIME }
+      # Heartbeat của uptime monitor (gói free): không có ping > 26 h ⇒ email (devops.md §6.5)
+      - { key: BACKUP_HEARTBEAT_URL, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
+
 services:
   - name: api
     image:

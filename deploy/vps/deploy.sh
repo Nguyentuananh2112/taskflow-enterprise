@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy theo DIGEST trên VPS (devops.md §5.2–5.3): ghi digest mới → pull → MIGRATE (job riêng, lỗi ⇒ dừng, bản cũ
 # vẫn chạy) → rollout api/web → chờ /readyz → smoke qua Caddy → lỗi ⇒ tự ROLLBACK về digest trước (.env.previous).
-#   bash deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest>
+#   bash deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest> [backup_digest]
 #   bash deploy.sh --rollback          # quay về lần deploy trước
 # Migration theo expand/contract (§4.2) ⇒ rollback app không cần rollback DB.
 set -euo pipefail
@@ -12,6 +12,9 @@ log() { echo "[deploy $(date -u +%FT%TZ)] $*"; }
 set_digests() { # sha api web migrate
   sed -i -e "s|^GIT_SHA=.*|GIT_SHA=$1|" -e "s|^API_DIGEST=.*|API_DIGEST=$2|" \
     -e "s|^WEB_DIGEST=.*|WEB_DIGEST=$3|" -e "s|^MIGRATE_DIGEST=.*|MIGRATE_DIGEST=$4|" .env
+  if [ -n "${5:-}" ]; then # image backup (B2) tùy chọn — trống ⇒ giữ digest đang có
+    if grep -q '^BACKUP_DIGEST=' .env; then sed -i "s|^BACKUP_DIGEST=.*|BACKUP_DIGEST=$5|" .env; else echo "BACKUP_DIGEST=$5" >> .env; fi
+  fi
 }
 
 wait_ready() {
@@ -51,8 +54,8 @@ if [ "${1:-}" = --rollback ]; then
   exit 1
 fi
 
-[ $# -eq 4 ] || { echo 'Cách dùng: deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest>' >&2; exit 2; }
-for d in "$2" "$3" "$4"; do [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Digest sai: $d" >&2; exit 2; }; done
+[ $# -ge 4 ] || { echo 'Cách dùng: deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest> [backup_digest]' >&2; exit 2; }
+for d in "$2" "$3" "$4" ${5:+"$5"}; do [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Digest sai: $d" >&2; exit 2; }; done
 
 cp .env .env.previous
 set_digests "$@"

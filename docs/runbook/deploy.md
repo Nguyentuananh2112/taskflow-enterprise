@@ -28,6 +28,13 @@ Kết nối bằng user quản trị (`doadmin`) — **không** dùng cho app:
 ```sql
 CREATE ROLE taskflow_app LOGIN PASSWORD '<sinh: openssl rand -base64 36>';
 ALTER ROLE taskflow_app SET statement_timeout = '10s';
+-- Role backup (B2): CHỈ đọc — pg_dump không cần ghi. Không dùng taskflow_app (có ghi) hay doadmin.
+CREATE ROLE taskflow_backup LOGIN PASSWORD '<sinh: openssl rand -base64 36>';
+GRANT CONNECT ON DATABASE taskflow TO taskflow_backup;
+GRANT USAGE ON SCHEMA public TO taskflow_backup;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO taskflow_backup;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO taskflow_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA public GRANT SELECT ON TABLES TO taskflow_backup;
 ```
 Quyền DML do **job migrate** cấp mỗi lần deploy (`docker/migrate/grant-app.sql`). Thiếu role ⇒ job migrate lỗi rõ ràng (đúng ý đồ).
 ### A.3 Tạo app lần đầu
@@ -39,6 +46,8 @@ yq '(.. | select(tag == "!!str")) |= (sub("__GHCR_OWNER__"; "<owner>") | sub("__
      | sub("__GIT_SHA__"; strenv(GIT_SHA)) | sub("example.com"; "<domain>"))' .do/app.yaml > /tmp/app.yaml
 doctl apps create --spec /tmp/app.yaml   # in ra APP_ID → biến environment DO_APP_ID
 ```
+Job `backup` (SCHEDULED, 19:00 UTC = 02:00 giờ VN) cần thêm: `BACKUP_DATABASE_URL` (taskflow_backup), `BACKUP_AGE_RECIPIENTS` (public key age), bucket/endpoint S3 **ngoài DigitalOcean**, credential **PutObject-only**, `BACKUP_HEARTBEAT_URL` (heartbeat uptime monitor gói free — không ping > 26 h ⇒ email). Chi tiết bucket/lifecycle/khóa: `docs/runbook/backup-restore.md` §3–4.
+
 Sau đó điền các env `type: SECRET` đang là `CHANGE_ME` (DATABASE_URL của **taskflow_app**, JWT_ACCESS_SECRET, METRICS_TOKEN, SENTRY_DSN) qua giao diện hoặc `doctl apps update` — DO mã hóa thành `EV[…]`, các lần deploy sau giữ nguyên.
 ### A.4 Deploy thường xuyên
 Actions → **Deploy** → `environment`, `target = do-app-platform`, `git_sha`. Workflow: lấy spec đang chạy → chỉ thay digest + `GIT_SHA` (yq) → `doctl apps update --wait` (job `migrate` PRE_DEPLOY chạy trước) → smoke → lỗi ⇒ áp lại spec trước.
@@ -64,6 +73,15 @@ Sinh `.env` + `.env.api` (mật khẩu/secret ngẫu nhiên, quyền 600) và CA
 Actions → **Deploy** → `target = vps`. Hoặc trên máy: `bash deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest>` — ghi digest → pull → **migrate** → rollout api/web → chờ `/readyz` → smoke qua Caddy/HTTPS → lỗi ⇒ tự rollback. Quay về bản trước bằng tay: `bash deploy.sh --rollback`.
 ### B.4 Sao lưu
 Postgres nằm trên chính VPS ⇒ **bắt buộc** sao lưu ra ngoài máy theo `docs/runbook/backup-restore.md` (B2: pg_dump mã hóa age → S3 tương thích, diễn tập khôi phục hằng tuần, cảnh báo 26 h). Snapshot VPS **không** thay được backup DB nhất quán.
+```bash
+# 1 lần: role chỉ đọc cho backup (SQL như §A.2, chạy bằng user postgres trong container)
+docker compose -f compose.prod.yml exec -T postgres psql -U postgres -d taskflow   # dán khối SQL taskflow_backup
+cp .env.backup.example .env.backup && chmod 600 .env.backup                       # điền BACKUP_* / AWS_* / heartbeat
+install -m 644 taskflow-backup.service taskflow-backup.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now taskflow-backup.timer
+systemctl start taskflow-backup.service && journalctl -u taskflow-backup -n 20     # chạy thử ngay 1 lần
+```
+Diễn tập khôi phục: workflow **Backup restore drill (weekly)** (B2) + diễn tập tay hằng tháng theo `backup-restore.md`.
 
 ## C. Sự cố
 | Triệu chứng | Xử lý |

@@ -78,6 +78,13 @@ jobs:
             echo "${name//-/_}=$digest" >> "$GITHUB_OUTPUT"
             echo "$ref → $digest"
           done
+          # Image backup (B2) là TÙY CHỌN: chưa có ⇒ để trống, giữ digest đang chạy.
+          ref="ghcr.io/$OWNER/taskflow-backup:sha-$GIT_SHA"
+          if digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | jq -r .digest); then
+            echo "taskflow_backup=$digest" >> "$GITHUB_OUTPUT"; echo "$ref → $digest"
+          else
+            echo "::notice::Không có $ref — giữ nguyên image backup hiện tại"
+          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,6 +103,7 @@ jobs:
           API_DIGEST: ${{ steps.digests.outputs.taskflow_api }}
           WEB_DIGEST: ${{ steps.digests.outputs.taskflow_web }}
           MIGRATE_DIGEST: ${{ steps.digests.outputs.taskflow_api_migrate }}
+          BACKUP_DIGEST: ${{ steps.digests.outputs.taskflow_backup }}
         run: |
           # Spec đang chạy (đã có secret mã hóa EV[…]) là gốc; chỉ thay digest + GIT_SHA ⇒ không đụng secret.
           doctl apps spec get "$APP_ID" --format yaml > previous.yaml
@@ -104,7 +112,8 @@ jobs:
             (.services[] | select(.name == "api") | .image.digest) = strenv(API_DIGEST) |
             (.services[] | select(.name == "web") | .image.digest) = strenv(WEB_DIGEST) |
             (.jobs[] | select(.name == "migrate") | .image.digest) = strenv(MIGRATE_DIGEST) |
-            (.services[].envs[] | select(.key == "GIT_SHA") | .value) = strenv(GIT_SHA)
+            (.services[].envs[] | select(.key == "GIT_SHA") | .value) = strenv(GIT_SHA) |
+            (.jobs[] | select(.name == "backup" and strenv(BACKUP_DIGEST) != "") | .image.digest) = strenv(BACKUP_DIGEST)
           ' previous.yaml > rendered.yaml
           diff -u previous.yaml rendered.yaml || true # log đúng phần đổi (không có secret — đã mã hóa EV[…])
           doctl apps update "$APP_ID" --spec rendered.yaml --wait
@@ -120,6 +129,7 @@ jobs:
           API_DIGEST: ${{ steps.digests.outputs.taskflow_api }}
           WEB_DIGEST: ${{ steps.digests.outputs.taskflow_web }}
           MIGRATE_DIGEST: ${{ steps.digests.outputs.taskflow_api_migrate }}
+          BACKUP_DIGEST: ${{ steps.digests.outputs.taskflow_backup }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
@@ -127,9 +137,10 @@ jobs:
           ssh_() { ssh -i ~/.ssh/deploy -o BatchMode=yes "$USER@$HOST" "$@"; }
           scp -i ~/.ssh/deploy -o BatchMode=yes deploy/vps/compose.prod.yml deploy/vps/Caddyfile \
             deploy/vps/deploy.sh deploy/vps/bootstrap.sh deploy/vps/.env.example deploy/vps/.env.api.example \
+            deploy/vps/.env.backup.example deploy/vps/taskflow-backup.service deploy/vps/taskflow-backup.timer \
             "$USER@$HOST:/opt/taskflow/"
           scp -i ~/.ssh/deploy -o BatchMode=yes docker/postgres/init/01-roles.sh "$USER@$HOST:/opt/taskflow/postgres-init/"
-          ssh_ "cd /opt/taskflow && bash deploy.sh '$GIT_SHA' '$API_DIGEST' '$WEB_DIGEST' '$MIGRATE_DIGEST'"
+          ssh_ "cd /opt/taskflow && bash deploy.sh '$GIT_SHA' '$API_DIGEST' '$WEB_DIGEST' '$MIGRATE_DIGEST' '$BACKUP_DIGEST'"
 
       # ---------------------------------------------------------------- smoke từ Internet (cả 2 phương án)
       - name: Smoke sau deploy (HTTPS thật)

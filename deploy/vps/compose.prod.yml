@@ -116,6 +116,18 @@ services:
     environment:
       VALKEY_PASSWORD: ${VALKEY_PASSWORD:?}
 
+  # Backup logic hằng ngày (B2) — chạy bởi systemd timer (taskflow-backup.timer), không chạy thường trực.
+  # Postgres nằm trên CHÍNH VPS ⇒ đây là lớp bảo vệ dữ liệu duy nhất ngoài máy (devops.md §4.3–4.4).
+  backup:
+    image: ghcr.io/${GHCR_OWNER:?}/taskflow-backup@${BACKUP_DIGEST:-sha256:CHANGE_ME}
+    profiles: [backup]
+    env_file: .env.backup # BACKUP_* + AWS_* (PutObject-only) + BACKUP_HEARTBEAT_URL — mẫu: .env.backup.example
+    entrypoint: ['sh', '-c']
+    command:
+      - backup.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then wget -qO- "$${BACKUP_HEARTBEAT_URL}" >/dev/null; fi
+    depends_on:
+      postgres: { condition: service_healthy }
+
 volumes:
   pgdata:
   caddy_data:

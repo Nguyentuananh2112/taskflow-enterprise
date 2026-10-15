@@ -1,0 +1,11 @@
+# /etc/systemd/system/taskflow-backup.timer — 19:00 UTC (02:00 giờ Việt Nam) hằng ngày, bù lượt lỡ khi máy tắt.
+[Unit]
+Description=TaskFlow backup hằng ngày
+
+[Timer]
+OnCalendar=*-*-* 19:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
