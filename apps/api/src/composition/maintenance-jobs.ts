@@ -133,8 +133,9 @@ export function purgeWorkspacesJob(d: {
     async run(signal) {
       if (signal?.aborted) return;
       try {
-        const { purged, skipped, failed } = await job.execute();
-        d.logger.info({ purged, skipped, failed }, 'maintenance.purge_summary');
+        const { purged, skipped, failed } = await job.execute({ signal });
+        const aborted = signal?.aborted ?? false;
+        d.logger.info({ purged, skipped, failed, aborted }, 'maintenance.purge_summary');
         // G1 F4: lỗi từng workspace không còn dừng cả lô, nhưng lượt vẫn phải tính là THẤT BẠI để
         // `maintenance.run_failed` + metric `scheduled_job_runs_total{result="failure"}` còn báo động.
         if (failed > 0) throw new PurgeIncompleteError(failed);

@@ -71,4 +71,21 @@ describe('PurgeDeletedWorkspacesJob — lỗi từng workspace', () => {
     ).rejects.toBeInstanceOf(PurgeRunStopped);
     expect(await h.workspaces.rows()).toHaveLength(2); // không purge thêm gì
   });
+
+  it('F7: signal hủy giữa lượt ⇒ workspace đang purge chạy hết, các workspace sau để lượt sau', async () => {
+    const stop = new AbortController();
+    const real = h.purger;
+    const purger: IWorkspacePurger = {
+      purge: async (id, now) => {
+        const done = await real.purge(id, now);
+        stop.abort(); // shutdown tới khi workspace đầu đang purge
+        return done;
+      },
+    };
+    const result = await new PurgeDeletedWorkspacesJob({ ...h, purger }).execute({
+      signal: stop.signal,
+    });
+    expect(result).toEqual({ purged: 1, skipped: 0, failed: 0 });
+    expect((await h.workspaces.rows()).map((w) => w.id)).toEqual([ctx.B]); // A purge xong, B còn
+  });
 });
