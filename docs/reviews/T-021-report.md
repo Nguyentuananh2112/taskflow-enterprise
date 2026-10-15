@@ -67,3 +67,10 @@ DoD sau sửa: typecheck / lint (api 213 module, 0 vi phạm) / **test 84 file, 
 - **Chưa chạy được production**: chờ repository Prisma + session store Valkey của B (T-020) — `createPrismaPersistence` + đóng `prisma.$disconnect()` trước `pool.end()`.
 - 404 route không tồn tại có `details.resource = "route"` — `NotFoundDetails` của contracts chưa có giá trị `route` (đề xuất C thêm, hoặc bỏ details cho route).
 - Job purge workspace (ADR-095) chưa được lên lịch — chưa có scheduler (devops §7.4).
+
+### QA F — vòng 2 @ 04c35f4 (sau sửa)
+- **SEC-40 ✅**: 5 register song song (email khác, cùng fullName) ⇒ 5×201, slug khác nhau; 5 register trùng email ⇒ đúng [201, 409×4].
+- **A5 ✅**: charset latin1 / utf-7 / utf-16le / utf-16be ⇒ 415.
+- Vẫn xanh: SEC-01, 18, 21, 21c, 23b, 25, 29, 30 (11 case), 31, 33, 56 (7 case), 57, 58.
+- **Tổng nhóm auth + workspaces: 52 pass · 0 fail · 8 skip (cần task — T-018) · 49 todo.** `production.sec.ts` không khởi động do guard InMemory ở production (đúng hành vi — chạy khi có T-020).
+- ⚠️ Lưu ý của F: SEC-21c / SEC-23b xanh trên InMemory **chưa** chứng minh chống lost update (A4) cho Prisma — phải chạy lại hai cổng này với Postgres thật khi có `PrismaUserRepository` (T-020).
