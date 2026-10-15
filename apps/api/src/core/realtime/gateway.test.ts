@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 
+import { Server, type Namespace, type ServerOptions } from 'socket.io';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -22,6 +23,29 @@ const CLIENT = '3b241101-e2bb-4255-8caf-4136c566a962';
 
 let rt: Awaited<ReturnType<typeof startRealtime>>;
 afterEach(async () => rt?.close());
+
+type LocalFlagOpts = { flags?: { local?: boolean } };
+
+/**
+ * Mô phỏng `@socket.io/redis-adapter` khi publish lên Valkey lỗi (T-028 H3): thao tác CỤM
+ * (`socketsLeave`/`disconnectSockets` không cờ `local`) chỉ publish rồi chờ message quay về ⇒ bị
+ * mất hẳn, kể cả ở instance hiện tại. Thao tác có cờ `local` vẫn chạy.
+ */
+function lossyClusterAdapter(): ServerOptions['adapter'] {
+  // Server không gắn http server: chỉ để lấy lớp Adapter mặc định, không giữ tài nguyên nào.
+  const probe = new Server();
+  type BaseAdapter = Namespace['adapter'];
+  const Base = probe.of('/').adapter.constructor as new (nsp: Namespace) => BaseAdapter;
+  return class LossyClusterAdapter extends Base {
+    override delSockets(...args: Parameters<BaseAdapter['delSockets']>): void {
+      if ((args[0] as LocalFlagOpts).flags?.local) super.delSockets(...args);
+    }
+
+    override disconnectSockets(...args: Parameters<BaseAdapter['disconnectSockets']>): void {
+      if ((args[0] as LocalFlagOpts).flags?.local) super.disconnectSockets(...args);
+    }
+  } as unknown as ServerOptions['adapter'];
+}
 
 describe('SEC-56 — Origin & transport (chống CSWSH)', () => {
   it('Origin trong whitelist + websocket + token hợp lệ ⇒ kết nối', async () => {
@@ -297,6 +321,41 @@ describe('thu hồi quyền phía server (security §5.4) — gọi sau commit',
     expect(await after).toBe(true);
   });
 
+  it('T-028 H3: thao tác cụm bị mất (Valkey lỗi) ⇒ instance hiện tại VẪN ngắt / đẩy socket khỏi phòng', async () => {
+    rt = await startRealtime({ adapter: lossyClusterAdapter() });
+    rt.accessChecker.allow('u1', WS, P1).allow('u2', WS, P1);
+    const s1 = rt.client({ token: 'user:u1:s1' });
+    const s2 = rt.client({ token: 'user:u1:s2' });
+    const member = rt.client({ token: 'user:u2:s3' });
+    await Promise.all([connected(s1), connected(s2), connected(member)]);
+    await emitWithAck(member, 'project:join', { workspaceId: WS, projectId: P1 });
+
+    await rt.gateway.revokeWorkspaceAccess(
+      { userId: 'u2', workspaceId: WS, projectIds: [P1] },
+      { actorId: 'owner' },
+    );
+    const [server] = (await rt.gateway.io.fetchSockets()).filter((s) => s.data.userId === 'u2');
+    expect(server?.rooms.has('project:' + P1)).toBe(false);
+
+    const gone1 = disconnected(s1);
+    await rt.gateway.disconnectSession('s1');
+    expect(await gone1).toBe('io server disconnect');
+    const gone2 = disconnected(s2);
+    await rt.gateway.disconnectUser('u1');
+    expect(await gone2).toBe('io server disconnect');
+    expect(member.connected).toBe(true);
+
+    await emitWithAck(member, 'project:join', { workspaceId: WS, projectId: P2 });
+    rt.accessChecker.allow('u2', WS, P2);
+    await emitWithAck(member, 'project:join', { workspaceId: WS, projectId: P2 });
+    await rt.gateway.closeWorkspace(
+      { workspaceId: WS, projectIds: [P2], memberUserIds: ['u2'] },
+      { actorId: 'owner' },
+    );
+    const [after] = await rt.gateway.io.fetchSockets();
+    expect(after?.rooms.has('project:' + P2)).toBe(false);
+  });
+
   it('notifyRoleChanged ⇒ member:role-changed tới phòng user', async () => {
     rt = await startRealtime();
     const socket = rt.client();
@@ -377,6 +436,40 @@ describe('auth:renew & hết hạn (security §5.3)', () => {
     rt.accessChecker.failWith = new Error('db');
     expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s1' })).toEqual({ ok: true });
     expect(rt.logger.messages('warn')).toContain('realtime.recheck_failed_keep_room');
+  });
+
+  it('T-028: auth:renew tối đa 5 lần/phút/socket ⇒ RATE_LIMITED (không gọi authenticator, không ngắt); qua cửa sổ thì được lại', async () => {
+    rt = await startRealtime();
+    const socket = rt.client();
+    await connected(socket);
+    const before = rt.authenticator.calls.length;
+    for (let i = 0; i < 5; i++)
+      expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s1' })).toEqual({
+        ok: true,
+      });
+    expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s1' })).toEqual({
+      ok: false,
+      code: 'RATE_LIMITED',
+    });
+    expect(rt.authenticator.calls.length - before).toBe(5);
+    expect(socket.connected).toBe(true);
+    rt.clock.advance(60_001);
+    expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s1' })).toEqual({ ok: true });
+  });
+
+  it('T-028: auth:renew tối đa 30 lần/phút/user gộp mọi socket của user trên instance', async () => {
+    rt = await startRealtime();
+    const sockets = Array.from({ length: 7 }, (_, i) => rt.client({ token: `user:u1:s${i}` }));
+    const other = rt.client({ token: 'user:u2:s9' });
+    await Promise.all([...sockets, other].map(connected));
+    const acks = [];
+    for (const [i, socket] of sockets.entries()) {
+      for (let k = 0; k < 5; k++)
+        acks.push(await emitWithAck(socket, 'auth:renew', { token: `user:u1:s${i}` }));
+    }
+    expect(acks.filter((a) => a.ok)).toHaveLength(30);
+    expect(acks.slice(30)).toEqual(Array(5).fill({ ok: false, code: 'RATE_LIMITED' }));
+    expect(await emitWithAck(other, 'auth:renew', { token: 'user:u2:s9' })).toEqual({ ok: true });
   });
 
   it.each([

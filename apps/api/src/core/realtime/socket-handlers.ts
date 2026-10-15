@@ -2,7 +2,11 @@ import type { Socket } from 'socket.io';
 
 import type { IClock, IIdGenerator } from '../domain';
 import { AppError } from '../errors';
-import { MAX_PROJECT_ROOMS_PER_SOCKET, PROJECT_JOIN_LIMIT } from '../http/rate-limit/rules';
+import {
+  AUTH_RENEW_LIMIT,
+  MAX_PROJECT_ROOMS_PER_SOCKET,
+  PROJECT_JOIN_LIMIT,
+} from '../http/rate-limit/rules';
 import type { ILogger } from '../logging/logger';
 import {
   AuthRenewPayload,
@@ -16,6 +20,7 @@ import {
   type SocketData,
 } from './events';
 import type { IProjectAccessChecker, ISocketAuthenticator } from './ports';
+import { SlidingWindow } from './sliding-window';
 
 export type AppSocket = Socket<
   ClientToServerEvents,
@@ -30,6 +35,8 @@ export interface SocketHandlerDeps {
   logger: ILogger;
   clock: IClock;
   ids: IIdGenerator;
+  /** Hạn mức `auth:renew` theo user — DÙNG CHUNG mọi socket của instance (gateway giữ). */
+  renewsByUser: SlidingWindow;
 }
 
 /** Hẹn giờ theo `exp` của token: hết hạn chưa `auth:renew` ⇒ `auth:expired` rồi ngắt (security §5.3). */
@@ -57,6 +64,7 @@ const ackOf = (ack: unknown): AckFn | undefined =>
 export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDeps): void {
   const timers = new WeakMap<AppSocket, NodeJS.Timeout>();
   const joinHits: number[] = [];
+  const renews = new SlidingWindow(AUTH_RENEW_LIMIT.socket);
   scheduleExpiry(socket, deps, timers);
   socket.on('disconnect', () => clearTimeout(timers.get(socket)));
 
@@ -124,6 +132,12 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
       ack({ ok: false, code: 'UNAUTHORIZED' });
       socket.disconnect(true);
     };
+    // Mỗi lần renew tốn tới ~20 truy vấn DB ⇒ giới hạn TRƯỚC mọi việc khác (T-028 Medium).
+    // Không ngắt: client thử lại sau; token hết hạn thì timer `auth:expired` tự ngắt.
+    const now = deps.clock.now().getTime();
+    if (!renews.tryHit(socket.id, now) || !deps.renewsByUser.tryHit(socket.data.userId, now)) {
+      return ack({ ok: false, code: 'RATE_LIMITED' });
+    }
     const parsed = AuthRenewPayload.safeParse(payload);
     if (!parsed.success) return reject();
     let principal;

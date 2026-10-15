@@ -20,6 +20,8 @@ import type {
   RealtimeEventMeta,
   WorkspaceRole,
 } from './ports';
+import { AUTH_RENEW_LIMIT } from '../http/rate-limit/rules';
+import { SlidingWindow } from './sliding-window';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
 export interface RealtimeGatewayOptions {
@@ -60,6 +62,8 @@ export class RealtimeGateway {
     Record<string, never>,
     SocketData
   >;
+
+  readonly #renewsByUser = new SlidingWindow(AUTH_RENEW_LIMIT.user);
 
   constructor(
     httpServer: HttpServer,
@@ -109,17 +113,21 @@ export class RealtimeGateway {
 
   #onConnection(socket: AppSocket): void {
     void socket.join([rooms.user(socket.data.userId), rooms.session(socket.data.sid)]);
-    registerSocketHandlers(socket, this.o);
+    registerSocketHandlers(socket, { ...this.o, renewsByUser: this.#renewsByUser });
   }
 
   // ---------- IAuthRealtimeNotifier (security §5.4) ----------
+  // Thu hồi luôn chạy LOCAL trước rồi mới phát cho cụm: với redis-adapter, thao tác cụm chỉ áp
+  // dụng ở chính instance này khi nhận lại message của mình qua Valkey ⇒ Valkey lỗi thì không
+  // instance nào thu hồi (T-028 H3). Bản local bảo đảm ít nhất instance hiện tại thu hồi; chạy
+  // lại khi message quay về là vô hại (idempotent).
   disconnectSession(sid: string): Promise<void> {
-    this.io.in(rooms.session(sid)).disconnectSockets(true);
+    this.#disconnect(rooms.session(sid));
     return Promise.resolve();
   }
 
   disconnectUser(userId: string): Promise<void> {
-    this.io.in(rooms.user(userId)).disconnectSockets(true);
+    this.#disconnect(rooms.user(userId));
     return Promise.resolve();
   }
 
@@ -129,7 +137,7 @@ export class RealtimeGateway {
     meta: RealtimeEventMeta,
   ): Promise<void> {
     const { userId, workspaceId, projectIds } = input;
-    this.io.in(rooms.user(userId)).socketsLeave(projectIds.map(rooms.project));
+    this.#leave(rooms.user(userId), projectIds.map(rooms.project));
     this.#emit(rooms.user(userId), 'workspace:access-revoked', { workspaceId }, meta);
     return Promise.resolve();
   }
@@ -153,7 +161,7 @@ export class RealtimeGateway {
       this.#emit(rooms.user(userId), 'workspace:access-revoked', { workspaceId }, meta);
     }
     const projectRooms = projectIds.map(rooms.project);
-    if (projectRooms.length) this.io.in(projectRooms).socketsLeave(projectRooms);
+    if (projectRooms.length) this.#leave(projectRooms, projectRooms);
     return Promise.resolve();
   }
 
@@ -171,6 +179,16 @@ export class RealtimeGateway {
     this.io.local.disconnectSockets(true);
     this.io.engine.close();
     return Promise.resolve();
+  }
+
+  #disconnect(room: string): void {
+    this.io.local.in(room).disconnectSockets(true);
+    this.io.in(room).disconnectSockets(true);
+  }
+
+  #leave(from: string | string[], leave: string[]): void {
+    this.io.local.in(from).socketsLeave(leave);
+    this.io.in(from).socketsLeave(leave);
   }
 
   #emit(room: string, type: string, data: unknown, meta: RealtimeEventMeta): void {
