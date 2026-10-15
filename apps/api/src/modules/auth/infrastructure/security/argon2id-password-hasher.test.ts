@@ -73,6 +73,18 @@ describe('Argon2idPasswordHasher (ADR-065)', () => {
     expect(impl.verify).not.toHaveBeenCalled();
   });
 
+  it('chuỗi khổng lồ (1 triệu ký tự): verify false / hash RangeError mà không chuẩn hóa NFC', async () => {
+    const spy = vi.spyOn(String.prototype, 'normalize');
+    try {
+      const huge = 'x'.repeat(1_000_000);
+      expect(await hasher.verify('$argon2id$v=19$m=1,t=1,p=1$AAAA$AAAA', huge)).toBe(false);
+      await expect(hasher.hash(huge)).rejects.toThrow(RangeError);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('hash mật khẩu > 256 ký tự ⇒ RangeError (policy phải chặn trước đó)', async () => {
     await expect(hasher.hash('x'.repeat(257))).rejects.toThrow(RangeError);
   });

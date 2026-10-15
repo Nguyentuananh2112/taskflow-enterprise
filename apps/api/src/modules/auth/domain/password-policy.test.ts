@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Email } from './email';
 import { PasswordPolicy } from './password-policy';
@@ -69,6 +69,29 @@ describe('PasswordPolicy (ADR-049, ADR-065)', () => {
 
   it('không cắt khoảng trắng (khoảng trắng là một phần của mật khẩu)', () => {
     expect(policy.check(' zt7-kLm9-pQ')).toEqual({ ok: true });
+  });
+
+  describe('chặn chuỗi khổng lồ trước khi chuẩn hóa NFC (phòng thủ chiều sâu, review T-013)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('> 1024 UTF-16 unit ⇒ TOO_LONG mà không gọi normalize', () => {
+      const spy = vi.spyOn(String.prototype, 'normalize');
+      expect(policy.check('x'.repeat(10_000))).toEqual({ ok: false, violations: ['TOO_LONG'] });
+      expect(PasswordPolicy.exceedsMaxLength('x'.repeat(1025))).toBe(true);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('256 chữ tiếng Việt dạng NFD (768 unit) vẫn hợp lệ — ngưỡng rẻ không chặn oan', () => {
+      const nfd = 'ệ'.normalize('NFD').repeat(256); // ệ = e + 2 dấu tổ hợp
+      expect(nfd.length).toBe(768);
+      expect(PasswordPolicy.exceedsMaxLength(nfd)).toBe(false);
+      expect(policy.check(nfd)).toEqual({ ok: true });
+    });
+
+    it('257 ký tự sau NFC ⇒ exceedsMaxLength true (ngưỡng chính xác vẫn áp dụng)', () => {
+      expect(PasswordPolicy.exceedsMaxLength('y'.repeat(257))).toBe(true);
+      expect(PasswordPolicy.exceedsMaxLength('y'.repeat(256))).toBe(false);
+    });
   });
 
   it('normalize() trả dạng NFC — dùng chung với hasher', () => {

@@ -8,7 +8,7 @@ import {
 } from '@node-rs/argon2';
 
 import type { IPasswordHasher } from '../../application/ports/password-hasher.port';
-import { PASSWORD_MAX_LENGTH, PasswordPolicy } from '../../domain/password-policy';
+import { PasswordPolicy } from '../../domain/password-policy';
 
 /**
  * ADR-065: argon2id, tham số OWASP m=47104 KiB (46 MiB), t=1, p=1. Mỗi lần băm/verify chiếm
@@ -45,7 +45,7 @@ export class Argon2idPasswordHasher implements IPasswordHasher {
   }
 
   async hash(password: string): Promise<string> {
-    if (PasswordPolicy.length(password) > PASSWORD_MAX_LENGTH) {
+    if (PasswordPolicy.exceedsMaxLength(password)) {
       throw new RangeError('Mật khẩu vượt độ dài tối đa — PasswordPolicy phải chặn trước khi băm');
     }
     return this.impl.hash(PasswordPolicy.normalize(password), ARGON2ID_PARAMS);
@@ -53,7 +53,7 @@ export class Argon2idPasswordHasher implements IPasswordHasher {
 
   async verify(hashed: string | null, password: string): Promise<boolean> {
     // Chống DoS: không đưa chuỗi khổng lồ vào argon2. Không lộ thông tin tài khoản (chỉ lộ "quá dài").
-    if (PasswordPolicy.length(password) > PASSWORD_MAX_LENGTH) return false;
+    if (PasswordPolicy.exceedsMaxLength(password)) return false;
     const normalized = PasswordPolicy.normalize(password);
     if (hashed === null) {
       await this.safeVerify(this.dummyHash, normalized); // cân thời gian, kết quả bỏ đi

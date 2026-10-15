@@ -3,6 +3,13 @@ import type { Email } from './email';
 export const PASSWORD_MIN_LENGTH = 12; // ADR-049
 export const PASSWORD_MAX_LENGTH = 256; // ADR-065 — chống DoS, argon2 không có giới hạn đầu vào
 
+/**
+ * Ngưỡng rẻ trước khi chuẩn hóa: một ký tự (code point sau NFC) của mật khẩu hợp lệ không vượt
+ * 4 UTF-16 unit ngay cả ở dạng NFD (vd "ệ" = 3 unit). Vượt ngưỡng ⇒ chắc chắn quá dài, khỏi tốn CPU
+ * chuẩn hóa chuỗi khổng lồ (review T-013; body limit + Zod ở HTTP đã chặn trước — đây là lớp thứ hai).
+ */
+const MAX_UTF16_UNITS = PASSWORD_MAX_LENGTH * 4;
+
 /** Phần local email ngắn hơn mức này thì không kiểm "chứa email" (tránh chặn oan, vd "a@x.vn"). */
 const MIN_EMAIL_LOCAL_TO_CHECK = 3;
 
@@ -28,7 +35,15 @@ export class PasswordPolicy {
     return [...PasswordPolicy.normalize(password)].length;
   }
 
+  /** Quá độ dài tối đa? Kiểm rẻ theo UTF-16 unit trước, chỉ chuẩn hóa khi chuỗi đủ ngắn. */
+  static exceedsMaxLength(password: string): boolean {
+    return (
+      password.length > MAX_UTF16_UNITS || PasswordPolicy.length(password) > PASSWORD_MAX_LENGTH
+    );
+  }
+
   check(password: string, email?: Email): PasswordCheckResult {
+    if (password.length > MAX_UTF16_UNITS) return { ok: false, violations: ['TOO_LONG'] };
     const normalized = PasswordPolicy.normalize(password);
     const length = [...normalized].length;
     const lower = normalized.toLowerCase();
