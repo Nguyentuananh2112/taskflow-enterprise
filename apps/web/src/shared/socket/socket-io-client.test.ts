@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createSocketIoClient, type SocketAuthHooks } from './socket-io-client';
+import { MAX_RENEW_FAILURES, createSocketIoClient, type SocketAuthHooks } from './socket-io-client';
 
 // Adapter socket.io (frontend.md §3.5, security.md §5): socket.io-client được giả lập ở mức module
 // để kiểm cấu hình handshake và các nhánh xác thực mà không cần server thật.
@@ -218,6 +218,54 @@ describe('createSocketIoClient', () => {
       expect(auth.renew).toHaveBeenCalledTimes(2);
       await vi.advanceTimersByTimeAsync(1);
       expect(auth.renew).toHaveBeenCalledTimes(3);
+    });
+
+    it('renew lỗi TẠM (mạng/5xx) ⇒ thử lại theo backoff; thành công ⇒ connect, không offline', async () => {
+      vi.useFakeTimers();
+      const renew = vi
+        .fn<() => Promise<boolean>>()
+        .mockRejectedValueOnce(new Error('network'))
+        .mockRejectedValueOnce(new Error('network'))
+        .mockResolvedValueOnce(true);
+      const { client } = setup({ renew }, () => 1);
+      client.connect();
+      fake.fire('connect');
+      fake.fire('disconnect', 'io server disconnect');
+      await vi.advanceTimersByTimeAsync(2_000); // lần 1 — lỗi
+      expect(renew).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(renew).toHaveBeenCalledTimes(1); // chờ 4s (2s·2^1)
+      await vi.advanceTimersByTimeAsync(1); // lần 2 — lỗi
+      await vi.advanceTimersByTimeAsync(8_000); // lần 3 — OK
+      expect(renew).toHaveBeenCalledTimes(3);
+      expect(fake.state.connectCalls).toBe(2);
+      expect(client.status()).toBe('reconnecting');
+    });
+
+    it('renew trả false (phiên đã hết: 401/thu hồi) ⇒ offline NGAY, không thử lại (fail-closed)', async () => {
+      vi.useFakeTimers();
+      const renew = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
+      const { client } = setup({ renew }, () => 1);
+      client.connect();
+      fake.fire('connect');
+      fake.fire('disconnect', 'io server disconnect');
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(renew).toHaveBeenCalledTimes(1);
+      expect(client.status()).toBe('offline');
+      expect(fake.state.connectCalls).toBe(1);
+    });
+
+    it(`renew lỗi tạm ${String(MAX_RENEW_FAILURES)} lần liên tiếp ⇒ offline, dừng thử`, async () => {
+      vi.useFakeTimers();
+      const renew = vi.fn<() => Promise<boolean>>().mockRejectedValue(new Error('network'));
+      const { client } = setup({ renew }, () => 1);
+      client.connect();
+      fake.fire('connect');
+      fake.fire('disconnect', 'io server disconnect');
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(renew).toHaveBeenCalledTimes(MAX_RENEW_FAILURES);
+      expect(client.status()).toBe('offline');
+      expect(fake.state.connectCalls).toBe(1);
     });
 
     it('client tự disconnect (đăng xuất) khi đang chờ ⇒ hủy, không refresh/connect', async () => {

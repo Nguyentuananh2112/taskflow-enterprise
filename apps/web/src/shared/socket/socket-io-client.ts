@@ -13,7 +13,7 @@ import type { RealtimeClient, RealtimeStatus } from './realtime-client';
 
 export type SocketAuthHooks = Readonly<{
   token: () => string | null;
-  /** Refresh ngay; `true` = có token mới. */
+  /** Refresh ngay; `true` = có token mới, `false` = phiên đã hết; NÉM = lỗi tạm (mạng/5xx/timeout). */
   renew: () => Promise<boolean>;
   /** Server từ chối token (`UNAUTHORIZED`) ⇒ kết thúc phiên. */
   revoked: () => void;
@@ -45,6 +45,8 @@ const ACK_TIMEOUT_MS = 5_000;
  */
 export const RECONNECT_BASE_MS = 2_000;
 export const RECONNECT_MAX_MS = 30_000;
+/** Lỗi TẠM khi refresh (mạng/5xx/timeout) ⇒ thử lại theo cùng backoff tối đa ngần này lần liên tiếp. */
+export const MAX_RENEW_FAILURES = 5;
 const UNAVAILABLE: SocketAck = { ok: false, code: 'SERVICE_UNAVAILABLE' };
 
 export function createSocketIoClient({
@@ -75,6 +77,7 @@ export function createSocketIoClient({
     return () => void set.delete(item);
   };
   let attempts = 0;
+  let renewFailures = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const refreshThenConnect = () => {
     clearTimeout(retryTimer);
@@ -82,15 +85,25 @@ export function createSocketIoClient({
     attempts += 1;
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
-      void auth.renew().then((ok) => {
-        if (ok) socket.connect();
-        else setStatus('offline');
-      });
+      auth.renew().then(
+        (ok) => {
+          renewFailures = 0;
+          // `false` = phiên đã hết (401/thu hồi) ⇒ fail-closed, KHÔNG thử lại.
+          if (ok) socket.connect();
+          else setStatus('offline');
+        },
+        () => {
+          renewFailures += 1;
+          if (renewFailures < MAX_RENEW_FAILURES) refreshThenConnect();
+          else setStatus('offline');
+        },
+      );
     }, delay);
   };
 
   socket.on('connect', () => {
     attempts = 0;
+    renewFailures = 0;
     setStatus('connected');
     if (connectedBefore) reconnectListeners.forEach((l) => l());
     connectedBefore = true;
@@ -113,7 +126,8 @@ export function createSocketIoClient({
   });
   socket.on('auth:expired', () => {
     // Token mới sẽ đi qua onTokenRenewed ⇒ renewAuth; server ngắt thì nhánh disconnect lo.
-    void auth.renew();
+    // Lỗi tạm ở đây không cần xử lý: server sẽ ngắt khi token hết hạn ⇒ nhánh disconnect thử lại.
+    auth.renew().catch(() => undefined);
   });
 
   const ack = (send: () => Promise<SocketAck>) => send().catch(() => UNAVAILABLE);
