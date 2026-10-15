@@ -1,6 +1,7 @@
 import {
   apiAddMember,
   apiCreateTask,
+  apiGetTask,
   apiLogin,
   apiMoveBetween,
   apiRegister,
@@ -82,5 +83,21 @@ test('E2E-REBAL: chèn lặp giữa 2 thẻ cố định ⇒ rebalance ⇒ thứ
   await waitBoardReady(page);
   await expect.poll(() => titlesIn(page, 'TODO')).toEqual(expected);
   expect(r.id).toBeTruthy();
+
+  // Không task nào được kẹt rank tạm pha 1 của rebalance (`~<id>`).
+  for (const t of [l, p, q, r]) {
+    expect((await apiGetTask(request, sa, t.id)).rank, `rank của ${t.key}`).not.toMatch(/^~/);
+  }
+
+  // HIGH (B tìm, A sửa): rebalance cùng cột từng để lại rank tạm `~<id>` ⇒ tạo task mới ở cột đó 500.
+  // Tạo qua UI thật: phải 201 và nằm CUỐI cột, thứ tự cũ giữ nguyên.
+  const created = page.waitForResponse(
+    (res) => /\/tasks$/.test(res.url()) && res.request().method() === 'POST',
+  );
+  await page.getByLabel('Task mới', { exact: true }).fill('Tạo sau rebalance');
+  await page.getByRole('button', { name: 'Tạo task' }).click();
+  const res = await created;
+  expect(res.status(), await res.text()).toBe(201);
+  await expect.poll(() => titlesIn(page, 'TODO')).toEqual([...expected, 'Tạo sau rebalance']);
   await userB.close();
 });
