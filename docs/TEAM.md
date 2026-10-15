@@ -40,7 +40,7 @@
 | 0 | Chốt thiết kế: T-001..T-007 | ✅ Xong |
 | 1a | T-008 khung monorepo + tooling (A) · đồng bộ tài liệu (B, C, D, E) | ✅ Xong (ee7049f) |
 | 1b | T-009 core kernel (A) · T-010 contracts + Prisma (C) · T-011 Docker + CI (D) · T-012 nền web + shared/ui (E) · T-013 adapter bảo mật auth (B) | 🟢 Đang chạy |
-| 2 | Backend song song: Auth · Workspace/Project/RBAC · Task domain | ⏳ |
+| 2 | Backend: ✅ T-013 adapter bảo mật · ✅ T-009 core · ✅ T-014 auth use cases · 🟢 T-015 Workspace (B) · 🟢 T-016 realtime + rate limit (A) · ⏳ Task domain (C, sau T-010) | 🟢 Đang chạy |
 | 3 | Tích hợp: Prisma repos, routes, audit trong transaction, Socket gateway, test IDOR | ⏳ |
 | 4 | Frontend song song: shell + auth · Kanban board | ⏳ |
 | 5 | E2E, k6, security review, deploy | ⏳ |
