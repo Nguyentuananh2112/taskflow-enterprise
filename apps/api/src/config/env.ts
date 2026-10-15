@@ -1,20 +1,95 @@
 import * as z from 'zod';
 
-// Nơi DUY NHẤT đọc process.env (devops.md §2.4). T-009/T-011 bổ sung đủ biến theo devops.md §2.2.
-const EnvSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
-  GIT_SHA: z.string().min(1).default('dev'),
-});
+// Nơi DUY NHẤT đọc process.env (devops.md §2.2–2.4, ESLint chặn chỗ khác). Thêm biến ⇒ sửa ở đây.
 
-export type Env = z.infer<typeof EnvSchema>;
+/**
+ * Secret không bao giờ được chấp nhận ở production (security.md §6.9): placeholder của
+ * `.env.example` (`change-me-…`) và giá trị test cố định (`test-only-…`).
+ */
+export const NON_PRODUCTION_SECRET = /^(change-me|test-only-)/;
+
+const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
+
+/** Khóa HS256 = byte UTF-8 của chuỗi (security.md §2.1: `TextEncoder().encode(secret)`), ≥ 32 byte. */
+const jwtSecret = z
+  .string()
+  .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, 'phải ≥ 32 byte');
+
+const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ });
+const redisUrl = z.url({ protocol: /^rediss?$/ });
+
+const originList = z
+  .string()
+  .transform((raw) =>
+    raw
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  )
+  .pipe(z.array(z.url().refine((u) => new URL(u).origin === u, 'chỉ origin, không path')).min(1));
+
+const EnvSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']),
+    APP_ENV: z.enum(['local', 'test', 'staging', 'production']),
+    PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
+    DATABASE_URL: postgresUrl,
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+    REDIS_URL: redisUrl,
+    // `kid` suy ra từ secret trong adapter (T-013) ⇒ không có biến JWT_ACCESS_KID riêng.
+    JWT_ACCESS_SECRET: jwtSecret,
+    JWT_ACCESS_SECRET_PREVIOUS: jwtSecret.optional(),
+    CORS_ORIGINS: originList,
+    COOKIE_SECURE: z.stringbool(),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10),
+    LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+    SENTRY_DSN: z.url().optional(),
+    GIT_SHA: z.string().min(1),
+    SOCKET_REDIS_ADAPTER: z.stringbool().default(false),
+    SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
+    READINESS_DRAIN_MS: z.coerce.number().int().min(0).max(60_000).default(5_000),
+    METRICS_TOKEN: z.string().min(32).optional(),
+  })
+  .superRefine((env, ctx) => {
+    const fail = (path: keyof typeof env, message: string) =>
+      ctx.addIssue({ code: 'custom', path: [path], message });
+
+    if (env.JWT_ACCESS_SECRET_PREVIOUS === env.JWT_ACCESS_SECRET) {
+      fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
+    }
+    if (env.NODE_ENV !== 'production') return;
+
+    if (!env.COOKIE_SECURE) fail('COOKIE_SECURE', 'production bắt buộc COOKIE_SECURE=true');
+    if (!env.REDIS_URL.startsWith('rediss://')) fail('REDIS_URL', 'production bắt buộc rediss://');
+    if (env.CORS_ORIGINS.some((origin) => !origin.startsWith('https://'))) {
+      fail('CORS_ORIGINS', 'production chỉ chấp nhận https://');
+    }
+    for (const key of ['JWT_ACCESS_SECRET', 'JWT_ACCESS_SECRET_PREVIOUS'] as const) {
+      if (NON_PRODUCTION_SECRET.test(env[key] ?? '')) fail(key, 'secret mẫu/test');
+    }
+    if (env.APP_ENV !== 'staging' && env.APP_ENV !== 'production') {
+      fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');
+    }
+    if (!env.SENTRY_DSN) fail('SENTRY_DSN', 'bắt buộc ở staging/production');
+    if (!env.METRICS_TOKEN) fail('METRICS_TOKEN', 'bắt buộc ở production');
+  });
+
+export type Env = z.output<typeof EnvSchema>;
+
+export class EnvValidationError extends Error {
+  /** Chỉ TÊN biến — không bao giờ chứa giá trị (secret). */
+  readonly variables: readonly string[];
+
+  constructor(variables: readonly string[]) {
+    super(`Biến môi trường thiếu hoặc không hợp lệ: ${variables.join(', ')}`);
+    this.name = 'EnvValidationError';
+    this.variables = variables;
+  }
+}
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = EnvSchema.safeParse(source);
-  if (!parsed.success) {
-    // Chỉ in TÊN biến sai, không in giá trị.
-    const names = [...new Set(parsed.error.issues.map((issue) => issue.path.join('.')))];
-    throw new Error(`Biến môi trường không hợp lệ: ${names.join(', ')}`);
-  }
-  return parsed.data;
+  if (parsed.success) return parsed.data;
+  const variables = Object.keys(z.flattenError(parsed.error).fieldErrors).sort();
+  throw new EnvValidationError(variables);
 }

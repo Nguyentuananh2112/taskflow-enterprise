@@ -1,17 +1,26 @@
-import express, { type Express } from 'express';
-import type { HealthzResponse } from '@taskflow/contracts';
+import { createServer, type RequestListener, type Server } from 'node:http';
 
-import type { Env } from './config/env';
+/**
+ * HTTP server cho app Express. Socket.io (Phase 3) gắn vào server này:
+ * `new Server(httpServer, …)`, và đăng ký closer `realtime` trong graceful shutdown.
+ *
+ * `keepAliveTimeout` > idle timeout của load balancer (thường 60s) để LB không gửi request
+ * vào kết nối Node vừa đóng (lỗi 502 ngắt quãng).
+ */
+export function createHttpServer(app: RequestListener): Server {
+  const server = createServer(app);
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+  server.requestTimeout = 30_000;
+  return server;
+}
 
-/** Tạo ứng dụng Express (chưa listen) — test dùng trực tiếp, main.ts khởi động. */
-export function createServer(env: Pick<Env, 'GIT_SHA'>): Express {
-  const app = express();
-  app.disable('x-powered-by');
-
-  app.get('/healthz', (_req, res) => {
-    const body: HealthzResponse = { status: 'ok', gitSha: env.GIT_SHA };
-    res.json(body);
+export function listen(server: Server, port: number, host?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve();
+    });
   });
-
-  return app;
 }

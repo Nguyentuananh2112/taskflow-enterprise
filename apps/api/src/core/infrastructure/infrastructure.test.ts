@@ -1,0 +1,76 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { SpyLogger } from '../../../test/support';
+import { CryptoRandom, SystemClock, UuidV7Generator } from './system';
+import { connectInBackground, createValkeyClient, type ValkeyClient } from './valkey';
+
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+describe('UuidV7Generator', () => {
+  it('sinh UUID v7 đúng định dạng RFC 9562, không trùng', () => {
+    const gen = new UuidV7Generator();
+    const ids = Array.from({ length: 1000 }, () => gen.next());
+    ids.forEach((id) => expect(id).toMatch(UUID_V7));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('id ở mili giây sau lớn hơn id ở mili giây trước (khóa tăng theo thời gian)', async () => {
+    const gen = new UuidV7Generator();
+    const first = gen.next();
+    await new Promise((r) => setTimeout(r, 3));
+    expect(gen.next() > first).toBe(true);
+  });
+});
+
+describe('SystemClock & CryptoRandom', () => {
+  it('SystemClock trả thời điểm hiện tại', () => {
+    const before = Date.now();
+    const now = new SystemClock().now().getTime();
+    expect(now).toBeGreaterThanOrEqual(before);
+    expect(now).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('token: base64url không padding, đúng số byte; int trong [min, max)', () => {
+    const random = new CryptoRandom();
+    const token = random.token(32);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(Buffer.from(token, 'base64url')).toHaveLength(32);
+    expect(random.token(32)).not.toBe(token);
+    for (let i = 0; i < 200; i++) {
+      const n = random.int(3, 5);
+      expect(n === 3 || n === 4).toBe(true);
+    }
+  });
+});
+
+describe('Valkey client', () => {
+  it('tạo client chưa kết nối; lỗi kết nối được log tối đa 1 lần / 30s', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-15T08:00:00.000Z') });
+    try {
+      const logger = new SpyLogger();
+      const client = createValkeyClient('redis://127.0.0.1:1', logger);
+      expect(client.isOpen).toBe(false);
+
+      client.emit('error', new Error('ECONNREFUSED'));
+      client.emit('error', new Error('ECONNREFUSED'));
+      expect(logger.messages('warn')).toEqual(['valkey.error']);
+
+      vi.advanceTimersByTime(30_001);
+      client.emit('error', new Error('ECONNREFUSED'));
+      expect(logger.messages('warn')).toEqual(['valkey.error', 'valkey.error']);
+
+      client.emit('ready');
+      expect(logger.messages('info')).toEqual(['valkey.ready']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('connectInBackground không ném; thất bại được log warn', async () => {
+    const logger = new SpyLogger();
+    const client = { connect: () => Promise.reject(new Error('down')) } as unknown as ValkeyClient;
+    connectInBackground(client, logger);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(logger.messages('warn')).toEqual(['valkey.connect_failed']);
+  });
+});
