@@ -1,6 +1,6 @@
 # Cấu hình gitleaks (v8.30.1) — dùng chung cho pre-commit (lefthook.yml) và CI (.github/workflows/ci.yml).
-# Kế thừa toàn bộ luật mặc định. Chỉ allowlist những giá trị GIẢ đã biết, theo regex chính xác —
-# không allowlist theo đường dẫn file (để secret thật lỡ dán vào .env.example vẫn bị bắt).
+# Kế thừa toàn bộ luật mặc định. Ngoại lệ phải HẸP: theo regex giá trị giả đã biết; theo đường dẫn chỉ cho
+# file dữ liệu công khai cụ thể. Không allowlist cả thư mục (secret thật lỡ dán vào test/.env.example vẫn bị bắt).
 title = "taskflow"
 
 [extend]
@@ -12,6 +12,17 @@ regexTarget = "line"
 regexes = [
   # Secret mẫu: env.ts từ chối tiền tố change-me / test-only ở production (ADR-098)
   '''(change-me|test-only)-[a-z0-9-]+''',
-  # Mật khẩu local có hậu tố _local_only
+  # Mật khẩu local có hậu tố _local_only / _ci_only / _smoke_only
   '''[a-z]+_(local|ci|smoke)_only''',
+  # Mật khẩu fixture kiểu XKCD trong test (không phải secret)
+  '''correct-horse-battery-staple''',
+  # Giá trị mẫu cũ (base64 của "change-me-local-only-not-a-real-secret-32bytes") còn trong lịch sử commit a28592c
+  # trước ADR-098 — không xóa được khỏi lịch sử, không phải secret.
+  '''Y2hhbmdlLW1lLWxvY2FsLW9ubHktbm90LWEtcmVhbC1zZWNyZXQtMzJieXRlcw==''',
+]
+
+[[allowlists]]
+description = "Danh sách mật khẩu phổ biến CÔNG KHAI dùng để chặn mật khẩu yếu (T-013, security.md §6.4) — dữ liệu, không phải secret"
+paths = [
+  '''^apps/api/src/modules/auth/infrastructure/security/data/common-passwords\.json$''',
 ]

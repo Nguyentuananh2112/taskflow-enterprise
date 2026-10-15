@@ -100,6 +100,7 @@ CI chưa chạy trên GitHub (repo chưa push) — workflow kiểm bằng action
 7. CI job `integration`: `prisma validate` → `migrate deploy` → `db:check-drift` (user migrator) → `pnpm --filter @taskflow/api test:integration`. Composite setup chạy `prisma generate` sau install (client sinh vào `src/generated`, gitignore) — mọi job typecheck/test/build đều cần.
 8. Không dùng BuildKit cache mount cho store pnpm — store nằm trong layer `deps` (chỉ đổi khi lockfile đổi), tránh lỗi hardlink chéo mount.
 9. Smoke api chạy `NODE_ENV=test` (production đòi `rediss://`, https, Sentry — không có trong runner).
+10. **gitleaks allowlist mở rộng có kiểm soát** sau khi quét lại toàn bộ ref (main đã có T-013/T-016, nhánh feat/T-017): 17 false positive ⇒ (a) path đúng 1 file `apps/api/src/modules/auth/infrastructure/security/data/common-passwords.json` (danh sách mật khẩu phổ biến công khai, 15 phát hiện), (b) regex `correct-horse-battery-staple` (fixture test trên feat/T-017), (c) literal base64 mẫu cũ còn trong lịch sử commit a28592c. Sau đó: toàn bộ ref `no leaks found`; probe token GitHub giả vẫn bị chặn.
 
 ## Rủi ro / việc cho ticket khác
 - **Migrate local bằng `taskflow_migrator`:** `prisma.config.ts` chỉ đọc `DATABASE_URL` (ADR-061) và `process.loadEnvFile` không ghi đè biến đã có ⇒ runbook §5 đặt tạm `$env:DATABASE_URL` (migrator) rồi gọi `db:deploy`/`db:seed`/`db:migrate`. Đã thử: chạy đúng.
