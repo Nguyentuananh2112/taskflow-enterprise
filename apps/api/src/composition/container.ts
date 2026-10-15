@@ -1,6 +1,6 @@
 import { ROLE_PERMISSIONS } from '@taskflow/contracts';
 import type { Store } from 'express-rate-limit';
-import type { Express } from 'express';
+import type { Express, Router } from 'express';
 import type { Logger } from 'pino';
 
 import { createApp, type AppConfig } from '../app';
@@ -63,6 +63,8 @@ export interface Container {
   task: TaskModule;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
+  /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
+  routers: readonly { path: string; router: Router }[];
 }
 
 /** Ma trận quyền dùng chung (contracts) — nguồn của `IRolePermissions` cho module Task. */
@@ -144,6 +146,14 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
 
+  // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
+  const routers = [
+    { path: '/auth', router: auth.router },
+    // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
+    // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
+    { path: TASKS_PATH, router: task.routes(auth.authenticate) },
+    { path: '/workspaces', router: workspace.routes(auth.authenticate) },
+  ];
   const app = createApp({
     config,
     logger,
@@ -154,13 +164,7 @@ export function createContainer(d: ContainerDeps): Container {
     rateLimit: createGlobalRateLimit(rateLimitDeps),
     ...(d.metrics ? { metrics: d.metrics } : {}),
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
-    routers: [
-      { path: '/auth', router: auth.router },
-      // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
-      // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
-      { path: TASKS_PATH, router: task.routes(auth.authenticate) },
-      { path: '/workspaces', router: workspace.routes(auth.authenticate) },
-    ],
+    routers,
   });
-  return { app, auth, workspace, task, realtime };
+  return { app, auth, workspace, task, realtime, routers };
 }

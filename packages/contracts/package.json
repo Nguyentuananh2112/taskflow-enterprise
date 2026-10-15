@@ -11,6 +11,7 @@
     "./project": "./src/project/project.schemas.ts",
     "./task": "./src/task/index.ts",
     "./audit": "./src/audit/audit.schemas.ts",
+    "./openapi": "./src/openapi/index.ts",
     "./realtime": "./src/realtime/events.ts",
     "./system": "./src/system/healthz.schemas.ts"
   },

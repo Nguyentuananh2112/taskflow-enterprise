@@ -113,6 +113,7 @@ describe('appConfigFromEnv', () => {
       production: true,
       hsts: true,
       bodyLimit: '100kb',
+      apiDocs: false, // A2: chỉ local/test
     });
   });
 });

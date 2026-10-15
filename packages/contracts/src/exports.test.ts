@@ -9,7 +9,10 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 };
 
 describe('package.json "exports" (data-and-api §5.1)', () => {
-  const subpaths = Object.entries(pkg.exports).filter(([key]) => key !== '.');
+  // `./openapi` (A2) CỐ Ý không có trong barrel gốc: generator + danh mục route chỉ dùng phía server /
+  // công cụ — để ngoài barrel thì bundle web không phải đánh giá module này.
+  const SERVER_ONLY = new Set(['.', './openapi']);
+  const subpaths = Object.entries(pkg.exports).filter(([key]) => !SERVER_ONLY.has(key));
 
   it.each(subpaths)(
     '%s chỉ xuất những gì barrel gốc cũng xuất (cùng tham chiếu)',
