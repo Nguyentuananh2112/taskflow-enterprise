@@ -334,7 +334,12 @@ describe('Refresh ‖ thu hồi toàn bộ (X4)', () => {
         const ctx = `vòng ${String(round)} (${useChange ? 'change-password' : 'logout-all'} ${String(revoke.status)}, refresh ${String(rf.status)})`;
         expect(revoke.status, ctx).toBe(useChange ? 200 : 204);
         await flushRateLimitCounters();
-        expect((await actors.refresh(user.refreshCookie)).status, `${ctx}: token gốc`).toBe(401);
+        // Token gốc vừa bị xoay < 10s ⇒ trong ân hạn trả 409 REFRESH_IN_PROGRESS (không cấp gì — §2.3);
+        // ngoài ra 401. Không bao giờ 200.
+        const original = await actors.refresh(user.refreshCookie);
+        expect([401, 409], `${ctx}: token gốc ${String(original.status)}`).toContain(
+          original.status,
+        );
         if (rf.status === 200) {
           const rotated = await actors.refresh(refreshCookieOf(rf));
           expect(rotated.status, `${ctx}: token xoay trong lúc thu hồi vẫn sống`).toBe(401);
