@@ -515,6 +515,28 @@ describe('thu hồi quyền phía server (security §5.4) — gọi sau commit',
     expect(await leaked).toBe(true);
   });
 
+  it('review B G1 vòng 2: lần kiểm lại đọc "còn quyền" nhưng trả về SAU hook thu hồi (projectIds thiếu P) ⇒ không ở lại phòng', async () => {
+    rt = await startRealtime();
+    rt.accessChecker.allow('u1', WS, P1);
+    const socket = rt.client({ token: 'user:u1:s1' });
+    await connected(socket);
+    rt.accessChecker.interleave = async (check) => {
+      if (check !== 2) return;
+      // Kiểm lại đã đọc "còn là thành viên"; thu hồi commit và hook chạy trước khi kết quả về.
+      await rt.gateway.revokeWorkspaceAccess(
+        { userId: 'u1', workspaceId: WS, projectIds: [] },
+        { actorId: 'owner' },
+      );
+    };
+    expect(await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 })).toEqual({
+      ok: false,
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])]).not.toContain(`project:${P1}`);
+    expect(server?.data.joined.size).toBe(0);
+  });
+
   it('review B G1: closeWorkspace rời phòng theo `joined` của MỌI socket (projectIds thiếu project)', async () => {
     rt = await startRealtime();
     rt.accessChecker.allow('u1', WS, P1).allow('u2', WS, P1).allow('u2', WS2, P3);

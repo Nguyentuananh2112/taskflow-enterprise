@@ -137,6 +137,11 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
       deps.logger.error({ err, userId, projectId }, 'realtime.project_join_check_failed');
       return ack({ ok: false, code: 'SERVICE_UNAVAILABLE' });
     }
+    // Ghi `joined` TRƯỚC khi vào phòng (review B G1 vòng 2): thu hồi theo workspace (`workspace:leave-
+    // rooms`) đọc `joined` ⇒ thấy cả join đang chạy và XÓA mục này. Nếu ghi sau lần kiểm lại, một lần
+    // kiểm lại gửi đi trước khi thu hồi commit (đọc "còn là thành viên") nhưng trả về sau hook thu hồi
+    // sẽ để socket ở lại phòng của project không có trong ảnh chụp `projectIds`.
+    joined.set(projectId, workspaceId);
     await socket.join(room);
     // TOCTOU (review T-016): thu hồi commit giữa lần kiểm trên và `join` đã chạy socketsLeave
     // TRƯỚC khi ta vào phòng ⇒ kiểm lại SAU join. Thu hồi commit sau lần kiểm này sẽ tự
@@ -148,15 +153,12 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
       deps.logger.error({ err, userId, projectId }, 'realtime.project_join_recheck_failed');
       stillAllowed = false;
     }
-    if (!stillAllowed) {
+    // `joined` mất mục ⇒ thu hồi theo workspace đã chạy trong lúc kiểm lại ⇒ không ở lại phòng.
+    if (!stillAllowed || joined.get(projectId) !== workspaceId) {
       await socket.leave(room);
       joined.delete(projectId);
       return ack({ ok: false, code: 'RESOURCE_NOT_FOUND' });
     }
-    // BẤT BIẾN (review B G1): KHÔNG await giữa lần kiểm lại và `joined.set` — thu hồi theo workspace
-    // (`workspace:leave-rooms`) đọc `joined`; chạy sau đây thì thấy phòng này, chạy trước thì lần
-    // kiểm lại đã thất bại.
-    joined.set(projectId, workspaceId);
     ack({ ok: true });
   }
 
