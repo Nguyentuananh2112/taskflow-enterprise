@@ -26,8 +26,16 @@ export const testRouter = {
   pathname: () => window.location.pathname,
 };
 
+/** Tham số động của route app/ (`/w/[wsId]`, `/w/[wsId]/p/[projectId]`). */
+function paramsOf(pathname: string): Record<string, string> {
+  const match = /^\/w\/([^/]+)(?:\/p\/([^/]+))?/.exec(pathname);
+  if (!match) return {};
+  return { wsId: match[1] ?? '', ...(match[2] ? { projectId: match[2] } : {}) };
+}
+
 export const nextNavigationMock = {
   useRouter: () => testRouter,
   usePathname: () => window.location.pathname,
   useSearchParams: () => new URLSearchParams(window.location.search),
+  useParams: () => paramsOf(window.location.pathname),
 };

@@ -14,15 +14,26 @@ type Props = Readonly<{
   headerActions?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Mở bằng URL (không có Trigger) ⇒ tự trả focus về phần tử đã mở drawer (vd thẻ task). */
+  onCloseAutoFocus?: (event: Event) => void;
 }>;
 
-export function Drawer({ open, onOpenChange, title, headerActions, children, className }: Props) {
+export function Drawer({
+  open,
+  onOpenChange,
+  title,
+  headerActions,
+  children,
+  className,
+  onCloseAutoFocus,
+}: Props) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-overlay" />
         <RadixDialog.Content
           aria-describedby={undefined}
+          {...(onCloseAutoFocus ? { onCloseAutoFocus } : {})}
           className={cn(
             'fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-surface text-text shadow-raised md:w-[480px]',
             className,

@@ -1,4 +1,5 @@
 import type { MembershipDto, UserDto } from '@taskflow/contracts/auth';
+import type { WorkspaceRole } from '@taskflow/contracts/rbac';
 
 // Trạng thái trong bộ nhớ của mock API (T-019). Mô phỏng ĐÚNG hành vi phiên của server thật
 // (security.md §1.3–1.7): refresh token xoay vòng theo family, cửa sổ ân hạn 10s (REFRESH_IN_PROGRESS),
@@ -18,6 +19,8 @@ export type MockDbOptions = Readonly<{
   /** TTL access token (giây) — test đặt ngắn để thử TOKEN_EXPIRED. */
   accessTtlSec?: number;
   now?: () => number;
+  /** Đăng ký tạo workspace mặc định ⇒ mock board tạo project "Dự án đầu tiên" (ADR-103). */
+  onWorkspaceCreated?: (workspaceId: string) => void;
 }>;
 
 /** Cửa sổ ân hạn sau khi xoay refresh token (security.md §1.4). */
@@ -26,6 +29,7 @@ export const REFRESH_GRACE_MS = 10_000;
 export class MockDb {
   readonly accessTtlSec: number;
   readonly now: () => number;
+  private readonly onWorkspaceCreated: ((workspaceId: string) => void) | undefined;
   private readonly users = new Map<string, MockUser>();
   private readonly memberships = new Map<string, MembershipDto[]>();
   private readonly access = new Map<string, AccessEntry>();
@@ -34,6 +38,7 @@ export class MockDb {
   constructor(options: MockDbOptions = {}) {
     this.accessTtlSec = options.accessTtlSec ?? 900;
     this.now = options.now ?? Date.now;
+    this.onWorkspaceCreated = options.onWorkspaceCreated;
   }
 
   findUserByEmail(email: string): MockUser | undefined {
@@ -61,11 +66,32 @@ export class MockDb {
       role: 'OWNER',
     };
     this.memberships.set(user.id, [workspace]);
+    this.onWorkspaceCreated?.(workspace.workspaceId);
     return { user, defaultWorkspaceId: workspace.workspaceId };
   }
 
   membershipsOf(userId: string): MembershipDto[] {
     return this.memberships.get(userId) ?? [];
+  }
+
+  membershipIn(userId: string, workspaceId: string): MembershipDto | undefined {
+    return this.membershipsOf(userId).find((m) => m.workspaceId === workspaceId);
+  }
+
+  /** Thêm vào workspace có sẵn (test/seed) — hoặc đổi role nếu đã là thành viên. */
+  setMembership(userId: string, workspace: MembershipDto, role: WorkspaceRole): void {
+    const others = this.membershipsOf(userId).filter(
+      (m) => m.workspaceId !== workspace.workspaceId,
+    );
+    this.memberships.set(userId, [...others, { ...workspace, role }]);
+  }
+
+  /** Thành viên của workspace, theo thứ tự đăng ký. */
+  membersOf(workspaceId: string): Array<{ user: UserDto; membership: MembershipDto }> {
+    return [...this.users.values()].flatMap((user) => {
+      const membership = this.membershipIn(user.id, workspaceId);
+      return membership ? [{ user, membership }] : [];
+    });
   }
 
   /** Cấp access token (chuỗi ngẫu nhiên — mock không ký JWT). */

@@ -1,10 +1,15 @@
 import { createAuthHandlers } from './auth-handlers';
+import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { contentTypeGuard } from './request-guards';
+import { createTaskHandlers } from './task-handlers';
+import { createWorkspaceHandlers } from './workspace-handlers';
 
-// Mock API (T-019): cùng bộ handler MSW dùng cho test (setupServer) và cho dev (route handler
-// app/mock-api/v1/[...path] khi APP_MOCK_API=1). Chưa có route thật ở API (Phase 3).
+// Mock API (T-019, T-025): cùng bộ handler MSW dùng cho test (setupServer) và cho dev (route handler
+// app/mock-api/v1/[...path] khi APP_MOCK_API=1). Hành vi theo data-and-api.md; event realtime phát
+// qua `board.onEvent` (test nối vào socket giả).
 
+export { MockBoard, type BoardEvent } from './mock-board';
 export { MockDb, REFRESH_GRACE_MS, type MockDbOptions } from './mock-db';
 export { isMockApiEnabled } from './mock-flag';
 
@@ -16,11 +21,25 @@ export type MockApiOptions = MockDbOptions &
 
 /** `baseUrl` = API_URL (gồm `/api/v1`, không có `/` cuối). */
 export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
-  const db = new MockDb(options);
+  const board = new MockBoard(options.now ?? Date.now);
+  const db = new MockDb({
+    ...options,
+    // ADR-103: workspace mặc định có sẵn project "Dự án đầu tiên" (keyPrefix TF).
+    onWorkspaceCreated: (workspaceId) => {
+      board.createProject(workspaceId, { name: 'Dự án đầu tiên', keyPrefix: 'TF' });
+      options.onWorkspaceCreated?.(workspaceId);
+    },
+  });
   const allowedOrigins = new Set(options.allowedOrigins ?? [new URL(baseUrl).origin]);
   return {
     db,
-    handlers: [contentTypeGuard(baseUrl), ...createAuthHandlers(baseUrl, db, allowedOrigins)],
+    board,
+    handlers: [
+      contentTypeGuard(baseUrl),
+      ...createAuthHandlers(baseUrl, db, allowedOrigins),
+      ...createWorkspaceHandlers(baseUrl, db, board),
+      ...createTaskHandlers(baseUrl, db, board),
+    ],
   };
 }
 

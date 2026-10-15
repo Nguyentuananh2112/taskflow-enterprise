@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { useMe } from '@/entities/session';
 import { Badge } from '@/shared/ui/badge';
 import { Button } from '@/shared/ui/button';
@@ -14,8 +16,8 @@ const ROLE_LABEL = {
 } as const;
 
 /**
- * `/w` — dashboard sau đăng nhập (T-019: bản rút gọn, chỉ liệt kê workspace từ `/auth/me`).
- * Danh sách project / board là ticket sau.
+ * `/w` — dashboard sau đăng nhập (T-019: bản rút gọn, liệt kê workspace từ `/auth/me`); mỗi workspace
+ * dẫn tới danh sách project (T-025).
  */
 export function WorkspacePickerPage() {
   const me = useMe();
@@ -43,12 +45,14 @@ export function WorkspacePickerPage() {
       {me.data && me.data.memberships.length > 0 && (
         <ul className="grid gap-3 sm:grid-cols-2">
           {me.data.memberships.map((m) => (
-            <li
-              key={m.workspaceId}
-              className="flex items-center justify-between gap-3 rounded-card border border-border bg-surface p-4 shadow-card"
-            >
-              <span className="font-medium">{m.workspaceName}</span>
-              <Badge>{ROLE_LABEL[m.role]}</Badge>
+            <li key={m.workspaceId}>
+              <Link
+                href={`/w/${m.workspaceId}/projects`}
+                className="flex items-center justify-between gap-3 rounded-card border border-border bg-surface p-4 shadow-card hover:border-primary"
+              >
+                <span className="font-medium">{m.workspaceName}</span>
+                <Badge>{ROLE_LABEL[m.role]}</Badge>
+              </Link>
             </li>
           ))}
         </ul>

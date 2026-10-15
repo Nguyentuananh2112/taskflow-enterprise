@@ -3,6 +3,7 @@ import {
   apiSuccess,
   toValidationIssues,
   type ErrorCode,
+  type PageMeta,
 } from '@taskflow/contracts/common';
 import { HttpResponse } from 'msw';
 import type * as z from 'zod';
@@ -12,10 +13,14 @@ import type * as z from 'zod';
 
 const meta = () => ({ timestamp: new Date().toISOString(), requestId: crypto.randomUUID() });
 
-type Init = Readonly<{ status?: number; headers?: HeadersInit }>;
+type Init = Readonly<{ status?: number; headers?: HeadersInit; page?: PageMeta }>;
 
 export function ok<S extends z.ZodType>(schema: S, data: z.input<S>, init: Init = {}) {
-  const body = apiSuccess(schema).parse({ success: true, data, meta: meta() });
+  const body = apiSuccess(schema).parse({
+    success: true,
+    data,
+    meta: { ...meta(), ...(init.page ? { page: init.page } : {}) },
+  });
   return HttpResponse.json(body, { status: init.status ?? 200, headers: init.headers ?? {} });
 }
 
@@ -53,6 +58,28 @@ export function ruleViolation(path: string, message: string) {
   return fail(400, 'VALIDATION_ERROR', { issues: [{ path: [path], code: 'custom', message }] });
 }
 
+/** Cursor opaque (base64url của offset) — đủ cho mock; server thật mã hóa khóa sắp xếp. */
+export function paginate<T>(items: readonly T[], cursor: string | undefined, limit: number) {
+  const offset = cursor ? Number(atob(cursor.replace(/-/g, '+').replace(/_/g, '/'))) || 0 : 0;
+  const slice = items.slice(offset, offset + limit);
+  const hasMore = offset + limit < items.length;
+  const nextCursor = hasMore ? btoa(String(offset + limit)).replace(/=+$/, '') : null;
+  return { data: slice, page: { nextCursor, hasMore, limit } satisfies PageMeta };
+}
+
+/** Parse query string bằng schema contracts (400 như server khi sai). */
+export function parseQuery<S extends z.ZodType>(
+  request: Request,
+  schema: S,
+): { data: z.output<S>; response?: never } | { response: Response; data?: never } {
+  const params = Object.fromEntries(new URL(request.url).searchParams);
+  const parsed = schema.safeParse(params);
+  if (parsed.success) return { data: parsed.data };
+  return {
+    response: fail(400, 'VALIDATION_ERROR', { issues: toValidationIssues(parsed.error) }),
+  };
+}
+
 const MESSAGES: Partial<Record<ErrorCode, string>> = {
   VALIDATION_ERROR: 'Dữ liệu không hợp lệ.',
   UNAUTHORIZED: 'Phiên đăng nhập không hợp lệ.',
@@ -65,4 +92,10 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   RATE_LIMITED: 'Bạn thao tác quá nhanh, vui lòng thử lại sau.',
   UNSUPPORTED_MEDIA_TYPE: 'Content-Type phải là application/json.',
   ORIGIN_NOT_ALLOWED: 'Nguồn yêu cầu không được phép.',
+  FORBIDDEN_ACCESS: 'Bạn không có quyền thực hiện thao tác này.',
+  RESOURCE_NOT_FOUND: 'Không tìm thấy tài nguyên.',
+  VERSION_CONFLICT: 'Task đã bị người khác cập nhật.',
+  INVALID_STATUS_TRANSITION: 'Không thể chuyển sang trạng thái này.',
+  PROJECT_ARCHIVED: 'Dự án đã được lưu trữ.',
+  BUSINESS_RULE_VIOLATION: 'Vi phạm luật nghiệp vụ.',
 };

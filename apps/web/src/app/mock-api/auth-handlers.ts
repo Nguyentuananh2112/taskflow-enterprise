@@ -13,6 +13,7 @@ import { http, type HttpHandler } from 'msw';
 
 import type { MockDb } from './mock-db';
 import { rejectsOrigin } from './request-guards';
+import { authenticate as authenticateRequest } from './mock-guard';
 import { fail, noContent, ok, parseBody, ruleViolation } from './respond';
 
 // Handler /auth/* của mock API — hành vi theo data-and-api.md §2.4 và security.md §1, §2.3, §6.4–6.5.
@@ -43,15 +44,9 @@ export function createAuthHandlers(
   const setCookie = (token: string | null) => ({ 'Set-Cookie': cookieHeader(basePath, token) });
   const loginFailures = new Map<string, number>();
 
-  /** Bearer ⇒ user, hoặc response lỗi 401 đúng mã (TOKEN_EXPIRED chỉ khi token hết hạn). */
   const authenticate = (request: Request) => {
-    const token = request.headers.get('authorization')?.replace(/^Bearer /, '');
-    const result = token ? db.verifyAccess(token) : { status: 'invalid' as const };
-    if (result.status === 'ok') return { user: result.user };
-    return {
-      response:
-        result.status === 'expired' ? fail(401, 'TOKEN_EXPIRED') : fail(401, 'UNAUTHORIZED'),
-    };
+    const auth = authenticateRequest(request, db);
+    return auth.response ? { response: auth.response } : { user: auth.ok };
   };
 
   return [
