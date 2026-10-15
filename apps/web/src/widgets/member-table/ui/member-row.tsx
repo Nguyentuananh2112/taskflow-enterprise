@@ -37,7 +37,7 @@ export function MemberRow({ wsId, member, permission, onLeft }: Props) {
               {member.fullName}
               {isSelf && <span className="text-text-muted"> (bạn)</span>}
             </span>
-            <span className="text-xs text-text-muted">{member.email}</span>
+            <span className="text-xs break-all text-text-muted">{member.email}</span>
           </span>
         </span>
       </td>
