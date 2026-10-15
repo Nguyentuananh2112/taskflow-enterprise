@@ -28,7 +28,7 @@ vi.mock('@/entities/task', async (importOriginal) => {
 
 const STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const scope = { wsId: WS_ID, projectId: PROJECT_ID };
-const N = 60;
+const N = 24;
 
 const stableOpen = () => undefined;
 

@@ -26,7 +26,7 @@ function Status() {
 }
 
 async function fillAndSubmit(email: string, password: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   if (email) await user.type(screen.getByLabelText(/Email/), email);
   if (password) await user.type(screen.getByLabelText(/Mật khẩu/), password);
   await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
@@ -76,7 +76,7 @@ describe('LoginForm', () => {
 
   it('sai 5 lần ⇒ RATE_LIMITED: báo số giây chờ', async () => {
     renderWithProviders(<LoginForm />);
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText(/Email/), 'khoa@example.com');
     await user.type(screen.getByLabelText(/Mật khẩu/), 'sai');
     for (let i = 0; i < 6; i += 1) {

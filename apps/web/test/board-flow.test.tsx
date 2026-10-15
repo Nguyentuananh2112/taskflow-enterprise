@@ -57,7 +57,7 @@ describe('board Kanban (OWNER)', () => {
     const a = await f.createTask('Viết đặc tả');
     f.signInAs(f.owner);
     openBoard(f.boardUrl, hub.client(getClientId()));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     await user.click(await screen.findByRole('button', { name: `Thao tác với ${a.key}` }));
     const items = (await screen.findAllByRole('menuitem')).map((i) => i.textContent);
@@ -76,7 +76,7 @@ describe('board Kanban (OWNER)', () => {
     await f.createTask('Task có sẵn');
     f.signInAs(f.owner);
     openBoard(f.boardUrl, hub.client(getClientId()));
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     await user.type(await screen.findByLabelText('Task mới'), 'Task vừa tạo');
     await user.click(screen.getByRole('button', { name: 'Tạo task' }));
@@ -144,7 +144,7 @@ describe('quyền & project lưu trữ', () => {
     expect(screen.queryByRole('button', { name: /^Thao tác với/ })).toBeNull();
     expect(screen.queryByLabelText('Task mới')).toBeNull();
 
-    await userEvent.setup().click(screen.getByRole('button', { name: a.title }));
+    await userEvent.setup({ delay: null }).click(screen.getByRole('button', { name: a.title }));
     const drawer = await screen.findByRole('dialog', { name: a.key });
     expect(within(drawer).queryByRole('textbox')).toBeNull();
     expect(within(drawer).queryByRole('button', { name: 'Xóa task' })).toBeNull();

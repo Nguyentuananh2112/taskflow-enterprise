@@ -97,7 +97,7 @@ vi.setConfig({ testTimeout: 30_000 });
 
 describe('luồng xác thực trên mock API', () => {
   it('đăng ký → dashboard → reload giữ phiên → token hết hạn được làm mới trong suốt → đăng xuất', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     // 1. Khách vào /w ⇒ bị chuyển về /login?next=/w, rồi đi tới /register.
     openPage('/w');
@@ -157,7 +157,7 @@ describe('luồng xác thực trên mock API', () => {
   });
 
   it('đăng xuất mọi thiết bị ⇒ cache của người dùng bị xóa, về /login', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     openPage('/login?next=%2Faccount');
     await user.type(await screen.findByLabelText(/Email/), 'binh@example.com');
     await user.type(screen.getByLabelText(/Mật khẩu/), BINH_PASSWORD);
@@ -172,7 +172,7 @@ describe('luồng xác thực trên mock API', () => {
   });
 
   it('?next= trỏ ra ngoài (open redirect) ⇒ bị bỏ, vào /w', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     openPage('/login?next=%2F%2Fevil.example');
     await user.type(await screen.findByLabelText(/Email/), 'binh@example.com');
     await user.type(screen.getByLabelText(/Mật khẩu/), BINH_PASSWORD);
