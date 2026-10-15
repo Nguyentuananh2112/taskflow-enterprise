@@ -111,5 +111,8 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-112 ✅ (Người dùng yêu cầu không để phiên nào ngừng) **Backlog tự phục vụ**: mỗi vai trò có hàng đợi việc kế tiếp trong `docs/tasks/BACKLOG.md`; báo DONE xong tự lấy việc tiếp, không chờ review. Tech Lead review/merge song song.
 
+- ADR-113 ✅ **Rủi ro chấp nhận có chủ đích cho v1** (threat model của B, `docs/design/threat-model.md` §6): **R8** JWT access HS256 khóa đối xứng — lộ secret ⇒ giả mạo được token; chấp nhận vì v1 chỉ một dịch vụ kiểm token, có runbook xoay khóa (security-go-live §9). Xem lại khi có ≥ 2 dịch vụ kiểm token ⇒ chuyển khóa bất đối xứng (EdDSA/ES256). **R9** thiếu `SENTRY_DSN` chỉ cảnh báo (giám sát không được làm sập app); checklist go-live BẮT BUỘC đặt DSN. **R15** tunnel `/monitoring` nhận sự kiện lỗi từ bất kỳ ai trong hạn mức (30/phút/IP, 300/phút/instance, 200kB); xem lại nếu quota Sentry bị đốt.
+- ADR-114 ✅ (Người dùng chốt) **Không cấp giấy phép mã nguồn** — repo public nhưng giữ toàn quyền (all rights reserved); không thêm file LICENSE mở; README ghi rõ. Có thể đổi sau. **SECURITY.md**: thời gian xử lý là MỤC TIÊU (best effort, ~5 ngày làm việc để phản hồi; công bố phối hợp 90 ngày), không phải cam kết cứng; kênh báo cáo: GitHub Private vulnerability reporting (bật khi publish) + email bảo mật do người dùng cung cấp.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
