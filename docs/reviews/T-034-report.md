@@ -1,6 +1,6 @@
 # T-034 — Báo cáo: màn hình quản trị workspace, thành viên, project
 
-**Người làm:** Engineer E (`taskflow-enterprise-54`) · **Branch:** `feat/T-034` (rebase lên main `f40e0aa` — đã chứa `fix/dnd-csp-nonce`) · **Ngày:** 2026-10-15
+**Người làm:** Engineer E (`taskflow-enterprise-54`) · **Branch:** `feat/T-034` (rebase lên main `07517fe` — đã chứa `fix/dnd-csp-nonce`, T-035) · **Ngày:** 2026-10-15
 Giữa chừng tạm dừng 2 lần cho việc gấp: `fix/web-test-timeouts` và `fix/dnd-csp-nonce` (cả hai đã merge). Mục 6: xử lý review bảo mật của B.
 
 ## 1. Đã làm
@@ -47,14 +47,15 @@ Giữa chừng tạm dừng 2 lần cho việc gấp: `fix/web-test-timeouts` v�
 ## 4. Rủi ro / ngoài phạm vi
 - `packages/contracts` `HealthzResponse` đã bỏ `gitSha` ở `7b84bcd` (A) — khớp web/API.
 - Contracts chưa có `version` cho workspace/project (ADR-110 hiện chỉ ở server): khi C thêm `expectedVersion` vào body sửa workspace/project, form cần gửi version + xử lý 409.
-- Lỗi dnd-kit CSP (`f2b735c`) đã merge (`f40e0aa`); rebase không xung đột.
+- Lỗi dnd-kit CSP (`f2b735c`) đã merge (`f40e0aa`); rebase lên `07517fe` không xung đột. API thật chạy code main mới trên DB `taskflow_t025` tạo lại (container postgres-test được tạo lại giữa chừng ⇒ `db:deploy` + seed lại).
 - Bug mới (F tìm, có từ trước, ngoài T-034): kéo bằng bàn phím vào cột TRỐNG ⇒ thả về cột cũ — sửa ở branch riêng từ main sau T-034.
 
-## 5. Definition of Done (worktree `D:/TaskFlow_wt/T-025`, rebase lên main `f40e0aa`, sau mục 6)
+## 5. Definition of Done (worktree `D:/TaskFlow_wt/T-025`, rebase lên main `07517fe`, sau mục 6)
 ```
+$ pnpm install --frozen-lockfile → exit 0
 $ pnpm typecheck              → exit 0
 $ pnpm lint                   → exit 0 (prettier; eslint --max-warnings=0; depcruise web 349 modules 0 vi phạm, api 0)
-$ pnpm test --maxWorkers=2    → Test Files 156 passed (156) · Tests 1594 passed (1594) · exit 0, 0 "Unhandled"
+$ pnpm test --maxWorkers=2    → Test Files 161 passed (161) · Tests 1630 passed (1630) · exit 0, 0 "Unhandled"
 $ pnpm --filter @taskflow/web build → exit 0
 $ REAL_API_PASSWORD=… pnpm --filter @taskflow/web test:real-api (API thật) → Test Files 3 passed (3) · exit 0
 $ (không đặt REAL_API_PASSWORD)  → Tests 3 skipped (3)
