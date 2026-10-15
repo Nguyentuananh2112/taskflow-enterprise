@@ -42,7 +42,11 @@ const EnvSchema = z
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
-    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10),
+    // Bắt buộc ghi TƯỜNG MINH (L1 của T-028): chuỗi rỗng KHÔNG được coi là 0 (z.coerce('') = 0).
+    TRUST_PROXY_HOPS: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.coerce.number().int().min(0).max(10),
+    ),
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
     SENTRY_DSN: z.url().optional(),
     GIT_SHA: z.string().min(1),
@@ -61,11 +65,16 @@ const EnvSchema = z
     if (env.JWT_ACCESS_SECRET_PREVIOUS === env.JWT_ACCESS_SECRET) {
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
     }
-    // Quyết định Tech Lead (T-020): staging/production KHÔNG bao giờ dùng lưu trữ bộ nhớ, kể cả "lai".
-    if (env.APP_ENV === 'staging' || env.APP_ENV === 'production') {
-      if (env.PERSISTENCE === 'memory') fail('PERSISTENCE', 'staging/production bắt buộc prisma');
+    if (env.NODE_ENV === 'production' && !isDeployed(env.APP_ENV)) {
+      fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');
     }
-    if (env.NODE_ENV !== 'production') return;
+    // Mọi hardening dựa trên APP_ENV, không phải NODE_ENV (L1 của T-028): APP_ENV=production +
+    // NODE_ENV=development trước đây khởi động với secret `change-me`, cookie không Secure…
+    if (!isDeployed(env.APP_ENV)) return;
+
+    if (env.NODE_ENV !== 'production') fail('NODE_ENV', 'staging/production bắt buộc production');
+    // Quyết định Tech Lead (T-020): staging/production KHÔNG bao giờ dùng lưu trữ bộ nhớ, kể cả "lai".
+    if (env.PERSISTENCE === 'memory') fail('PERSISTENCE', 'staging/production bắt buộc prisma');
 
     if (!env.COOKIE_SECURE) fail('COOKIE_SECURE', 'production bắt buộc COOKIE_SECURE=true');
     if (!env.REDIS_URL.startsWith('rediss://')) fail('REDIS_URL', 'production bắt buộc rediss://');
@@ -75,14 +84,16 @@ const EnvSchema = z
     for (const key of ['JWT_ACCESS_SECRET', 'JWT_ACCESS_SECRET_PREVIOUS'] as const) {
       if (NON_PRODUCTION_SECRET.test(env[key] ?? '')) fail(key, 'secret mẫu/test');
     }
-    if (env.APP_ENV !== 'staging' && env.APP_ENV !== 'production') {
-      fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');
-    }
     if (!env.SENTRY_DSN) fail('SENTRY_DSN', 'bắt buộc ở staging/production');
     if (!env.METRICS_TOKEN) fail('METRICS_TOKEN', 'bắt buộc ở production');
   });
 
 export type Env = z.output<typeof EnvSchema>;
+
+/** Môi trường triển khai thật — nơi mọi hardening production bắt buộc. */
+export function isDeployed(appEnv: string): appEnv is 'staging' | 'production' {
+  return appEnv === 'staging' || appEnv === 'production';
+}
 
 export class EnvValidationError extends Error {
   /** Chỉ TÊN biến — không bao giờ chứa giá trị (secret). */
