@@ -6,7 +6,7 @@
 | `taskflow-enterprise-0b` | **Tech Lead / Kiến trúc sư** | Ra quyết định, viết ticket, review, merge. Không ai khác sửa `docs/blueprint/DECISIONS.md`. |
 | `taskflow-enterprise-50` | **Engineer A — Platform/Research** | Hạ tầng, tooling, nghiên cứu công nghệ, sau này: Auth. |
 | `taskflow-enterprise-87` | **Engineer B — Security/Backend** | Thiết kế bảo mật, sau này: Workspace/Project/RBAC. |
-| `taskflow-enterprise-d7` (thay `-ba` crash) | **Engineer C — Domain/Contracts** | Data model, API contract, sau này: Task domain. |
+| (tạm nghỉ — `-d7` crash, mở lại khi cần) | **Engineer C — Domain/Contracts** | Data model, API contract, sau này: Task domain. |
 | `taskflow-enterprise-a5` | **Engineer D — QA/DevOps** | Vận hành production, CI/CD, chiến lược test; sau này: test độc lập (bảo mật/IDOR/E2E), pipeline. |
 | `taskflow-enterprise-54` (thay `-b7`, `-37`) | **Engineer E — Frontend** | Kiến trúc FE & UX; sau này: Kanban board, realtime phía client. |
 | `taskflow-enterprise-bb` | **Engineer F — QA/Tester độc lập** | Mutation testing, bộ test bảo mật đầu-cuối SEC-01..58, sau này E2E. Chỉ ghi thư mục test, không sửa code sản phẩm. |
