@@ -88,7 +88,7 @@
 | LOG-06 | U | Hash của Alice có tham số argon2 khác cấu hình (`needsRehash = true`) | Login đúng | Hash mới được lưu; login thành công. `needsRehash = false` ⇒ hash không đổi | |
 | LOG-07 | U | — | Login thành công | Payload access token: có `sub, tv, sid, jti, iat, exp, iss="taskflow-api", aud="taskflow-web"`; `exp - iat = 900`; **không** có `role`, `workspaceId`, `email` | |
 | LOG-08 | I | — | 20 lần login "không có email" và 20 lần "sai mật khẩu" | Chênh lệch trung vị thời gian < 50ms | SEC-27 |
-| LOG-09 | I | — | 6 lần login sai cùng IP + email trong 15 phút | Lần 6 `429` + `Retry-After`; login **đúng** không làm tăng bộ đếm thất bại | SEC-28 |
+| LOG-09 | I | — | 11 lần login sai (401) cùng IP + email trong 15 phút (ADR-108) | Lần 11 `429` + `Retry-After`; login **đúng**, body sai (`400`) và request đã bị `429` **không** làm tăng bộ đếm; cùng email từ IP khác vẫn đăng nhập được | SEC-28 |
 | LOG-10 | I | `NODE_ENV=production` (config test) / `development` | Login | Prod: `__Host-tf_rt; HttpOnly; Secure; SameSite=Strict; Path=/`, không `Domain` (ADR-109). Dev: `tf_rt`, không `Secure`, `Path=/api/v1/auth` | SEC-34 |
 | LOG-11 | I | Valkey tắt | Login; register; gọi `GET /readyz`; gọi `GET /auth/me` bằng access token hợp lệ | Login/register `503 SERVICE_UNAVAILABLE` và không gọi hasher (fail-closed, security.md 6.4); `/readyz` vẫn xanh (ADR-074); `/auth/me` `200` (fallback DB) | |
 | LOG-12 | I | — | Login với `Content-Type: text/plain` | `415 UNSUPPORTED_MEDIA_TYPE` | SEC-31 |

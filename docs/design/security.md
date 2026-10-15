@@ -148,7 +148,7 @@ Quên mật khẩu / xác minh email (cần hạ tầng email), MFA, danh sách 
 |---|---|
 | Thuật toán | **HS256** (một service vừa ký vừa xác minh, không cần khóa công khai). Thư viện **jose 6** (ADR-060): ký bằng `new SignJWT(claims).setProtectedHeader({ alg: 'HS256', kid })`, verify bằng `jwtVerify(token, key, { algorithms: ['HS256'], issuer, audience, clockTolerance: 5 })` — **phải** truyền whitelist `algorithms` (chống `alg: none` / nhầm thuật toán). Khóa = `new TextEncoder().encode(secret)`. |
 | Khóa | `JWT_ACCESS_SECRET` ≥ 32 byte ngẫu nhiên (base64), kiểm tra độ dài bằng Zod lúc khởi động; dev và prod khác nhau. Header có `kid`; env cho phép `JWT_ACCESS_SECRET_PREVIOUS` để xoay khóa không làm rớt phiên (verify thử theo `kid`). |
-| TTL | 15 phút (`expiresIn: 900` trong response). `clockTolerance` 5s. |
+| TTL | 15 phút (`expiresIn: 900` trong response). `clockTolerance` 5s. Riêng `APP_ENV=test`: `JWT_ACCESS_TTL_SECONDS` (5–900) rút ngắn TTL cho test hết hạn hộp đen (T-031); đặt biến này ở môi trường khác ⇒ app từ chối khởi động. |
 | Lưu trữ FE | Chỉ trong bộ nhớ (ADR-026). Gửi bằng `Authorization: Bearer`. Không bao giờ ở localStorage/cookie/URL. |
 
 Claims:
@@ -495,13 +495,13 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-lim
 
 | Endpoint | Giới hạn | Khóa |
 |---|---|---|
-| `POST /auth/login` | 5 lần **thất bại** / 15 phút | IP + email(hash) |
-|  | 20 / 15 phút | IP |
-|  | 50 thất bại / giờ | email(hash) — chống stuffing phân tán |
+| `POST /auth/login` | 20 / 15 phút — chạy **trước** validate, đếm mọi request | IP |
+|  | 10 lần **401** / 15 phút — **sau** validate (ADR-108) | IP + email(hash) |
+|  | 100 lần **401** / giờ — **sau** validate (ADR-108) | email(hash) — chống stuffing phân tán |
 | `POST /auth/register` | 5 / giờ | IP |
 | `POST /auth/refresh` | 60 / 5 phút | IP |
 | `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user |
-| `POST /auth/change-password` | 5 / 15 phút | user |
+| `POST /auth/change-password` | 5 / 15 phút — **fail-closed** (ADR-108) | user |
 | `PATCH /auth/me` | 30 / giờ | user |
 | `POST ws/members` | 30 / giờ | user |
 | `POST /workspaces` | 10 / giờ | user |
@@ -511,7 +511,9 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-lim
 | Socket handshake | 20 / phút | IP |
 | Socket `project:join` | 30 / phút | socket |
 
-Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register** (`503 SERVICE_UNAVAILABLE`) — tránh brute force tự do khi Valkey chết. `/readyz` **không** đỏ khi chỉ Valkey lỗi (ADR-074): API vẫn phục vụ người đã đăng nhập (fallback DB, 2.4), chỉ login/register tạm từ chối. Phải có cảnh báo vận hành riêng cho Valkey vì readyz không báo.
+**ADR-108 — chống khóa tài khoản từ xa (M4 của T-028):** hai bucket theo email chạy **sau** validate (body sai ⇒ `400`, không bị đếm; email đã chuẩn hóa) và **chỉ đếm `401 INVALID_CREDENTIALS`** — `400` / `429` không đếm, nên chờ hết cửa sổ là mở lại (không gia hạn mãi). Bucket chặt theo cặp (IP, email) chặn dò từ một IP mà không khóa chủ tài khoản ở IP khác; bucket theo email 100/giờ đủ cao để vài chục IP không khóa được người dùng thật. Rủi ro còn lại (kẻ tấn công có ≥ 100 lần 401/giờ trên nhiều IP vẫn làm chậm nạn nhân trong một giờ) được chấp nhận có chủ đích; CAPTCHA / backoff thuộc lộ trình sau v1.
+
+Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register/refresh/change-password** (`503 SERVICE_UNAVAILABLE`) — tránh brute force tự do khi Valkey chết. `/readyz` **không** đỏ khi chỉ Valkey lỗi (ADR-074): API vẫn phục vụ người đã đăng nhập (fallback DB, 2.4), chỉ login/register tạm từ chối. Phải có cảnh báo vận hành riêng cho Valkey vì readyz không báo.
 
 ### 6.5 Mật khẩu & chống user enumeration
 - Chính sách (ADR-049, ADR-065): **tối thiểu 12 ký tự**, **tối đa 256 ký tự** (chống DoS — argon2 không có giới hạn đầu vào như bcrypt; đếm theo code point sau chuẩn hóa NFC), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ ~10k mục, không gọi dịch vụ ngoài), không được chứa phần local của email. Body limit 100kb (6.7) vẫn chặn trước ở tầng HTTP.
@@ -625,7 +627,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-25 | JWT `alg: none`, ký bằng secret sai, sửa `sub`, thiếu `tv`, sai `iss`/`aud` | 401 UNAUTHORIZED |
 | SEC-26 | JWT hết hạn | 401 TOKEN_EXPIRED |
 | SEC-27 | Login email không tồn tại vs sai mật khẩu | cùng status, code, message; chênh lệch thời gian trung vị < 50ms (đo 20 lần) |
-| SEC-28 | 6 lần login sai cùng IP + email trong 15 phút | lần 6: 429 RATE_LIMITED + `Retry-After` |
+| SEC-28 | 11 lần login sai (401) cùng IP + email trong 15 phút (ADR-108) | lần 11: 429 RATE_LIMITED + `Retry-After`; body sai (400) không bị đếm; cùng email từ IP khác vẫn đăng nhập được |
 | SEC-29 | `POST /auth/refresh` với `Origin` lạ hoặc thiếu Origin | 403 ORIGIN_NOT_ALLOWED, token không bị xoay |
 | SEC-30 | Request CORS từ origin ngoài whitelist | không có `Access-Control-Allow-Origin` |
 | SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |
