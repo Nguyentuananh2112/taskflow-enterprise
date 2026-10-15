@@ -189,6 +189,7 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@index([userId])
+  @@index([workspaceId, role]) // ADR-051: khóa dòng OWNER (ADR-046)
   @@map("workspace_members")
 }
 
@@ -293,6 +294,7 @@ Ghi chú: audit log là **append-only** — repository chỉ có `append()`, kh�
 | | `(purge_at)` partial `WHERE purge_at IS NOT NULL` | Job purge quét workspace hết ân hạn. |
 | | `(deleted_by_id)` | FK (SetNull). |
 | workspace_members | `UNIQUE(workspace_id, user_id)` | Mỗi user 1 role/workspace; middleware membership tra theo cặp này (đường nóng nhất hệ thống); phủ FK workspace_id. |
+| | `(workspace_id, role)` | ADR-051: `SELECT … WHERE role = 'OWNER' FOR UPDATE` (mục 1.8) chỉ quét/khóa dòng OWNER. |
 | | `(user_id)` | FK; "workspace của tôi". |
 | projects | `UNIQUE(workspace_id, key_prefix)` | FR-03; phủ FK workspace_id. |
 | | `UNIQUE(id, workspace_id)` | Đích FK kép (D6). |
@@ -322,7 +324,7 @@ Sau commit: phát `workspace:access-revoked { workspaceId }` vào phòng `user:{
 - `GET /workspaces` và `GET /auth/me` (`memberships`) lọc `deleted_at IS NULL`.
 - Lệnh ghi đang chạy dở lúc workspace bị xóa vẫn có thể commit — vô hại vì dữ liệu được giữ tới khi purge và đi theo khi khôi phục.
 
-**Khôi phục** (ĐỀ XUẤT: có, trong 30 ngày) — `POST /workspaces/:wsId/restore`:
+**Khôi phục** (ADR-050: có, trong 30 ngày) — `POST /workspaces/:wsId/restore`:
 
 - Middleware riêng `requireMembership(wsId, { includeDeleted: true, minRole: OWNER })`. Membership được giữ nguyên khi xóa, nên OWNER lúc xóa vẫn là OWNER. Không phải OWNER / workspace chưa xóa / đã quá `purge_at` (job chưa kịp chạy) ⇒ `404`.
 - Cập nhật có điều kiện, rồi kiểm `count === 1`, nếu không ⇒ 404: `UPDATE workspaces SET deleted_at = NULL, purge_at = NULL, deleted_by_id = NULL WHERE id = $wsId AND deleted_at IS NOT NULL AND purge_at > now()`. Purge job chỉ xóa khi `purge_at <= now()` và kiểm lại điều kiện đó sau khi khóa dòng ⇒ hai điều kiện loại trừ nhau, restore và purge không race. Không cần kiểm slug (slug vẫn giữ chỗ).
@@ -331,7 +333,7 @@ Sau commit: phát `workspace:access-revoked { workspaceId }` vào phòng `user:{
   - Mọi thất bại, kể cả PM/MEMBER của chính workspace đó, trả **cùng một body 404**.
   - Rate limit 10/giờ/user, ghi log sự kiện bảo mật.
   - `?deleted=true` chỉ trả workspace mình là OWNER và chưa quá `purge_at`.
-- Trạng thái: 🟡 chờ Tech Lead duyệt (Q7).
+- Trạng thái: ✅ ADR-050 — SEC-51..55 bắt buộc.
 - Không phát socket event; thành viên thấy lại workspace qua `GET /workspaces`.
 - OWNER xem danh sách có thể khôi phục qua `GET /workspaces?deleted=true` (kèm `purgeAt`). v1 không cache membership (T-002).
 
@@ -436,7 +438,7 @@ AuditLogDto   = { id, taskId, action, actor: UserRefDto, oldValue, newValue, cre
 
 | Method | Path | Permission | Request | Response `data` | Lỗi riêng |
 |---|---|---|---|---|---|
-| POST | `/auth/register` | Public, rate-limit 5/giờ/IP | body `{ email, password, fullName }` | `201 { ...AuthTokenDto, user: UserDto, defaultWorkspaceId }` + cookie | `409 EMAIL_ALREADY_EXISTS` (giữ cho v1 vì chưa có email — câu hỏi mở của B cho Tech Lead) |
+| POST | `/auth/register` | Public, rate-limit 5/giờ/IP | body `{ email, password, fullName }` | `201 { ...AuthTokenDto, user: UserDto, defaultWorkspaceId }` + cookie | `409 EMAIL_ALREADY_EXISTS` (ADR-049: giữ ở v1 + rate limit; xác minh email để sau v1) |
 | POST | `/auth/login` | Public, rate-limit | body `{ email, password }` | `{ ...AuthTokenDto, user: UserDto }` + cookie | `401 INVALID_CREDENTIALS` (cả user đã `deleted_at`) |
 | POST | `/auth/refresh` | Cookie refresh + kiểm Origin, rate-limit | — | `AuthTokenDto` + cookie mới (rotation) | `401 REFRESH_TOKEN_INVALID` (hết hạn/thu hồi/reuse — không phân biệt), `409 REFRESH_IN_PROGRESS` (token vừa xoay < 10s: FE đợi ~300ms, thử lại 1 lần), `403 ORIGIN_NOT_ALLOWED` |
 | POST | `/auth/logout` | Cookie refresh + kiểm Origin | — | **`204`** không body; xóa cookie (idempotent) | `403 ORIGIN_NOT_ALLOWED` |
@@ -444,7 +446,7 @@ AuditLogDto   = { id, taskId, action, actor: UserRefDto, oldValue, newValue, cre
 | GET | `/auth/me` | Bearer | — | `{ user: UserDto, memberships: MembershipDto[] }` | — |
 | POST | `/auth/change-password` | Bearer | body `{ currentPassword, newPassword }` | `AuthTokenDto` + cookie mới (phiên mới cho thiết bị hiện tại; mọi phiên khác bị thu hồi) | `400 INVALID_CURRENT_PASSWORD` (cố ý không 401) |
 
-Luật trường (T-002): `password` ≥ 15 ký tự (NIST SP 800-63B-4) và ≤ 72 **byte** UTF-8 (giới hạn bcrypt), không luật thành phần, chặn danh sách mật khẩu phổ biến, không trùng email; `fullName` trim, 1–100 ký tự; `email` trim + lowercase + NFC. FE chỉ tự gọi refresh khi `code = TOKEN_EXPIRED`, không phải mọi 401.
+Luật trường (T-002): `password` ≥ 12 ký tự (ADR-049) và ≤ 72 **byte** UTF-8 (giới hạn bcrypt), không luật thành phần, chặn danh sách mật khẩu phổ biến, không trùng email; `fullName` trim, 1–100 ký tự; `email` trim + lowercase + NFC. FE chỉ tự gọi refresh khi `code = TOKEN_EXPIRED`, không phải mọi 401.
 
 ### 2.5. Workspaces & members
 
@@ -462,6 +464,14 @@ Luật trường (T-002): `password` ≥ 15 ký tự (NIST SP 800-63B-4) và ≤
 | DELETE | `/workspaces/:wsId/members/:userId` | `member:leave` (min VIEWER); người khác cần thêm `member:remove` (Policy — xem 2.2) | — | `{ userId, unassignedTaskCount }` | `403` (PM xóa OWNER/PM), `422 BUSINESS_RULE_VIOLATION` (`LAST_OWNER`) |
 
 Policy member: xem 2.2 (chốt với T-002); workspace luôn còn ≥1 OWNER, khóa chống race theo mục 1.8 (ADR-046). Khi xóa/tự rời **hoặc hạ xuống VIEWER**: bỏ gán mọi task của họ trong workspace theo mục 1.9 (ADR-044).
+
+Luật trường workspace (R19, chốt với T-002/T-006):
+
+- `name`: trim, 1–100 ký tự, không chứa ký tự điều khiển.
+- `slug`: `^[a-z0-9]+(-[a-z0-9]+)*$`, dài 3–50, unique toàn hệ thống (kể cả workspace đang xóa mềm). Client gửi chữ hoa ⇒ `400` (không tự lowercase, để URL người dùng thấy đúng như đã gửi).
+- Slug dành riêng, trả `409 RESOURCE_CONFLICT` (`details.field = "slug"`) như slug đã có người dùng: `api`, `app`, `www`, `admin`, `auth`, `login`, `register`, `settings`, `workspaces`, `new`, `help`, `support`, `status`. Danh sách là hằng số của application, không nằm trong contracts.
+- `POST /workspaces` không gửi `slug` ⇒ server sinh từ `name`: bỏ dấu tiếng Việt (NFD + bỏ dấu, `đ`→`d`), lowercase, ký tự khác `[a-z0-9]` thành `-`, gộp và cắt `-` ở hai đầu, cắt 40 ký tự. Nếu kết quả dưới 3 ký tự hoặc là slug dành riêng ⇒ dùng `workspace` (luôn kèm hậu tố ngẫu nhiên). Trùng ⇒ thêm hậu tố `-` + 6 ký tự `[a-z0-9]` ngẫu nhiên, thử lại tối đa 5 lần. Register tạo workspace mặc định theo cùng quy tắc, sinh từ `fullName`.
+- Contracts: `WorkspaceName`, `WorkspaceSlug` (primitive dùng lại, mục 5.2).
 
 ### 2.6. Projects
 
@@ -537,7 +547,7 @@ Prefix: `/workspaces/:wsId/projects/:projectId/tasks`
 | `RESOURCE_NOT_FOUND` | 404 | Không tồn tại **hoặc** khác tenant (ADR-020) | `{ resource: "task"\|"project"\|"workspace"\|"user" }` |
 | `VERSION_CONFLICT` | 409 | `expectedVersion` lệch (ADR-010) | `{ currentVersion, current: TaskDto }` |
 | `RESOURCE_CONFLICT` | 409 | Trùng unique (slug, keyPrefix, đã là thành viên), trùng rank sau retry | `{ field?, reason }` |
-| `EMAIL_ALREADY_EXISTS` | 409 | Register trùng email (giữ ở v1, bù bằng rate-limit) | null |
+| `EMAIL_ALREADY_EXISTS` | 409 | Register trùng email (ADR-049: giữ ở v1, bù bằng rate-limit) | null |
 | `REFRESH_IN_PROGRESS` | 409 | Refresh token vừa xoay < 10s (2 tab refresh cùng lúc) — không cấp, không thu hồi family | null |
 | `PAYLOAD_TOO_LARGE` | 413 | Vượt body limit (ADR-028) | null |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Body không phải `application/json` | null |
@@ -652,6 +662,7 @@ packages/contracts/src/
 - Hậu tố: `…Body` (request body), `…Query` (query string, dùng `z.coerce` cho số), `…Params` (path params), `…Dto` (dữ liệu trả về), `…Response` (khi `data` không phải 1 Dto), `…Event` (payload socket), `…Details` (`error.details` có cấu trúc).
 - Enum: `z.enum([...])` tên số ít PascalCase (`TaskStatus`), giá trị UPPER_SNAKE khớp Prisma enum. Prisma enum **không** import vào contracts — một test ở `apps/api` khẳng định hai bên khớp.
 - Field primitive dùng lại (`TaskTitle = z.string().trim().min(3).max(150)`) để FE form và BE validate cùng một luật.
+- `Password = z.string().min(12).refine(s => new TextEncoder().encode(s).length <= 72)` (ADR-049). Kiểm danh sách mật khẩu phổ biến và "không trùng email" nằm ở **application** của API (danh sách lớn, cần ngữ cảnh), không nằm trong contracts.
 - Zod 4: `z.uuid()`, `z.email()`, `z.iso.datetime()`, `z.iso.date()` — TODO(T-001) xác nhận chữ ký với bản Zod 4 được chốt.
 - DTO dùng `z.object` (strip mặc định); Body dùng `z.strictObject` để từ chối field lạ (vd client gửi `version`, `createdById`).
 
@@ -698,6 +709,7 @@ Task mới luôn ở TODO. Sai ⇒ `422 INVALID_STATUS_TRANSITION` với `detail
 | R15 | Lệnh không đổi gì (vd assign cùng người, PATCH cùng giá trị, move về đúng chỗ) ⇒ trả `200` task hiện tại, **không** tăng version, không audit, không event | update, move, assign | — | ĐỀ XUẤT |
 | R16 | Task đã xóa mềm: mọi GET/ghi ⇒ `404`; riêng audit-logs vẫn đọc được | mọi | `404` | D1 |
 | R17 | `keyPrefix`: `^[A-Z][A-Z0-9]{1,9}$`, unique trong workspace, bất biến | create project | `400` / `409` | FR-03, D7 |
+| R19 | Workspace `name` trim 1–100; `slug` `^[a-z0-9]+(-[a-z0-9]+)*$` dài 3–50, unique, có slug dành riêng; tự sinh khi không gửi (mục 2.5) | create/update workspace, register | `400` / `409 RESOURCE_CONFLICT` | T-006, ĐỀ XUẤT |
 
 ---
 
@@ -710,5 +722,5 @@ Task mới luôn ở TODO. Sai ⇒ `422 INVALID_STATUS_TRANSITION` với `detail
 | Q3 | Nơi đặt bảng chuyển trạng thái | ✅ ADR-043 — domain là nguồn, contracts bản sao + test parity |
 | Q4 | VIEWER làm assignee | ✅ ADR-044 — **không**; R6, R14, mục 1.9 |
 | Q5 | Cấm xóa task khi archived | ✅ ADR-045 — R5 |
-| Q6 | `409 EMAIL_ALREADY_EXISTS` ở register | 🟡 ADR-049 — chờ người dùng chốt |
-| Q7 | Khôi phục workspace trong ân hạn: chỉ OWNER (mục 1.7) | 🟡 ĐỀ XUẤT T-003b, chờ duyệt |
+| Q6 | `409 EMAIL_ALREADY_EXISTS` ở register | ✅ ADR-049 — giữ 409 ở v1; mật khẩu ≥ 12 ký tự |
+| Q7 | Khôi phục workspace trong ân hạn: chỉ OWNER (mục 1.7) | ✅ ADR-050 — làm ở v1; slug giữ chỗ |

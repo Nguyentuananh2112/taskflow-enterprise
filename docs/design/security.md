@@ -1,6 +1,6 @@
 # Thiết kế bảo mật — Auth, phân quyền, đa tenant (T-002)
 
-**Tác giả:** Engineer B (`taskflow-enterprise-87`) · **Phase:** 0 · **Trạng thái:** ✅ chính thức (ADR-040) · bổ sung T-002b: ADR-041 → ADR-047
+**Tác giả:** Engineer B (`taskflow-enterprise-87`) · **Phase:** 0 · **Trạng thái:** ✅ chính thức (ADR-040) · đã cập nhật theo ADR-041 → ADR-051
 **Căn cứ:** `DECISIONS.md` v1.1 (ADR-014, ADR-020 → ADR-030), PRD v1.0 mục 1.2 & 6. Thống nhất cột DB + mã lỗi với Engineer C (T-003).
 
 > Quy ước: "phải/không được" = bắt buộc khi code ở Phase 2–3. Phiên bản thư viện cụ thể do T-001 (`docs/research/stack-versions.md`) chốt; tài liệu này chỉ mô tả hành vi.
@@ -34,7 +34,7 @@ sequenceDiagram
   A->>A: bcrypt.hash(password, 12)  ← NGOÀI transaction (≈250ms, không giữ tx mở)
   A->>DB: BEGIN
   A->>DB: INSERT users
-  A->>DB: INSERT workspaces (slug = slugify(fullName) + "-" + 6 ký tự base36 ngẫu nhiên)
+  A->>DB: INSERT workspaces (slug sinh từ fullName theo R19 của T-003)
   A->>DB: INSERT workspace_members (role OWNER)
   A->>DB: INSERT projects (dự án mặc định, keyPrefix "TF")
   A->>DB: INSERT refresh_tokens (familyId mới)
@@ -43,9 +43,9 @@ sequenceDiagram
 ```
 
 - **Trùng email:** bắt lỗi unique (Prisma `P2002`, target `email`) → rollback → `409 EMAIL_ALREADY_EXISTS`. Không kiểm tra "SELECT trước rồi INSERT" (race).
-- **Trùng slug:** `P2002` target `slug` → sinh suffix mới, **thử lại cả transaction tối đa 3 lần**, sau đó `500 INTERNAL_ERROR` (xác suất ~0 với 36⁶ ≈ 2,2 tỉ tổ hợp). Slug không bao giờ lấy nguyên email (lộ email qua URL).
+- **Slug (R19, `data-and-api.md` 2.5):** sinh từ `fullName` (bỏ dấu, `đ→d`, ký tự lạ thành `-`, cắt 40 ký tự); dưới 3 ký tự hoặc trùng slug dành riêng ⇒ `workspace-xxxxxx`. Trùng (`P2002` target `slug`) ⇒ thêm hậu tố ngẫu nhiên 6 ký tự, **thử lại cả transaction tối đa 5 lần** (lỗi unique làm hỏng transaction Postgres nên không thể thử lại bên trong), sau đó `500 INTERNAL_ERROR`. Slug không bao giờ lấy từ email (lộ email qua URL). Slug chỉ để hiển thị; mọi route dùng `wsId` (uuid), nên đoán slug không giúp truy cập.
 - Register tự đăng nhập (tạo family mới như login).
-- Anti-enumeration cho register: xem 6.5 (giới hạn đã biết, câu hỏi mở cho Tech Lead).
+- Anti-enumeration cho register: xem 6.5 (v1 chấp nhận lộ email đã đăng ký, ADR-049).
 
 ### 1.2 Login — `POST /api/v1/auth/login` (Public)
 
@@ -226,7 +226,7 @@ Claims:
 | `workspace:read` | ✅ | ✅ | ✅ | ✅ | |
 | `workspace:update` | ✅ | | | | |
 | `workspace:delete` | ✅ | | | | Xóa mềm 30 ngày (ADR-047, 3.6) |
-| `workspace:restore` | ✅ | | | | *Chờ duyệt.* Chỉ trên ws đã xóa mềm, chưa quá hạn; middleware riêng `includeDeleted` (3.6) |
+| `workspace:restore` | ✅ | | | | ADR-050. Chỉ trên ws đã xóa mềm, chưa quá hạn; middleware riêng `includeDeleted` (3.6) |
 | `member:read` | ✅ | ✅ | ✅ | ✅ | |
 | `member:add` | ✅ | ✅ | | | PM chỉ thêm với role `MEMBER`/`VIEWER`; OWNER thêm role bất kỳ. Người được thêm phải là user tồn tại, chưa là member. |
 | `member:update-role` | ✅ | | | | Không được hạ OWNER cuối cùng (`422 BUSINESS_RULE_VIOLATION`, `details.rule = "LAST_OWNER"`, chống race theo 3.5). Hạ xuống VIEWER ⇒ bỏ gán task (3.5) |
@@ -292,7 +292,7 @@ Tiền tố `/api/v1`. `ws` = `/workspaces/:wsId`, `p` = `/projects/:projectId`,
 | `GET ws` | `workspace:read` | |
 | `PATCH ws` | `workspace:update` | |
 | `DELETE ws` | `workspace:delete` | xóa mềm (3.6) |
-| `POST ws/restore` *(chờ duyệt)* | `requireMembership(includeDeleted, OWNER)` — không qua `loadMembership` | điều kiện `deleted_at IS NOT NULL AND purge_at > now()` (3.6) |
+| `POST ws/restore` (ADR-050) | `requireMembership(includeDeleted, OWNER)` — không qua `loadMembership` | điều kiện `deleted_at IS NOT NULL AND purge_at > now()` (3.6) |
 | `GET ws/members` | `member:read` | |
 | `POST ws/members` | `member:add` | role được cấp ≤ quyền người mời |
 | `PATCH ws/members/:userId` | `member:update-role` | LAST_OWNER |
@@ -345,7 +345,7 @@ SELECT id, user_id FROM workspace_members
 - Mọi kiểm tra tenant ở tầng UseCase/Query (4.1) cũng phải có điều kiện `workspace.deletedAt = null` (phòng thủ 2 lớp, không chỉ dựa vào middleware).
 - Không có cache membership ở v1 (3.3). Nếu sau này thêm cache thì phải xóa cache của mọi member khi workspace bị xóa **hoặc** được khôi phục.
 
-**Khôi phục — `POST /workspaces/:wsId/restore`** (C đề xuất trong `data-and-api.md` 1.7; **chờ Tech Lead duyệt**, chưa có ADR). Nếu được duyệt thì phải tuân thủ:
+**Khôi phục — `POST /workspaces/:wsId/restore`** (ADR-050; contract ở `data-and-api.md` 1.7). Bắt buộc:
 - Route nằm **ngoài** `loadMembership`, dùng middleware riêng `requireMembership(wsId, { includeDeleted: true, minRole: OWNER })`. Đây là chỗ duy nhất được dùng `includeDeleted: true`; có lint/test chặn dùng ở route khác.
 - Mọi thất bại (không phải member, là PM/MEMBER/VIEWER, ws chưa xóa, đã quá `purgeAt`, ws không tồn tại) ⇒ **cùng một** `404 RESOURCE_NOT_FOUND`. Không trả 403 cho member không phải OWNER: với họ ws đang "không tồn tại".
 - UseCase chạy trong transaction: `UPDATE workspaces SET deleted_at = NULL WHERE id = $ws AND deleted_at IS NOT NULL AND purge_at > now()` rồi kiểm `count`. `count = 0` ⇒ 404. Job purge cũng chỉ xóa với điều kiện `purge_at <= now()`. Hai điều kiện loại trừ nhau nên restore và purge không thể cùng thành công.
@@ -353,6 +353,8 @@ SELECT id, user_id FROM workspace_members
 - Rate limit 10 lần/giờ/user. Ghi log sự kiện bảo mật (`workspace.restored`, actor, ip, requestId).
 - Sau commit không cần thao tác socket: member tự `project:join` lại như bình thường.
 - `GET /workspaces?deleted=true` chỉ trả ws đã xóa mềm, chưa quá `purgeAt`, mà người gọi là **OWNER**. PM/MEMBER/VIEWER của ws đó không thấy.
+- Slug của ws đã xóa vẫn được giữ chỗ trong thời gian ân hạn (unique không đổi), để khôi phục không bao giờ va chạm slug (ADR-050).
+- Câu khóa OWNER (3.5) dùng index `(workspace_id, role)` trên `workspace_members` (ADR-051).
 
 ## 4. Chống IDOR (ADR-020)
 
@@ -469,6 +471,9 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit`. Key tính theo IP
 | `POST /auth/refresh` | 60 / 5 phút | IP |
 | `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user |
 | `POST /auth/change-password` | 5 / 15 phút | user |
+| `POST ws/members` | 30 / giờ | user |
+| `POST /workspaces` | 10 / giờ | user |
+| `POST ws/restore` | 10 / giờ | user |
 | API đã xác thực (mặc định) | 300 / phút | user |
 | API chưa xác thực khác | 100 / phút | IP |
 | Socket handshake | 20 / phút | IP |
@@ -477,12 +482,13 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit`. Key tính theo IP
 Redis lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register** — tránh brute force tự do khi Redis chết (bcrypt cost 12 cũng tự làm chậm).
 
 ### 6.5 Mật khẩu & chống user enumeration
-- Chính sách: **tối thiểu 15 ký tự** (NIST SP 800-63B-4 yêu cầu ≥15 cho mật khẩu dùng làm yếu tố duy nhất — hệ thống này chưa có MFA), **tối đa 72 byte UTF-8** (giới hạn đầu vào bcrypt; từ chối thay vì để bcrypt cắt cụt im lặng), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh ~10k mục, offline), không được chứa phần local của email. Tiếng Việt có dấu tốn 2–3 byte/ký tự nên 72 byte ≈ 24–36 ký tự có dấu — chấp nhận ở v1, ghi trong câu hỏi mở.
+- Chính sách (ADR-049): **tối thiểu 12 ký tự**, **tối đa 72 byte UTF-8** khi dùng bcrypt (giới hạn đầu vào của bcrypt; từ chối thay vì để bcrypt cắt cụt im lặng — xem ADR-048), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ ~10k mục, không gọi dịch vụ ngoài), không được chứa phần local của email. Tiếng Việt có dấu tốn 2–3 byte/ký tự nên 72 byte ≈ 24–36 ký tự có dấu.
+- **Lệch NIST có chủ đích:** NIST SP 800-63B-4 yêu cầu tối thiểu 15 ký tự cho mật khẩu dùng làm yếu tố duy nhất (hệ thống chưa có MFA). Người dùng chọn 12 vì trải nghiệm (ADR-049). Bù lại bằng danh sách mật khẩu phổ biến, rate limit login đa khóa (6.4) và bcrypt cost 12. Xem lại khi có MFA hoặc khi có yêu cầu tuân thủ.
 - bcrypt cost 12 (ADR-030), rehash khi đăng nhập nếu cost thấp hơn cấu hình.
-- **ADR-048 (🟡):** nếu T-001 xác nhận argon2id dùng tốt trên Node 24 + Docker thì chuyển sang argon2id và bỏ giới hạn 72 byte; không thì giữ như trên. Không làm pre-hash. Độ dài tối thiểu và chống dò email ở register chờ người dùng chốt (ADR-049).
+- **ADR-048 (🟡):** nếu T-001 xác nhận argon2id dùng tốt trên Node 24 + Docker thì chuyển sang argon2id và bỏ giới hạn 72 byte; không thì giữ như trên. Không làm pre-hash.
 - Login: cùng message + cùng thời gian (DUMMY_HASH) cho "không có email" và "sai mật khẩu"; rate limit không phân biệt hai trường hợp.
-- Register: v1 trả `409 EMAIL_ALREADY_EXISTS` — **lộ được** email đã đăng ký. Chống triệt để cần xác minh email (luôn trả 202 + gửi mail) mà v1 chưa có hạ tầng email. Giảm thiểu: rate limit 5/giờ/IP. Câu hỏi mở cho Tech Lead.
-- `member:add` theo email: user không tồn tại và user tồn tại phải trả **cùng** phản hồi nếu không được phép biết (đề xuất: chỉ thêm user đã có tài khoản, lỗi chung `422 BUSINESS_RULE_VIOLATION` "Không thể thêm người dùng này").
+- Register (ADR-049): v1 trả `409 EMAIL_ALREADY_EXISTS` — **chấp nhận** lộ email đã đăng ký. Giảm thiểu: rate limit 5/giờ/IP. Xác minh email (luôn trả 202 + gửi mail) nằm trong lộ trình sau v1.
+- `member:add` theo email (contract T-003): email không có tài khoản ⇒ `404 RESOURCE_NOT_FOUND` (`resource: "user"`). Vì register đã lộ email đã đăng ký (ADR-049) nên đây không phải rò rỉ mới; endpoint chỉ dành cho PM/OWNER đã đăng nhập và có rate limit 30/giờ/user (6.4) để chặn dò hàng loạt. Khi có xác minh email (sau v1) thì xem lại cả hai chỗ.
 
 ### 6.6 So sánh an toàn thời gian
 - Mật khẩu: `bcrypt.compare` (tự an toàn thời gian).
@@ -577,7 +583,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-29 | `POST /auth/refresh` với `Origin` lạ hoặc thiếu Origin | 403 ORIGIN_NOT_ALLOWED, token không bị xoay |
 | SEC-30 | Request CORS từ origin ngoài whitelist | không có `Access-Control-Allow-Origin` |
 | SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |
-| SEC-32 | Mật khẩu 14 ký tự; 73 byte; nằm trong danh sách phổ biến | 400 VALIDATION_ERROR |
+| SEC-32 | Mật khẩu 11 ký tự; 73 byte (khi dùng bcrypt); nằm trong danh sách phổ biến; chứa phần local của email | 400 VALIDATION_ERROR. Mật khẩu 12 ký tự hợp lệ ⇒ 201 |
 | SEC-33 | Log của login/refresh/register/change-password | không chứa password, access token, refresh token, header Cookie/Authorization |
 | SEC-34 | Cookie refresh ở prod | có `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, tên `__Secure-tf_rt`, không `Domain` |
 | SEC-35 | Socket handshake không token / token sai / `tv` cũ | `connect_error` với `data.code` tương ứng |
@@ -596,11 +602,6 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-48 | (E2E) Tải trang web 2 lần liên tiếp | Header CSP có nonce khác nhau giữa 2 lần; bản production không có `unsafe-inline`/`unsafe-eval` trong `script-src` |
 | SEC-49 | (E2E) Tạo task với title/description `<img src=x onerror=alert(1)>` và `<script>alert(1)</script>` rồi mở board | Hiển thị dạng text, không có dialog, không có lỗi JS |
 | SEC-50 | (E2E) Đi hết luồng chính (đăng nhập, board, kéo thả, logout) | Không có vi phạm CSP trong console; không có access token trong localStorage/sessionStorage/URL |
-
-Các test dưới đây chỉ áp dụng nếu endpoint khôi phục được duyệt:
-
-| ID | Kịch bản | Kỳ vọng |
-|---|---|---|
 | SEC-51 | ws A đã xóa mềm. Pam (PM), Mia, Bob (người ngoài) gọi `POST /workspaces/A/restore` | 404, body giống hệt ws không tồn tại; A vẫn bị xóa |
 | SEC-52 | Alice restore ws chưa xóa; restore ws đã quá `purgeAt` | 404 cả hai |
 | SEC-53 | Alice restore A đúng lúc job purge chạy trên A (`purgeAt` vừa tới) | Chỉ một bên thành công; không có trạng thái nửa vời (ws còn mà dữ liệu con đã mất) |
@@ -646,6 +647,6 @@ Index: `[user_id, revoked_at]` (thu hồi hàng loạt), `[family_id]` (thu hồ
 ---
 
 ## Nguồn
-- NIST SP 800-63B-4 (8/2025): tối thiểu 15 ký tự cho mật khẩu một yếu tố — trích qua [sakimura.org](https://www.sakimura.org/en/2025/10/7710/), [netwrix.com](https://netwrix.com/en/resources/blog/nist-password-guidelines/). Cần đối chiếu bản gốc NIST khi Phase 2.
+- NIST SP 800-63B-4 (8/2025): tối thiểu 15 ký tự cho mật khẩu một yếu tố (v1 lệch có chủ đích, ADR-049) — trích qua [sakimura.org](https://www.sakimura.org/en/2025/10/7710/), [netwrix.com](https://netwrix.com/en/resources/blog/nist-password-guidelines/). Cần đối chiếu bản gốc NIST khi Phase 2.
 - Cookie `Secure` trên `http://localhost` (Chrome 89+, Firefox 75+ chấp nhận; Chrome từ chối tiền tố `__Secure-`/`__Host-`; Safari từ chối): [httpwg/http-extensions#2605](https://github.com/httpwg/http-extensions/issues/2605), [flaviocopes — Safari](https://flaviocopes.com/cookie-not-being-set-in-safari).
 - bcrypt giới hạn đầu vào 72 byte; API Socket.io 4 `socketsLeave`/`disconnectSockets` hoạt động xuyên node với adapter; helmet, express-rate-limit + Redis store — tên package/phiên bản do T-001 xác nhận trước khi code.

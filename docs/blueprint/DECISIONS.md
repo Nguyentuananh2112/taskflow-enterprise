@@ -10,7 +10,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 ## Repo & công nghệ
 - ADR-001 ✅ **pnpm monorepo**: `apps/api` (Express), `apps/web` (Next.js), `packages/contracts` (Zod schema + types dùng chung FE/BE), `packages/config` (eslint/tsconfig chung). Thay cho `backend/` + `frontend/` của v1.0.
-- ADR-002 🟡 **Phiên bản ổn định mới nhất**: Next.js 16, Express 5, Zod 4, Prisma 7, Socket.io 4.x, TypeScript 5.x, Node 24 LTS, PostgreSQL 17/18, Redis 7/8. Con số chính xác + breaking changes do T-001 xác nhận → `docs/research/stack-versions.md`.
+- ADR-002 ⛔ (THAY BỞI ADR-060) **Phiên bản ổn định mới nhất**: Next.js 16, Express 5, Zod 4, Prisma 7, Socket.io 4.x, TypeScript 5.x, Node 24 LTS, PostgreSQL 17/18, Redis 7/8. Con số chính xác + breaking changes do T-001 xác nhận → `docs/research/stack-versions.md`.
 - ADR-003 ✅ Test: Vitest (unit + integration), Postgres thật qua Docker cho integration, Playwright cho E2E, k6 cho tải.
 - ADR-004 ✅ Quy tắc kiến trúc phải được **máy ép**: ESLint `max-lines` (component 150, backend class 200), `no-restricted-imports` (domain cấm prisma/express/redis/socket.io/zod-infra), `dependency-cruiser` cho ranh giới tầng & module. Lint đỏ = không merge.
 
@@ -49,6 +49,35 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-049 ✅ (Người dùng chốt) Register với email đã tồn tại trả `409 EMAIL_ALREADY_EXISTS` ở v1, giảm thiểu bằng rate-limit; **xác minh email đưa vào lộ trình sau v1**. Mật khẩu tối thiểu **12 ký tự** + chặn danh sách mật khẩu phổ biến (danh sách cục bộ, không gọi dịch vụ ngoài); tối đa theo ADR-048. Lệch NIST 800-63B-4 (15) có chủ đích — ghi rõ trong security.md.
 - ADR-050 ✅ **Khôi phục workspace ở v1**: OWNER được `POST /workspaces/:wsId/restore` trong 30 ngày ân hạn (ân hạn không có khôi phục thì vô nghĩa). Slug được giữ chỗ trong thời gian ân hạn. Áp dụng đủ yêu cầu bảo mật mục 3.6 security.md (một kiểu 404 cho mọi thất bại, UPDATE có điều kiện `purge_at > now()`, rate-limit, log sự kiện bảo mật) — SEC-51..55 thành bắt buộc.
 - ADR-051 ✅ Thêm index `(workspace_id, role)` trên `workspace_members` (phục vụ khóa dòng OWNER, ADR-046).
+
+## Chốt Phase 0 — T-001, T-004, T-005, T-006, T-007 (Tech Lead + người dùng, 2026-10-15)
+### Stack (ghi đè ADR-002) — nguồn: `docs/research/stack-versions.md`
+- ADR-060 ✅ Pin chính xác: Node 24.22.0 · pnpm **11.28.x** (12 là bản viết lại bằng Rust vừa ra — xét lại ở Phase 5) · TypeScript **6.0.3** (TS 7 chưa có API, typescript-eslint/dependency-cruiser không chạy) · `prisma` + `@prisma/client` **7.10.0 chính xác** · Zod 4.6.x · Postgres 18.6 · node-redis 6 · jose 6 · tsx + tsdown · `@dnd-kit/react` · fetch wrapper tự viết (không axios).
+- ADR-061 ✅ **Cấm `npx prisma`** ở mọi nơi (sẽ kéo 8.0 RC) — chỉ `pnpm exec prisma`. `prisma.config.ts` dùng `process.env.DATABASE_URL ?? ""` để `generate` chạy được lúc build Docker.
+- ADR-062 ✅ Dùng preview `partialIndexes` của Prisma 7.10 cho partial unique index (Prisma theo dõi được → không drift migration). Collation "C" của `rank` viết SQL tay trong migration; CI kiểm tra `prisma migrate diff` rỗng.
+- ADR-063 ✅ **Valkey** (giấy phép BSD) thay Redis 8 (AGPLv3) cho cache/rate-limit/Socket.io adapter; client node-redis tương thích.
+- ADR-064 ✅ Lint: **ESLint 10** cấu hình tay (flat config), không phụ thuộc eslint-config-next; dùng `@next/eslint-plugin-next` nếu tương thích ESLint 10, không thì bỏ.
+- ADR-065 ✅ ADR-048 chốt: **argon2id** (`@node-rs/argon2`, OWASP m=47104 t=1 p=1). Bỏ giới hạn 72 byte; giới hạn trên 256 ký tự (chống DoS). Phải kiểm chứng trong container ở Phase 1.
+
+### Hạ tầng & vận hành (người dùng chốt) — nguồn: `docs/design/devops.md`
+- ADR-070 ✅ **Làm local trước** (Docker Compose trên máy dev). Chọn hosting trước Phase 5; ứng viên mặc định: DigitalOcean managed (Singapore). Code không được gắn chặt vào nhà cung cấp.
+- ADR-071 ✅ Chưa có domain — chỉ cần trước khi deploy staging.
+- ADR-072 ✅ **GitHub public repo.** Hệ quả bắt buộc: quét secret (gitleaks) trong CI + pre-commit; không bao giờ commit `.env`, dữ liệu thật, khóa; bật branch protection + required reviewers cho environment production (miễn phí với repo public).
+- ADR-073 ✅ Giám sát gói miễn phí (Sentry free + uptime monitor free), cảnh báo qua **email**.
+- ADR-074 ✅ Duyệt 8 quyết định tự đưa ra trong `docs/reviews/T-004-report.md`: readyz không đỏ khi Valkey lỗi (nhưng login/register fail-closed theo T-002); Socket.io client chỉ `websocket` (không cần sticky session); web nhận `API_URL` lúc runtime (1 image cho mọi môi trường); tách user DB `taskflow_app` / `taskflow_migrator`; migrate là job riêng trước rollout; coverage domain ≥ 90%, application ≥ 80%; mỗi worker Vitest một DB clone từ template; backup logical ra storage ngoài nhà cung cấp.
+
+### Contract & frontend — nguồn: `docs/design/frontend.md`, `data-and-api.md`
+- ADR-080 ✅ `packages/contracts` có `TASK_STATUS_TRANSITIONS` và `ROLE_PERMISSIONS` dạng dữ liệu thuần, test parity với domain API trong CI (mở rộng ADR-043).
+- ADR-081 ✅ API bật locale `vi` của Zod; `details` vẫn giữ issue `code` + `path` để FE xử lý theo máy.
+- ADR-082 ✅ Giải mâu thuẫn T-002/T-003 — **contract của C thắng**: gán người là `PATCH …/tasks/:taskId/assignee`; xóa task trả `200 { id, version }`. B sửa SEC-07..09.
+- ADR-083 ✅ Bổ sung API: `PATCH /auth/me` (sửa họ tên) và tham số `q` tìm kiếm cho `GET members`.
+- ADR-084 ✅ Dashboard render động là chấp nhận được (CSP nonce); cấu hình runtime theo ADR-074.
+
+### Test spec — nguồn: `docs/design/test-spec-*.md`
+- ADR-090 ✅ Duyệt `test-spec-auth-workspace.md` (156 case) và `test-spec-task.md` (~190 case) làm đặc tả TDD cho Phase 2. Duyệt thay đổi của B: `member:add` với email lạ trả 404 theo contract + rate-limit 30/giờ/user.
+- ADR-091 ✅ `expectedVersion` được kiểm tra **trước** no-op (no-op với version cũ vẫn 409).
+- ADR-092 ✅ Bỏ gán do hệ thống (hạ VIEWER / xóa thành viên) được chạy cả trong project archived — ngoại lệ có chủ đích của ADR-045.
+- ADR-093 ✅ Giao tiếp giữa module theo DIP: module Workspace định nghĩa port `ITaskAssignmentCleaner` ở tầng application của nó; module Task hiện thực; wire ở composition root. **Module không import thẳng nội bộ module khác** — dependency-cruiser chặn; chỉ được import qua `modules/<x>/index.ts` (public API) nếu thật cần.
 
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (bcrypt cost 12). Đo bằng k6 ở Phase 5.

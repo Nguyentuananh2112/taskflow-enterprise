@@ -23,14 +23,22 @@
 4. Không đưa thông tin bịa: số phiên bản, API thư viện phải kiểm chứng (docs chính thức / npm registry). Ghi nguồn.
 5. Xong việc: viết báo cáo vào `docs/reviews/<TICKET>-report.md` (đã làm gì, file nào, quyết định tự đưa ra, rủi ro, câu hỏi mở), rồi **SendMessage cho `taskflow-enterprise-0b`** dòng đầu: `DONE <TICKET>`.
 
+## Quy trình code (từ Phase 1) — mỗi người một git worktree
+1. Tạo worktree riêng từ `main`: `git worktree add ../TaskFlow_wt/<TICKET> -b feat/<TICKET> main` rồi làm việc **trong thư mục đó**, không làm trong `D:\TaskFlow_Enterprise`.
+2. Được commit trên branch `feat/<TICKET>` của mình (kết thúc commit message bằng dòng `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`). **Không merge vào `main`, không push** — chỉ Tech Lead merge.
+3. Chỉ sửa file trong "Phạm vi sở hữu" của ticket. Cần thêm dependency → `pnpm add --filter <pkg>` trong worktree của mình; xung đột `pnpm-lock.yaml` Tech Lead xử lý lúc merge.
+4. Trước khi báo DONE: rebase lên `main` mới nhất, chạy Definition of Done, ghi kết quả lệnh vào báo cáo.
+5. Không bao giờ commit `.env`, secret, dữ liệu thật (repo sẽ public — ADR-072).
+
 ## Definition of Done (từ Phase 1 trở đi)
 `pnpm typecheck && pnpm lint && pnpm test` xanh · không vi phạm ADR-004 · test cho mọi luật nghiệp vụ mới · báo cáo đã gửi.
 
 ## Lộ trình
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
-| 0 | Chốt thiết kế: T-001 stack · T-002 bảo mật · T-003 data + API · T-004 DevOps/QA · T-005 Frontend/UX | 🟢 Đang chạy |
-| 1 | Nền móng monorepo, Docker, Prisma, core, contracts, lint/CI (1 người, tuần tự) | ⏳ |
+| 0 | Chốt thiết kế: T-001..T-007 | ✅ Xong |
+| 1a | T-008 khung monorepo + tooling (A, một mình — cổng chặn) · song song: đồng bộ tài liệu theo ADR-060..093 (B, C, D, E) | 🟢 Đang chạy |
+| 1b | Song song sau T-008: T-009 core kernel (A) · T-010 contracts + Prisma (C) · T-011 Docker + CI (D) · T-012 nền web + shared/ui (E) · T-013 adapter bảo mật auth (B) | ⏳ |
 | 2 | Backend song song: Auth · Workspace/Project/RBAC · Task domain | ⏳ |
 | 3 | Tích hợp: Prisma repos, routes, audit trong transaction, Socket gateway, test IDOR | ⏳ |
 | 4 | Frontend song song: shell + auth · Kanban board | ⏳ |
