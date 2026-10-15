@@ -7,7 +7,7 @@ import {
 } from '@taskflow/contracts/common';
 import * as z from 'zod';
 
-import { ApiError, CLIENT_ERROR_CODES } from './api-error';
+import { ApiError, CLIENT_ERROR_CODES, isApiError } from './api-error';
 import { createSingleFlight } from './single-flight';
 
 // Fetch wrapper duy nhất của web (ADR-060: không axios; frontend.md §3.3). Nơi duy nhất được gọi fetch.
@@ -141,8 +141,22 @@ export function createHttpClient(deps: HttpDeps) {
   async function renewed(sentToken: string | null): Promise<boolean> {
     const current = deps.auth?.getAccessToken() ?? null;
     if (current !== null && current !== sentToken) return true;
-    return (await refresh?.run().catch(() => false)) ?? false;
+    return (await refresh?.run()) ?? false;
   }
+
+  /**
+   * Refresh ném lỗi (mạng, 5xx) ⇒ KHÔNG kết thúc phiên (frontend.md §3.3: lỗi mạng không đẩy về
+   * /login) — trả lỗi mạng cho request này, phiên vẫn giữ để thử lại sau.
+   */
+  const refreshUnavailable = (cause: unknown) =>
+    isApiError(cause)
+      ? cause
+      : new ApiError({
+          status: 0,
+          code: CLIENT_ERROR_CODES.network,
+          message: 'Không kết nối được máy chủ.',
+          cause,
+        });
 
   async function request<S extends z.ZodType>(
     method: Method,
@@ -157,7 +171,12 @@ export function createHttpClient(deps: HttpDeps) {
       if (!(error instanceof ApiError) || !deps.auth || !refresh) throw error;
       // Chỉ TOKEN_EXPIRED mới tự refresh (security.md §2.5) — và chỉ thử lại 1 lần.
       if (error.code === 'TOKEN_EXPIRED') {
-        if (!retried && (await renewed(sentToken))) return request(method, path, opts, true);
+        if (!retried) {
+          const ok = await renewed(sentToken).catch((cause: unknown) => {
+            throw refreshUnavailable(cause);
+          });
+          if (ok) return request(method, path, opts, true);
+        }
         deps.auth.onSessionEnded('expired');
       } else if (error.code === 'UNAUTHORIZED' && sentToken !== null) {
         // tv lệch / sid bị thu hồi (security.md §2.5): token không còn giá trị, không refresh.

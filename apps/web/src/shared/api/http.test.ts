@@ -231,13 +231,14 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     expect(auth.onSessionEnded).toHaveBeenCalledWith('expired');
   });
 
-  it('refresh ném lỗi (mạng) ⇒ xử lý như thất bại, không treo', async () => {
-    const auth = fakeAuth({ refresh: vi.fn(() => Promise.reject(new Error('offline'))) });
+  it('refresh ném lỗi (mạng) ⇒ NETWORK_ERROR, KHÔNG kết thúc phiên, không treo', async () => {
+    const auth = fakeAuth({ refresh: vi.fn(() => Promise.reject(new TypeError('offline'))) });
     const { http } = setup([fail(401, 'TOKEN_EXPIRED')], auth);
     await expect(http.get('/me', { schema: Item })).rejects.toMatchObject({
-      code: 'TOKEN_EXPIRED',
+      code: CLIENT_ERROR_CODES.network,
+      status: 0,
     });
-    expect(auth.onSessionEnded).toHaveBeenCalledWith('expired');
+    expect(auth.onSessionEnded).not.toHaveBeenCalled();
   });
 
   it('UNAUTHORIZED (tv lệch / sid thu hồi) ⇒ KHÔNG refresh, kết thúc phiên "revoked"', async () => {
