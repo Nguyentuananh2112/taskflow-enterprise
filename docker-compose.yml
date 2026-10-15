@@ -1,0 +1,90 @@
+# Hạ tầng local (ADR-070) — devops.md §3.4. App chạy trên máy bằng `pnpm dev`; compose chỉ lo hạ tầng.
+#   pnpm infra:up      → postgres + postgres-test + valkey
+#   docker compose --profile mail up -d mailpit   → (tùy chọn) hộp thư giả
+# Mật khẩu dưới đây CHỈ dùng cho máy dev, cổng chỉ mở trên 127.0.0.1. Đổi được qua file .env ở gốc (xem .env.example).
+name: taskflow
+
+# Debian (không alpine): collation glibc giống bản managed (devops.md §3.4). Ghim tag + digest.
+x-postgres: &postgres
+  image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+  init: true
+  environment: &postgres-env
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_local_only}
+    # Dùng bởi docker/postgres/init/01-roles.sh để tạo 2 user tách quyền (ADR-074).
+    TASKFLOW_MIGRATOR_PASSWORD: ${TASKFLOW_MIGRATOR_PASSWORD:-migrator_local_only}
+    TASKFLOW_APP_PASSWORD: ${TASKFLOW_APP_PASSWORD:-app_local_only}
+  volumes:
+    - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+  healthcheck:
+    test: ['CMD-SHELL', 'pg_isready -U postgres -d "$${POSTGRES_DB}"']
+    interval: 5s
+    timeout: 3s
+    retries: 20
+  stop_grace_period: 30s
+
+services:
+  postgres:
+    <<: *postgres
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: taskflow
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      # PG18 đổi đường dẫn: mount /var/lib/postgresql (KHÔNG phải .../data như ≤17).
+      - pgdata:/var/lib/postgresql
+
+  # DB cho integration test: dữ liệu trong RAM, tắt fsync (chỉ dùng cho test — devops.md §8.3).
+  # DB "taskflow_template" do migrator sở hữu; test harness migrate vào đây rồi
+  # CREATE DATABASE taskflow_w<N> TEMPLATE taskflow_template cho từng worker Vitest (ADR-074).
+  postgres-test:
+    <<: *postgres
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: taskflow_template
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+    ports:
+      - '127.0.0.1:${POSTGRES_TEST_PORT:-5433}:5432'
+    tmpfs:
+      - /var/lib/postgresql
+
+  valkey:
+    image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+    init: true
+    # Không persistence (chỉ chứa dữ liệu dựng lại được). noeviction: không âm thầm xóa bộ đếm rate-limit (§7.1).
+    command:
+      - valkey-server
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - '127.0.0.1:${VALKEY_PORT:-6379}:6379'
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.31.5@sha256:94f6b70c1436defae6799d9ac7ff0eeff9540465b842026d5cdb018f1c0234ea
+    profiles: [mail]
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+
+volumes:
+  pgdata:

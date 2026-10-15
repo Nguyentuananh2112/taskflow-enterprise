@@ -180,8 +180,8 @@ Thay đổi so với T-004:
 ### 2.5 Quản lý secret (repo public — ADR-072)
 - `.gitignore` chặn `.env`, `.env.*` (trừ `!.env.example`), `*.pem`, `*.key`, `*.dump`, `*.sql.gz`, `backups/`. `.env.example` chỉ có tên biến và giá trị giả rõ ràng, dạng `change-me-…`.
 - **3 lớp chặn rò secret:**
-  1. **pre-commit:** chạy `gitleaks git --pre-commit --staged` (gitleaks v8.30.1) qua git hook do repo quản lý. ⚠ KIỂM CHỨNG T-011: chọn trình quản lý hook (lefthook/husky — chưa có trong T-001, cần tra registry) và cách cài gitleaks trên Windows cho dev.
-  2. **CI:** job `static` chạy gitleaks trên toàn bộ commit của PR. Dùng **binary/Docker image chính thức** (`ghcr.io/gitleaks/gitleaks:v8.30.1`) thay `gitleaks-action`, để không phụ thuộc điều kiện license của action với tài khoản tổ chức (⚠ KIỂM CHỨNG T-011). File `.gitleaks.toml` chỉ allowlist đúng các giá trị giả trong `.env.example` và fixture test.
+  1. **pre-commit:** chạy `gitleaks git --pre-commit --staged` (gitleaks v8.30.1) qua **lefthook 2.2.2** (`lefthook.yml`, cài bằng script `prepare` — T-011). Chọn lefthook thay husky + lint-staged: 1 file cấu hình, tự lọc file staged và `git add` lại file đã format. Dev cài gitleaks bằng `winget install Gitleaks.Gitleaks` (runbook `docs/runbook/local-dev.md`); thiếu binary ⇒ hook chặn commit.
+  2. **CI:** job `static` chạy gitleaks trên toàn bộ commit của PR. Job **`gitleaks` riêng** tải binary chính thức v8.30.1 + **kiểm SHA256** thay `gitleaks-action` (action cần license với tài khoản tổ chức — README gitleaks). PR quét `base..head`, push `main` quét toàn bộ lịch sử. File `.gitleaks.toml` chỉ allowlist đúng các giá trị giả trong `.env.example` và fixture test.
   3. **GitHub Secret scanning + Push protection:** bật trong Settings (miễn phí cho repo public).
 - Lộ secret lên repo public = coi như **đã bị lộ**: xoay ngay; xóa khỏi lịch sử chỉ là bước phụ.
 - Local: mỗi dev tự copy `.env.example` → `.env`. Secret local khác hoàn toàn staging/prod.
@@ -201,7 +201,7 @@ Thay đổi so với T-004:
 - Base image `node:24.22.0-bookworm-slim`, **ghim thêm digest** (`@sha256:…`); Renovate/Dependabot cập nhật digest. Chọn slim (glibc) cho ổn định với Prisma, Playwright và module prebuilt (stack-versions §6).
 - pnpm: `corepack enable` (Node 24 vẫn có corepack) + `"packageManager": "pnpm@11.28.2"`. Lưu ý pnpm 11 **chặn install script mặc định** → `allowBuilds` trong `pnpm-workspace.yaml` (T-001 §10). `@node-rs/argon2` là prebuilt nên không cần mục này.
 - Gọi Prisma **chỉ** bằng `pnpm exec prisma …` trong mọi Dockerfile, script và CI (ADR-061). CI có bước grep chặn chuỗi `npx prisma` (§5.1).
-- Build cache: `pnpm fetch` theo `pnpm-lock.yaml` + `RUN --mount=type=cache,target=/pnpm/store`. ⚠ KIỂM CHỨNG T-011: hành vi `pnpm fetch` / `pnpm deploy` ở pnpm 11 (pnpm 10+ đòi `inject-workspace-packages` hoặc `--legacy` cho `deploy`).
+- Build cache: `pnpm fetch` theo `pnpm-lock.yaml`. Đã kiểm ở T-011 (pnpm 11.28.2): `pnpm fetch` → `pnpm install --offline --frozen-lockfile` chạy được; `pnpm deploy --prod` **không cần** `--legacy`. Không dùng cache mount (store nằm trong layer `deps`, chỉ đổi khi lockfile đổi).
 - Runtime chạy bằng user `node` (uid 1000). Không có compiler, pnpm, source TS.
 - `CMD ["node", "dist/main.js"]` dạng exec; **không** `pnpm start`. Compose đặt `init: true` để reap tiến trình con và chuyển tín hiệu.
 - `ENV NODE_ENV=production`; `ARG GIT_SHA` → `ENV GIT_SHA`; thêm label OCI `revision` và `source`.
@@ -217,7 +217,7 @@ stage build    : FROM deps AS build
                    → pnpm --filter @taskflow/api exec prisma generate   (DATABASE_URL vắng → "" theo ADR-061, generate vẫn chạy)
                    → pnpm --filter @taskflow/api build                   (tsdown: bundle + inline @taskflow/contracts + client Prisma sinh ở src/generated;
                                                                           external: @prisma/*, pg, @node-rs/argon2)
-                   → pnpm deploy --filter @taskflow/api --prod /out      (chỉ còn dependencies runtime; ⚠ cờ pnpm 11 — T-011)
+                   → pnpm deploy --filter @taskflow/api --prod /out      (chỉ còn dependencies runtime; pnpm 11 không cần --legacy — đã kiểm)
 stage migrate  : FROM build AS migrate
                    → WORKDIR apps/api · USER node
                    → CMD ["pnpm","exec","prisma","migrate","deploy"]     (prisma CLI 7.10.0 đã pin; KHÔNG npx)
@@ -231,7 +231,7 @@ stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
   ```
   docker run --rm taskflow-api:<sha> node -e "import('@node-rs/argon2').then(async a=>{const h=await a.hash('x'.repeat(20),{algorithm:2,memoryCost:47104,timeCost:1,parallelism:1});if(!h.startsWith('\$argon2id\$')||!(await a.verify(h,'x'.repeat(20))))process.exit(1)})"
   ```
-  Kiểm cả hai kiến trúc nếu build multi-arch (amd64 bắt buộc; arm64 khi dev dùng Apple Silicon). Lệnh này cũng chứng minh `pnpm deploy` đã kéo đúng gói `@node-rs/argon2-linux-x64-gnu`. Hằng số `algorithm` ⚠ KIỂM CHỨNG T-011: dùng enum `Algorithm.Argon2id` nếu chạy dạng file script.
+  Kiểm cả hai kiến trúc nếu build multi-arch (amd64 bắt buộc; arm64 khi dev dùng Apple Silicon). Lệnh này cũng chứng minh `pnpm deploy` đã kéo đúng gói `@node-rs/argon2-linux-x64-gnu`. Bản hiện thực: script `docker/verify-argon2.mjs` (dùng enum `Algorithm.Argon2id`) chạy qua stdin trong image — CI job `build` và `pnpm docker:verify-argon2`.
 
 ### 3.3 `apps/web/Dockerfile`
 - `next.config.ts`: `output: 'standalone'` + `outputFileTracingRoot` trỏ về gốc monorepo. Không cần `transpilePackages`, vì Turbopack tự transpile workspace package (stack-versions §3).
@@ -241,7 +241,7 @@ stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
   - **copy thêm** `apps/web/.next/static` → `/app/apps/web/.next/static`, và `apps/web/public` → `/app/apps/web/public`
   - `ENV HOSTNAME=0.0.0.0 PORT=3000`, `USER node`, `CMD ["node","apps/web/server.js"]`
 - Healthcheck: Route Handler `/api/healthz` trả 200, không gọi API.
-- ⚠ KIỂM CHỨNG T-011: cấu trúc thư mục standalone của Next 16.4.1 trong monorepo pnpm (vị trí `server.js`, có cần `sharp` không).
+- Đã kiểm (Next 16.4.1, T-011): `server.js` nằm ở `.next/standalone/apps/web/server.js`; image chạy `node apps/web/server.js`.
 
 ### 3.4 `docker-compose.yml` cho local dev
 | Service | Image | Ghi chú |
@@ -249,7 +249,7 @@ stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
 | `postgres` | `postgres:18.6-bookworm` | port 5432; volume `pgdata:/var/lib/postgresql` (**PG18 đổi đường dẫn**; mount `/var/lib/postgresql/data` kiểu ≤17 sẽ mất dữ liệu khi tạo lại container); healthcheck `pg_isready`; `POSTGRES_DB=taskflow`; init script tạo role `taskflow_app` + `taskflow_migrator` (§4.1) |
 | `postgres-test` | cùng image | port 5433; `tmpfs: /var/lib/postgresql`; `-c fsync=off -c synchronous_commit=off -c full_page_writes=off` (chỉ dùng cho test) |
 | `valkey` | `valkey/valkey:9.1.2` | port 6379; không persistence (`--save "" --appendonly no`); `--maxmemory-policy noeviction` (§7.1) |
-| `mailpit` | `axllent/mailpit` (⚠ pin tag ở T-011) | **profile `mail`**, tắt mặc định. Xác minh email nằm sau v1 (ADR-049) |
+| `mailpit` | `axllent/mailpit:v1.31.5` (+ digest) | **profile `mail`**, tắt mặc định. Xác minh email nằm sau v1 (ADR-049) |
 
 - Dùng image Debian thay alpine cho Postgres để collation theo glibc giống bản managed. Điều này ảnh hưởng `ORDER BY` trên các cột text không phải `rank`.
 - App (api/web) chạy trên máy bằng `pnpm dev` để hot reload; compose chỉ lo hạ tầng.
@@ -281,7 +281,7 @@ Nguyên tắc: **code phiên bản N và N+1 phải cùng chạy được trên 
 | Thêm cột | Nullable, hoặc có `DEFAULT` hằng (PG 11+ không rewrite bảng). Nếu cần NOT NULL không default: thêm nullable → backfill theo lô → ở release sau thêm `CHECK … NOT VALID`, `VALIDATE`, rồi `SET NOT NULL` |
 | Đổi tên cột/bảng | **Cấm đổi tên trực tiếp.** Thêm cột mới, ghi cả hai → backfill → chuyển sang đọc cột mới → bỏ cột cũ ở release sau nữa |
 | Xóa cột | Release 1: code ngừng dùng (bỏ field khỏi Prisma schema). Release 2: migration `DROP COLUMN` |
-| Tạo index trên bảng lớn | `CREATE INDEX CONCURRENTLY` trong migration **riêng**, chỉ chứa đúng lệnh đó. ⚠ KIỂM CHỨNG T-011/Phase 2: Prisma 7.10 có bọc file migration trong transaction không. Nếu có thì phải chạy ngoài Prisma |
+| Tạo index trên bảng lớn | `CREATE INDEX CONCURRENTLY` trong migration **riêng**, chỉ chứa đúng lệnh đó. ⚠ KIỂM CHỨNG Phase 2 (T-010): Prisma 7.10 có bọc file migration trong transaction không. Nếu có thì phải chạy ngoài Prisma |
 | Thêm FK | `ADD CONSTRAINT … NOT VALID` rồi `VALIDATE CONSTRAINT` ở migration sau |
 | Đổi kiểu cột | Làm như đổi tên (cột mới + backfill) |
 | Enum Postgres | Thêm giá trị: an toàn. Bỏ giá trị: expand/contract |
@@ -295,7 +295,7 @@ Nguyên tắc: **code phiên bản N và N+1 phải cùng chạy được trên 
   - Với 1 triệu dòng thì chạy bao lâu?
   - Code cũ có chạy được trên schema mới không?
   - Rollback app có chạy được không?
-- CI kiểm tra (ADR-062): `pnpm exec prisma migrate diff --from-migrations … --to-schema … --exit-code` phải rỗng (quên tạo migration thì đỏ), và migrate từ DB rỗng lên head phải thành công. ⚠ KIỂM CHỨNG T-011: cú pháp cờ `migrate diff` ở 7.10 (có cần `--shadow-database-url` hay không).
+- CI kiểm tra (ADR-062): `pnpm exec prisma migrate diff --from-migrations … --to-schema … --exit-code` phải rỗng (quên tạo migration thì đỏ), và migrate từ DB rỗng lên head phải thành công. Prisma 7 đã **bỏ** `--shadow-database-url`; CI (T-011) chạy `migrate deploy` rồi `migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (DB sau migrate phải khớp schema).
 
 ### 4.3 Backup (áp dụng khi lên staging/prod — Phase 5)
 | Lớp | Phương án C (ứng viên) | Phương án A (dự phòng) |
@@ -369,9 +369,10 @@ setup ──┬── static      (typecheck · lint+depcruise · prettier · gi
   - `pnpm build`
   - `docker buildx build` cả 3 target, cache `type=gha`, **không push** trên PR
   - **smoke argon2 trong image** (§3.2)
-  - `trivy image --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed` (⚠ pin phiên bản Trivy ở T-011)
+  - `trivy image --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed` (T-011 ghim `aquasec/trivy:0.75.0` + digest — bỏ qua 0.76.0 vì mới phát hành < 24h; quét cả `vuln,secret`)
 - **e2e (Phase 4+):** dựng `docker-compose.prodlike.yml` từ image vừa build, seed, chạy Playwright 1.64.1 trong image `mcr.microsoft.com/playwright:v1.64.1-*`. PR chạy Chromium; nightly chạy Chromium + WebKit + Firefox. Upload trace/video khi lỗi.
-- **Nightly:** `pnpm audit --prod --audit-level high` (mở issue khi đỏ), E2E 3 trình duyệt, test 2 instance (§7.2).
+- **`pnpm audit --prod --audit-level high` chạy trong job `static` và chặn merge** (Tech Lead, bổ sung T-011). Ngoại lệ chỉ qua `auditConfig.ignoreGhsas` trong `pnpm-workspace.yaml`, mỗi mục ghi lý do + ngày xét lại.
+- **Nightly:** E2E 3 trình duyệt, test 2 instance (§7.2).
 - **Dependabot:** cho npm, Docker digest, GitHub Actions. Lưu ý `minimumReleaseAge: 1440` của pnpm 11 (T-001) làm bản vừa publish chưa cài được ngay — đây là cố ý, để chống tấn công supply-chain.
 
 **Điều kiện chặn merge** (branch protection/ruleset trên `main`, miễn phí với repo public — ADR-072):
@@ -657,13 +658,8 @@ Mỗi mục phải có người ký xác nhận và bằng chứng (link log/ả
 
 | Điểm | Phụ trách |
 |---|---|
-| `pnpm fetch`/`deploy` ở pnpm 11 | T-011 |
-| Trình quản lý git hook + cách cài gitleaks cho dev | T-011 |
-| Cú pháp `migrate diff` 7.10 | T-011 |
-| Prisma có bọc migration trong transaction không | T-011 / Phase 2 |
-| Cấu trúc standalone Next 16.4 | T-011 |
-| Tag pin của mailpit và Trivy | T-011 |
-| Option `max` của PrismaPg | T-008 / T-011 |
+| Prisma có bọc migration trong transaction không | Phase 2 (T-010) |
+| Option `max` của PrismaPg | T-010 |
 | `io.local.disconnectSockets` | Phase 3 |
 | Thư viện scheduler | Phase 2 |
 | CA tự ký cho Playwright | Phase 4 |

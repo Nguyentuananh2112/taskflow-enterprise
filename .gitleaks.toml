@@ -1,0 +1,17 @@
+# Cấu hình gitleaks (v8.30.1) — dùng chung cho pre-commit (lefthook.yml) và CI (.github/workflows/ci.yml).
+# Kế thừa toàn bộ luật mặc định. Chỉ allowlist những giá trị GIẢ đã biết, theo regex chính xác —
+# không allowlist theo đường dẫn file (để secret thật lỡ dán vào .env.example vẫn bị bắt).
+title = "taskflow"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Giá trị mẫu công khai trong *.env.example và docker-compose.yml (chỉ cho máy dev)"
+regexTarget = "line"
+regexes = [
+  # JWT_ACCESS_SECRET mẫu = base64("change-me-local-only-not-a-real-secret-32bytes")
+  '''Y2hhbmdlLW1lLWxvY2FsLW9ubHktbm90LWEtcmVhbC1zZWNyZXQtMzJieXRlcw==''',
+  # Mật khẩu local có hậu tố _local_only
+  '''[a-z]+_local_only''',
+]

@@ -1,0 +1,34 @@
+# Build context = gốc monorepo. Giữ context nhỏ và KHÔNG BAO GIỜ đưa secret vào image (ADR-072).
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/.vitest
+**/playwright-report
+**/test-results
+**/src/generated
+**/*.tsbuildinfo
+**/*.log
+
+# secret & dữ liệu
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.dump
+**/*.sql.gz
+backups/
+
+# không cần trong image
+.git
+.github
+.vscode
+.idea
+docs
+docker
+lefthook.yml
+.gitleaks.toml
+**/Dockerfile
+.dockerignore
+docker-compose*.yml
