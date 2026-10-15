@@ -4,7 +4,7 @@ import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod';
 
-import { errorOf, FakeClock, productionEnvVars } from '../test/support';
+import { errorOf, FakeClock, productionEnvVars, testEnvVars } from '../test/support';
 import { appConfigFromEnv, createApp, type AppConfig } from './app';
 import { loadEnv } from './config/env';
 import { requestContext } from './core/context/request-context';
@@ -19,6 +19,7 @@ const config = (overrides: Partial<AppConfig> = {}): AppConfig => ({
   corsOrigins: [ORIGIN],
   trustProxyHops: 0,
   production: false,
+  hsts: false,
   bodyLimit: '1kb',
   ...overrides,
 });
@@ -58,10 +59,15 @@ const probe = (name: string, critical: boolean, ok: boolean): ReadinessProbe => 
 });
 
 function build(
-  options: { production?: boolean; probes?: ReadinessProbe[]; shuttingDown?: boolean } = {},
+  options: {
+    production?: boolean;
+    hsts?: boolean;
+    probes?: ReadinessProbe[];
+    shuttingDown?: boolean;
+  } = {},
 ) {
   return createApp({
-    config: config({ production: options.production ?? false }),
+    config: config({ production: options.production ?? false, hsts: options.hsts ?? false }),
     logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
     clock: new FakeClock('2026-10-15T08:00:00.000Z'),
     probes: options.probes ?? [probe('db', true, true), probe('valkey', false, true)],
@@ -82,6 +88,7 @@ describe('appConfigFromEnv', () => {
       corsOrigins: ['https://app.example.com'],
       trustProxyHops: 1,
       production: true,
+      hsts: true,
       bodyLimit: '100kb',
     });
   });
@@ -118,9 +125,16 @@ describe('header bảo mật (security.md §6.2–6.3)', () => {
     expect(res.headers['strict-transport-security']).toBeUndefined();
   });
 
-  it('HSTS 1 năm + includeSubDomains ở production', async () => {
-    const res = await request(build({ production: true })).get('/healthz');
+  it('HSTS 1 năm + includeSubDomains khi APP_ENV staging/production (ADR-101)', async () => {
+    const res = await request(build({ hsts: true })).get('/healthz');
     expect(res.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
+  });
+
+  it('ADR-101: HSTS theo APP_ENV, không theo NODE_ENV — local/test không bao giờ có HSTS', () => {
+    const local = loadEnv(testEnvVars({ NODE_ENV: 'development', APP_ENV: 'local' }));
+    expect(appConfigFromEnv(local).hsts).toBe(false);
+    const staging = loadEnv(productionEnvVars({ APP_ENV: 'staging' }));
+    expect(appConfigFromEnv(staging).hsts).toBe(true);
   });
 
   it('CORS: origin trong whitelist được phản hồi kèm credentials; origin lạ không', async () => {
