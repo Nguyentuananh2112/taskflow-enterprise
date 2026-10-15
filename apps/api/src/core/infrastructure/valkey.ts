@@ -2,13 +2,18 @@ import { createClient } from 'redis';
 
 import type { ILogger } from '../logging/logger';
 
+/** Backoff reconnect: 100ms × 2^lần thử, trần 5s (không dồn dập khi Valkey sập lâu). */
+export function valkeyReconnectDelay(retries: number): number {
+  return Math.min(100 * 2 ** retries, 5_000);
+}
+
 const buildClient = (url: string) =>
   createClient({
     url,
     disableOfflineQueue: true,
     socket: {
       connectTimeout: 5_000,
-      reconnectStrategy: (retries) => Math.min(100 * 2 ** retries, 5_000),
+      reconnectStrategy: valkeyReconnectDelay,
     },
   });
 
