@@ -107,5 +107,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-110 ✅ **Cấm ghi snapshot aggregate không kiểm soát đồng thời** (mở rộng ADR-104 thành nguyên tắc chung — X2/X8 của F: workspace bị xóa hồi sinh 14/40 lần). Mọi aggregate có thể bị ghi đồng thời (Task, Workspace, Project) dùng **optimistic lock** (`version` + `updateMany where version` ⇒ 409); trường bảo mật của User dùng lệnh nguyên tử theo ý định (ADR-104). Repository không được có `save()` ghi cả bản ghi không điều kiện. Review checklist + test race bắt buộc cho mọi aggregate mới.
 
+- ADR-111 ✅ (Người dùng chốt) **Bình luận trên task để sau v1.** Ma trận quyền giữ sẵn `comment:create`; không thêm model/API/UI ở v1. Deploy (Phase 5) chuẩn bị SAU khi hoàn thiện ## Hiệu năng kiểm thử trên máy (Mốc 1).
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
