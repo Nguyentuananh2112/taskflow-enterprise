@@ -273,6 +273,7 @@ stage runtime       : FROM node slim → COPY --from=build /out (node_modules pr
   - `taskflow_migrator`: owner của schema, có DDL. Chỉ job migrate dùng, qua `DATABASE_URL` riêng của job, luôn kết nối thẳng (không qua pooler).
   - `taskflow_app`: chỉ `SELECT/INSERT/UPDATE/DELETE` trên bảng và `USAGE` trên sequence. Cấp bằng `ALTER DEFAULT PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA public GRANT …` để bảng mới tự có quyền. Bước này nằm trong migration đầu tiên hoặc script init role.
   - Local compose cũng tách đúng như vậy, để lỗi thiếu quyền lộ ra ngay ở máy dev.
+- **Grant sau mỗi lần migrate (T-027 bổ sung):** `ALTER DEFAULT PRIVILEGES … IN SCHEMA public` lưu theo từng database và gắn với schema ⇒ DB tạo sau init, DB managed ở production, schema bị dựng lại đều thiếu quyền cho app. Vì vậy job migrate (image `migrate`: `docker/migrate/migrate.mjs`) và `pnpm --filter @taskflow/api db:deploy` luôn chạy `prisma migrate deploy` **rồi** `prisma db execute --file docker/migrate/grant-app.sql` (idempotent: GRANT DML trên mọi bảng/sequence + default privileges + REVOKE CREATE; lỗi rõ ràng nếu role `taskflow_app` chưa tồn tại). CI kiểm trên DB mới tinh (`docker/migrate/verify-grants.sh`): app đọc/ghi được, CREATE/DROP/ALTER/TRUNCATE bị từ chối — cả qua `db:deploy` lẫn image migrate. **Cấm chạy app bằng migrator.** Harness bảo mật (F) tự grant cùng nội dung — đề xuất gọi chung file này.
 - Migration đã apply **không được sửa**. Muốn sửa thì viết migration mới.
 
 ### 4.2 Quy tắc migration an toàn (expand/contract)

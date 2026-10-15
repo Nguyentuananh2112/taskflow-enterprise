@@ -87,6 +87,8 @@ Copy-Item apps/web/.env.example apps/web/.env.local
 Giá trị mẫu chạy được ngay với compose. **Không bao giờ commit** `.env`/`.env.local` (đã có trong `.gitignore`, gitleaks chặn thêm một lớp).
 
 ## 5. Migrate, seed, integration test
+> **Cấm chạy app (API) bằng `taskflow_migrator`** — kể cả "sửa nhanh" khi gặp `permission denied for table …`. App luôn dùng `taskflow_app` (chỉ DML). Lỗi quyền sau migrate nghĩa là bước grant chưa chạy: `db:deploy` (và image migrate) = `migrate deploy` **+** `docker/migrate/grant-app.sql` (cấp DML cho `taskflow_app` trên mọi bảng/sequence, đặt default privileges, thu hồi CREATE). DB tạo sau init (vd `taskflow_<ticket>`) cũng chỉ cần chạy `db:deploy` một lần. Gọi `prisma migrate deploy` trần sẽ **không** grant.
+
 Đặt một lần cho phiên PowerShell (CI/Docker đã đặt sẵn): Prisma CLI không gọi mạng kiểm tra phiên bản/telemetry — trên mạng chậm có thể treo 120 s+ làm migrate/test đỏ oan (T-022):
 ```powershell
 $env:CHECKPOINT_DISABLE = '1'; $env:PRISMA_HIDE_UPDATE_MESSAGE = '1'

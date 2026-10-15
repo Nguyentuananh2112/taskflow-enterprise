@@ -58,7 +58,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=migrate-files /migrate ./
 USER node
-CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+# migrate deploy rồi grant DML cho taskflow_app (docker/migrate/migrate.mjs + grant-app.sql) — lỗi bước nào ⇒ exit ≠ 0.
+CMD ["node", "migrate.mjs"]
 
 # ---------- runtime: không pnpm, không devDependencies, không source TS ----------
 FROM ${NODE_IMAGE} AS runtime

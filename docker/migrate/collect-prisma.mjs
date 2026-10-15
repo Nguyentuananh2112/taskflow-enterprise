@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const [apiDirArg, outDirArg] = process.argv.slice(2);
 if (!apiDirArg || !outDirArg) {
@@ -103,6 +104,10 @@ else symlinkSync(relative(dirname(prismaLink), prismaTarget), prismaLink, 'dir')
 
 cpSync(join(apiDir, 'prisma'), join(outDir, 'prisma'), { recursive: true });
 cpSync(join(apiDir, 'prisma.config.ts'), join(outDir, 'prisma.config.ts'));
+// Entrypoint + SQL grant DML cho taskflow_app sau migrate (cùng thư mục với script này).
+const here = dirname(fileURLToPath(import.meta.url));
+cpSync(join(here, 'migrate.mjs'), join(outDir, 'migrate.mjs'));
+cpSync(join(here, 'grant-app.sql'), join(outDir, 'grant-app.sql'));
 // package.json tối thiểu: "type": "module" cho prisma.config.ts dạng ESM như ở apps/api.
 writeFileSync(
   join(outDir, 'package.json'),

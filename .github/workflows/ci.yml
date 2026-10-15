@@ -176,8 +176,17 @@ jobs:
           DATABASE_URL: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_template
         run: |
           pnpm exec prisma validate
-          pnpm exec prisma migrate deploy
+          # migrate deploy + grant DML cho taskflow_app (docker/migrate/grant-app.sql)
+          pnpm run db:deploy
           pnpm run db:check-drift
+      # DB MỚI TINH → db:deploy → taskflow_app đọc/ghi được, KHÔNG có DDL; deploy lần 2 idempotent (T-027).
+      - name: Quyền DB sau deploy (db:deploy)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          MIGRATOR_PASSWORD: migrator_ci_only
+          APP_PASSWORD: app_ci_only
+        run: bash docker/migrate/verify-grants.sh
       - name: Integration tests (Postgres thật, DB taskflow_it)
         env:
           DATABASE_URL_TEST: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_it
@@ -231,7 +240,8 @@ jobs:
           DATABASE_URL: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_template
         run: |
           pnpm exec prisma validate
-          pnpm exec prisma migrate deploy
+          # migrate deploy + grant DML cho taskflow_app (docker/migrate/grant-app.sql)
+          pnpm run db:deploy
           pnpm run db:check-drift
       - name: test:security
         env:
@@ -298,6 +308,26 @@ jobs:
       # Postgres + Valkey thật: healthz, readyz, Valkey chết ⇒ degraded, docker stop ⇒ graceful shutdown exit 0.
       - name: Smoke api (readyz + graceful shutdown thật)
         run: bash docker/smoke-api.sh taskflow-api:ci
+      # Chính image migrate trên Postgres tạm dựng bằng init script: DB mới → migrate + grant → quyền app đúng.
+      - name: Image migrate — quyền DB sau deploy
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '15432'
+          MIGRATOR_PASSWORD: migrator_ci_only
+          APP_PASSWORD: app_ci_only
+          MIGRATE_IMAGE: taskflow-api-migrate:ci
+          DOCKER_NETWORK: tf-grants
+          DB_HOST_IN_NETWORK: tf-grants-pg
+        run: |
+          docker network create tf-grants
+          docker run -d --name tf-grants-pg --network tf-grants -p 127.0.0.1:15432:5432             -e POSTGRES_PASSWORD=postgres_ci_only -e POSTGRES_DB=taskflow_template             -e TASKFLOW_MIGRATOR_PASSWORD=migrator_ci_only -e TASKFLOW_APP_PASSWORD=app_ci_only             -v "$PWD/docker/postgres/init:/docker-entrypoint-initdb.d:ro"             postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+          for _ in $(seq 1 60); do
+            docker logs tf-grants-pg 2>&1 | grep -q 'PostgreSQL init process complete' &&
+              PGPASSWORD=migrator_ci_only psql -h 127.0.0.1 -p 15432 -U taskflow_migrator -d postgres -qc 'select 1' >/dev/null 2>&1 && break
+            sleep 2
+          done
+          bash docker/migrate/verify-grants.sh
+          docker rm -f tf-grants-pg && docker network rm tf-grants
       - name: Smoke web (healthz, non-root)
         run: |
           docker run -d --name web -p 3000:3000 -e APP_ENV=test -e API_URL=http://127.0.0.1:4000/api/v1 taskflow-web:ci
