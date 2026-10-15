@@ -57,5 +57,7 @@ Máy dev dùng chung có RAM/IO hạn chế; cấu hình máy (Defender, Dev Dri
 2. Vitest: dùng mặc định của repo (`VITEST_MAX_WORKERS`, 4 local) hoặc thấp hơn (`--maxWorkers=2`) khi máy bận; luôn kiểm **exit code**.
 3. Việc nặng (Stryker, k6, `docker build`, `next build` nhiều lần, Playwright) **không chạy cùng lúc với việc nặng khác của chính mình**; Stryker/k6 chỉ chạy khi Tech Lead báo "máy rảnh".
 4. Commit WIP sớm và thường xuyên trên branch của mình (đã qua hook) — phiên có thể bị đóng bất ngờ khi máy cạn bộ nhớ.
-5. Xóa worktree không dùng nữa: `git worktree remove ../TaskFlow_wt/<X>` (bật `core.longpaths`).
+5. **Sau mỗi lần rebase/đổi branch: chạy `pnpm install --frozen-lockfile` ngay** (trước khi commit) — nếu không, hook `pnpm exec …` có thể tự kích hoạt `pnpm install` và treo vì tranh khóa store với phiên khác.
+6. **Tắt mọi server/tiến trình bạn tự bật** (`next start`, `tsx src/main.ts`, Playwright webServer, container tạm) khi chạy xong — một server bị quên đã chạy >10 giờ chiếm RAM.
+7. Xóa worktree không dùng nữa: `git worktree remove ../TaskFlow_wt/<X>` (bật `core.longpaths`).
 6. **Cổng nghiệm thu chạy trên snapshot của chính mình** (branch/commit cố định trong worktree của mình), không bao giờ trỏ vào worktree đang làm việc của người khác — họ có thể đổi branch giữa chừng (bài học T-028, F).
