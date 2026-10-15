@@ -21,7 +21,8 @@
 2. **Không commit, không đổi branch** trừ khi ticket cho phép. Tech Lead commit sau khi review.
 3. Phát hiện mâu thuẫn hoặc thiếu thông tin → **dừng và hỏi Tech Lead** qua SendMessage tới `taskflow-enterprise-0b`, đừng tự đoán ở quyết định lớn.
 4. Không đưa thông tin bịa: số phiên bản, API thư viện phải kiểm chứng (docs chính thức / npm registry). Ghi nguồn.
-5. Xong việc: viết báo cáo vào `docs/reviews/<TICKET>-report.md` (đã làm gì, file nào, quyết định tự đưa ra, rủi ro, câu hỏi mở), rồi **SendMessage cho `taskflow-enterprise-0b`** dòng đầu: `DONE <TICKET>`.
+5. **Không ghi vào memory của Claude** (`~/.claude/projects/d--TaskFlow-Enterprise/memory/`) — thư mục này dùng chung cho mọi session, ghi "tôi là Engineer X" sẽ làm các session khác hiểu sai vai trò. Ngữ cảnh dự án nằm trong `docs/`.
+6. Xong việc: viết báo cáo vào `docs/reviews/<TICKET>-report.md` (đã làm gì, file nào, quyết định tự đưa ra, rủi ro, câu hỏi mở), rồi **SendMessage cho `taskflow-enterprise-0b`** dòng đầu: `DONE <TICKET>`.
 
 ## Quy trình code (từ Phase 1) — mỗi người một git worktree
 1. Tạo worktree riêng từ `main`: `git worktree add ../TaskFlow_wt/<TICKET> -b feat/<TICKET> main` rồi làm việc **trong thư mục đó**, không làm trong `D:\TaskFlow_Enterprise`.
