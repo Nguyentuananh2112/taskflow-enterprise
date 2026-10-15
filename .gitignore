@@ -31,3 +31,8 @@ test-results/
 
 # Next 16.4 tự sinh mỗi lần `next dev` (hướng dẫn cho AI agent, trỏ tới docs trong node_modules/next)
 apps/web/AGENTS.md
+
+# Backup / dump database — không bao giờ commit (ADR-072)
+*.dump
+*.sql.gz
+backups/
