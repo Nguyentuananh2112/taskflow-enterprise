@@ -1,19 +1,20 @@
 // T-023: sau khi module Task có repository Prisma, `main.ts` THẬT ở staging với cấu hình mặc định
 // (PERSISTENCE = prisma) phải khởi động được — guard "không module bộ nhớ ở
 // staging/production" (T-020) không còn chặn vì `modules.task = prisma`.
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { productionEnvVars } from '../../support';
 import { testDatabaseUrl } from '../db';
+import { stopChildren } from '../support/child-process';
 
 const API_DIR = resolve(import.meta.dirname, '../../..');
 const PORT = 4900 + Math.floor(Math.random() * 90);
 const STARTUP_TIMEOUT_MS = 120_000;
-const kills: (() => void)[] = [];
-afterAll(() => kills.forEach((k) => k()));
+const children: ChildProcess[] = [];
+afterAll(() => stopChildren(children));
 
 describe('khởi động main.ts với Prisma đầy đủ (T-023)', () => {
   it(
@@ -35,7 +36,7 @@ describe('khởi động main.ts với Prisma đầy đủ (T-023)', () => {
         env: { ...process.env, ...env },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      kills.push(() => child.kill('SIGTERM'));
+      children.push(child);
       child.stdout.on('data', (b: Buffer) => (output += b.toString()));
       child.stderr.on('data', (b: Buffer) => (output += b.toString()));
       let exitCode: number | null | undefined;

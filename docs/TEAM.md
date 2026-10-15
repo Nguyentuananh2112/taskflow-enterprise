@@ -54,7 +54,7 @@
 ## Giảm tải máy dev (ADR-107) — bắt buộc
 Máy dev dùng chung có RAM/IO hạn chế; cấu hình máy (Defender, Dev Drive…) **giữ nguyên** theo quyết định của người dùng. Vì vậy:
 1. **Dùng lại worktree cũ** cho ticket mới thay vì tạo worktree mới: trong worktree hiện có của bạn, `git fetch` (không cần) → `git switch -c feat/<TICKET> main` (sau khi đã commit hết việc cũ). `pnpm install` lúc đó chỉ cài phần chênh lệch — vài chục giây thay vì 25–45 phút. Chỉ tạo worktree mới khi thật cần chạy 2 branch song song.
-2. Vitest: dùng mặc định của repo (`VITEST_MAX_WORKERS`, 4 local) hoặc thấp hơn (`--maxWorkers=2`) khi máy bận; luôn kiểm **exit code**.
+2. Vitest: dùng mặc định của repo (`VITEST_MAX_WORKERS`, 4 local) hoặc thấp hơn (`--maxWorkers=2`) khi máy bận — chỉ cho unit, KHÔNG cho `test:integration` (luôn tuần tự, runbook local-dev §5); luôn kiểm **exit code**.
 3. Việc nặng (Stryker, k6, `docker build`, `next build` nhiều lần, Playwright) **không chạy cùng lúc với việc nặng khác của chính mình**; Stryker/k6 chỉ chạy khi Tech Lead báo "máy rảnh".
 4. Commit WIP sớm và thường xuyên trên branch của mình (đã qua hook) — phiên có thể bị đóng bất ngờ khi máy cạn bộ nhớ.
 5. **Sau mỗi lần rebase/đổi branch: chạy `pnpm install --frozen-lockfile` ngay** (trước khi commit) — nếu không, hook `pnpm exec …` có thể tự kích hoạt `pnpm install` và treo vì tranh khóa store với phiên khác.

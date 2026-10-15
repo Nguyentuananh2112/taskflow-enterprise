@@ -14,6 +14,7 @@ import {
   testPrisma,
   testValkeyUrl,
 } from '../support/prisma-test-kit';
+import { stopChildren } from '../support/child-process';
 
 const API_DIR = resolve(import.meta.dirname, '../../..');
 const PORT = 4600 + Math.floor(Math.random() * 300);
@@ -54,7 +55,8 @@ async function waitHealthy(api: ReturnType<typeof startApi>): Promise<void> {
 
 const children: ChildProcess[] = [];
 afterAll(async () => {
-  for (const c of children) c.kill('SIGTERM');
+  // Chờ API con thoát hẳn TRƯỚC khi file kế tiếp TRUNCATE / FLUSHDB (nó còn giữ kết nối).
+  await stopChildren(children);
   await disconnectTestPrisma();
 });
 
