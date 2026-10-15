@@ -45,3 +45,8 @@
 | 3 | Tích hợp: Prisma repos, routes, audit trong transaction, Socket gateway, test IDOR | ⏳ |
 | 4 | Frontend song song: shell + auth · Kanban board | ⏳ |
 | 5 | E2E, k6, security review, deploy | ⏳ |
+
+## Môi trường test dùng chung (ADR-106)
+- Postgres test (cổng 5434) dùng chung, harness integration **xóa schema `public`** của DB đích ⇒ **mỗi người một database riêng** tạo từ quyền CREATEDB của `taskflow_migrator`: `taskflow_<ticket>` (vd `taskflow_t020`), suite đen của QA dùng `taskflow_sec`. **Cấm** trỏ test vào `taskflow_template` hoặc DB dev (5435).
+- Valkey (6380) dùng chung: test dùng prefix key riêng hoặc DB index riêng.
+- Container tạm riêng (cổng khác) được phép, phải tự dọn khi xong. Không bao giờ dừng/sửa compose `taskflow` dùng chung hoặc container của dự án khác.

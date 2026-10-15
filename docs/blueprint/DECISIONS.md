@@ -97,5 +97,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-104 ✅ **Chống lost update trên users (A4)**: bỏ `save(user)` tổng quát cho user đã tồn tại. Repository có lệnh nguyên tử theo mục đích: `recordLogin(id, at)` (chỉ `last_login_at`); `rehashPassword(id, oldHash, newHash)` có điều kiện `password_hash = oldHash` (thua race ⇒ bỏ qua); `changePassword(id, oldHash, newHash, at)` có điều kiện + **tăng `token_version` trong cùng câu lệnh** `RETURNING token_version`; `bumpTokenVersion(id)` = `token_version + 1 RETURNING`; `updateProfile(id, {fullName})`. Aggregate User vẫn kiểm luật; repository chỉ thực thi ý định. Test tầng I: login ‖ change-password và login ‖ logout-all lặp 20 lần.
 - ADR-105 ✅ **Thu hồi phiên fail-closed (A3)**: logout / logout-all / change-password / reuse-detected **ghi giá trị thu hồi vào Valkey TRƯỚC commit** (`SET auth:sid-revoked:{sid}`, `SET auth:tv:{userId} = tv mới` — tv mới lấy từ `RETURNING` trong transaction); ghi lỗi ⇒ `503 SERVICE_UNAVAILABLE` + rollback. Sau commit ghi lại lần nữa (best-effort). Nạp cache khi đọc (read-through) **chỉ dùng `SET NX`** — không bao giờ đè giá trị thu hồi. TTL `auth:tv` = **60 giây**. Lý do không "DEL trước commit": request đọc xen giữa sẽ nạp lại tv cũ từ DB chưa commit.
 
+- ADR-106 ✅ Môi trường test dùng chung: mỗi engineer/QA một database riêng trên postgres-test (xem TEAM.md); harness phải từ chối chạy nếu trỏ vào `taskflow_template` hoặc DB dev.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
