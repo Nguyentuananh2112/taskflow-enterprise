@@ -43,7 +43,15 @@ Script `e2e/scripts/integration-isolation-gate.mjs` — chạy `pnpm --filter @t
 
 Lần chạy (b) đầu tiên trùng thời điểm E chạy E2E trên Valkey db 12 ⇒ chạy lại trên db 9, kết quả đỏ tương tự (không do Valkey).
 
-**Trên fix của D:** _chờ D chạy xong, F chạy lại độc lập trên snapshot riêng — bổ sung tại đây._
+**Trên fix của D (`fix/integration-serial` @ 13e5594, snapshot riêng của F) — XANH:**
+
+| Chế độ | Exit | Kết quả |
+|---|---|---|
+| (a) `VITEST_MAX_WORKERS=2` | 0 | **373/373**, không lỗi tranh chấp |
+| (b) lượt 1 | 0 | **373/373** (64s) |
+| (b) lượt 2 | 0 | **373/373** (102s) — log: `DB …/taskflow_f2gate / Valkey …/9 đang bận (lượt khác) — chờ tối đa 600000ms…` ⇒ chờ khóa rồi mới chạy |
+
+Script cổng được siết sau ghi chú của D: lỗi hạ tầng (`ERR_PNPM_*`) **không** được tính là "từ chối rõ ràng"; từ chối hợp lệ phải nêu khóa.
 
 ## 4. Lỗ hổng cùng loại ở suite bảo mật (D chỉ ra)
 
