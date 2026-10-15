@@ -130,10 +130,11 @@ flowchart LR
 | **S** — CSRF trên endpoint cookie | SameSite=Strict + `Origin` whitelist + bắt buộc `application/json` (UTF-8, charset trùng ⇒ 415) | Middleware tests; transport.sec | — |
 | **S** — Giả IP qua `X-Forwarded-For` để né rate limit | `TRUST_PROXY_HOPS` đo thực tế; IPv6 gom /56 | Go-live §3.1 (thủ công); `rate-limit` tests | Phụ thuộc cấu hình đúng (G1) |
 | **S** — CSWSH / socket không xác thực | Origin whitelist + token ở `handshake.auth` (không query) + chỉ websocket | `gateway.test.ts` | — |
-| **I** — Event realtime lọt sang workspace khác | Join phòng kiểm membership + project ∈ ws, kiểm lại sau join; emit chỉ `project:{id}` | `realtime.http.test.ts`, `project-realtime.http.test.ts` | — |
+| **I** — Event realtime lọt sang workspace khác | Join phòng kiểm membership + project ∈ ws, kiểm lại sau join; emit chỉ `project:{id}`; thu hồi rời phòng theo cả `projectIds` lẫn `socket.data.joined` lọc theo workspace (bắt project tạo / join song song) | `realtime.http.test.ts`, `project-realtime.http.test.ts`, `gateway.test.ts` (G1 realtime) | — |
+| **E** — Socket sống sót sau thu hồi phiên commit giữa handshake | Vào phòng `user` / `session` rồi verify token lần nữa; lỗi ⇒ ngắt (fail-closed); `project:join` chờ kết quả. Thu hồi đăng ký trước các hook phụ sau commit | `gateway.test.ts` (M1), `remove-member-revoke-order.test.ts` | — |
 | **I** — Bí mật / PII vào log hoặc Sentry | Serializer allow-list (T-031 mục 0: lỗi DB không mang dòng dữ liệu); redact header; Sentry `dataCollection` tắt + `beforeSend` allow-list | Test P2039 thật (`sentry-leak.int.ts`); `refresh-cookie-logging.test.ts` | — |
 | **I** — `/metrics`, `/healthz` lộ thông tin | `/metrics` cổng riêng, `127.0.0.1` mặc định, Bearer bắt buộc từ staging; `/healthz` không lộ `gitSha` | `metrics` tests; go-live §6.4 | — |
-| **D** — Flood tài nguyên (pool DB, socket renew, readyz) | Rate limit toàn cục + theo route; `auth:renew` 5 / phút / socket; socket join budget; body 100 kB | T-030, T-031 tests | Không có giới hạn số socket đồng thời / user (L6 T-028) |
+| **D** — Flood tài nguyên (pool DB, socket renew, readyz) | Rate limit toàn cục + theo route; `auth:renew` 5 / phút / socket; join 30 / phút / socket + 60 / phút / user; tối đa 20 socket / user / instance; body 100 kB | T-030, T-031, `gateway.test.ts` (G1 realtime M2) | Hạn mức user đếm theo instance (ADR-115, R21) |
 | **D** — Valkey chập chờn làm sập process (redis-adapter publish) | Bọc publish + thu hồi local-first (T-030) | Integration test proxy TCP riêng | R5 |
 | **E** — Cấu hình production sai (secret mẫu, cookie không Secure, CORS http, lưu trữ bộ nhớ) | Env validate theo `APP_ENV`, app từ chối khởi động | `env.test.ts`; startup tests | R9 |
 
@@ -143,10 +144,14 @@ flowchart LR
 |---|---|---|---|
 | **E / T** — App bị chiếm chạy DDL / xóa schema | Tách role: app = `taskflow_app` (chỉ DML), migrate = `taskflow_migrator` | `verify-grants.sh` (CI); drill bước 8 | — |
 | **I** — Lộ bản sao lưu | Mã hóa phía client bằng age; máy backup chỉ có public key; storage khác nhà cung cấp; không bản rõ trên đĩa | Drill: không có `PGDMP` trên storage, sai khóa / sửa 1 byte bị từ chối | — |
-| **T / D** — Xóa / mã hóa tống tiền bản sao lưu | Credential PutObject-only; xóa bằng lifecycle; versioning / object lock | Runbook backup §3 (cấu hình thủ công) | Phụ thuộc cấu hình bucket |
+| **T / D** — Xóa / ghi đè / mã hóa tống tiền bản sao lưu | Credential PutObject-only; xóa bằng lifecycle; **versioning + object lock bắt buộc** (PutObject ghi đè được khóa đoán được) | Runbook backup §3 (cấu hình thủ công) | **Đã sửa trên `fix/B2-backup-review`, CHƯA merge — chờ diễn tập được người dùng duyệt**. Trên `main` runbook vẫn ghi object lock là tùy chọn. Sau merge: phụ thuộc cấu hình bucket |
+| **S / T** — Máy backup bị chiếm dựng bản "mới nhất" hợp lệ (age chỉ bảo đảm toàn vẹn, không bảo đảm nguồn gốc) | Sự cố bảo mật ⇒ khôi phục bản trước thời điểm bị chiếm; kiểm TOC so với DB dựng sạch; không khôi phục bằng superuser | Runbook backup §5.1 | **Đã sửa trên `fix/B2-backup-review`, CHƯA merge — chờ diễn tập được người dùng duyệt**; R22 |
+| **I** — Mật khẩu DB lộ qua argv của `pg_dump` | `backup.sh` từ chối URL có mật khẩu; dùng `PGPASSWORD` / `PGPASSFILE` | Drill kiểm từ chối (exit 2) — diễn tập chưa chạy lại | **Đã sửa trên `fix/B2-backup-review`, CHƯA merge — chờ diễn tập được người dùng duyệt** |
 | **D** — Backup có nhưng không khôi phục được | Diễn tập tự động hằng tuần: đối chiếu dữ liệu / index / constraint / quyền + `pg_amcheck` | `backup-drill.yml`; kiểm đột biến (đỏ đúng chỗ) | R16 |
 | **I** — Secret lọt vào repo public | gitleaks pre-commit + CI toàn lịch sử; push protection | CI job gitleaks | Lộ = xoay ngay (go-live §9) |
 | **T** — Dependency / action / image độc | Lockfile frozen; action pin theo SHA; image pin version; `pnpm audit`; Trivy | CI | Rủi ro chuỗi cung ứng nền tảng (không loại bỏ được) |
+| **T / E** — Image do người ngoài build lên registry chính thức (`workflow_run` của PR fork có nhánh tên `main`) | Release chỉ chạy cho `push` từ chính repo trên `main`; deploy theo digest + required reviewers | Review G1-D3 H1; go-live: không bật `ENABLE_RELEASE` trước khi sửa | **D đã sửa trên `feat/D3-deploy-prep` @ `7027b06`, CHƯA merge** |
+| **E** — Khóa SSH deploy (VPS) = root qua nhóm `docker` | `authorized_keys` `restrict,command=` chỉ nhận gói file + `deploy <sha> <digest>…` | Review G1-D3 M1 (chờ D) | Chưa sửa |
 | **T** — Hợp đồng / mock / server lệch nhau | Contract test event parity; real-API suites | `realtime-event-parity.test.ts` | — |
 
 ## 5. Những gì đã thay đổi so với threat model ban đầu (T-002)
@@ -163,7 +168,9 @@ Các lớp mới được thêm **sau khi** rà soát tìm ra lỗ hổng thật
 - **Log và Sentry không mang dữ liệu dòng DB:** T-031 mục 0, H4 của T-028.
 - **Redis-adapter không làm sập process:** T-030, H3.
 - **Mock web phải khắt khe như server:** H2 → T-029; contract test event parity.
-- **Sao lưu mã hóa có diễn tập tự động:** B2.
+- **Sao lưu mã hóa có diễn tập tự động:** B2. Sửa sau G1 B2 (object lock bắt buộc, khôi phục bản trước thời điểm bị chiếm, không mật khẩu trong argv) nằm trên `fix/B2-backup-review`, **chưa merge** — chờ diễn tập.
+- **Realtime sau G1:** xác thực lại sau handshake, trần socket / join theo user, renew kiểm lại lỗi ⇒ ngắt, thu hồi theo `joined`, thu hồi đăng ký trước hook phụ; client nối lại có jitter.
+- **Bảo trì sau G1 T-033:** rank `~` kẹt (High) đã sửa; purge một workspace lỗi không dừng cả lô; shutdown dừng purge giữa các workspace (F7).
 
 ## 6. Rủi ro chấp nhận có chủ đích
 
@@ -186,6 +193,8 @@ Các lớp mới được thêm **sau khi** rà soát tìm ra lỗ hổng thật
 | R17 | Event realtime đang phát dở lúc shutdown bị mất | Client reconnect + refetch | ADR-012 | — |
 | R19 | XSS trên một subdomain anh em vẫn nguy hiểm cho người dùng (dù không còn tossing được cookie) | Phụ thuộc vệ sinh DNS (go-live §2.5) | ADR-029, ADR-109 | Có subdomain do bên thứ ba vận hành |
 | R20 | Workspace xóa mềm giữ dữ liệu 30 ngày trước khi purge | Chủ đích để khôi phục | ADR-047 | Yêu cầu xóa ngay (GDPR-like) |
+| R21 | Hạn mức realtime theo user (20 socket, 60 join / phút, renew) đếm theo instance ⇒ nhiều instance thì nhân lên; Valkey lỗi ⇒ rơi về hạn mức cục bộ (fail-open) | Hạn mức chống lạm dụng, không phải kiểm quyền; fail-closed làm mất realtime mỗi lần Valkey chập chờn | **ADR-115** | Chạy > 1 instance (`SOCKET_REDIS_ADAPTER=true`) ⇒ đếm dùng chung qua Valkey |
+| R22 | Ai có public key age (gồm máy backup) đều tạo được bản backup hợp lệ ⇒ không chứng minh được nguồn gốc | Ký bằng khóa trên máy riêng tăng độ phức tạp vận hành v1 | Runbook backup §1, §5.1 (trên `fix/B2-backup-review`, chưa merge) | Có máy ký riêng hoặc storage kéo (pull) từ phía nhà cung cấp |
 
 R11 (Valkey không persistence) đã khắc phục bằng X3 nên không còn trong danh sách; phần còn lại thuộc R5. R14 (image GHCR public) không phải rủi ro vì image không chứa secret (Trivy secret scan).
 
