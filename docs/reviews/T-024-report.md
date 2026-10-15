@@ -72,3 +72,6 @@ $ pnpm build                                                      [exit 0]
 $ pnpm --filter @taskflow/api mutation:core-http                  99.24%   [exit 0]
 $ pnpm --filter @taskflow/api mutation:core-runtime               88.48%   [exit 0]
 ```
+
+## Bổ sung sau review — thống nhất thứ tự 404 trước 403 cho route project (quyết định TL)
+Route `/workspaces/:wsId/projects/:projectId*` (T-021) giờ tra project bằng `GetProjectQuery` (mọi role có `project:read`) **trước** `permit` ⇒ VIEWER PATCH/archive/unarchive project không tồn tại nhận **404 `project`** (trước đây 403); project có thật ⇒ 403; body sai từ người không có quyền ⇒ 403. Test trong `project.http.test.ts`; kiểm tra đột biến: bỏ bước này ⇒ test đỏ. DoD sau thay đổi: typecheck / lint / **110 file, 1164 test** — exit 0.
