@@ -51,6 +51,13 @@ export class TaskRankRebalancer {
       const key = keys[i]!;
       if (task.id === moving.id) {
         movingRank = key;
+        // F1 (HIGH, review B T-033): `moving` ĐANG ở cột đích ⇒ pha 1 cũng đổi nó sang `~<id>`. Khóa mới
+        // trùng rank cũ ⇒ `moveTo` của use case trả false và KHÔNG lưu ⇒ commit với rank tạm ⇒ mọi
+        // create/append cột đó 500. Bất biến: rebalance ghi lại MỌI dòng đã stash trước khi trả về —
+        // ghi lại rank cũ (không version/audit/event), giống nhánh "khóa trùng" của task khác dưới đây.
+        if (moving.status === target && moving.rank === key) {
+          if (!(await d.tasks.save(moving, moving.version))) throw new RankConflictError();
+        }
         continue;
       }
       const expectedVersion = task.version;

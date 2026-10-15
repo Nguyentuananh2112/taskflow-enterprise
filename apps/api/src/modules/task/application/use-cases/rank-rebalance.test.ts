@@ -71,6 +71,30 @@ describe('rebalance rank theo cột (T-033)', () => {
     });
   });
 
+  it('F1 (HIGH, review B): move CÙNG cột kích hoạt rebalance, khóa mới của task được move TRÙNG rank cũ ⇒ không còn rank tạm "~", tạo / thêm cuối cột vẫn chạy', async () => {
+    const h = await createTaskHarness();
+    const a = await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: LONG });
+    const c = await h.seedTask({ rank: `${LONG}V`, createdById: U.Pam });
+    // X đang cuối cột với rank "a2" — sau rebalance thứ tự A, B, X, C ⇒ X nhận đúng khóa "a2" của
+    // spread (trùng rank cũ) ⇒ `moveTo` trả false.
+    const x = await h.seedTask({ rank: 'a2' });
+    await h.move.execute({
+      ...h.scope('Mia'),
+      taskId: x.id,
+      input: { expectedVersion: 1, afterId: b.id },
+    });
+    const rows = await h.backend.taskRows();
+    expect(rows.filter((r) => r.rank.startsWith('~')).map((r) => r.id)).toEqual([]);
+    expect(await h.column('TODO')).toEqual([a.id, b.id, x.id, c.id]);
+    // Trước khi sửa: rank "~<uuid>" còn lại ⇒ tính khóa cuối cột ném lỗi ⇒ 500 cho mọi create.
+    const created = await h.create.execute({
+      ...h.scope('Mia'),
+      input: { title: 'Sau rebalance' },
+    });
+    expect((await h.column('TODO')).at(-1)).toBe(created.id);
+  });
+
   it('rank bình thường ⇒ không rebalance (chỉ task được move đổi)', async () => {
     const h = await createTaskHarness();
     const a = await h.seedTask({ rank: 'a0' });
