@@ -10,8 +10,9 @@
 | `core/http`, `core/errors`, `core/logging`, `config`, `composition`, `main.ts` | A | B | Xong |
 | `core/realtime` (Socket.io, redis-adapter) | A | B | Xong |
 | `apps/web` | E | B | Xong |
-| `modules/auth`, `modules/workspace` | **B** | **F đọc chéo** (người viết không tự chấm) | Chờ F (Tech Lead xếp lịch) |
-| `modules/task` (routes, query, realtime) | C/A | B | **Chờ T-023/T-024 merge** |
+| `modules/auth`, `modules/workspace` | **B** | **F đọc chéo** (người viết không tự chấm) | Xong: `docs/reviews/T-028-crossread-F.md` (branch `feat/T-028-crossread-F`). X1 sửa ở đây; X2–X9 ⇒ **T-032** (B) |
+| `modules/task`: domain / application (main, T-018) + Prisma (`feat/T-023`, chưa merge) | C | B | Xong — đọc branch qua `git show`, findings gửi C trước merge |
+| `modules/task`: HTTP + tenant guard + realtime (`feat/T-024`, chưa merge) | A | B | Xong — findings gửi A trước merge |
 | Dependency (`pnpm audit --prod`) | — | B | Xong |
 
 - Đọc code đã merge, mỗi vùng đọc end-to-end từ route tới DB.
@@ -134,8 +135,9 @@ Mức độ theo ảnh hưởng × khả năng khai thác hiện tại. "Chủ" 
 | Open redirect | `?next=` chỉ nhận đường dẫn cùng origin | `shared/lib/safe-next-path.ts` | **K (H1)** |
 | W-MOCK | Mock API không bật được ở staging/prod | `app/mock-api/mock-flag.ts:7-8` | K khi thiếu APP_ENV (M7) |
 | V14 | Không có dữ liệu nhạy cảm trong URL | form login/register | K (M6) |
-| §4.1 / §3 | Query đọc của task (cursor, audit log, search) phạm vi tenant | `modules/task/**` | ⏳ chờ T-023/T-024 |
-| §5.2 | Realtime task (`emitToProject` qua LateBoundRealtime, sau commit) | `composition/late-realtime.ts` | ⏳ chưa wire (T-024) |
+| §4.1 / §3 | Query đọc của task (cursor, audit log) phạm vi tenant; IDOR qua taskId / anchor / assignee | `task.queries.ts`, `feat/T-023:…/prisma-task-read-model.ts`, `feat/T-024:…/task.routes.ts` | Đ (không IDOR; T-L2/T-L3/T-L4 là phòng thủ chiều sâu) |
+| V8 / §3.2 | TaskPolicy khớp ma trận (ADR-022/041/044/045); 409 `details.current` chỉ sau 404/403 và cùng phạm vi | `task-commands.ts`, `workspace/domain/roles.ts:45-68` | Đ (T-L1 race archive) |
+| §5.2 | Realtime task (`emitToProject` qua LateBoundRealtime, sau commit, chỉ `project:{id}`, UserRef không email) | `feat/T-024:composition/late-realtime.ts`; `task-realtime.ts` | Đ |
 | — | Xóa / ẩn danh user (D2) ⇒ `disconnectUser`, thu hồi | — | N/A (chưa có use case) |
 | V4 WS client | Client Socket.io: `withCredentials:false`, token trong `auth` | `apps/web` | N/A (chưa có client) |
 
@@ -153,14 +155,50 @@ All found vulnerabilities were already reviewed and decided to be ignored
 
 Không có advisory nào khác đang mở cho dependency production.
 
+## Module task (T-018 trên main; T-023 / T-024 chưa merge)
+
+Không có Critical / High / Medium. Không có IDOR: tenant guard hai lớp đứng vững trên cả 8 route task. Findings gửi thẳng chủ code để sửa **trước khi merge** (cc Tech Lead).
+
+| ID | Mức | Lỗi | Vị trí | Chủ |
+|---|---|---|---|---|
+| T-L1 | Low | Race lách luật archive (ADR-023/045): `loadProject` đọc project không khóa ⇒ update/move/assign/delete ‖ archive ⇒ sửa task trong project đã archive (create không bị — cấp số nguyên tử) | `task-commands.ts:59-78`; `PrismaTaskProjectStore.findInWorkspace` | C (+ B nếu thêm biến thể `FOR SHARE` ở port workspace) |
+| T-L2 | Low | `save()` cập nhật không có phạm vi tenant (`where { id, version }`) — §4.1.2; chưa khai thác được | `feat/T-023:…/prisma-task.repository.ts:110`; in-memory tương tự | C |
+| T-L3 | Low | `listAuditLogs` lọc chỉ theo `taskId` (§4.1.5); đang được `taskExists` có phạm vi che | `task-read-model.port.ts:40`; `feat/T-023:…/prisma-task-read-model.ts:123-129` | C |
+| T-L4 | Low | Cursor tự chế với `id` không phải uuid ⇒ 500 (ASVS V2), ai cũng làm ngập alert được | `task.queries.ts:31-36` | C |
+| T-L5 | Low | Mọi request task đi qua `authenticate` + limiter `api-user` **hai lần** (router workspace catch-all mount trước) ⇒ hạn thực tế 150/phút thay vì 300 (§6.4) | `feat/T-024:composition/container.ts:146-147`; `workspace.routes.ts:46` | A (B phối hợp router workspace) |
+| T-L6 | Low | OWNER / PM gửi body assign / query delete sai ⇒ 403 thay vì 400 (permission tối thiểu `:own` mà OWNER / PM chỉ có `:any`) | `feat/T-024:…/task.routes.ts:61,67`; `task-membership.ts:68` | A |
+| T-L7 | Low | Response task thiếu `Cache-Control: no-store` (ASVS V14.3.2) | `feat/T-024:…/task.controller.ts` | A (hoặc toàn cục — T-031 L4) |
+| T-L8 | Low (cần kiểm) | `charset` lặp: middleware lấy cái **đầu**, body-parser lấy cái **cuối** ⇒ `charset=utf-8; charset=utf-16le` có thể lọt 415 | `feat/T-024:core/http/middleware.ts:89-93` | A |
+
+**Info:**
+- `edgeRank` / `rankBefore` / `rankAfter` và việc đọc lại trong `listAssignedForUpdate` không lọc workspace. An toàn vì đã kiểm trong cùng transaction.
+- Domain không kiểm enum `priority`.
+- Lỗi Prisma được ném nguyên ⇒ 500, và log mang detail (xem H4 / T-031).
+- Validate body / query chạy trước 404 project / task. Không rò vì kết quả không phụ thuộc vào sự tồn tại.
+
+## X1 — cookie tossing (F) ⇒ ADR-109
+
+- F chỉ ra bản sửa L14 (`4faa10c`) bị vượt: `clear()` host-only xóa cookie **của nạn nhân**, cookie `Domain=` của kẻ tấn công ở lại ⇒ hoán đổi phiên. Nạn nhân không có cookie thì nhận ngay cookie kẻ tấn công.
+- **Đã sửa trên `feat/T-028-task`:**
+  1. Cookie trùng tên ⇒ refresh / logout thu hồi family của **mọi** giá trị rồi mới xóa.
+  2. Quá 4 giá trị ⇒ 401 ngay, không thu hồi, không xóa (chặn khuếch đại; cookie nạn nhân còn nên vẫn "trùng").
+  3. **ADR-109:** staging / production dùng `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/`, không Domain. Server **chỉ** đọc tên này. Trình duyệt cấm `Domain=` với tiền tố `__Host-` ⇒ đóng cả lớp tấn công, kể cả kiểu "đặt lại token sống sau khi bị xóa" và tràn cookie jar mà F nêu.
+- **Test:**
+  - `cookie-tossing.http.test.ts`: trùng tên ⇒ mọi family chết; nạn nhân không cookie + cookie kẻ tấn công khác tên (`tf_rt` / `__Secure-tf_rt`) ⇒ 401; trần 4;
+  - `auth.http.test.ts`: thuộc tính `__Host-` ở prod;
+  - `refresh-cookie.test.ts`: chỉ đọc đúng tên;
+  - `refresh-cookie-logging.test.ts`: header Cookie / Set-Cookie bị redact.
+- **Tài liệu:** security.md §2.3, SEC-34; test-spec LOG-10.
+- **Còn cập nhật (chủ tài liệu khác):** checklist `devops.md:620` (D) vẫn ghi `__Secure-tf_rt; Path=/api/v1/auth`; suite đen `test/security/auth.sec.ts:274` (F).
+
 ## Việc còn lại
 
-1. **Rà `modules/task`** sau khi T-023/T-024 merge (Tech Lead báo). Trọng tâm:
-   - IDOR qua cursor / audit log / search `q`;
-   - thứ tự 401 → 400 → 404 → 403 của route task;
-   - rate limit route task;
-   - realtime `emitToProject` sau commit.
-2. **F đọc chéo `auth` / `workspace`.** Lỗi tìm thấy ⇒ B sửa trên branch này.
+1. **Lỗi đọc chéo X2–X9 của F** ⇒ ticket **T-032** (B):
+   - ADR-110: version có điều kiện cho Workspace / Project;
+   - X3: cache miss kiểm `sid-revoked` trong DB;
+   - X4: `FOR SHARE` user trong transaction refresh;
+   - X5–X9.
+2. **C / A sửa T-L1…T-L8 trước khi merge T-023 / T-024.** Sau khi merge, rà lại nhanh phần diff.
 3. **Kiểm thực tế còn treo (của người nhận ticket sửa):**
    - H3 bằng integration test (bật adapter, tắt Valkey);
    - `ipKeyGenerator` có ném lỗi với IPv6 zone-id (`fe80::1%eth0`) trong `allowRequest` của socket không (nếu có ⇒ uncaughtException);
