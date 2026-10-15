@@ -90,6 +90,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-099 ✅ Font Inter **tự host** (không `next/font/google`: không gọi mạng lúc build, không lộ IP người dùng cho bên thứ ba, hợp CSP).
 - ADR-100 ✅ Toast dùng Radix Toast + store tự viết; **không dùng sonner** (tự chèn `<style>` không có nonce ⇒ vi phạm CSP). Thêm `get-nonce` 1.0.1 để style của Radix mang nonce.
 - ADR-101 ✅ `upgrade-insecure-requests` + HSTS chỉ bật khi `APP_ENV ∈ {staging, production}` (không theo `NODE_ENV`) — E2E chạy http trên host khác localhost không bị gãy; HSTS không bao giờ gửi ở môi trường local.
+- ADR-103 ✅ Tên mặc định khi đăng ký: workspace "Workspace của {fullName}", project "Dự án đầu tiên" với keyPrefix `TF` (T-015). Route khôi phục workspace là route riêng; `WorkspaceAccess` (loadMembership) không có cờ includeDeleted — workspace đã xóa luôn 404, use case restore tự kiểm OWNER bằng query riêng.
 - ADR-102 ✅ **Tương thích tiến khi deploy lệch phiên bản**: FE gặp `error.code` lạ (API mới hơn web) ⇒ giữ nguyên `status` + `message`, map về mã chung `UNKNOWN_ERROR` và xử lý như lỗi chung theo HTTP status — **không** coi là `BAD_RESPONSE`. `BAD_RESPONSE` chỉ dành cho body không phải envelope hợp lệ.
 
 ## Hiệu năng
