@@ -1,0 +1,107 @@
+# Hạ tầng TẠM cho đo tải T-027 — project riêng `taskflow-load` (không đụng compose `taskflow` dùng chung, ADR-106).
+# Không map cổng nào ra host; network khai báo ở đây (không cần `docker network create`). Dọn: run.sh down.
+#   docker compose -p taskflow-load -f load/compose.load.yml …   (run.sh gọi sẵn)
+name: taskflow-load
+
+x-db: &db
+  POSTGRES_PASSWORD: load_only
+  POSTGRES_DB: taskflow_load
+  TASKFLOW_MIGRATOR_PASSWORD: migrator_load_only
+  TASKFLOW_APP_PASSWORD: app_load_only
+
+services:
+  pg:
+    image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+    environment: *db
+    volumes:
+      - ../docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    command:
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - max_connections=200
+    healthcheck:
+      # Lúc init, server tạm chỉ nghe unix socket ⇒ TCP 127.0.0.1 sẵn sàng = init xong.
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1']
+      interval: 2s
+      timeout: 5s
+      retries: 90
+      start_period: 120s
+    networks: [load]
+
+  valkey:
+    image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+    command: ['valkey-server', '--save', '', '--appendonly', 'no']
+    networks: [load]
+
+  migrate:
+    image: ${MIGRATE_IMAGE:-taskflow-api-migrate:load}
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    profiles: [tools]
+    environment:
+      DATABASE_URL: postgresql://taskflow_migrator:migrator_load_only@pg:5432/taskflow_load
+    depends_on:
+      pg: { condition: service_healthy }
+    networks: [load]
+
+  api:
+    image: ${API_IMAGE:-taskflow-api:load}
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+      args:
+        GIT_SHA: load
+    # Image production, NODE_ENV=test để không đòi rediss/https; TRUST_PROXY_HOPS=1 như sau LB.
+    environment:
+      NODE_ENV: test
+      APP_ENV: test
+      GIT_SHA: load
+      LOG_LEVEL: warn
+      DATABASE_URL: postgresql://taskflow_app:app_load_only@pg:5432/taskflow_load
+      DATABASE_POOL_MAX: '20'
+      REDIS_URL: redis://valkey:6379
+      JWT_ACCESS_SECRET: test-only-load-test-secret-0123456789abcdef
+      CORS_ORIGINS: http://localhost:3001
+      COOKIE_SECURE: 'false'
+      TRUST_PROXY_HOPS: '1'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      pg: { condition: service_healthy }
+      valkey: { condition: service_started }
+    networks: [load]
+
+  k6:
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+    profiles: [tools]
+    volumes:
+      - ./:/load:ro
+      - ${RESULTS:-./results/adhoc}:/out
+    environment:
+      OUT_DIR: /out
+      BASE_URL: http://api:4000
+      WS: ${WS:-5}
+      USERS: ${USERS:-20}
+      STAGES: ${STAGES:-}
+      STAGE_SECONDS: ${STAGE_SECONDS:-}
+      RT_VUS: ${RT_VUS:-}
+      RT_SECONDS: ${RT_SECONDS:-}
+      HOT_STAGES: ${HOT_STAGES:-}
+      RPROJ: ${RPROJ:-2}
+    networks: [load]
+
+networks:
+  load: {}

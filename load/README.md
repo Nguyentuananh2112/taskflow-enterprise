@@ -10,6 +10,8 @@ STAGES=10,25,50 STAGE_SECONDS=30 bash load/run.sh   # chạy thử nhanh
 KEEP=1 bash load/run.sh ; bash load/run.sh down     # giữ container để soi, rồi tự dọn
 ```
 
+Hạ tầng là compose project riêng **`taskflow-load`** (`load/compose.load.yml`: network khai trong file, không map cổng ra host, không đụng compose `taskflow` dùng chung). Đặt `API_IMAGE` + `MIGRATE_IMAGE` để dùng image có sẵn thay vì build.
+
 Kết quả: `load/results/<thời điểm>/` (gitignore): `board-summary.{md,json}`, `realtime-summary.{md,json}`, `analyze.txt` (pg_stat_statements + EXPLAIN ANALYZE), `stats-after-board.txt`, `environment.md`, `seed.txt`.
 
 | File                      | Vai trò                                                                                                                                                                 |
