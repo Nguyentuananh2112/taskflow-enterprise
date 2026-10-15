@@ -197,6 +197,21 @@ describe('POST /auth/login', () => {
   });
 });
 
+describe('JWT_ACCESS_TTL_SECONDS (APP_ENV=test — E2E-11)', () => {
+  const lifetimeOf = (token: string) => {
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'),
+    ) as { iat: number; exp: number };
+    return payload.exp - payload.iat;
+  };
+
+  it('mặc định token sống 900 giây; cấu hình 5 ⇒ token sống 5 giây', async () => {
+    expect(lifetimeOf((await t.register('Mia')).token)).toBe(900);
+    t = createTestApp({ jwtAccessTtlSeconds: 5 });
+    expect(lifetimeOf((await t.register('Pam')).token)).toBe(5);
+  });
+});
+
 describe('POST /auth/refresh & /auth/logout (cookie + Origin)', () => {
   it.each([
     ['thiếu Origin', undefined],

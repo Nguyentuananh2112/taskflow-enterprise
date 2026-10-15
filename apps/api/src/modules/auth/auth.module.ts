@@ -60,7 +60,7 @@ export interface AuthModuleDeps {
   repos: AuthRepositories;
   hasher: IPasswordHasher;
   policy: PasswordPolicy;
-  jwt: { secret: string; previousSecret?: string | undefined };
+  jwt: { secret: string; previousSecret?: string | undefined; ttlSeconds?: number | undefined };
   cookieSecure: boolean;
   /** Middleware Origin ∈ whitelist cho /refresh, /logout. */
   requireAllowedOrigin: RequestHandler;
@@ -99,7 +99,8 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
         previousSecret: d.jwt.previousSecret,
         issuer: JWT_ISSUER,
         audience: JWT_AUDIENCE,
-        ttlSeconds: ACCESS_TOKEN_TTL_SECONDS,
+        // Rút ngắn chỉ ở APP_ENV=test (env.ts); thu hồi phiên vẫn giữ ACCESS_TOKEN_TTL_SECONDS (≥ TTL).
+        ttlSeconds: d.jwt.ttlSeconds ?? ACCESS_TOKEN_TTL_SECONDS,
       },
       clock,
     );

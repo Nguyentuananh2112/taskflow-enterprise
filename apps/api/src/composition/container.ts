@@ -31,6 +31,8 @@ export interface ContainerConfig extends AppConfig {
   cookieSecure: boolean;
   jwtSecret: string;
   jwtPreviousSecret?: string | undefined;
+  /** Chỉ APP_ENV=test (env.ts chặn nơi khác); thiếu ⇒ 900 giây. */
+  jwtAccessTtlSeconds?: number | undefined;
 }
 
 export interface ContainerDeps {
@@ -117,7 +119,11 @@ export function createContainer(d: ContainerDeps): Container {
     repos: persistence.auth,
     hasher: d.hasher,
     policy: d.policy,
-    jwt: { secret: config.jwtSecret, previousSecret: config.jwtPreviousSecret },
+    jwt: {
+      secret: config.jwtSecret,
+      previousSecret: config.jwtPreviousSecret,
+      ttlSeconds: config.jwtAccessTtlSeconds,
+    },
     cookieSecure: config.cookieSecure,
     requireAllowedOrigin: requireAllowedOrigin(config.corsOrigins),
     provisioner: workspace.provisioner,

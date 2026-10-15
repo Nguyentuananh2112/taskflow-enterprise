@@ -71,6 +71,7 @@ async function main(): Promise<void> {
       cookieSecure: env.COOKIE_SECURE,
       jwtSecret: env.JWT_ACCESS_SECRET,
       jwtPreviousSecret: env.JWT_ACCESS_SECRET_PREVIOUS,
+      jwtAccessTtlSeconds: env.JWT_ACCESS_TTL_SECONDS,
     },
     logger,
     clock,

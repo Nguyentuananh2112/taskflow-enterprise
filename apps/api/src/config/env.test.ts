@@ -161,6 +161,32 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     },
   );
 
+  it('JWT_ACCESS_TTL_SECONDS (E2E-11): hợp lệ CHỈ khi APP_ENV=test, 5–900; thiếu ⇒ undefined (900)', () => {
+    expect(loadEnv(testEnvVars({ APP_ENV: 'test', JWT_ACCESS_TTL_SECONDS: '5' }))).toMatchObject({
+      JWT_ACCESS_TTL_SECONDS: 5,
+    });
+    expect(loadEnv(testEnvVars()).JWT_ACCESS_TTL_SECONDS).toBeUndefined();
+    expect(
+      loadEnv(testEnvVars({ JWT_ACCESS_TTL_SECONDS: '' })).JWT_ACCESS_TTL_SECONDS,
+    ).toBeUndefined();
+    for (const bad of ['4', '901', '1.5', 'abc']) {
+      expect(variablesOf(testEnvVars({ APP_ENV: 'test', JWT_ACCESS_TTL_SECONDS: bad }))).toEqual([
+        'JWT_ACCESS_TTL_SECONDS',
+      ]);
+    }
+  });
+
+  it.each(['local', 'staging', 'production'])(
+    'JWT_ACCESS_TTL_SECONDS ở APP_ENV=%s ⇒ từ chối khởi động (không âm thầm bỏ qua)',
+    (appEnv) => {
+      const vars =
+        appEnv === 'local'
+          ? testEnvVars({ APP_ENV: appEnv, JWT_ACCESS_TTL_SECONDS: '60' })
+          : productionEnvVars({ APP_ENV: appEnv, JWT_ACCESS_TTL_SECONDS: '60' });
+      expect(variablesOf(vars)).toEqual(['JWT_ACCESS_TTL_SECONDS']);
+    },
+  );
+
   it('appConfigFromEnv: production / hsts theo APP_ENV, không theo NODE_ENV', () => {
     const local = appConfigFromEnv(loadEnv(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'test' })));
     expect([local.production, local.hsts]).toEqual([false, false]);

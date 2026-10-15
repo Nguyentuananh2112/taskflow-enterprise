@@ -39,6 +39,12 @@ const EnvSchema = z
     // `kid` suy ra từ secret trong adapter (T-013) ⇒ không có biến JWT_ACCESS_KID riêng.
     JWT_ACCESS_SECRET: jwtSecret,
     JWT_ACCESS_SECRET_PREVIOUS: jwtSecret.optional(),
+    // CHỈ APP_ENV=test (E2E-11 của F: token hết hạn trong vài giây), 5–900 giây. Môi trường khác có
+    // biến này ⇒ từ chối khởi động (không âm thầm bỏ qua). Thiếu ⇒ 900 giây (security.md §2.1).
+    JWT_ACCESS_TTL_SECONDS: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.coerce.number().int().min(5).max(900).optional(),
+    ),
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
@@ -64,6 +70,9 @@ const EnvSchema = z
 
     if (env.JWT_ACCESS_SECRET_PREVIOUS === env.JWT_ACCESS_SECRET) {
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
+    }
+    if (env.JWT_ACCESS_TTL_SECONDS !== undefined && env.APP_ENV !== 'test') {
+      fail('JWT_ACCESS_TTL_SECONDS', 'chỉ được đặt khi APP_ENV=test');
     }
     if (env.NODE_ENV === 'production' && !isDeployed(env.APP_ENV)) {
       fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');
