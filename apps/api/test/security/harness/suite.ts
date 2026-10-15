@@ -87,7 +87,7 @@ export function useApi(
  * Case SEC chưa chạy được vì route/tính năng chưa có. Tên luôn mang nhãn `PENDING-ROUTE` để báo
  * cáo đếm được; bị skip (KHÔNG xanh giả). Phase 3: đổi `pendingRoute` → `it` khi route merge.
  */
-function runPending(blockedBy: string): boolean {
+export function runPending(blockedBy: string): boolean {
   const raw = process.env.SEC_RUN_PENDING ?? '';
   if (raw === 'all') return true;
   const tags = raw

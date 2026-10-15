@@ -97,12 +97,7 @@ describe('Thu hồi phiên', () => {
   );
   // ADR-105 (A3): ghi thu hồi vào Valkey TRƯỚC commit; lỗi ⇒ 503 + rollback; read-through chỉ SET NX.
   // Cổng nghiệm thu trên branch T-020 (Postgres + Valkey thật). 24b/24d cần container Valkey RIÊNG
-  // do suite tự tạo/hủy (TL duyệt có điều kiện) — chưa viết thân.
-  pendingRoute(
-    'SEC-24b',
-    'Valkey lỗi khi ghi thu hồi TRƯỚC commit ⇒ 503, rollback (tv/mật khẩu không đổi trong DB)',
-    T020,
-  );
+  // do suite tự tạo/hủy: SEC-24b ở `valkey-outage.sec.ts`; 24d chưa viết thân.
   pendingRoute(
     'SEC-24c',
     'Đọc xen giữa: cache tv bị xóa (miss) + authenticate song song với logout-all ×20 ⇒ sau 204 access cũ LUÔN 401 (SET NX không đè giá trị thu hồi)',

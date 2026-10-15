@@ -244,7 +244,37 @@ Trạng thái: **✅** xanh · **❌** đỏ (có lỗi thật) · **⏳ có th�
 - Migrate: `CHECKPOINT_DISABLE=1`, `PRISMA_HIDE_UPDATE_MESSAGE=1`, timeout `SEC_MIGRATE_TIMEOUT_MS` (300s); lỗi báo rõ `signal`/timeout thay vì stdout rỗng. D đặt `CHECKPOINT_DISABLE` ở Docker/CI/runbook (TL giao).
 - Giữ: `SEC_API_READY_TIMEOUT_MS` (90s) cho từng file — sau warm-up chỉ còn 1–3s.
 
-**Chưa làm:** tái hiện trong một worktree **hoàn toàn mới** (cần `pnpm install` 10–30 phút trên mạng hiện tại) — đang chạy nền, kết quả sẽ bổ sung vào đây.
+### D.2 Rà lại snapshot cce9c2d + hoàn tất T-017c (Engineer F, phiên thay thế, 2026-10-15)
+
+Snapshot cce9c2d (TL lưu sau crash) đã rà toàn bộ: tách case task `tenant.sec.ts` → `task.sec.ts` **không mất ID nào** (17 ID: SEC-02..12c, 42..45 đều có trong `task.sec.ts`); harness đúng ý đồ. Các lỗ đã tìm ra và sửa (commit 05390f7 + commit cuối):
+
+| # | Lỗ | Bằng chứng | Sửa |
+|---|---|---|---|
+| D1 | `test:security` không `prisma generate` (khác `test:integration`) ⇒ worktree mới đỏ ngay: `ERR_MODULE_NOT_FOUND src/generated/prisma/client` | worktree verify mới trên C: (T-020 gate) | script `test:security` = `prisma generate --no-hints && vitest …` (TL duyệt — ngoài `test/security/**`); globalSetup thêm gợi ý `db:generate` khi gặp lỗi này |
+| D2 | Valkey chết ⇒ warm-up **vẫn qua** (app khởi động được khi Valkey chết), file test đỏ với `ECONNREFUSED` thô, không gắn nhãn hạ tầng | `SEC_REDIS_URL=…:6399/15` | globalSetup PING Valkey trước (không reconnect) ⇒ `[hạ tầng suite bảo mật] bước "kết nối Valkey …" lỗi` + gợi ý, exit 1 sau 2s |
+| D3 | `rate-limit.sec.ts` đỏ khi 2 lần chạy dùng chung Valkey db 15 (D báo): `useApi` FLUSHDB **trước** khi lấy khóa; khóa advisory chỉ có hiệu lực trong 1 database ⇒ 2 lần chạy khác `SEC_PG_DB` không thấy nhau | phân tích code | 2 khóa advisory trên DB `postgres` (theo DB đích + theo Valkey URL), lấy cả hai hoặc không; FLUSHDB sau khi giữ khóa; `SEC_LOCK_WAIT_MS` (300s). Kiểm: 2 lần `rate-limit` song song (khác DB, chung db 15) ⇒ cả hai exit 0, lần sau chờ lần trước (14s / 27s) |
+
+Kiểm lỗi hạ tầng thật: Postgres sai cổng ⇒ `bước "chuẩn bị DB + migrate"` + ECONNREFUSED + gợi ý, exit 1 (1s). Tái hiện worktree mới: warm-up 3,4s (C:) — sau khi generate.
+
+**Test auth bổ sung (TL giao sau cổng T-020):**
+
+- **SEC-21c** thêm bước xóa cache `auth:tv:*` rồi đọc lại ⇒ chứng minh `token_version` trong **DB**, không chỉ Valkey (ADR-105 ghi Valkey trước commit nên cache che lost update); kiểm cả `logout-all` = 204.
+- **SEC-23b** chấp nhận nhánh đổi mật khẩu thua race (`400 INVALID_CURRENT_PASSWORD`, ADR-104) và kiểm trạng thái cuối theo bên thắng; mọi status khác đỏ.
+- **SEC-23c (mới)** — ép nhánh thua bằng hộp đen (TL duyệt, thay hook trễ trong `src`): 2 change-password song song cùng `currentPassword` ×20 ⇒ đúng `[200, 400]`, chỉ mật khẩu bên thắng đăng nhập được.
+- **SEC-24b (thân HTTP mới, `valkey-outage.sec.ts`)** — container Valkey tạm (`valkey/valkey:9.1.2`, cổng ngẫu nhiên, nhãn `taskflow.security-suite=temp`, tự xóa): giết Valkey ⇒ đối chứng `/auth/me` 200 (fallback đọc DB — để 503 không đến từ bước xác thực) ⇒ `logout-all` + `change-password` = 503 `SERVICE_UNAVAILABLE` ⇒ bật lại cache trống ⇒ token cũ 200, refresh 200, mật khẩu cũ 200, mật khẩu mới 401 (rollback trọn vẹn). **Mutation-check:** sửa tạm `writeRevocationOrFail` thành nuốt lỗi (fail-open) ⇒ test đỏ `expected 204 to be 503`; đã khôi phục `src` (`git checkout`, không commit). Container chỉ dựng khi case được chạy.
+
+**Kết quả (main 99e9041 + feat/T-017c, Prisma mặc định, `--maxWorkers=2`):**
+
+| Lệnh | Exit | Kết quả |
+|---|---|---|
+| `SEC_RUN_PENDING=T-020 … auth.sec -t "SEC-21c\|SEC-23b\|SEC-23c\|SEC-24c"` ×5 | 0 ×5 | 4/4 pass mỗi lượt (×20 vòng) |
+| `SEC_RUN_PENDING=T-020 … valkey-outage` | 0 | SEC-24b pass (44s) |
+| `pnpm run test:security` (mặc định) | 0 | 45 pass · 33 skip · 37 todo |
+| `SEC_RUN_PENDING=T-020 pnpm run test:security` | 0 | 50 pass · 28 skip · 37 todo |
+
+Cổng T-020 (trước merge, feat/T-020 @ 9b466c0 + T-017c): SEC-21c/23b/24c 10/10 lượt (200/200 vòng mỗi case), exit 0; probe xóa cache 6 lượt × 40 vòng xanh (nay thành 21c/23b ở trên).
+
+**Còn mở:** SEC-24d (ghi lại sau commit lỗi rồi hồi phục) chưa có thân. Lần chạy suite bằng harness **cũ** (branch khác chưa rebase) vẫn dùng khóa cũ trên DB suite ⇒ không loại trừ với harness mới cho tới khi rebase.
 
 ---
 
