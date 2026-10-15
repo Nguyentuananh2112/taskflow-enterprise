@@ -5,7 +5,12 @@ import { defineProject } from 'vitest/config';
 
 export default defineProject({
   plugins: [react()],
-  resolve: { alias: { '@': path.join(import.meta.dirname, 'src') } },
+  resolve: {
+    alias: {
+      '@test': path.join(import.meta.dirname, 'test'),
+      '@': path.join(import.meta.dirname, 'src'),
+    },
+  },
   test: {
     name: 'web',
     environment: 'jsdom',
