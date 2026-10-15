@@ -36,7 +36,7 @@ function data<T>(res: RawResponse, expected: number, what = ''): T {
 
 export function refreshCookieOf(res: RawResponse): string {
   const raw = res.headers['set-cookie'] ?? [];
-  const cookie = raw.find((c) => /^(__Secure-)?tf_rt=/.test(c));
+  const cookie = raw.find((c) => /^(__Secure-|__Host-)?tf_rt=/.test(c));
   if (!cookie) throw new Error(`Không có cookie refresh trong response: ${JSON.stringify(raw)}`);
   return cookie.split(';')[0] ?? '';
 }

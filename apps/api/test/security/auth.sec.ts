@@ -269,11 +269,7 @@ describe('Đăng nhập & mật khẩu', () => {
       expect(logs).not.toMatch(/"(authorization|cookie)":/i);
     },
   );
-  pendingRoute(
-    'SEC-34',
-    'Cookie refresh ở prod: HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; __Secure-tf_rt; không Domain',
-    AUTH,
-  );
+  // SEC-34 (cookie prod, ADR-109 `__Host-tf_rt`) + cookie tossing: `cookie-tossing.sec.ts`.
 });
 
 describe('Mass assignment hồ sơ', () => {
