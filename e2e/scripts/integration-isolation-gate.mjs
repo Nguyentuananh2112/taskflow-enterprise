@@ -47,6 +47,10 @@ function run(label, extraEnv) {
         summary,
         ranTests: /Tests\s+[^\n]*\(\d+\)/.test(log),
         contention: (log.match(CONTENTION) ?? [])[0] ?? null,
+        // Hạ tầng hỏng (vd ERR_PNPM_VERIFY_DEPS_BEFORE_RUN) KHÔNG được tính là "từ chối rõ ràng".
+        infraError: (log.match(/ERR_PNPM_[A-Z_]+/) ?? [])[0] ?? null,
+        // Từ chối hợp lệ phải nói rõ là do khóa / lượt khác đang chạy.
+        lockRefusal: /advisory|lock|khóa|đang (được )?(dùng|chạy)/i.test(log),
       });
     });
   });
@@ -71,7 +75,7 @@ await ensureDb();
 
 if (MODE.includes('a')) {
   const r = await run('a-workers2', { VITEST_MAX_WORKERS: '2' });
-  const ok = r.code === 0 && !r.contention;
+  const ok = r.code === 0 && r.ranTests && !r.contention && !r.infraError;
   verdicts.push({ gate: 'a: VITEST_MAX_WORKERS=2, 1 lượt', ok, ...r });
 }
 
@@ -81,8 +85,11 @@ if (MODE.includes('b')) {
   const second = run('b-run2', {});
   const [r1, r2] = await Promise.all([first, second]);
   // Lượt 2 hợp lệ nếu: chờ xong rồi xanh, HOẶC từ chối rõ ràng mà không chạy test nào (exit ≠ 0).
-  const r2ok = (r2.code === 0 && !r2.contention) || (r2.code !== 0 && !r2.ranTests);
-  const ok = r1.code === 0 && !r1.contention && r2ok;
+  const r2ok =
+    !r2.infraError &&
+    ((r2.code === 0 && r2.ranTests && !r2.contention) ||
+      (r2.code !== 0 && !r2.ranTests && r2.lockRefusal));
+  const ok = r1.code === 0 && r1.ranTests && !r1.contention && !r1.infraError && r2ok;
   verdicts.push({ gate: 'b: 2 lượt song song cùng DB', ok, run1: r1, run2: r2 });
 }
 
