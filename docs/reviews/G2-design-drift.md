@@ -42,4 +42,25 @@ Suggestion: add these 5 rows, with a "where it is counted" column (Valkey vs ins
 
 Verified unchanged (no drift): §3.2 query keys + staleTime (me 5 min, lists 60 s, board/task Infinity, audit 0 — `apps/web/src/entities/*/model/*.ts`); §2.4 ESLint/depcruise limits (150/200 lines, ≤3 `useState`) — enforced by `pnpm lint` on every commit.
 
-<!-- Các mục do agent quét sẽ được bổ sung dưới đây sau khi xác minh lại. -->
+## test-spec-task.md (owner: C)
+
+### T1 — §5 suggested file layout doesn't match the repo, and files named as written would NOT run
+- Doc: `test-spec-task.md:451-471` — `domain/__tests__/*.spec.ts`, `application/__tests__/*.spec.ts`, `infrastructure/__tests__/*.int.spec.ts` / `*.concurrency.spec.ts`, `apps/api/test/support/fixtures.ts`, `in-memory/*.ts`.
+- Code: no `__tests__/` dir and no `*.spec.ts` in `apps/api/src`. Unit tests sit next to code as `*.test.ts` (e.g. `apps/api/src/modules/task/domain/task.test.ts`, `application/use-cases/*.use-case.test.ts`); Postgres tests are `apps/api/test/integration/**/*.int.ts` (e.g. `task/task-concurrency.int.ts`); in-memory repo `src/modules/task/infrastructure/persistence/in-memory/`; fixtures/harnesses `src/modules/task/testing/`.
+- Why it matters: `apps/api/vitest.config.ts:9` only includes `*.test.ts` — a new test written per the doc (`*.spec.ts`) is silently skipped.
+- Fix (doc): replace §5 with the real layout + suffixes.
+
+### T2 — Vitest project names and test doubles
+- Doc: `:14-16`, `:471` — projects `unit`, `integration`, `concurrency` (concurrency ×20 nightly); doubles `FixedClock`, `FakeTransactionManager`.
+- Code: projects `api` (`apps/api/vitest.config.ts`), `api-integration` (`vitest.integration.config.ts`, `test/integration/**/*.int.ts`), `api-security` (`test/security/vitest.config.ts`, `*.sec.ts`); no `concurrency` project, no nightly workflow (scheduled: `mutation.yml`, `backup-drill.yml` only). Doubles: `FakeClock`, `SequentialIdGenerator` (`apps/api/test/support/time-and-ids.ts`), `FakeUnitOfWork` (`test/support/fake-unit-of-work.ts`), `SpyEventBus` (`test/support/spies.ts`).
+- Fix (doc): rename; mark "concurrency ×20 nightly" as future or drop.
+
+## test-spec-auth-workspace.md (owner: C)
+
+### T3 — "Layer I" is one thing in the doc, three runners in the repo
+- Doc: `test-spec-auth-workspace.md:17` (layer I = real HTTP + Postgres + Valkey); `:373` note 3 (schema per worker or truncate between files ⇒ parallel).
+- Code: HTTP-level tests `apps/api/test/http/*.http.test.ts` run in the default `api` project via `pnpm test` (no Postgres); Postgres tests `test/integration/**/*.int.ts` via `test:integration`, one DB `taskflow_it` (`DATABASE_URL_TEST`), sequential (`fileParallelism: false`, `apps/api/test/integration/db.ts:19-22` truncates a fixed table list); black-box HTTP+DB+Valkey `test/security/*.sec.ts` via `test:security` (DB `taskflow_sec`, Valkey db 15). Race cases: `test/integration/workspace/workspace-races.int.ts`, `auth/auth-races.int.ts`, `test/security/workspace-races.sec.ts`.
+- Fix (doc): short "where layer I runs" table (3 commands + DBs); drop "per-worker schema / parallel".
+
+Split (Tech Lead, 23:30): A covers data-and-api.md, security.md (beyond S1), devops.md in `docs/reviews/G2-design-drift-A.md`; E covers frontend.md + test-spec-*. E passed A raw, two-sided-checked notes for A's three docs.
+
