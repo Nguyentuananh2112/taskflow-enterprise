@@ -15,7 +15,7 @@ import {
 import { API_DIR, API_URL, WEB_ORIGIN } from '../support/env';
 import { expect, flushValkey, newUser, test } from '../support/fixtures';
 
-// Cổng HIGH T-033 (B tìm, A sửa): rebalance cùng cột gán cho thẻ ĐANG DI CHUYỂN đúng key cũ của nó ⇒
+// Cổng HIGH T-033 (B tìm, A sửa — merge 1681b20; chạy thường trực, ~30s): rebalance cùng cột gán cho thẻ ĐANG DI CHUYỂN đúng key cũ của nó ⇒
 // không lưu ⇒ kẹt rank tạm `~<id>` ⇒ tạo task / move cuối cột ⇒ 500. Chuỗi thao tác chính xác của B.
 // Tính N bằng CHÍNH thư viện server dùng (apps/api: fractional-indexing 4.0.0, ESM) — không thêm dependency.
 const THRESHOLD = 64;
@@ -60,12 +60,6 @@ async function moveAfter(
 test('T-033 rank `~<id>`: N lần chèn L sau R, rồi move X sau R ⇒ không kẹt `~`, tạo task cột đó 201', async ({
   request,
 }) => {
-  // Đỏ trên main tới khi fix của A merge ⇒ mặc định fixme có nhãn (không đỏ cả suite, không xanh giả);
-  // cổng nghiệm thu: E2E_GATE=T-033. Bỏ điều kiện này khi fix đã vào main.
-  test.fixme(
-    !(process.env.E2E_GATE ?? '').includes('T-033'),
-    '[PENDING fix rank `~id` — A] chạy với E2E_GATE=T-033',
-  );
   test.setTimeout(300_000);
   const generateKeyBetween = await loadGenerateKeyBetween();
   const user = newUser('tilde');
