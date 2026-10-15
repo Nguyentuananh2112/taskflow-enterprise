@@ -1,8 +1,8 @@
 # T-019 — Báo cáo: xác thực phía web (đăng ký, đăng nhập, phiên) trên mock API
 
-**Người làm:** Engineer E (`taskflow-enterprise-37`) · **Branch:** `feat/T-019` (từ main `6378fef`) · **Ngày:** 2026-10-15
+**Người làm:** Engineer E (`taskflow-enterprise-37`) · **Branch:** `feat/T-019` (đã rebase lên main `cf79ee5`) · **Ngày:** 2026-10-15
 
-## 1. Việc 0 — follow-up review T-012 (commit riêng `e04875d`)
+## 1. Việc 0 — follow-up review T-012 (commit riêng `3019a7b`)
 - **ADR-101:** `upgrade-insecure-requests` và HSTS bật theo `APP_ENV ∈ {staging, production}` (`enforcesHttps()` trong `csp.ts`; `proxy.ts` truyền `appEnv`). `NODE_ENV` chỉ còn quyết định phần nới cho HMR (W-CSP-3). Có test cho đủ 4 giá trị `local/test/staging/production`, và test khẳng định build prod với `APP_ENV=test` không có `unsafe-eval`. Đã kiểm trên `next start` với `APP_ENV=local`: header không có HSTS và không có `upgrade-insecure-requests`.
 - **ADR-102:** envelope lỗi hợp lệ nhưng `error.code` không có trong `ErrorCode` ⇒ `UNKNOWN_ERROR`, giữ `status`/`message`/`requestId`; mã gốc lưu ở `ApiError.serverCode` (chỉ để log). Vỏ envelope vẫn parse chặt bằng `ApiError.extend({ error: ApiErrorBody.extend({ code: z.string() }) })` của contracts. `BAD_RESPONSE` chỉ dành cho body không phải envelope (có test: thiếu `meta`, không phải JSON, sai `data`).
 
@@ -39,7 +39,12 @@
 - **Đa tab:** tab 2 mở `/account`; đăng xuất ở tab 1 ⇒ tab 2 về `/login?next=%2Faccount` ngay. Đăng nhập lại ở tab 1 ⇒ tab 2 tự khôi phục phiên và quay về `/account`.
 
 ### Lighthouse 13.5.0 (build prod, Chrome headless)
-LIGHTHOUSE_TABLE
+| Trang | Accessibility | Best practices |
+|---|---|---|
+| `/login` | **100** | 92 |
+| `/register` | **100** | 92 |
+
+Ticket yêu cầu a11y ≥ 95: **đạt**. Best practices bị trừ ở `errors-in-console` vì một dòng `401` của `/auth/refresh`: GuestGate thử khôi phục phiên cho khách chưa có cookie. Đây là hành vi đúng thiết kế (frontend.md §3.3) — cookie HttpOnly nên JS không biết trước có phiên hay không, và API thật cũng sẽ trả như vậy. Mục `inspector-issues` (CSP, không có URL) giống T-012.
 
 ## 4. Quyết định tự đưa ra (cần Tech Lead duyệt)
 1. **Mock dev là route handler Next cùng origin, không dùng Service Worker của MSW.** Lý do: cookie refresh HttpOnly hoạt động như thật (SW không đặt được cookie HttpOnly); không cần CORS; không phải nới CSP (`strict-dynamic` chặn đăng ký SW nếu không thêm `worker-src`). Route trả 404 khi tắt cờ hoặc ở `APP_ENV=staging/production` (`isMockApiEnabled`, có test). Đánh đổi: code mock nằm trong image (không chạy được nếu không bật cờ), dữ liệu mất khi restart server.
@@ -58,4 +63,13 @@ LIGHTHOUSE_TABLE
 `@tanstack/react-query` 5.104.2 · `react-hook-form` 7.90.0 · `@hookform/resolvers` 5.9.1 · `msw` 3.0.3 (dependency vì route mock dùng lúc chạy) · dev: `@testing-library/user-event` 14.6.8. Các phiên bản khớp frontend.md §10 (V5, V7, V11).
 
 ## 7. Definition of Done
-DOD_BLOCK
+Chạy trong worktree trên main `9e109fc` (sau đó main chỉ thêm `cf79ee5` — ticket T-025, tài liệu):
+```
+$ pnpm typecheck  → exit 0
+$ pnpm lint       → exit 0 (prettier; eslint --max-warnings=0, gồm max-lines 150 cho .tsx và ≤ 3 useState;
+                     depcruise web: 163 modules, 361 deps, 0 vi phạm; api: 0 vi phạm)
+$ pnpm test --maxWorkers=4 → Test Files 106 passed (106) · Tests 1094 passed (1094) · exit 0
+$ pnpm --filter @taskflow/web build → OK (mọi route ƒ Dynamic, có /mock-api/v1/[...path])
+```
+**Lưu ý trung thực:** lần chạy `pnpm test` mặc định (12 worker) trên máy này báo `84 passed / 953 tests` **kèm 22 "Unhandled Error"**: 22 file test web không khởi động được worker (`Timeout waiting for worker to respond`), tức là **không chạy**, chứ không phải chạy rồi pass. Chạy lại với `--maxWorkers=4` thì đủ 106 file, xanh hết. Đề xuất (ngoài phạm vi của tôi, có thể gộp vào T-022 CI hardening): đặt `maxWorkers` trong `vitest.config.ts` gốc, và cho CI fail khi có unhandled error (vitest vẫn tính "passed" cho số file đã chạy).
+- Hook pre-commit (lefthook của T-011) chưa chạy khi tôi tạo 2 commit (lefthook chưa được cài trong worktree lúc đó). Tôi đã chạy bù `gitleaks 8.30.1 git --log-opts=main..HEAD`: **2 commit, no leaks found**. (Quét thư mục `apps/web` có 13 cảnh báo, nhưng tất cả nằm trong `.next/` — output build bị gitignore, là khóa preview Next tự sinh mỗi lần build, không nằm trong repo.)
