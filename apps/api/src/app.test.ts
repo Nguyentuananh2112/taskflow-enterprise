@@ -1,3 +1,5 @@
+import { Writable } from 'node:stream';
+
 import { applyVietnameseZodLocale } from '@taskflow/contracts';
 import { Router } from 'express';
 import request from 'supertest';
@@ -5,6 +7,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod';
 
 import { errorOf, FakeClock, productionEnvVars, testEnvVars } from '../test/support';
+import {
+  leakedSecrets,
+  prismaCheckViolation,
+  prismaValidationError,
+} from '../test/support/prisma-errors';
 import { appConfigFromEnv, createApp, type AppConfig } from './app';
 import { loadEnv } from './config/env';
 import { requestContext } from './core/context/request-context';
@@ -45,6 +52,12 @@ function testRouter(): Router {
     throw new Error('db password=hunter2');
   });
   router.get('/zod', () => z.object({ a: z.string() }).parse({}));
+  router.get('/prisma-check', () => {
+    throw prismaCheckViolation();
+  });
+  router.get('/prisma-validation', () => {
+    throw prismaValidationError();
+  });
   router.get('/context', (_req, res) => {
     res.json({ requestId: requestContext.requestId() });
   });
@@ -64,11 +77,12 @@ function build(
     hsts?: boolean;
     probes?: ReadinessProbe[];
     shuttingDown?: boolean;
+    logger?: ReturnType<typeof createLogger>;
   } = {},
 ) {
   return createApp({
     config: config({ production: options.production ?? false, hsts: options.hsts ?? false }),
-    logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
+    logger: options.logger ?? createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
     clock: new FakeClock('2026-10-15T08:00:00.000Z'),
     probes: options.probes ?? [probe('db', true, true), probe('valkey', false, true)],
     isShuttingDown: () => options.shuttingDown ?? false,
@@ -302,9 +316,41 @@ describe('error handler (đa hình)', () => {
     const res = await request(build()).get('/api/v1/async-crash');
     expect(errorOf(res).details?.debug).toMatchObject({
       name: 'Error',
-      message: 'db password=hunter2',
+      message: 'db password=[REDACTED]',
     });
+    expect(JSON.stringify(res.body)).not.toContain('hunter2');
   });
+
+  it.each([
+    [
+      'vi phạm CHECK (P2039, dữ liệu dòng trong cause.detail)',
+      '/api/v1/prisma-check',
+      'PrismaClientKnownRequestError',
+    ],
+    [
+      'PrismaClientValidationError (message in tham số)',
+      '/api/v1/prisma-validation',
+      'PrismaClientValidationError',
+    ],
+  ])(
+    'T-031 mục 0 — %s: log (qua logger của pino-http) và details.debug KHÔNG chứa email / hash',
+    async (_label, path, name) => {
+      const lines: string[] = [];
+      const stream = new Writable({
+        write(chunk: Buffer, _enc, done) {
+          lines.push(chunk.toString());
+          done();
+        },
+      });
+      const logger = createLogger({ level: 'info', gitSha: 'sha-1', appEnv: 'local' }, stream);
+      const res = await request(build({ logger })).get(path);
+      expect(res.status).toBe(500);
+      expect(lines.some((l) => l.includes('http.unhandled_error'))).toBe(true);
+      expect(leakedSecrets(lines.join(''))).toEqual([]);
+      expect(errorOf(res).details?.debug).toMatchObject({ name });
+      expect(leakedSecrets(res.body)).toEqual([]);
+    },
+  );
 
   it('route không tồn tại ⇒ 404 RESOURCE_NOT_FOUND trong envelope', async () => {
     const res = await request(build()).get('/api/v1/nope');

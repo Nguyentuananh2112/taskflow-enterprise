@@ -4,11 +4,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import cors from 'cors';
 import express, { type RequestHandler } from 'express';
 import helmet from 'helmet';
-import type { Logger } from 'pino';
+import { pino, type Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 
 import { requestContext } from '../context/request-context';
 import { OriginNotAllowedError, UnsupportedMediaTypeError } from '../errors';
+import { errorSerializer } from '../logging/error-serializer';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const QUIET_PATHS = new Set(['/healthz', '/readyz']);
@@ -17,6 +18,22 @@ const QUIET_PATHS = new Set(['/healthz', '/readyz']);
 export function resolveRequestId(header: string | string[] | undefined): string {
   const value = Array.isArray(header) ? header[0] : header;
   return value && UUID.test(value) ? value.toLowerCase() : randomUUID();
+}
+
+type ErrSerializer = (err: unknown) => unknown;
+
+/**
+ * pino-http tạo logger con với serializer `err` CHUẨN (chép mọi thuộc tính enumerable — kể cả
+ * `meta` của lỗi Prisma) nếu không truyền ⇒ dùng lại serializer allow-list của logger gốc
+ * (`createLogger`); thiếu thì dùng bản an toàn nhất (không stack). T-031 mục 0.
+ */
+function inheritedErrSerializer(logger: Logger): ErrSerializer {
+  const own = (logger as unknown as Record<symbol, Record<string, unknown> | undefined>)[
+    pino.symbols.serializersSym
+  ]?.['err'];
+  return typeof own === 'function'
+    ? (own as ErrSerializer)
+    : errorSerializer({ includeStack: false });
 }
 
 /**
@@ -41,6 +58,7 @@ export function requestLogging(logger: Logger): RequestHandler[] {
         url: req.url,
       }),
       res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
+      err: inheritedErrSerializer(logger),
     },
   });
   const bindContext: RequestHandler = (req, _res, next) => {

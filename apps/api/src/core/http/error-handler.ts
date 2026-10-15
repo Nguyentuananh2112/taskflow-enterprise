@@ -9,6 +9,7 @@ import {
   UnsupportedMediaTypeError,
   ValidationError,
 } from '../errors';
+import { serializeError } from '../logging/error-serializer';
 import type { ILogger } from '../logging/logger';
 import type { HttpResponder } from './envelope';
 import { validationErrorFromZod } from './zod';
@@ -87,10 +88,8 @@ export function globalErrorHandler(options: ErrorHandlerOptions): ErrorRequestHa
     }
     const body = responder.errorBody(error);
     if (exposeInternalErrors && error instanceof InternalError) {
-      const cause = error.cause instanceof Error ? error.cause : undefined;
-      body.error.details = {
-        debug: { name: cause?.name, message: cause?.message, stack: cause?.stack },
-      };
+      // CÙNG serializer allow-list với log (T-031 mục 0): không trả message/meta thô của lỗi DB.
+      body.error.details = { debug: serializeError(error.cause, { includeStack: true }) };
     }
     res.status(error.statusCode).set(error.headers).json(body);
   };
