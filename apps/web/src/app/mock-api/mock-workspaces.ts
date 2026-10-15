@@ -162,7 +162,9 @@ export class MockWorkspaces {
       .filter((m) => m.userId === userId && m.role === 'OWNER')
       .flatMap((m) => {
         const row = this.rows.get(m.workspaceId);
-        return row && row.deletedAt !== null ? [row] : [];
-      });
+        // Như server: chỉ workspace còn trong ân hạn (purgeAt > now), mới xóa trước.
+        return row && row.deletedAt !== null && (row.purgeAt ?? '') > this.iso() ? [row] : [];
+      })
+      .sort((a, b) => ((a.deletedAt ?? '') < (b.deletedAt ?? '') ? 1 : -1));
   }
 }

@@ -18,8 +18,12 @@ import { Select } from '@/shared/ui/select';
 import { toast } from '@/shared/ui/toast';
 
 const FIELDS = ['email', 'role'] as const;
-/** security.md §6.5: email chưa có tài khoản ⇒ thông báo chung, không xác nhận email tồn tại hay không. */
-const NOT_ADDABLE = 'Không thể thêm người này. Kiểm tra email đã đăng ký tài khoản TaskFlow chưa.';
+/**
+ * security.md §6.5: 404 (email chưa có tài khoản) và 409 (đã là thành viên) dùng CÙNG một câu — không
+ * xác nhận email có tồn tại hay không.
+ */
+const NOT_ADDABLE =
+  'Không thể thêm người này. Kiểm tra email đã đăng ký tài khoản TaskFlow và chưa là thành viên.';
 
 type Props = Readonly<{ wsId: string; actorRole: WorkspaceRole | null }>;
 
@@ -43,10 +47,8 @@ export function AddMemberForm({ wsId, actorRole }: Props) {
       reset({ email: '', role: values.role });
       toast({ title: `Đã thêm ${member.fullName}`, tone: 'success' });
     } catch (error) {
-      if (isApiError(error, 'RESOURCE_NOT_FOUND'))
+      if (isApiError(error, 'RESOURCE_NOT_FOUND') || isApiError(error, 'RESOURCE_CONFLICT')) {
         return setError('root.server', { message: NOT_ADDABLE });
-      if (isApiError(error, 'RESOURCE_CONFLICT')) {
-        return setError('email', { message: 'Người này đã là thành viên.' });
       }
       applyServerErrors((name, e) => setError(name as (typeof FIELDS)[number], e), error, {
         fields: FIELDS,

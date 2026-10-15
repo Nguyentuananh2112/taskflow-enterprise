@@ -14,6 +14,7 @@ import type { MockBoard } from './mock-board';
 import type { MockDb } from './mock-db';
 import { authenticate, forbiddenUnless, originClientId, requireMember } from './mock-guard';
 import type { WorkspaceRow } from './mock-workspaces';
+import type { RateLimiter } from './request-guards';
 import { fail, ok, parseBody, parseQuery } from './respond';
 import { accessRevoked } from './workspace-events';
 
@@ -43,6 +44,7 @@ export function createWorkspaceHandlers(
   baseUrl: string,
   db: MockDb,
   board: MockBoard,
+  limit: RateLimiter,
 ): HttpHandler[] {
   const url = (path: string) => `${baseUrl}${path}`;
   const ws = db.workspaces;
@@ -66,6 +68,8 @@ export function createWorkspaceHandlers(
     http.post(url('/workspaces'), async ({ request }) => {
       const auth = authenticate(request, db);
       if (auth.response) return auth.response;
+      const limited = limit(`create-ws:${auth.ok.id}`, 10);
+      if (limited) return limited;
       const body = await parseBody(request, CreateWorkspaceBody);
       if (body.response) return body.response;
       if (body.data.slug !== undefined && ws.slugTaken(body.data.slug)) return slugConflict();
@@ -135,6 +139,8 @@ export function createWorkspaceHandlers(
           issues: [{ path: ['wsId'], code: 'invalid_format', message: 'Không phải UUID hợp lệ' }],
         });
       }
+      const limited = limit(`restore-ws:${auth.ok.id}`, 10);
+      if (limited) return limited;
       const restored = ws.restore(String(params.wsId), auth.ok.id);
       if (!restored) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'workspace' });
       return ok(WorkspaceDto, toDto(restored, 'OWNER'));

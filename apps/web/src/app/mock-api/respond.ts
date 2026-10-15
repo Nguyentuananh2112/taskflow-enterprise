@@ -45,7 +45,11 @@ export async function parseBody<S extends z.ZodType>(
   request: Request,
   schema: S,
 ): Promise<{ data: z.output<S>; response?: never } | { response: Response; data?: never }> {
-  const raw: unknown = await request.json().catch(() => undefined);
+  // Như express.json({ type: 'application/json' }): chỉ parse body khi Content-Type là JSON (kể cả DELETE).
+  const isJson = (request.headers.get('content-type') ?? '')
+    .toLowerCase()
+    .startsWith('application/json');
+  const raw: unknown = isJson ? await request.json().catch(() => undefined) : undefined;
   const parsed = schema.safeParse(raw);
   if (parsed.success) return { data: parsed.data };
   return {

@@ -1,11 +1,13 @@
 import type { SocketAck } from '@taskflow/contracts/realtime';
 
-import type { MockBoard } from '@/app/mock-api';
+import type { MockBoard, MockDb } from '@/app/mock-api';
 import type { RealtimeClient, RealtimeStatus, ServerEvent, ServerPayload } from '@/shared/socket';
 
 // Socket giả cho test (frontend.md §8.2): hub đóng vai server Socket.io — nhận event từ mock API
 // (board.onEvent, đã có `originClientId` từ header X-Client-Id) và phát vào phòng `project:{id}` cho
-// các client đã join. Mỗi client giả = một tab (clientId riêng).
+// các client đã join. Mỗi client giả = một tab (clientId riêng). Như gateway thật (security.md §5):
+// client có `userId` tự vào phòng `user:{id}` khi connect; `project:join` kiểm membership + project ∈
+// workspace (có `db`); `workspace:access-revoked` ⇒ rút client của user đó khỏi phòng project của ws.
 
 type Handler = (payload: never) => void;
 
@@ -14,20 +16,41 @@ export class FakeRealtimeHub {
   /** Từ chối `project:join` (mô phỏng không còn là thành viên). */
   denyJoin = new Set<string>();
 
-  constructor(board?: MockBoard) {
+  constructor(
+    private readonly board?: MockBoard,
+    private readonly db?: MockDb,
+  ) {
     board?.onEvent((event) => this.broadcast(event.room, event.name, event.payload));
   }
 
-  client(clientId: string = crypto.randomUUID()): FakeRealtimeClient {
-    const client = new FakeRealtimeClient(this, clientId);
+  client(clientId: string = crypto.randomUUID(), userId?: string): FakeRealtimeClient {
+    const client = new FakeRealtimeClient(this, clientId, userId);
     this.clients.add(client);
     return client;
+  }
+
+  /** `RESOURCE_NOT_FOUND` như server khi không còn là thành viên / ws xóa / project ∉ ws. */
+  canJoin(userId: string | undefined, workspaceId: string, projectId: string): boolean {
+    if (this.denyJoin.has(projectId)) return false;
+    if (!this.db || !this.board || userId === undefined) return true;
+    return (
+      this.db.membershipIn(userId, workspaceId) !== undefined &&
+      this.board.getProject(workspaceId, projectId) !== undefined
+    );
   }
 
   broadcast<E extends ServerEvent>(room: string, name: E, payload: ServerPayload<E>): void {
     for (const client of this.clients) {
       if (client.status() === 'connected' && client.rooms.has(room))
         client.emitServer(name, payload);
+    }
+    // Server: socketsLeave các phòng project của ws cho user mất quyền (gateway.ts).
+    if (name === 'workspace:access-revoked' && room.startsWith('user:')) {
+      const { workspaceId } = (payload as { data: { workspaceId: string } }).data;
+      const projectIds = this.board?.listProjects(workspaceId, 'all').map((p) => p.id) ?? [];
+      for (const client of this.clients) {
+        if (client.rooms.has(room)) projectIds.forEach((id) => client.rooms.delete(id));
+      }
     }
   }
 }
@@ -45,10 +68,12 @@ export class FakeRealtimeClient implements RealtimeClient {
   constructor(
     private readonly hub: FakeRealtimeHub,
     readonly clientId: string,
+    readonly userId?: string,
   ) {}
 
   connect(): void {
     if (this.current === 'connected') return;
+    if (this.userId) this.rooms.add(`user:${this.userId}`);
     this.setStatus('connected');
     if (this.connectedBefore) this.reconnectListeners.forEach((l) => l());
     this.connectedBefore = true;
@@ -91,9 +116,15 @@ export class FakeRealtimeClient implements RealtimeClient {
     this.handlers.get(event)?.forEach((handler) => (handler as (p: unknown) => void)(payload));
   }
 
-  joinProject({ projectId }: { workspaceId: string; projectId: string }): Promise<SocketAck> {
+  joinProject({
+    workspaceId,
+    projectId,
+  }: {
+    workspaceId: string;
+    projectId: string;
+  }): Promise<SocketAck> {
     this.joinLog.push(projectId);
-    if (this.hub.denyJoin.has(projectId)) {
+    if (!this.hub.canJoin(this.userId, workspaceId, projectId)) {
       return Promise.resolve({ ok: false, code: 'RESOURCE_NOT_FOUND' });
     }
     this.rooms.add(projectId);

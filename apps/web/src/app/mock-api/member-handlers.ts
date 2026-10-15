@@ -13,6 +13,7 @@ import * as z from 'zod';
 import type { MockBoard } from './mock-board';
 import type { MockDb } from './mock-db';
 import { forbiddenUnless, originClientId, requireMember, type MemberContext } from './mock-guard';
+import type { RateLimiter } from './request-guards';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 import { accessRevoked, roleChanged, unassignAll } from './workspace-events';
 
@@ -26,7 +27,12 @@ const canGrant = (actor: WorkspaceRole, role: WorkspaceRole) =>
 const lastOwner = () => fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'LAST_OWNER' });
 const notFoundUser = () => fail(404, 'RESOURCE_NOT_FOUND', { resource: 'user' });
 
-export function createMemberHandlers(baseUrl: string, db: MockDb, board: MockBoard): HttpHandler[] {
+export function createMemberHandlers(
+  baseUrl: string,
+  db: MockDb,
+  board: MockBoard,
+  limit: RateLimiter,
+): HttpHandler[] {
   const base = `${baseUrl}/workspaces/:wsId/members`;
   const ws = db.workspaces;
   const toDto = (wsId: string, userId: string): MemberDto => {
@@ -69,6 +75,8 @@ export function createMemberHandlers(baseUrl: string, db: MockDb, board: MockBoa
       if (ctx.response) return ctx.response;
       const denied = forbiddenUnless(ctx.ok, 'member:add');
       if (denied) return denied;
+      const limited = limit(`add-member:${ctx.ok.user.id}`, 30);
+      if (limited) return limited;
       const body = await parseBody(request, AddMemberBody);
       if (body.response) return body.response;
       if (!canGrant(ctx.ok.membership.role, body.data.role)) {

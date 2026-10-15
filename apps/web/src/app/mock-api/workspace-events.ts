@@ -78,6 +78,8 @@ export function unassignAll(
   workspaceId: string,
   userId: string,
 ): number {
+  // Như server (task-assignment-cleaner): event bỏ gán do hệ thống không mang originClientId.
+  const systemOrigin = { actorId: origin.actorId, originClientId: null };
   let count = 0;
   for (const project of board.listProjects(workspaceId, 'all')) {
     for (const task of board.listTasks(project.id)) {
@@ -90,7 +92,7 @@ export function unassignAll(
       };
       board.saveTask(next);
       board.audit(next, 'ASSIGNEE_CHANGED', actor, { assigneeId: userId }, { assigneeId: null });
-      publish.updated(board, origin, next, ['assignee']);
+      publish.updated(board, systemOrigin, next, ['assignee']);
       count += 1;
     }
   }
