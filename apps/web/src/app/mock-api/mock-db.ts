@@ -1,6 +1,8 @@
 import type { MembershipDto, UserDto } from '@taskflow/contracts/auth';
 import type { WorkspaceRole } from '@taskflow/contracts/rbac';
 
+import { MockWorkspaces } from './mock-workspaces';
+
 // Trạng thái trong bộ nhớ của mock API (T-019). Mô phỏng ĐÚNG hành vi phiên của server thật
 // (security.md §1.3–1.7): refresh token xoay vòng theo family, cửa sổ ân hạn 10s (REFRESH_IN_PROGRESS),
 // logout-all tăng tokenVersion ⇒ access token cũ thành UNAUTHORIZED. KHÔNG phải mã bảo mật thật —
@@ -31,7 +33,8 @@ export class MockDb {
   readonly now: () => number;
   private readonly onWorkspaceCreated: ((workspaceId: string) => void) | undefined;
   private readonly users = new Map<string, MockUser>();
-  private readonly memberships = new Map<string, MembershipDto[]>();
+  /** Workspace + thành viên (T-034) — nguồn duy nhất cho tên/slug/role/xóa mềm. */
+  readonly workspaces: MockWorkspaces;
   private readonly access = new Map<string, AccessEntry>();
   private readonly refresh = new Map<string, RefreshEntry>();
 
@@ -39,6 +42,7 @@ export class MockDb {
     this.accessTtlSec = options.accessTtlSec ?? 900;
     this.now = options.now ?? Date.now;
     this.onWorkspaceCreated = options.onWorkspaceCreated;
+    this.workspaces = new MockWorkspaces(this.now);
   }
 
   findUserByEmail(email: string): MockUser | undefined {
@@ -59,19 +63,28 @@ export class MockDb {
       tokenVersion: 1,
     };
     this.users.set(user.id, user);
-    const workspace: MembershipDto = {
-      workspaceId: crypto.randomUUID(),
-      workspaceName: `Workspace của ${input.fullName}`,
-      slug: `ws-${user.id.slice(0, 8)}`,
-      role: 'OWNER',
-    };
-    this.memberships.set(user.id, [workspace]);
-    this.onWorkspaceCreated?.(workspace.workspaceId);
-    return { user, defaultWorkspaceId: workspace.workspaceId };
+    const workspaceId = this.createWorkspace(`Workspace của ${input.fullName}`, undefined, user.id);
+    return { user, defaultWorkspaceId: workspaceId };
   }
 
+  /** POST /workspaces và register (ADR-103): người tạo là OWNER; slug trống ⇒ sinh từ tên. */
+  createWorkspace(name: string, slug: string | undefined, ownerId: string): string {
+    const row = this.workspaces.create(
+      { name, slug: slug ?? this.workspaces.generateSlug(name) },
+      ownerId,
+    );
+    this.onWorkspaceCreated?.(row.id);
+    return row.id;
+  }
+
+  /** Membership của các workspace CHƯA xóa (workspace xóa mềm ⇒ 404 với mọi thành viên — R18). */
   membershipsOf(userId: string): MembershipDto[] {
-    return this.memberships.get(userId) ?? [];
+    return this.workspaces.activeOf(userId).map(({ workspace, member }) => ({
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      slug: workspace.slug,
+      role: member.role,
+    }));
   }
 
   membershipIn(userId: string, workspaceId: string): MembershipDto | undefined {
@@ -80,17 +93,17 @@ export class MockDb {
 
   /** Thêm vào workspace có sẵn (test/seed) — hoặc đổi role nếu đã là thành viên. */
   setMembership(userId: string, workspace: MembershipDto, role: WorkspaceRole): void {
-    const others = this.membershipsOf(userId).filter(
-      (m) => m.workspaceId !== workspace.workspaceId,
-    );
-    this.memberships.set(userId, [...others, { ...workspace, role }]);
+    this.workspaces.setMember(workspace.workspaceId, userId, role);
   }
 
-  /** Thành viên của workspace, theo thứ tự đăng ký. */
-  membersOf(workspaceId: string): Array<{ user: UserDto; membership: MembershipDto }> {
-    return [...this.users.values()].flatMap((user) => {
-      const membership = this.membershipIn(user.id, workspaceId);
-      return membership ? [{ user, membership }] : [];
+  /** Thành viên của workspace, theo thứ tự tham gia. */
+  membersOf(
+    workspaceId: string,
+  ): Array<{ user: UserDto; membership: MembershipDto; joinedAt: string }> {
+    return this.workspaces.membersOf(workspaceId).flatMap((m) => {
+      const user = this.users.get(m.userId);
+      const membership = user && this.membershipIn(user.id, workspaceId);
+      return user && membership ? [{ user, membership, joinedAt: m.joinedAt }] : [];
     });
   }
 
