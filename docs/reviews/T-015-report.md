@@ -1,19 +1,19 @@
 # T-015 Report — Module Workspace / Member / Project (TDD, InMemory)
 
-**Người làm:** Engineer B · **Branch:** `feat/T-015` (rebase trên `main` 4e186ac, đã có T-010) · **Ngày:** 2026-10-15
+**Người làm:** Engineer B · **Branch:** `feat/T-015` (rebase trên `main` 6378fef — đã có T-010, T-012) · **Ngày:** 2026-10-15
 
 ## Commit
 
 ```
-6af72fd feat(T-015): workspace/member/project module — domain, use cases, adapters
-18ab9bb feat(T-015): expose access-token exp on AuthenticatedUser   ← commit riêng, nhỏ (quyết định 1)
+a768f8d feat(T-015): workspace/member/project module — domain, use cases, adapters
+95b5423 feat(T-015): expose access-token exp on AuthenticatedUser   ← commit riêng, nhỏ (quyết định 1)
 ```
 
-`18ab9bb` là bản sau rebase của `774ba4b` đã báo A (nội dung giống hệt). A cherry-pick bản nào cũng merge sạch.
+`95b5423` là bản sau rebase của `774ba4b` đã báo A (nội dung giống hệt). A cherry-pick bản nào cũng merge sạch.
 
 ## Quyết định của Tech Lead trong ticket này (ghi theo yêu cầu)
 
-1. **`exp` trong `AuthenticatedUser`:** cho phép mở rộng phạm vi sang `modules/auth` đúng cho thay đổi này, làm **commit riêng đầu tiên** để A (T-016) cherry-pick. Đã làm: `18ab9bb` (2 file, có test).
+1. **`exp` trong `AuthenticatedUser`:** cho phép mở rộng phạm vi sang `modules/auth` đúng cho thay đổi này, làm **commit riêng đầu tiên** để A (T-016) cherry-pick. Đã làm: `95b5423` (2 file, có test).
 2. **Phụ thuộc giữa module — phương án chặt:**
    - `modules/auth/index.ts` và `modules/workspace/index.ts` **chỉ export type**. Mỗi file có test khẳng định `Object.keys(module) === []`.
    - Workspace `import type` qua `modules/auth` và khai `implements IWorkspaceProvisioner` / `implements IMembershipReader` tường minh. Phụ thuộc một chiều Workspace → Auth, chỉ ở mức type. Auth không import Workspace.
@@ -74,7 +74,7 @@ Tiền tố: `apps/api/src/modules/workspace/`. `(U*)` = case gốc là I, có t
 ```
 $ pnpm typecheck   → apps/api, apps/web, packages/*: Done
 $ pnpm lint        → prettier ✔ · eslint ✔ · depcruise api: ✔ no dependency violations found (180 modules, 573 dependencies cruised)
-$ pnpm test        → Test Files 58 passed (58) · Tests 643 passed (643)
+$ pnpm test        → Test Files 73 passed (73) · Tests 742 passed (742)
 
 $ vitest --project api --coverage (include **/modules/workspace/**, trừ *.test.ts, testing/**, *.port.ts, index.ts)
 Statements 96.31% · Branches 93.65% · Functions 95.18% · Lines 97.71%
