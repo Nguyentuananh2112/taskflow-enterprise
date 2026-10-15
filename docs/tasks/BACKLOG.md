@@ -31,7 +31,7 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 | E1 | Rebase T-034 + F5/F2/F1/F3/F4 | đang giao | E |
 | E2 | Fix kéo bàn phím vào cột trống (WCAG 2.1.1) | cổng E2E-03 của F | |
 | E3 | Rà responsive (360px → 1440px) cho mọi màn, dark mode, trạng thái loading/empty/error theo frontend.md §1; sửa chỗ lệch | F viết E2E viewport mobile song song | |
-| E4 | Rà chuỗi tiếng Việt toàn app (nhất quán thuật ngữ, không lộ mã lỗi kỹ thuật cho người dùng) | | |
+| E4 | Rà chuỗi tiếng Việt toàn app (nhất quán thuật ngữ, không lộ mã lỗi kỹ thuật cho người dùng) | | E — 2026-10-15 23:25, `feat/E4-vi-strings` (rà tĩnh xong, không cần sửa) |
 
 ## F — QA độc lập (`taskflow-enterprise-bf`)
 | # | Việc | Ghi chú | Đang làm |
