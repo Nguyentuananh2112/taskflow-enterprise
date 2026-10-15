@@ -2,6 +2,11 @@
 # Chọn lefthook (không phải husky + lint-staged): 1 file cấu hình, chạy song song, tự lọc file staged
 # và tự `git add` lại file đã format (stage_fixed) — không cần thêm lint-staged.
 # Tài liệu: https://lefthook.dev/configuration/
+#
+# KHÔNG gọi `pnpm exec` / `pnpm run` trong hook: pnpm 11 có `verifyDepsBeforeRun` mặc định `install` (áp cho
+# run + exec — https://pnpm.io/settings/build#verifydepsbeforerun) ⇒ node_modules lệch lockfile là hook TỰ chạy
+# `pnpm install`, tranh khóa store với các worktree khác. Hook gọi thẳng binary trong node_modules/.bin (shim sh —
+# chạy được cả Linux lẫn Git Bash trên Windows); thiếu thì báo "chạy pnpm install" và exit ≠ 0, KHÔNG tự cài.
 pre-commit:
   parallel: true
   jobs:
@@ -15,9 +20,15 @@ pre-commit:
 
     - name: prettier
       glob: '*.{js,cjs,mjs,ts,tsx,json,md,yml,yaml,css}'
-      run: pnpm exec prettier --write --ignore-unknown --log-level warn {staged_files}
+      run: >-
+        if [ ! -x node_modules/.bin/prettier ]; then
+        echo 'Thiếu node_modules/.bin/prettier — chạy pnpm install trong worktree này (hook KHÔNG tự cài)' >&2; exit 1; fi;
+        node_modules/.bin/prettier --write --ignore-unknown --log-level warn {staged_files}
       stage_fixed: true
 
     - name: eslint
       glob: '*.{js,cjs,mjs,ts,tsx}'
-      run: pnpm exec eslint --max-warnings=0 --no-warn-ignored {staged_files}
+      run: >-
+        if [ ! -x node_modules/.bin/eslint ]; then
+        echo 'Thiếu node_modules/.bin/eslint — chạy pnpm install trong worktree này (hook KHÔNG tự cài)' >&2; exit 1; fi;
+        node_modules/.bin/eslint --max-warnings=0 --no-warn-ignored {staged_files}
