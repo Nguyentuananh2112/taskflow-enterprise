@@ -22,3 +22,7 @@
 
 ## Done
 `docker compose up -d` lên xanh; build 2 image thành công; workflow hợp lệ (`actionlint` nếu có). Report `docs/reviews/T-011-report.md` trên branch. Nhắn `DONE T-011 feat/T-011`.
+
+## Bổ sung (Tech Lead, sau review T-008)
+- Sau **2026-10-15T17:50Z** (bản vá next 16.4.1 / react 19.3.1 đã đủ 24h): xóa khối `minimumReleaseAgeExclude` trong `pnpm-workspace.yaml` (thêm file này vào phạm vi sở hữu). CI phải chạy `pnpm audit --prod` và fail khi có lỗ hổng high/critical.
+- Thêm `corepack enable pnpm` vào runbook (nếu không có quyền ghi thư mục Node thì dùng `corepack pnpm …`).

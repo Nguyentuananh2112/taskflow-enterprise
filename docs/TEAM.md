@@ -38,8 +38,8 @@
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Chốt thiết kế: T-001..T-007 | ✅ Xong |
-| 1a | T-008 khung monorepo + tooling (A, một mình — cổng chặn) · song song: đồng bộ tài liệu theo ADR-060..093 (B, C, D, E) | 🟢 Đang chạy |
-| 1b | Song song sau T-008: T-009 core kernel (A) · T-010 contracts + Prisma (C) · T-011 Docker + CI (D) · T-012 nền web + shared/ui (E) · T-013 adapter bảo mật auth (B) | ⏳ |
+| 1a | T-008 khung monorepo + tooling (A) · đồng bộ tài liệu (B, C, D, E) | ✅ Xong (ee7049f) |
+| 1b | T-009 core kernel (A) · T-010 contracts + Prisma (C) · T-011 Docker + CI (D) · T-012 nền web + shared/ui (E) · T-013 adapter bảo mật auth (B) | 🟢 Đang chạy |
 | 2 | Backend song song: Auth · Workspace/Project/RBAC · Task domain | ⏳ |
 | 3 | Tích hợp: Prisma repos, routes, audit trong transaction, Socket gateway, test IDOR | ⏳ |
 | 4 | Frontend song song: shell + auth · Kanban board | ⏳ |
