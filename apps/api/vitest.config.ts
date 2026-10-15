@@ -7,6 +7,10 @@ export default defineConfig({
     name: 'api',
     environment: 'node',
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    // Lần gọi HTTP đầu tiên mỗi file phải nạp cả app (express, pino, zod, socket.io…) — khi chạy song
+    // song ~80 file trên máy/CI bận có thể > 5s mặc định (đo được 7–11s) ⇒ nới để không flaky.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
