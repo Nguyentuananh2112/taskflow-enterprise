@@ -11,7 +11,13 @@ export interface ScheduledJob {
   intervalMs: number;
   /** Lệch ngẫu nhiên [0, jitterMs) cộng vào mỗi lần hẹn — các instance không chạy cùng giây. */
   jitterMs: number;
-  run(): Promise<void>;
+  /**
+   * Lượt ĐẦU chạy sau khoảng này (+ jitter) thay vì cả `intervalMs` (review B T-033 F6): restart
+   * thường xuyên hơn chu kỳ thì job không bao giờ chạy. Thiếu ⇒ `intervalMs`.
+   */
+  firstRunAfterMs?: number;
+  /** `signal` bị hủy khi scheduler dừng (graceful shutdown — F7): job nên dừng giữa các bước. */
+  run(signal?: AbortSignal): Promise<void>;
 }
 
 export interface SchedulerDeps {
@@ -31,6 +37,7 @@ export class MaintenanceScheduler {
   readonly #timers = new Map<string, unknown>();
   readonly #running = new Set<Promise<void>>();
   #stopped = false;
+  readonly #abort = new AbortController();
 
   constructor(
     private readonly jobs: readonly ScheduledJob[],
@@ -38,13 +45,14 @@ export class MaintenanceScheduler {
   ) {}
 
   start(): void {
-    for (const job of this.jobs) this.#schedule(job);
+    for (const job of this.jobs) this.#schedule(job, true);
     this.d.logger.info({ jobs: this.jobs.map((j) => j.name) }, 'maintenance.started');
   }
 
   /** Graceful shutdown: không bắt đầu lượt mới; chờ lượt đang chạy tối đa `timeoutMs`. */
   async stop(timeoutMs: number): Promise<void> {
     this.#stopped = true;
+    this.#abort.abort(); // lượt đang chạy thấy `signal.aborted` ⇒ dừng giữa các bước (F7)
     const clear = this.d.clearTimer ?? ((t) => clearTimeout(t as NodeJS.Timeout));
     for (const timer of this.#timers.values()) clear(timer);
     this.#timers.clear();
@@ -61,7 +69,7 @@ export class MaintenanceScheduler {
   async runNow(job: ScheduledJob): Promise<void> {
     if (this.#stopped) return;
     const startedAt = Date.now();
-    const p = job.run().then(
+    const p = job.run(this.#abort.signal).then(
       () =>
         this.d.logger.info(
           { job: job.name, durationMs: Date.now() - startedAt },
@@ -87,9 +95,10 @@ export class MaintenanceScheduler {
     }
   }
 
-  #schedule(job: ScheduledJob): void {
+  #schedule(job: ScheduledJob, first = false): void {
     if (this.#stopped) return;
-    const delay = job.intervalMs + Math.floor((this.d.random ?? Math.random)() * job.jitterMs);
+    const base = first ? (job.firstRunAfterMs ?? job.intervalMs) : job.intervalMs;
+    const delay = base + Math.floor((this.d.random ?? Math.random)() * job.jitterMs);
     const setTimer = this.d.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     const timer = setTimer(() => {
       void this.runNow(job).then(() => this.#schedule(job));
@@ -103,6 +112,9 @@ export class MaintenanceScheduler {
  * Lượt purge (ADR-047/095): job của Workspace (B) với purger đã bọc `ExclusivePurgeRun`.
  * Instance khác đang chạy lô ⇒ dừng lượt này (log info, không phải lỗi).
  */
+/** Lượt purge đầu sau khi khởi động (+ jitter) — đủ để app ổn định, không chờ cả giờ (F6). */
+export const PURGE_FIRST_RUN_AFTER_MS = 30_000;
+
 export function purgeWorkspacesJob(d: {
   workspaces: IWorkspaceRepository;
   purger: IWorkspacePurger;
@@ -117,7 +129,9 @@ export function purgeWorkspacesJob(d: {
     name: 'purge-deleted-workspaces',
     intervalMs: d.intervalMs,
     jitterMs: d.jitterMs,
-    async run() {
+    firstRunAfterMs: PURGE_FIRST_RUN_AFTER_MS,
+    async run(signal) {
+      if (signal?.aborted) return;
       try {
         const { purged, skipped, failed } = await job.execute();
         d.logger.info({ purged, skipped, failed }, 'maintenance.purge_summary');

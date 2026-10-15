@@ -118,8 +118,8 @@ export async function startServer(
   // Kết quả mỗi lượt ⇒ metrics `scheduled_job_*` (T-035) — bọc `run`, không sửa scheduler.
   const measured = (job: ScheduledJob): ScheduledJob => ({
     ...job,
-    run: () =>
-      job.run().then(
+    run: (signal) =>
+      job.run(signal).then(
         () => metrics.recordJobRun(job.name, true),
         (err: unknown) => {
           metrics.recordJobRun(job.name, false);

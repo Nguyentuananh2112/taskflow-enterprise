@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createTaskHarness, U, type TaskHarness } from '../../testing/task-harness';
-import { RANK_REBALANCE_THRESHOLD } from '../task-rank-rebalancer';
+import { RANK_REBALANCE_MAX_TASKS, RANK_REBALANCE_THRESHOLD } from '../task-rank-rebalancer';
 
 // T-033: cân bằng lại rank theo cột khi move sinh rank quá dài (ADR-011 mở rộng). Chạy trên cả
 // InMemory và Postgres (runner LSP).
@@ -69,6 +69,67 @@ describe('rebalance rank theo cột (T-033)', () => {
       status: 'TODO',
       tasks: 4,
     });
+  });
+
+  it('F1 (HIGH, review B): move CÙNG cột kích hoạt rebalance, khóa mới của task được move TRÙNG rank cũ ⇒ không còn rank tạm "~", tạo / thêm cuối cột vẫn chạy', async () => {
+    const h = await createTaskHarness();
+    const a = await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: LONG });
+    const c = await h.seedTask({ rank: `${LONG}V`, createdById: U.Pam });
+    // X đang cuối cột với rank "a2" — sau rebalance thứ tự A, B, X, C ⇒ X nhận đúng khóa "a2" của
+    // spread (trùng rank cũ) ⇒ `moveTo` trả false.
+    const x = await h.seedTask({ rank: 'a2' });
+    await h.move.execute({
+      ...h.scope('Mia'),
+      taskId: x.id,
+      input: { expectedVersion: 1, afterId: b.id },
+    });
+    const rows = await h.backend.taskRows();
+    expect(rows.filter((r) => r.rank.startsWith('~')).map((r) => r.id)).toEqual([]);
+    expect(await h.column('TODO')).toEqual([a.id, b.id, x.id, c.id]);
+    // Trước khi sửa: rank "~<uuid>" còn lại ⇒ tính khóa cuối cột ném lỗi ⇒ 500 cho mọi create.
+    const created = await h.create.execute({
+      ...h.scope('Mia'),
+      input: { title: 'Sau rebalance' },
+    });
+    expect((await h.column('TODO')).at(-1)).toBe(created.id);
+  });
+
+  it('F2 (review B): cột vượt RANK_REBALANCE_MAX_TASKS ⇒ KHÔNG rebalance (giữ khóa dài hợp lệ), log cảnh báo', async () => {
+    const h = await createTaskHarness();
+    const filler = RANK_REBALANCE_MAX_TASKS - 3; // + A, B, C ⇒ đủ MAX task khác, + X ⇒ vượt
+    for (let i = 0; i < filler; i++)
+      await h.seedTask({ rank: `a${'V'.repeat(RANK_REBALANCE_THRESHOLD + 8)}${i}` });
+    const t = await crowdedColumn(h);
+    const dto = await moveXAfterB(h, t);
+    expect(dto.rank.length).toBeGreaterThan(RANK_REBALANCE_THRESHOLD);
+    expect(await h.row(t.a.id)).toMatchObject({ rank: 'a0', version: 1 });
+    const rows = await h.backend.taskRows();
+    expect(rows.some((r) => r.rank.startsWith('~'))).toBe(false);
+    expect(h.logger.messages('warn')).toContain('task.rank_rebalance_skipped_large_column');
+  });
+
+  it('F3/F5 (review B): lỗi DB tạm thời (55P03 hết lock_timeout) ⇒ chạy lại transaction và thành công', async () => {
+    const h = await createTaskHarness();
+    const transient = Object.assign(new Error('lock timeout'), {
+      meta: { driverAdapterError: { cause: { originalCode: '55P03' } } },
+    });
+    const run = h.backend.uow.run.bind(h.backend.uow);
+    vi.spyOn(h.backend.uow, 'run')
+      .mockImplementationOnce(() => Promise.reject(transient))
+      .mockImplementation(run);
+    const dto = await h.create.execute({ ...h.scope('Mia'), input: { title: 'Sau khi chờ khóa' } });
+    expect(dto.title).toBe('Sau khi chờ khóa');
+    expect(h.logger.messages('warn')).toContain('task.rank_conflict_retry');
+  });
+
+  it('F3/F5: lỗi tạm thời lặp lại quá giới hạn thử ⇒ 503 SERVICE_UNAVAILABLE (thử lại sau), không 500', async () => {
+    const h = await createTaskHarness();
+    const deadlock = Object.assign(new Error('deadlock'), { code: '40P01' });
+    vi.spyOn(h.backend.uow, 'run').mockImplementation(() => Promise.reject(deadlock));
+    await expect(
+      h.create.execute({ ...h.scope('Mia'), input: { title: 'Không bao giờ' } }),
+    ).rejects.toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE' });
   });
 
   it('rank bình thường ⇒ không rebalance (chỉ task được move đổi)', async () => {

@@ -15,6 +15,14 @@ import type { TaskCommands } from './task-commands';
 export const RANK_REBALANCE_THRESHOLD = 64;
 
 /**
+ * Review B T-033 F2: cột lớn hơn ⇒ KHÔNG rebalance (giữ khóa dài — vẫn là khóa hợp lệ, cột `rank` là
+ * text không giới hạn), log cảnh báo. Rebalance ghi từng task (UPDATE có version + audit + event)
+ * ⇒ cột vài nghìn task vượt timeout transaction 10s ⇒ 500 lặp lại mỗi lần thả vào khe đó. 500 task ≈
+ * vài giây trên máy dev; con số chốt theo đo k6 (T-027 / A3).
+ */
+export const RANK_REBALANCE_MAX_TASKS = 500;
+
+/**
  * Cân bằng lại rank của MỘT cột, chạy BÊN TRONG transaction của lệnh move đã giữ `lockColumn`
  * (ADR-011 mở rộng). Không có actor "system" (ADR-014): actor là người đang move ⇒ mỗi task bị đổi
  * rank có `version + 1`, audit `MOVED` và realtime `task:moved` của chính nó — FE áp dụng theo
@@ -38,6 +46,18 @@ export class TaskRankRebalancer {
     const startedAt = Date.now();
     const { project, target, moving, wanted, meta } = input;
     const others = (await d.tasks.listColumn(project.id, target)).filter((t) => t.id !== moving.id);
+    if (others.length + 1 > RANK_REBALANCE_MAX_TASKS) {
+      d.logger.warn(
+        {
+          projectId: project.id,
+          status: target,
+          tasks: others.length + 1,
+          rankLength: wanted.length,
+        },
+        'task.rank_rebalance_skipped_large_column',
+      );
+      return wanted;
+    }
     // Thứ tự đích: các task khác theo rank hiện tại, chèn `moving` vào đúng chỗ của `wanted`.
     const at = others.findIndex((t) => wanted < t.rank);
     const ordered = [...others];
@@ -51,6 +71,13 @@ export class TaskRankRebalancer {
       const key = keys[i]!;
       if (task.id === moving.id) {
         movingRank = key;
+        // F1 (HIGH, review B T-033): `moving` ĐANG ở cột đích ⇒ pha 1 cũng đổi nó sang `~<id>`. Khóa mới
+        // trùng rank cũ ⇒ `moveTo` của use case trả false và KHÔNG lưu ⇒ commit với rank tạm ⇒ mọi
+        // create/append cột đó 500. Bất biến: rebalance ghi lại MỌI dòng đã stash trước khi trả về —
+        // ghi lại rank cũ (không version/audit/event), giống nhánh "khóa trùng" của task khác dưới đây.
+        if (moving.status === target && moving.rank === key) {
+          if (!(await d.tasks.save(moving, moving.version))) throw new RankConflictError();
+        }
         continue;
       }
       const expectedVersion = task.version;
