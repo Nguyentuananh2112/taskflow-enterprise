@@ -9,7 +9,7 @@
 `../TaskFlow_wt/T-025`, branch `feat/T-025` từ `main` mới nhất (sau khi T-019 merge).
 
 ## Việc cần làm
-1. Màn danh sách project của workspace + màn board `/(dashboard)/w/[wsSlug]/p/[projectKey]` (route theo frontend.md).
+1. Màn danh sách project của workspace + màn board `/w/[wsId]/p/[projectId]` trong route group `(app)` (+ `?task=<taskId>` cho drawer) — theo frontend.md §1.1: URL dùng uuid vì slug đổi được và API định tuyến theo id.
 2. Board 4 cột theo `TASK_STATUS_TRANSITIONS` của contracts: cột không hợp lệ bị **chặn thả trước khi gửi** (không gọi API cho bước sai state machine); kéo thả trong cột và giữa cột bằng `@dnd-kit/react`, có điều khiển bàn phím (a11y).
 3. Move gửi `{ status?, afterId?, beforeId?, expectedVersion }`; optimistic update **theo từng task** (rollback có điều kiện `cached.version === base.version`); 409 `VERSION_CONFLICT` ⇒ dùng `details.current` + rebase 3 chiều theo frontend.md, 1 lần tự gửi lại; 422 ⇒ rollback + toast.
 4. Tạo nhanh task (toolbar), chi tiết task (drawer): sửa title/description/priority/dueDate, gán người (theo quyền ADR-041/044), xóa (ADR-022/045), xem audit log (cursor).
