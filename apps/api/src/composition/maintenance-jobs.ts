@@ -133,7 +133,7 @@ export function purgeWorkspacesJob(d: {
     async run(signal) {
       if (signal?.aborted) return;
       try {
-        const { purged, skipped, failed } = await job.execute({ signal });
+        const { purged, skipped, failed } = await job.execute(signal ? { signal } : {});
         const aborted = signal?.aborted ?? false;
         d.logger.info({ purged, skipped, failed, aborted }, 'maintenance.purge_summary');
         // G1 F4: lỗi từng workspace không còn dừng cả lô, nhưng lượt vẫn phải tính là THẤT BẠI để
