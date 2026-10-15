@@ -21,7 +21,30 @@
 | `docs/tasks/BACKLOG.md` | D3 "Đang làm: D" |
 
 ## Kiểm chứng (không tài nguyên thật)
-<!-- KẾT QUẢ -->
+Không tạo tài khoản, không push image, không gọi API DigitalOcean/GitHub thật. Lần kiểm cuối trên nhánh đã rebase lên `main` (154f23c):
+
+| Kiểm | Kết quả |
+|---|---|
+| `actionlint` 1.7.12 (mọi workflow, gồm release/deploy) | exit 0 |
+| `shellcheck` (koalaman/shellcheck:stable) `bootstrap.sh deploy.sh ci-entry.sh` | exit 0 |
+| `docker compose -p taskflow-d3check -f compose.prod.yml config -q` (env từ các `.example`, không `up`) | exit 0; 7 service với profile migrate/backup |
+| Render spec App Platform bằng **đúng biểu thức yq của deploy.yml** (mikefarah/yq:4) | exit 0; 4 digest + 2 `GIT_SHA` được thay, không còn placeholder ngoài comment |
+| `ci-entry.sh` thử tay (`TASKFLOW_DIR` tạm) | `receive` chỉ ghi file trong allowlist (không đè `deploy.sh`); `deploy x;id …` và `bash -i` ⇒ rc 2; `deploy`/`rollback` hợp lệ chuyển cho deploy.sh |
+| `caddy validate`, `bootstrap.sh` (sinh `.env`/cert Valkey) | xanh (lần kiểm trước rebase) |
+| Lát cắt VPS chạy thật trên máy dev (project `taskflow-d3-slice`, Caddy 127.0.0.1:18080/18443) | Postgres + Valkey TLS healthy; **job migrate (`migrate.mjs`) + grant exit 0**. API image cũ (t022) crashloop vì env.ts cũ bắt `SENTRY_DSN` ⇒ **chưa chạy lại** với image mới — việc mở bên dưới |
+
+## Người dùng phải làm khi chốt hosting (ADR-070)
+1. Chọn phương án (App Platform hay VPS) + domain (ADR-071).
+2. GitHub: biến repo `ENABLE_RELEASE=true`; tạo environment `staging`/`production` (production: required reviewers, chỉ `main`) với biến/secret ở runbook deploy §0.
+3. App Platform: tạo Managed PG/Valkey + app từ `.do/app.yaml` (thay `__GHCR_OWNER__`, domain), tạo role `taskflow_app`/`taskflow_backup`, điền secret `CHANGE_ME` một lần; token DO có scope + hạn.
+4. VPS: làm runbook §B.1–B.2 (user deploy, `ci-entry.sh` + `authorized_keys restrict,command=`, firewall, bootstrap), DNS A record.
+5. Backup: bucket S3 **ngoài** nhà cung cấp hosting, credential PutObject-only, khóa age, heartbeat monitor (runbook backup-restore §3–4).
+6. Deploy staging → kiểm → deploy production cùng SHA (job guard bắt buộc thứ tự này).
+
+## Rủi ro còn lại
+- **`compose.prod.yml` đến từ CI** (qua `receive`) mà user deploy thuộc nhóm docker ≈ root ⇒ ai sửa được file này trên `main` và qua được reviewer là có root VPS. Giảm thiểu: chỉ từ `main` (guard + release H1), required reviewers, forced command chặn mọi thứ khác.
+- Secret: App Platform chỉ nằm ở DO (`EV[…]`); VPS giữ `.env*` quyền 600 trong `/opt/taskflow` (700).
+- Chưa PoC App Platform thật (WebSocket qua ingress, PRE_DEPLOY, grace period) — cần tài khoản.
 
 ## Đọc chéo đã xử lý
 | Nguồn | Mục | Xử lý | Commit |
@@ -44,5 +67,6 @@ Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted
 
 ## Việc mở / phụ thuộc
 - B2 (`docker/backup/`) chưa merge ⇒ bước build image backup trong release tự bỏ qua; deploy giữ image backup hiện có khi chưa có tag.
+- Lát cắt VPS: chạy lại api/web với image build từ main hiện tại (migrate đã xanh) — làm khi máy rảnh.
 - Domain chưa có (ADR-071) ⇒ `example.com` trong spec/runbook.
 - Trước Phase 5: PoC App Platform (WebSocket qua ingress, PRE_DEPLOY, grace period) theo devops.md §1.3 — cần tài khoản thật ⇒ người dùng quyết.
