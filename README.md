@@ -31,7 +31,7 @@ Hướng dẫn đầy đủ từ máy trắng (Windows, cài công cụ, xử l�
 
 ```sh
 # 1. Dependency (cũng cài git hook pre-commit)
-corepack enable pnpm
+corepack enable pnpm   # Windows, Node trong Program Files: cần quyền admin — hoặc dùng `corepack pnpm …`
 pnpm install
 
 # 2. Postgres + Valkey bằng Docker — cổng host riêng: Postgres 5435, Valkey 6380 (ADR-097)
