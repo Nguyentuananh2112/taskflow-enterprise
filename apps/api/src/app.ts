@@ -5,6 +5,8 @@ import { isDeployed, type Env } from './config/env';
 import type { IClock } from './core/domain';
 import { HttpResponder } from './core/http/envelope';
 import { globalErrorHandler, notFoundHandler } from './core/http/error-handler';
+import { markRouteBase, type AppMetrics } from './core/observability/metrics';
+import type { IErrorReporter } from './core/observability/sentry';
 import { healthRouter, type ReadinessProbe } from './core/http/health';
 import {
   jsonBody,
@@ -48,6 +50,10 @@ export interface AppDependencies {
   routers?: readonly { path: string; router: Router }[];
   /** Một router gắn thẳng dưới `/api/v1` (test). */
   apiRouter?: Router;
+  /** Metrics Prometheus (T-035) — đo theo MẪU route; endpoint `/metrics` ở cổng nội bộ riêng. */
+  metrics?: AppMetrics;
+  /** Báo lỗi 5xx ra Sentry (T-035). */
+  errorReporter?: IErrorReporter;
 }
 
 /**
@@ -63,6 +69,7 @@ export function createApp(deps: AppDependencies): Express {
   app.set('trust proxy', config.trustProxyHops);
 
   app.use(requestLogging(logger));
+  if (deps.metrics) app.use(deps.metrics.httpMetrics());
   app.use(securityHeaders({ corsOrigins: config.corsOrigins, hsts: config.hsts }));
   app.use(
     healthRouter({
@@ -80,10 +87,19 @@ export function createApp(deps: AppDependencies): Express {
     next();
   });
   if (deps.rateLimit?.length) app.use(...deps.rateLimit);
-  for (const { path, router } of deps.routers ?? []) app.use(`/api/v1${path}`, router);
-  if (deps.apiRouter) app.use('/api/v1', deps.apiRouter);
+  for (const { path, router } of deps.routers ?? []) {
+    app.use(`/api/v1${path}`, markRouteBase(`/api/v1${path}`), router);
+  }
+  if (deps.apiRouter) app.use('/api/v1', markRouteBase('/api/v1'), deps.apiRouter);
 
   app.use(notFoundHandler);
-  app.use(globalErrorHandler({ responder, logger, exposeInternalErrors: !config.production }));
+  app.use(
+    globalErrorHandler({
+      responder,
+      logger,
+      exposeInternalErrors: !config.production,
+      ...(deps.errorReporter ? { reporter: deps.errorReporter } : {}),
+    }),
+  );
   return app;
 }

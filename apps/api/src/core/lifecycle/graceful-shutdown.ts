@@ -19,6 +19,8 @@ export interface GracefulShutdownOptions {
   /** Đóng theo thứ tự sau khi HTTP đóng xong: scheduler → prisma → pool → valkey. */
   resources?: readonly Closer[];
   exit?: (code: number) => void;
+  /** Exception không bắt được (unhandledRejection/uncaughtException) — vd báo Sentry (T-035). */
+  onFatal?: (error: unknown) => void;
 }
 
 export interface GracefulShutdown {
@@ -85,10 +87,12 @@ export function createGracefulShutdown(options: GracefulShutdownOptions): Gracef
       }
       proc.on('unhandledRejection', (reason) => {
         logger.fatal({ err: reason }, 'process.unhandled_rejection');
+        options.onFatal?.(reason);
         void this.shutdown('unhandledRejection', 1);
       });
       proc.on('uncaughtException', (err) => {
         logger.fatal({ err }, 'process.uncaught_exception');
+        options.onFatal?.(err);
         void this.shutdown('uncaughtException', 1);
       });
     },

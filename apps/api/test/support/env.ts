@@ -10,6 +10,8 @@ export function testEnvVars(overrides: Record<string, string | undefined> = {}):
     COOKIE_SECURE: 'false',
     TRUST_PROXY_HOPS: '0',
     GIT_SHA: 'test-sha',
+    // T-035: cổng metrics do OS chọn — nhiều tiến trình API (startup test, suite bảo mật) không đụng nhau.
+    METRICS_PORT: '0',
     ...overrides,
   };
 }

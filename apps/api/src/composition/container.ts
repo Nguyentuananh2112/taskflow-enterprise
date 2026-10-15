@@ -23,6 +23,8 @@ import type { IRolePermissions } from '../modules/task/application/task-actor';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
+import type { AppMetrics } from '../core/observability/metrics';
+import type { IErrorReporter } from '../core/observability/sentry';
 import { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
 import { AuthUserDirectory } from './users';
@@ -49,6 +51,9 @@ export interface ContainerDeps {
   probes: readonly ReadinessProbe[];
   isShuttingDown: () => boolean;
   accessTokens?: IAccessTokenService;
+  /** Observability (T-035) — thiếu ⇒ không đo / không báo Sentry (test). */
+  metrics?: AppMetrics;
+  errorReporter?: IErrorReporter;
 }
 
 export interface Container {
@@ -147,6 +152,8 @@ export function createContainer(d: ContainerDeps): Container {
     probes: d.probes,
     isShuttingDown: d.isShuttingDown,
     rateLimit: createGlobalRateLimit(rateLimitDeps),
+    ...(d.metrics ? { metrics: d.metrics } : {}),
+    ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
     routers: [
       { path: '/auth', router: auth.router },
       // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒

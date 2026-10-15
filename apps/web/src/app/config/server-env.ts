@@ -32,3 +32,53 @@ export function readPublicRuntimeConfig(source: EnvSource = process.env): Public
     appEnv: env.APP_ENV,
   });
 }
+
+const SentryEnv = z.object({
+  // Trống = không đặt. DSN là công khai (chỉ cho phép GỬI event) nhưng repo public ⇒ đặt qua env.
+  SENTRY_DSN: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.url({ protocol: /^https?$/ }).optional(),
+  ),
+  GIT_SHA: z.string().min(1).optional(),
+  APP_ENV: AppEnv.default('production'),
+  // Số proxy tin cậy trước web (CÙNG quy tắc TRUST_PROXY_HOPS của API): IP client = phần tử thứ `hops`
+  // từ cuối X-Forwarded-For — dùng cho hạn mức tunnel /monitoring. 0 ⇒ không tin XFF.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
+});
+
+export interface SentryRuntimeConfig {
+  /** Không có ⇒ Sentry tắt (cả client lẫn tunnel `/monitoring` — 404). */
+  dsn?: string;
+  /** Proxy tin cậy trước web — xác định IP client cho hạn mức tunnel. */
+  trustProxyHops: number;
+  environment: string;
+  release?: string;
+}
+
+/**
+ * Cấu hình Sentry web (T-035) — tách khỏi `PublicRuntimeConfig` (không đổi tập khóa gửi xuống
+ * client qua AppProviders). Root layout render thành `<meta>`; route `/monitoring` dùng để kiểm DSN.
+ */
+export function readSentryConfig(source: EnvSource = process.env): SentryRuntimeConfig {
+  const env = SentryEnv.parse(source);
+  // staging/production: DSN http ⇒ event đi dạng rõ (review B L3) ⇒ TẮT Sentry + cảnh báo. Không ném:
+  // hàm chạy mỗi request của root layout — giám sát không được làm sập trang (T-035 mục 5).
+  const insecure =
+    env.SENTRY_DSN !== undefined &&
+    !env.SENTRY_DSN.startsWith('https://') &&
+    (env.APP_ENV === 'staging' || env.APP_ENV === 'production');
+  if (insecure) warnInsecureDsnOnce();
+  return {
+    environment: env.APP_ENV,
+    trustProxyHops: env.TRUST_PROXY_HOPS,
+    ...(env.SENTRY_DSN && !insecure ? { dsn: env.SENTRY_DSN } : {}),
+    ...(env.GIT_SHA ? { release: env.GIT_SHA } : {}),
+  };
+}
+
+let warnedInsecureDsn = false;
+function warnInsecureDsnOnce(): void {
+  if (warnedInsecureDsn) return;
+  warnedInsecureDsn = true;
+  console.warn('[web] SENTRY_DSN không phải https ở staging/production — Sentry bị tắt');
+}

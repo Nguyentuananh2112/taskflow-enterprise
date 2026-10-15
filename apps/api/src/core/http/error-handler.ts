@@ -11,6 +11,7 @@ import {
 } from '../errors';
 import { serializeError } from '../logging/error-serializer';
 import type { ILogger } from '../logging/logger';
+import type { IErrorReporter } from '../observability/sentry';
 import type { HttpResponder } from './envelope';
 import { validationErrorFromZod } from './zod';
 
@@ -87,6 +88,8 @@ export interface ErrorHandlerOptions {
   /** Chỉ `false` ở development/test: thêm `details.debug` (tên, message, stack) cho lỗi 500. */
   exposeInternalErrors: boolean;
   translators?: readonly ErrorTranslator[];
+  /** Sentry (T-035): CHỈ lỗi 5xx (devops.md §6.3). Thiếu ⇒ không báo. */
+  reporter?: IErrorReporter;
 }
 
 /**
@@ -101,9 +104,12 @@ export function globalErrorHandler(options: ErrorHandlerOptions): ErrorRequestHa
       return;
     }
     const error = toAppError(err, translators);
+    // Metrics `http_errors_total{code}` đọc ở `finish` (core/observability/metrics.ts).
+    (res.locals as { errorCode?: string }).errorCode = error.code;
     const log = (req as { log?: ILogger }).log ?? logger;
     if (error.statusCode >= 500) {
       log.error({ err: error.cause ?? err, code: error.code }, 'http.unhandled_error');
+      options.reporter?.capture(error.cause ?? err);
     } else if (!(err instanceof AppError) && !(err instanceof z.ZodError)) {
       // Lỗi client do thư viện ném (URIError, body-parser…) — warn, không phải error (L3).
       log.warn({ err, code: error.code }, 'http.client_error');
