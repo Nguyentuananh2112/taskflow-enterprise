@@ -2,7 +2,6 @@ import { ROLE_PERMISSIONS } from '@taskflow/contracts';
 
 import {
   FakeClock,
-  FakeUnitOfWork,
   SequentialIdGenerator,
   SpyEventBus,
   SpyLogger,
@@ -20,16 +19,9 @@ import { MoveTaskUseCase } from '../application/use-cases/move-task.use-case';
 import { TaskQueries } from '../application/use-cases/task.queries';
 import { UpdateTaskUseCase } from '../application/use-cases/update-task.use-case';
 import { Task, type TaskProps } from '../domain/task';
-import {
-  InMemoryAssigneeDirectory,
-  InMemoryTaskAuditLogRepository,
-  InMemoryTaskProjectStore,
-  InMemoryUserRefReader,
-} from '../infrastructure/persistence/in-memory/in-memory-task-collaborators';
-import { InMemoryTaskDatabase } from '../infrastructure/persistence/in-memory/in-memory-task-database';
-import { InMemoryTaskReadModel } from '../infrastructure/persistence/in-memory/in-memory-task-read-model';
-import { InMemoryTaskRepository } from '../infrastructure/persistence/in-memory/in-memory-task.repository';
+import type { TaskStatus } from '../domain/task-status';
 import { FractionalIndexRankGenerator } from '../infrastructure/rank/fractional-index-rank-generator';
+import { inMemoryTaskBackend, type TaskBackend } from './task-backend';
 
 // Fixture chuẩn test-spec-task.md §0.2.
 export const NOW = '2026-10-15T08:00:00.000Z';
@@ -64,63 +56,95 @@ export const contractsPermissions: IRolePermissions = {
   allows: (role, permission) => ROLE_PERMISSIONS[role].includes(permission),
 };
 
-export function createTaskHarness() {
-  const db = new InMemoryTaskDatabase();
-  const s = db.state;
+async function seedFixtures(b: TaskBackend): Promise<void> {
   for (const [name, userId] of Object.entries(U)) {
-    s.users.set(userId, {
+    // Zed đã ẩn danh hóa (D2): DB lưu tên thay thế, membership đã xóa.
+    const deleted = name === 'Zed';
+    await b.seedUser({
       id: userId,
-      fullName: name,
-      deletedAt: name === 'Zed' ? new Date(NOW) : null,
+      fullName: deleted ? 'Người dùng đã xóa' : name,
+      deletedAt: deleted ? new Date(NOW) : null,
     });
   }
-  for (const [p, role] of Object.entries(ROLE_IN_W1))
-    s.members.push({ workspaceId: W1, userId: U[p as Person], role });
-  s.members.push({ workspaceId: W2, userId: U.Otto, role: 'OWNER' });
+  await b.seedWorkspace(W1);
+  await b.seedWorkspace(W2);
+  for (const [p, role] of Object.entries(ROLE_IN_W1)) {
+    await b.seedMember({ workspaceId: W1, userId: U[p as Person], role });
+  }
+  await b.seedMember({ workspaceId: W2, userId: U.Otto, role: 'OWNER' });
   const project = (pid: string, workspaceId: string, keyPrefix: string, archived = false) =>
-    s.projects.set(pid, {
+    b.seedProject({
       id: pid,
       workspaceId,
       keyPrefix,
       nextTaskNumber: 1,
       archivedAt: archived ? new Date(NOW) : null,
     });
-  project(P1, W1, 'TF');
-  project(P2, W1, 'ARC', true);
-  project(P3, W1, 'WEB');
-  project(Q1, W2, 'TF');
+  await project(P1, W1, 'TF');
+  await project(P2, W1, 'ARC', true);
+  await project(P3, W1, 'WEB');
+  await project(Q1, W2, 'TF');
+}
 
-  const uow = new FakeUnitOfWork(db);
-  const users = new InMemoryUserRefReader(db);
-  const tasks = new InMemoryTaskRepository(db);
-  const audit = new InMemoryTaskAuditLogRepository(db);
+/** Harness test-spec §0: use case thật trên `backend` (InMemory mặc định, Prisma ở tầng I). */
+export async function createTaskHarness(backend: TaskBackend = inMemoryTaskBackend()) {
+  await seedFixtures(backend);
+  const { uow } = backend;
   const events = new SpyEventBus();
   const notifier = createSpy<ITaskRealtimeNotifier>(uow);
   const logger = new SpyLogger();
   const clock = new FakeClock(NOW);
-  const ids = new SequentialIdGenerator();
   const policy = new TaskPolicy(contractsPermissions);
-  const projects = new InMemoryTaskProjectStore(db);
   const deps: TaskCommandDeps = {
-    tasks,
-    projects,
-    assignees: new InMemoryAssigneeDirectory(db),
-    users,
-    audit,
+    tasks: backend.tasks,
+    projects: backend.projects,
+    assignees: backend.assignees,
+    users: backend.users,
+    audit: backend.audit,
     ranks: new FractionalIndexRankGenerator(),
     notifier,
     events,
     uow,
     clock,
-    ids,
+    ids: new SequentialIdGenerator(),
     policy,
     logger,
   };
   const commands = new TaskCommands(deps);
   let seq = 0;
 
+  const seedTask = async (over: Partial<TaskProps> & { rank: string }): Promise<TaskProps> => {
+    seq += 1;
+    const projectId = over.projectId ?? P1;
+    const project = (await backend.projectRow(projectId))!;
+    const props: TaskProps = {
+      id: id(1000 + seq),
+      workspaceId: project.workspaceId,
+      projectId,
+      number: over.number ?? seq,
+      title: `Task ${over.number ?? seq}`,
+      description: null,
+      status: 'TODO',
+      priority: 'MEDIUM',
+      version: 1,
+      dueDate: null,
+      assigneeId: null,
+      createdById: U.Mia,
+      deletedAt: null,
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
+      ...over,
+    };
+    await backend.insertTask(Task.reconstitute(props).toPrimitives());
+    if (project.nextTaskNumber <= props.number) {
+      await backend.patchProject(projectId, { nextTaskNumber: props.number + 1 });
+    }
+    return props;
+  };
+  const row = async (taskId: string) => (await backend.taskRows()).find((t) => t.id === taskId)!;
+
   return {
-    db,
+    backend,
     deps,
     uow,
     events,
@@ -133,7 +157,7 @@ export function createTaskHarness() {
     assign: new AssignTaskUseCase(commands),
     update: new UpdateTaskUseCase(commands),
     remove: new DeleteTaskUseCase(commands),
-    queries: new TaskQueries({ readModel: new InMemoryTaskReadModel(db, users), projects, policy }),
+    queries: new TaskQueries({ readModel: backend.readModel, projects: backend.projects, policy }),
     cleaner: new TaskAssignmentCleaner(commands),
     scope: (p: Person, projectId = P1, extra: Partial<TaskScope> = {}): TaskScope => ({
       workspaceId: W1,
@@ -141,40 +165,23 @@ export function createTaskHarness() {
       actor: actor(p),
       ...extra,
     }),
-    /** Chèn thẳng một task (như dữ liệu có sẵn) — không audit, không event. */
-    seedTask(over: Partial<TaskProps> & { rank: string }): TaskProps {
-      seq += 1;
-      const projectId = over.projectId ?? P1;
-      const row = db.state.projects.get(projectId)!;
-      const number = over.number ?? row.nextTaskNumber;
-      row.nextTaskNumber = Math.max(row.nextTaskNumber, number + 1);
-      const props: TaskProps = {
-        id: id(1000 + seq),
-        workspaceId: row.workspaceId,
-        projectId,
-        number,
-        title: `Task ${number}`,
-        description: null,
-        status: 'TODO',
-        priority: 'MEDIUM',
-        version: 1,
-        dueDate: null,
-        assigneeId: null,
-        createdById: U.Mia,
-        deletedAt: null,
-        createdAt: new Date(NOW),
-        updatedAt: new Date(NOW),
-        ...over,
-      };
-      db.state.tasks.set(props.id, Task.reconstitute(props).toPrimitives());
-      return props;
-    },
-    // Luôn đọc `db.state` hiện tại: rollback của FakeUnitOfWork thay cả object state.
-    row: (taskId: string) => db.state.tasks.get(taskId)!,
-    auditOf: (taskId: string) => db.state.audit.filter((a) => a.taskId === taskId),
+    seedTask,
+    row,
+    patchTask: (taskId: string, patch: Partial<TaskProps>) => backend.patchTask(taskId, patch),
+    taskCount: async () => (await backend.taskRows()).length,
+    allAudit: () => backend.auditRows(),
+    auditOf: async (taskId: string) =>
+      (await backend.auditRows()).filter((a) => a.taskId === taskId),
+    project: async (projectId: string) => (await backend.projectRow(projectId))!,
+    /** Id task sống của một cột (P1), theo thứ tự byte của rank. */
+    column: async (status: TaskStatus, projectId = P1) =>
+      (await backend.taskRows())
+        .filter((t) => t.projectId === projectId && t.status === status && t.deletedAt === null)
+        .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0))
+        .map((t) => t.id),
     emitted: () => notifier.calls.filter((c) => c.method === 'emitToProject'),
     randomId: () => id(9999),
   };
 }
 
-export type TaskHarness = ReturnType<typeof createTaskHarness>;
+export type TaskHarness = Awaited<ReturnType<typeof createTaskHarness>>;
