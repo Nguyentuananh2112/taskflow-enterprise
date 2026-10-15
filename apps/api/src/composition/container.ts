@@ -143,8 +143,10 @@ export function createContainer(d: ContainerDeps): Container {
     rateLimit: createGlobalRateLimit(rateLimitDeps),
     routers: [
       { path: '/auth', router: auth.router },
-      { path: '/workspaces', router: workspace.routes(auth.authenticate) },
+      // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
+      // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
       { path: TASKS_PATH, router: task.routes(auth.authenticate) },
+      { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     ],
   });
   return { app, auth, workspace, task, realtime };

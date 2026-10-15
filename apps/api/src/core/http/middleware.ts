@@ -102,13 +102,28 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
 
 const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH']);
 
-/** Tách `type/subtype; charset=…` của header Content-Type (chữ thường, bỏ nháy). */
-export function parseContentType(header: string | undefined): { type: string; charset?: string } {
+/**
+ * Tách `type/subtype; charset=…` của header Content-Type (chữ thường, bỏ nháy). `ambiguous`: có hơn
+ * một tham số charset, hoặc tham số charset không đọc được — ta và body-parser có thể hiểu khác nhau
+ * (body-parser lấy cái CUỐI) ⇒ phải từ chối (audit T-028 F4).
+ */
+export function parseContentType(header: string | undefined): {
+  type: string;
+  charset?: string;
+  ambiguous?: true;
+} {
   const [type = '', ...params] = (header ?? '').split(';').map((p) => p.trim().toLowerCase());
-  const charset = params
+  const charsetParams = params.filter((p) => /^charset\s*=/.test(p));
+  const charsets = charsetParams
     .map((p) => /^charset\s*=\s*"?([^";\s]+)"?$/.exec(p)?.[1])
-    .find((c): c is string => c !== undefined);
-  return charset === undefined ? { type } : { type, charset };
+    .filter((c): c is string => c !== undefined);
+  const ambiguous = charsetParams.length > 1 || charsets.length !== charsetParams.length;
+  const charset = charsets[0];
+  return {
+    type,
+    ...(charset === undefined ? {} : { charset }),
+    ...(ambiguous ? { ambiguous: true as const } : {}),
+  };
 }
 
 const UTF8 = new Set(['utf-8', 'utf8']);
@@ -119,10 +134,11 @@ const UTF8 = new Set(['utf-8', 'utf8']);
  * `charset` khác (utf-7, utf-16…) ⇒ 415, kể cả DELETE có body (QA F, T-021 finding A5). Sai ⇒ 415.
  */
 export const requireJsonContentType: RequestHandler = (req, _res, next) => {
-  const { type, charset } = parseContentType(req.headers['content-type']);
+  const { type, charset, ambiguous } = parseContentType(req.headers['content-type']);
   const bodyRequired = METHODS_WITH_BODY.has(req.method);
   const wrongType = bodyRequired && type !== 'application/json';
-  const wrongCharset = type === 'application/json' && charset !== undefined && !UTF8.has(charset);
+  const wrongCharset =
+    type === 'application/json' && (ambiguous || (charset !== undefined && !UTF8.has(charset)));
   next(wrongType || wrongCharset ? new UnsupportedMediaTypeError() : undefined);
 };
 

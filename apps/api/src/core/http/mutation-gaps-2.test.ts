@@ -73,7 +73,7 @@ describe('parseContentType / Origin', () => {
     ['Application/JSON; Charset="UTF-8"', { type: 'application/json', charset: 'utf-8' }],
     ['application/json; foo=bar; charset=utf8', { type: 'application/json', charset: 'utf8' }],
     ['application/json; xcharset=utf-16', { type: 'application/json' }],
-    ['application/json; charset=utf-16 extra', { type: 'application/json' }],
+    ['application/json; charset=utf-16 extra', { type: 'application/json', ambiguous: true }],
     // Hồi quy (lộ ra nhờ đột biến): regex T-021 mất dấu \ ⇒ "\s" thành chữ "s".
     ['application/json; charset = utf-16le', { type: 'application/json', charset: 'utf-16le' }],
     ['application/json; charset=us-ascii', { type: 'application/json', charset: 'us-ascii' }],

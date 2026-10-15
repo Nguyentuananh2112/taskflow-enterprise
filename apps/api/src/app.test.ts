@@ -196,6 +196,18 @@ describe('body & Content-Type', () => {
   );
 
   it.each([
+    'application/json; charset=utf-8; charset=utf-16le',
+    'application/json; charset=utf-16le; charset=utf-8',
+    'application/json; charset=utf-8 extra',
+  ])(
+    'charset lặp / không đọc được (%s) ⇒ 415 — body-parser lấy charset CUỐI (audit T-028 F4)',
+    async (ct) => {
+      const res = await request(build()).post(TASK).set('Content-Type', ct).send('{"title":"abc"}');
+      expect(res.status).toBe(415);
+    },
+  );
+
+  it.each([
     'application/json',
     'application/json; charset=utf-8',
     'application/json;charset="UTF-8"',

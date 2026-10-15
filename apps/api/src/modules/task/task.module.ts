@@ -118,6 +118,7 @@ export function createTaskModule(d: TaskModuleDeps): TaskModule {
         controller,
         membership: d.membership,
         permissions: d.permissions,
+        scope: { projects: d.repos.projects, tasks: d.repos.tasks },
         authenticate,
         limit: d.limit,
       }),

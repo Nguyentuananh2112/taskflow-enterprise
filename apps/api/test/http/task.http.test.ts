@@ -154,6 +154,75 @@ describe('IDOR & thứ tự kiểm (ADR-020, data-and-api §2.2)', () => {
   });
 });
 
+describe('audit T-028 (B) — F1/F2/F3 và thứ tự 404 trước 400 body', () => {
+  const remaining = (res: request.Response) =>
+    // Lấy lần xuất hiện CUỐI của policy api-user (đi qua limiter 2 lần thì header có 2 mục).
+    Number([...String(res.headers['ratelimit']).matchAll(/"api-user"; r=(\d+)/g)].at(-1)?.[1]);
+
+  it('F1: mỗi request task chỉ qua authenticate + limiter api-user MỘT lần (router task gắn trước /workspaces)', async () => {
+    const first = await request(t.app).get(inA()).set(alice.auth);
+    const second = await request(t.app).get(inA()).set(alice.auth);
+    expect(first.status).toBe(200);
+    expect(remaining(first) - remaining(second)).toBe(1);
+    // Route workspace vẫn được limiter (1 lần) như cũ.
+    const ws = await request(t.app).get(`/api/v1/workspaces/${alice.workspaceId}`).set(alice.auth);
+    expect(remaining(second) - remaining(ws)).toBe(1);
+  });
+
+  it('F2: OWNER / PM (chỉ có quyền :any) gửi body assign / query delete sai ⇒ 400, không 403', async () => {
+    const pm = await t.register('Pam');
+    await join(pm, 'PM');
+    const { task } = await createTask(mia);
+    for (const u of [alice, pm]) {
+      const assign = await request(t.app)
+        .patch(`${inA()}/${task.id}/assignee`)
+        .set(u.auth)
+        .send({ expectedVersion: 1, assigneeId: 'x' });
+      expect(assign.status).toBe(400);
+      const del = await request(t.app)
+        .delete(`${inA()}/${task.id}?expectedVersion=abc`)
+        .set(u.auth);
+      expect(del.status).toBe(400);
+    }
+    // VIEWER (không :own lẫn :any) vẫn 403 với quyền tối thiểu là :own.
+    const viewer = await request(t.app)
+      .patch(`${inA()}/${task.id}/assignee`)
+      .set(vic.auth)
+      .send({ expectedVersion: 1, assigneeId: 'x' });
+    expect(errorOf(viewer)).toMatchObject({ details: { required: 'task:assign:own' } });
+  });
+
+  it('F3: response task (thành công lẫn lỗi) có Cache-Control: no-store', async () => {
+    expect((await request(t.app).get(inA()).set(alice.auth)).headers['cache-control']).toBe(
+      'no-store',
+    );
+    expect((await request(t.app).get(inA())).headers['cache-control']).toBe('no-store');
+  });
+
+  it('404 project/task trước 400 body (security.md): body sai vào project/task không tồn tại ⇒ 404', async () => {
+    const missing = '0199e5a2-7c1e-7cc3-9a3b-00000000dead';
+    const noProject = await request(t.app).post(inA(missing)).set(mia.auth).send({ bogus: 1 });
+    expect(errorOf(noProject)).toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+      details: { resource: 'project' },
+    });
+    const noTask = await request(t.app)
+      .patch(`${inA()}/${missing}`)
+      .set(mia.auth)
+      .send({ bogus: 1 });
+    expect(errorOf(noTask)).toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+      details: { resource: 'task' },
+    });
+    // VIEWER cũng nhận 404 (không phải 403) khi task không tồn tại.
+    const viewer = await request(t.app)
+      .patch(`${inA()}/${missing}`)
+      .set(vic.auth)
+      .send({ bogus: 1 });
+    expect(viewer.status).toBe(404);
+  });
+});
+
 describe('cập nhật / di chuyển / gán / xóa', () => {
   it('PATCH với expectedVersion ⇒ version+1; version cũ ⇒ 409 VERSION_CONFLICT kèm current (FE hòa giải không refetch)', async () => {
     const { task } = await createTask(mia);
