@@ -97,9 +97,9 @@ test('E2E-04: kéo Cần làm → Hoàn thành bị chặn (state machine) ⇒ K
   expect(patches).toEqual([]);
 });
 
-// FIXME (TL): đỏ tất định — bàn phím không thả được vào cột TRỐNG (đích thả mất sau khi overlay di chuyển);
-// giao E sau T-034. Giữ thân test làm cổng: bỏ `.fixme` khi E sửa.
-test.fixme('[PENDING fix bàn phím cột trống — E] E2E-03: kéo bằng BÀN PHÍM vào cột TRỐNG (Space, mũi tên phải, Space) ⇒ Cần làm → Đang làm', async ({
+// E2 (fix/dnd-keyboard-empty-column): trước đây đỏ tất định — sortable lấy group từ task.status nên
+// SortableKeyboardPlugin tưởng thẻ chưa đổi cột và kéo về. Cổng của bản sửa.
+test('E2E-03: kéo bằng BÀN PHÍM vào cột TRỐNG (Space, mũi tên phải, Space) ⇒ Cần làm → Đang làm', async ({
   page,
   request,
 }) => {
