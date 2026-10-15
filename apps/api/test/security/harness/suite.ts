@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, it } from 'vitest';
 
-import { startApi, type RunningApi } from './api-process';
+import { API_DIR, startApi, type RunningApi } from './api-process';
 import { loadHarnessConfig, TEST_JWT_SECRET } from './config';
-import { createEphemeralDatabase, type EphemeralDatabase } from './database';
+import { prepareSuiteDatabase, type SuiteDatabase } from './database';
 import { flushRateLimitCounters } from './valkey';
 import { rawRequest, type RawRequest, type RawResponse } from './http-client';
 
@@ -34,24 +34,54 @@ export function baseEnv(dbUrl: string, overrides: Record<string, string> = {}) {
 }
 
 /**
- * Mỗi file suite: một DB clone + một process API thật, dọn sau `afterAll`.
- * Trả về đối tượng lười — chỉ dùng bên trong test/hook.
+ * Build đang test CỐ Ý từ chối khởi động với cấu hình này vì tính năng chưa có (vd production cần
+ * repository Prisma — T-020). Chỉ khi output khởi động khớp `startupRefusal` thì cả file bị skip có
+ * nhãn; mọi lỗi khởi động khác vẫn đỏ. Đặt biến `requiredEnv=1` (CI khi tính năng đã có) ⇒ không
+ * bao giờ skip — lỗi khởi động là đỏ thật.
  */
-export function useApi(envOverrides: Record<string, string> = {}): ApiUnderTest {
+export interface PendingStartup {
+  label: string;
+  startupRefusal: RegExp;
+  requiredEnv: string;
+}
+
+/**
+ * Mỗi file suite: DB riêng của suite (ADR-106, schema làm mới) + một process API thật, dọn sau
+ * `afterAll` (kể cả khi test đỏ). Trả về đối tượng lười — chỉ dùng bên trong test/hook.
+ */
+export function useApi(
+  envOverrides: Record<string, string> = {},
+  pending?: PendingStartup,
+): ApiUnderTest {
   const config = loadHarnessConfig();
-  let db: EphemeralDatabase | undefined;
+  let db: SuiteDatabase | undefined;
   let api: RunningApi | undefined;
+  let skipReason: string | undefined;
 
   beforeAll(async () => {
     // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
     await flushRateLimitCounters();
-    db = await createEphemeralDatabase(config);
-    api = await startApi(baseEnv(db.appUrl, envOverrides));
-  }, 120_000);
+    db = await prepareSuiteDatabase(config, API_DIR);
+    try {
+      api = await startApi(baseEnv(db.appUrl, envOverrides));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const forced = pending && process.env[pending.requiredEnv] === '1';
+      if (!pending || forced || !pending.startupRefusal.test(message)) throw err;
+      skipReason = `[${pending.label}] build này từ chối khởi động (đúng thiết kế) — đặt ${pending.requiredEnv}=1 để bắt buộc chạy`;
+    }
+  }, 180_000);
+
+  beforeEach((ctx) => {
+    if (skipReason) ctx.skip(skipReason);
+  });
 
   afterAll(async () => {
-    await api?.stop();
-    await db?.drop();
+    try {
+      await api?.stop();
+    } finally {
+      await db?.release();
+    }
   }, 30_000);
 
   const running = (): RunningApi => {

@@ -12,6 +12,7 @@ import { flushRateLimitCounters } from './harness/valkey';
 const api = useApi();
 const actors = new Actors(api);
 const AUTH = 'auth routes (Phase 3)';
+const T020 = 'T-020 Prisma + Valkey (ADR-104/105)';
 
 const me = (token: string) => actors.json('GET', '/auth/me', token);
 
@@ -94,10 +95,36 @@ describe('Thu hồi phiên', () => {
     'Logout-all khi Valkey tắt ⇒ access cũ vẫn bị từ chối (fallback DB)',
     AUTH,
   );
+  // ADR-105 (A3): ghi thu hồi vào Valkey TRƯỚC commit; lỗi ⇒ 503 + rollback; read-through chỉ SET NX.
+  // Cổng nghiệm thu trên branch T-020 (Postgres + Valkey thật). 24b/24d cần container Valkey RIÊNG
+  // do suite tự tạo/hủy (TL duyệt có điều kiện) — chưa viết thân.
   pendingRoute(
     'SEC-24b',
-    'Findings A3: Valkey lỗi ĐÚNG LÚC ghi sau commit (logout-all/logout/đổi mật khẩu) rồi hồi phục ⇒ access cũ vẫn 401',
-    AUTH,
+    'Valkey lỗi khi ghi thu hồi TRƯỚC commit ⇒ 503, rollback (tv/mật khẩu không đổi trong DB)',
+    T020,
+  );
+  pendingRoute(
+    'SEC-24c',
+    'Đọc xen giữa: cache tv bị xóa (miss) + authenticate song song với logout-all ×20 ⇒ sau 204 access cũ LUÔN 401 (SET NX không đè giá trị thu hồi)',
+    T020,
+    async () => {
+      for (let round = 0; round < 20; round += 1) {
+        await flushRateLimitCounters(); // xóa cả `auth:tv:*` ⇒ mọi request kế tiếp là cache miss
+        const user = await actors.register(`interleave-${round}`);
+        const readers = Array.from({ length: 10 }, () => me(user.accessToken));
+        const logoutAll = actors.json('POST', '/auth/logout-all', user.accessToken);
+        const [result] = await Promise.all([logoutAll, ...readers]);
+        expect(result.status, `vòng ${round}: logout-all`).toBe(204);
+        for (let i = 0; i < 3; i += 1) {
+          expect((await me(user.accessToken)).status, `vòng ${round}, đọc lại ${i}`).toBe(401);
+        }
+      }
+    },
+  );
+  pendingRoute(
+    'SEC-24d',
+    'Ghi trước commit thành công, ghi lại sau commit lỗi (Valkey tắt giữa chừng) rồi hồi phục ⇒ access cũ vẫn 401',
+    T020,
   );
 
   // Findings A4 — lost update trên users: login (đọc → argon2 → save) chạy song song với thao tác
@@ -106,7 +133,7 @@ describe('Thu hồi phiên', () => {
   pendingRoute(
     'SEC-23b',
     'Race login(mật khẩu cũ) ‖ đổi mật khẩu, 20 vòng ⇒ mật khẩu mới luôn đúng, mật khẩu cũ luôn sai',
-    AUTH,
+    `${AUTH} · ${T020}`,
     async () => {
       for (let round = 0; round < 20; round += 1) {
         await flushRateLimitCounters();
@@ -132,7 +159,7 @@ describe('Thu hồi phiên', () => {
   pendingRoute(
     'SEC-21c',
     'Race login ‖ logout-all, 20 vòng ⇒ access token cấp TRƯỚC logout-all luôn 401',
-    AUTH,
+    `${AUTH} · ${T020}`,
     async () => {
       for (let round = 0; round < 20; round += 1) {
         await flushRateLimitCounters();

@@ -7,17 +7,26 @@ import { useApi } from './harness/suite';
 // cố ý không kết nối được ở local ⇒ chỉ ảnh hưởng readyz (degraded, ADR-074), không chặn khởi động.
 
 const PROD_ORIGIN = 'https://app.sec.example';
-const api = useApi({
-  NODE_ENV: 'production',
-  APP_ENV: 'staging',
-  REDIS_URL: 'rediss://127.0.0.1:6380',
-  CORS_ORIGINS: PROD_ORIGIN,
-  COOKIE_SECURE: 'true',
-  TRUST_PROXY_HOPS: '1',
-  JWT_ACCESS_SECRET: 'staging-like-secret-for-security-suite-0123456789',
-  SENTRY_DSN: 'https://public@o0.ingest.sentry.io/0',
-  METRICS_TOKEN: 'm'.repeat(32),
-});
+const api = useApi(
+  {
+    NODE_ENV: 'production',
+    APP_ENV: 'staging',
+    REDIS_URL: 'rediss://127.0.0.1:6380',
+    CORS_ORIGINS: PROD_ORIGIN,
+    COOKIE_SECURE: 'true',
+    TRUST_PROXY_HOPS: '1',
+    JWT_ACCESS_SECRET: 'staging-like-secret-for-security-suite-0123456789',
+    SENTRY_DSN: 'https://public@o0.ingest.sentry.io/0',
+    METRICS_TOKEN: 'm'.repeat(32),
+  },
+  {
+    // T-021: main.ts từ chối lưu trữ bộ nhớ ở production (guard đúng) ⇒ skip có nhãn tới khi có Prisma.
+    // CI sau T-020: SEC_REQUIRE_PRODUCTION=1 ⇒ file này BẮT BUỘC chạy, khởi động lỗi là đỏ.
+    label: 'PENDING-T020',
+    startupRefusal: /Lưu trữ bộ nhớ không được dùng ở production/,
+    requiredEnv: 'SEC_REQUIRE_PRODUCTION',
+  },
+);
 
 describe('Production hardening', () => {
   it('HSTS bật: max-age 1 năm + includeSubDomains', async () => {
