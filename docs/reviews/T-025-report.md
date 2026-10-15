@@ -1,7 +1,8 @@
 # T-025 — Báo cáo: bảng Kanban (kéo thả, optimistic update, realtime) trên mock API
 
-**Người làm:** Engineer E (session `taskflow-enterprise-54`, thay `-37`) · **Branch:** `feat/T-025` (rebase lên main `33d2fe9`) · **Ngày:** 2026-10-15
-Giữa chừng tạm dừng để làm T-029 (`fix/T-029-web-sec`, đã báo DONE). Nhánh này **chưa** chứa T-029 — khi T-029 merge cần rebase (đụng `session.ts`, `mock-api/index.ts`, `auth-handlers.ts`).
+**Người làm:** Engineer E (session `taskflow-enterprise-54`, thay `-37`) · **Branch:** `feat/T-025` (rebase lên main `f1355ce`, đã gồm T-029) · **Ngày:** 2026-10-15
+Giữa chừng tạm dừng để làm T-029 (đã merge `689decd`). Đã rebase: xung đột ở `mock-api/index.ts`, `auth-handlers.ts`, `respond.ts` được gộp cả hai phía (guard Content-Type/Origin của T-029 + handler board của T-025); `session.ts` tự gộp (cờ logout-pending + `realtimeAuth`).
+ADR-109 (`__Host-tf_rt`): API hiện vẫn đặt `tf_rt` không Secure ở dev http (`refresh-cookie.ts`), mock giả lập môi trường dev nên giữ `tf_rt` + `Path=<base>/auth`; FE không đọc cookie nên không phải sửa.
 
 ## 1. Đã làm (theo 7 việc của ticket)
 1. **Route** (`app/(app)/w/…`): `/w/[wsId]` ⇒ redirect `/projects`; `/w/[wsId]/projects` (tab Đang hoạt động / Đã lưu trữ, cursor); `/w/[wsId]/p/[projectId]` (+ `?task=`) — uuid, không slug. Id sai định dạng ⇒ màn "Không tìm thấy hoặc bạn không có quyền truy cập" (không gọi API). `/w` giờ link tới danh sách project.
@@ -62,7 +63,13 @@ Best practices chỉ trừ `inspector-issues` (CSP, không URL) — giống T-01
 `docs/design/frontend.md`: §4.3 (fractional-indexing không ném lỗi) + mục mới **§10.1 V13–V19** (MSW 3 `onUnhandledFrame`/không cookie jar — theo yêu cầu Tech Lead; PointerSensor mặc định; plugin Accessibility; CollisionPriority; ResizeObserver jsdom; structural sharing; memo 500 task).
 
 ## 7. Definition of Done
-Chạy trong worktree `D:/TaskFlow_wt/T-025` trên main `33d2fe9`:
+Chạy trong worktree `D:/TaskFlow_wt/T-025` sau rebase lên main `f1355ce`:
 ```
-DOD_PLACEHOLDER
+$ pnpm typecheck              → exit 0
+$ pnpm lint                   → exit 0 (prettier; eslint --max-warnings=0 gồm max-lines 150 .tsx / 200 .ts và ≤ 3 useState;
+                                 depcruise web: 292 modules, 840 deps, 0 vi phạm; api: 0 vi phạm)
+$ pnpm test --maxWorkers=2    → Test Files 129 passed (129) · Tests 1334 passed (1334) · exit 0, 0 "Unhandled"
+$ pnpm --filter @taskflow/web build → exit 0 (route mới: /w/[wsId], /w/[wsId]/projects, /w/[wsId]/p/[projectId])
 ```
+Build và Lighthouse chạy trên bản trước rebase (trước khi gộp T-029); phần gộp chỉ đụng mock/phiên, đã có test.
+Hook pre-commit (lefthook: gitleaks + prettier + eslint) chạy đầy đủ cho mọi commit của nhánh; gitleaks `main..HEAD`: no leaks found.
