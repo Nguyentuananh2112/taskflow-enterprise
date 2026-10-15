@@ -2,21 +2,30 @@ import type { CookieOptions, Request, Response } from 'express';
 
 import type { IClock } from '../../../core/domain';
 
+/** Dev: Path hẹp — trên localhost cookie không tách theo cổng, Path=/ sẽ gửi cả sang web :3000. */
 export const REFRESH_COOKIE_PATH = '/api/v1/auth';
+/** Trùng tên nhiều hơn mức này ⇒ từ chối, không thu hồi từng giá trị (chặn khuếch đại DB/Valkey). */
+export const MAX_REFRESH_COOKIES = 4;
 
 /**
- * Cookie refresh token (security.md §2.3): HttpOnly, SameSite=Strict, Path=/api/v1/auth, không
- * Domain (host-only). `secure` ⇒ thuộc tính Secure + tên `__Secure-tf_rt`; dev (http://localhost)
- * ⇒ `tf_rt` không Secure (trình duyệt từ chối tiền tố `__Secure-` trên localhost).
+ * Cookie refresh token (security.md §2.3, ADR-109): HttpOnly, SameSite=Strict, không Domain.
+ * - `secure` (staging/production) ⇒ `__Host-tf_rt; Secure; Path=/`. Tiền tố `__Host-` buộc trình
+ *   duyệt từ chối mọi cookie tên này có `Domain=` hoặc thiếu `Secure`/`Path=/` ⇒ subdomain anh em
+ *   KHÔNG cài được (cookie tossing / login CSRF — T-028). Server chỉ đọc đúng tên này: cookie
+ *   `tf_rt` / `__Secure-tf_rt` do ai khác đặt bị bỏ qua.
+ * - Dev (http://localhost) ⇒ `tf_rt`, không Secure, Path=/api/v1/auth (trình duyệt từ chối tiền tố
+ *   `__Host-`/`__Secure-` trên localhost).
  */
 export class RefreshCookie {
   readonly name: string;
+  readonly #path: string;
 
   constructor(
     private readonly secure: boolean,
     private readonly clock: IClock,
   ) {
-    this.name = secure ? '__Secure-tf_rt' : 'tf_rt';
+    this.name = secure ? '__Host-tf_rt' : 'tf_rt';
+    this.#path = secure ? '/' : REFRESH_COOKIE_PATH;
   }
 
   #options(maxAgeMs: number): CookieOptions {
@@ -24,7 +33,7 @@ export class RefreshCookie {
       httpOnly: true,
       secure: this.secure,
       sameSite: 'strict',
-      path: REFRESH_COOKIE_PATH,
+      path: this.#path,
       maxAge: Math.max(0, maxAgeMs),
     };
   }

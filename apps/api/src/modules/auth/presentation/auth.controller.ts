@@ -18,7 +18,7 @@ import type { LogoutUseCase } from '../application/use-cases/logout.use-case';
 import type { RefreshSessionUseCase } from '../application/use-cases/refresh-session.use-case';
 import type { RegisterUseCase } from '../application/use-cases/register.use-case';
 import type { UpdateMeUseCase } from '../application/use-cases/update-me.use-case';
-import type { RefreshCookie } from './refresh-cookie';
+import { MAX_REFRESH_COOKIES, type RefreshCookie } from './refresh-cookie';
 
 export interface AuthControllerDeps {
   register: Pick<RegisterUseCase, 'execute'>;
@@ -61,6 +61,7 @@ export class AuthController {
 
   /** Lỗi `REFRESH_TOKEN_INVALID` ⇒ xóa cookie (security §1.4); `REFRESH_IN_PROGRESS` giữ cookie. */
   refresh = async (req: Request, res: Response) => {
+    this.#rejectFlood(req);
     try {
       await this.#revokeIfAmbiguous(req);
       const result = await this.d.refresh.execute({
@@ -76,6 +77,7 @@ export class AuthController {
 
   /** Idempotent: luôn 204 + xóa cookie. Cookie trùng tên ⇒ thu hồi family của MỌI giá trị. */
   logout = async (req: Request, res: Response) => {
+    this.#rejectFlood(req);
     for (const refreshToken of this.d.cookie.readAll(req)) {
       await this.d.logout.execute({ refreshToken });
     }
@@ -90,6 +92,16 @@ export class AuthController {
    * giá trị (như logout) rồi mới báo `REFRESH_TOKEN_INVALID`: cookie còn sót lại đều đã chết.
    * Nạn nhân phải đăng nhập lại — chấp nhận khi đang bị tấn công. Gốc rễ: tiền tố `__Host-`.
    */
+  /**
+   * Quá `MAX_REFRESH_COOKIES` giá trị trùng tên ⇒ 401 NGAY, không thu hồi từng cái (một header
+   * Cookie 16KB chứa ~50 giá trị ⇒ khuếch đại DB/Valkey) và KHÔNG xóa cookie: cookie host-only của
+   * nạn nhân còn đó nên lần sau vẫn là "trùng" ⇒ không thể hoán đổi phiên.
+   */
+  #rejectFlood(req: Request): void {
+    if (this.d.cookie.readAll(req).length > MAX_REFRESH_COOKIES)
+      throw new RefreshTokenInvalidError();
+  }
+
   async #revokeIfAmbiguous(req: Request): Promise<void> {
     const values = this.d.cookie.readAll(req);
     if (values.length < 2) return;
