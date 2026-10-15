@@ -128,3 +128,63 @@ describe('useBoardDnd — chuột vào cột TRỐNG (E2)', () => {
     expect(hook.result.current.state.preview?.TODO).toEqual([task.id]);
   });
 });
+
+describe('useBoardDnd — task đổi qua realtime GIỮA lúc kéo (review B, ADR-010/110)', () => {
+  const columnsOf = (tasks: TaskDto[]) => ({
+    TODO: tasks.filter((t) => t.status === 'TODO'),
+    IN_PROGRESS: tasks.filter((t) => t.status === 'IN_PROGRESS'),
+    REVIEW: tasks.filter((t) => t.status === 'REVIEW'),
+    DONE: tasks.filter((t) => t.status === 'DONE'),
+  });
+
+  function setupLive(task: TaskDto) {
+    const onMove = vi.fn();
+    const hook = renderHook(
+      ({ tasks }: { tasks: TaskDto[] }) =>
+        useBoardDnd({
+          columns: columnsOf(tasks),
+          byId: Object.fromEntries(tasks.map((t) => [t.id, t])),
+          onMove,
+        }),
+      { initialProps: { tasks: [task] } },
+    );
+    const handlers = () => hook.result.current.handlers as unknown as Handlers;
+    const source = sourceOf(task);
+    const dropIntoInProgress = () => {
+      act(() => handlers().onDragStart(op(source, null), null));
+      return () => {
+        act(() =>
+          handlers().onDragOver(
+            op(source, { id: 'IN_PROGRESS', data: { status: 'IN_PROGRESS' } }),
+            null,
+          ),
+        );
+        act(() =>
+          handlers().onDragEnd(
+            op(source, { id: task.id, data: { status: 'IN_PROGRESS', key: task.key } }),
+            null,
+          ),
+        );
+      };
+    };
+    return { hook, onMove, dropIntoInProgress };
+  }
+
+  it('version đổi giữa dragStart và thả ⇒ KHÔNG onMove (không ghi đè thay đổi của người khác)', () => {
+    const task = makeTask({ status: 'TODO', version: 3 });
+    const { hook, onMove, dropIntoInProgress } = setupLive(task);
+    const drop = dropIntoInProgress();
+    // Người khác sửa nội dung task (event realtime ⇒ cache version 4) trong lúc mình đang kéo.
+    hook.rerender({ tasks: [{ ...task, title: 'Bản của họ', version: 4 }] });
+    drop();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('version không đổi ⇒ onMove với base = task lúc BẮT ĐẦU kéo (expectedVersion đúng)', () => {
+    const task = makeTask({ status: 'TODO', version: 3 });
+    const { onMove, dropIntoInProgress } = setupLive(task);
+    dropIntoInProgress()();
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onMove.mock.calls[0]?.[0]).toMatchObject({ id: task.id, version: 3 });
+  });
+});

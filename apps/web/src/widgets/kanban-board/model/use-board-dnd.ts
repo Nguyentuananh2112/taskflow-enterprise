@@ -34,6 +34,11 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
   const [state, dispatch] = useReducer(dragReducer, IDLE);
   // Handler đọc dữ liệu mới nhất qua ref (DragDropProvider giữ handler qua nhiều lần render).
   const drag = useRef<DragState>(IDLE);
+  /**
+   * Task lúc BẮT ĐẦU kéo — `expectedVersion` của lượt thả phải là version người dùng đã thấy khi nhấc
+   * thẻ; đọc lại cache lúc thả sẽ nuốt thay đổi realtime đến giữa chừng (ADR-010/110, review B).
+   */
+  const baseTask = useRef<TaskDto | null>(null);
   const latest = useRef({ columns, byId, onMove });
   useEffect(() => {
     latest.current = { columns, byId, onMove };
@@ -43,6 +48,7 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
     const id = event.operation.source?.id;
     const task = id === undefined ? undefined : latest.current.byId[String(id)];
     if (!task) return;
+    baseTask.current = task;
     const snapshot = toColumnIds(latest.current.columns);
     drag.current = {
       activeId: task.id,
@@ -75,7 +81,9 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
 
   const onDragEnd = useCallback<NonNullable<Handlers['onDragEnd']>>((event) => {
     const { activeId, from, before, preview } = drag.current;
+    const base = baseTask.current;
     drag.current = IDLE;
+    baseTask.current = null;
     dispatch({ type: 'end' });
     if (event.canceled || !activeId || !from || !before || !preview) return;
     // Quyết định theo đích THẬT lúc thả, không theo preview: preview có thể còn giữ cột hợp lệ vừa đi
@@ -87,13 +95,21 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
       return;
     }
     if (findColumn(preview, activeId) !== target) return; // preview chưa kịp theo đích ⇒ không đoán
-    const task = latest.current.byId[activeId];
-    if (!task) {
+    const current = latest.current.byId[activeId];
+    if (!current || !base) {
       toast({ title: 'Task vừa bị xóa', tone: 'error' });
       return;
     }
+    // Người khác đã đổi task trong lúc kéo ⇒ không ghi đè: hủy lượt thả, board hiện bản mới nhất.
+    if (current.version !== base.version) {
+      toast({
+        title: 'Task vừa được người khác thay đổi',
+        description: 'Hãy kéo lại nếu vẫn muốn chuyển.',
+      });
+      return;
+    }
     const intent = computeMoveIntent(before, preview, activeId);
-    if (intent) latest.current.onMove(task, intent);
+    if (intent) latest.current.onMove(base, intent);
   }, []);
 
   const handlers = useMemo(
