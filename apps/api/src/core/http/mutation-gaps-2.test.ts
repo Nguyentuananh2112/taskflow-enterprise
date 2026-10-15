@@ -26,9 +26,9 @@ const reqWith = (headers: Record<string, string | string[]>, extra: object = {})
 
 describe('pagination: cursor opaque ↔ after/nextAfter', () => {
   it('khứ hồi; kind gắn với endpoint; null ⇒ hết trang', () => {
-    const meta = pageMeta('members', 'id-42', 10);
+    const meta = pageMeta('members', UUID, 10);
     expect(meta).toMatchObject({ hasMore: true, limit: 10 });
-    expect(afterFromCursor('members', meta.nextCursor ?? undefined)).toBe('id-42');
+    expect(afterFromCursor('members', meta.nextCursor ?? undefined)).toBe(UUID);
     expect(() => afterFromCursor('projects', meta.nextCursor ?? undefined)).toThrow();
     expect(pageMeta('members', null, 10)).toEqual({ nextCursor: null, hasMore: false, limit: 10 });
     expect(afterFromCursor('members', undefined)).toBeUndefined();
@@ -132,7 +132,7 @@ describe('pino-http: health không log, mức log theo biên 400/500', () => {
     }
     const logged = lines
       .filter((l) => l['req'])
-      .map((l) => [(l['req'] as { url: string }).url, l['level']]);
+      .map((l) => [(l['req'] as { path: string }).path, l['level']]);
     expect(logged).toEqual([
       ['/s/399', 'info'],
       ['/s/400', 'warn'],

@@ -55,7 +55,7 @@ const echo: RequestHandler = (req, res) => {
 };
 
 describe('pino-http: dòng log request chỉ có các trường an toàn (P1, middleware.ts:37-43)', () => {
-  it('req = {id, method, url}, res = {statusCode} — không header nào (Authorization, Cookie, X-Api-Key…) lọt log', async () => {
+  it('req = {id, method, path}, res = {statusCode} — không header nào (Authorization, Cookie, X-Api-Key…) lọt log', async () => {
     const lines: Record<string, unknown>[] = [];
     const sink = new Writable({
       write(chunk: Buffer, _e, done) {
@@ -76,7 +76,9 @@ describe('pino-http: dòng log request chỉ có các trường an toàn (P1, mi
       .set('X-Api-Key', 'secret-key');
     const entry = lines.find((l) => l['msg'] === 'request completed');
     expect(entry).toBeDefined();
-    expect(Object.keys(entry?.['req'] as object).sort()).toEqual(['id', 'method', 'url']);
+    // T-031 (L5): chỉ path, không query string.
+    expect(entry?.['req']).toMatchObject({ method: 'GET', path: '/x' });
+    expect(Object.keys(entry?.['req'] as object).sort()).toEqual(['id', 'method', 'path']);
     expect(entry?.['res']).toEqual({ statusCode: 200 });
     expect(JSON.stringify(lines)).not.toMatch(/secret-(token|cookie|key)/);
   });
@@ -276,7 +278,6 @@ describe('cursor, validate, zod, health (P2/P3)', () => {
     try {
       const a = express().use(
         healthRouter({
-          gitSha: 't',
           probes: [
             { name: 'db', critical: true, timeoutMs: 1_000, check: () => Promise.resolve() },
           ],
