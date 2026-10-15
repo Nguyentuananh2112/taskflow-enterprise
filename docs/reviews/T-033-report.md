@@ -98,6 +98,10 @@ Mọi commit đều qua hook lefthook (gitleaks, prettier, eslint), không dùng
 4. Ngân sách dừng job khi shutdown là ½ `SHUTDOWN_TIMEOUT_MS`, phần còn lại để đóng Prisma/pool/Valkey.
 5. Test integration của purge đặt ở `test/integration/maintenance/` (thư mục mới). Ticket không liệt kê `test/` trong phạm vi sở hữu, nhưng test tầng I là bắt buộc.
 
+### Quyết định của Tech Lead về mục 6
+- (1) Rebalance trong move thay vì job: **DUYỆT**.
+- (2) Khóa advisory theo `(project, status)`: **DUYỆT CÓ ĐIỀU KIỆN**. D đo trong T-027 hai kịch bản: "cột nóng" (nhiều user move vào cùng một cột) và "move kích hoạt rebalance cột 500 task". Nếu **P95 ghi > 300 ms** (ADR-030) thì xem lại. Phương án dự phòng: chỉ lấy khóa cột khi cần rebalance; các move còn lại dựa vào unique rank + retry như trước T-033. Lúc đó create/move thường phải bỏ qua cột đang ở pha khóa tạm `~<id>`, nghĩa là phải đọc hàng xóm dưới khóa chia sẻ hoặc retry khi gặp khóa tạm.
+
 ## 7. Phối hợp / việc mở
 - B: đã đồng ý thiết kế. T-032 (ADR-110, cột `version` cho workspaces/projects) không xung đột: purge xóa cứng, restore vẫn giữ điều kiện cũ.
 - A: tên file, thứ tự shutdown và vị trí biến env đã thống nhất. Sau khi T-031 merge, `maintenanceEnabled` có thể dùng `isDeployed`.
