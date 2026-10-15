@@ -33,9 +33,16 @@ const reject = (header: string | undefined) =>
   );
 
 describe('AccessTokenAuthenticator (security.md 2.5)', () => {
-  it('MW-08: token hợp lệ ⇒ { id, sid, tv }; cache đọc đúng 1 lần (MGET), miss ⇒ DB rồi SET NX', async () => {
+  it('MW-08: token hợp lệ ⇒ { id, sid, tv, exp }; cache đọc đúng 1 lần (MGET), miss ⇒ DB rồi SET NX', async () => {
     const { alice, session, header } = await signedIn(2);
-    expect(await auth.authenticate(header)).toEqual({ id: alice.id, sid: session.familyId, tv: 2 });
+    // exp (giây) cho socket hẹn giờ auth:expired (security.md 5.3, T-016)
+    const expectedExp = Math.floor(h.clock.now().getTime() / 1000) + 900;
+    expect(await auth.authenticate(header)).toEqual({
+      id: alice.id,
+      sid: session.familyId,
+      tv: 2,
+      exp: expectedExp,
+    });
     expect(h.store.ops).toEqual([
       { op: 'read', userId: alice.id, sid: session.familyId },
       { op: 'primeTokenVersion', userId: alice.id, tokenVersion: 2 },

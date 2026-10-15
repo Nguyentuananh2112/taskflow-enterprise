@@ -18,6 +18,8 @@ export interface AuthenticatedUser {
   id: string;
   sid: string;
   tv: number;
+  /** Hạn access token (giây kể từ epoch) — socket dùng để hẹn giờ `auth:expired` (security.md 5.3). */
+  exp: number;
 }
 
 export interface AccessTokenAuthenticatorDeps {
@@ -45,13 +47,13 @@ export class AccessTokenAuthenticator {
     if (!result.ok) {
       throw result.reason === 'expired' ? new TokenExpiredError() : new UnauthorizedError();
     }
-    const { sub, sid, tv } = result.claims;
+    const { sub, sid, tv, exp } = result.claims;
 
     const state = await this.#sessionState(sub, sid);
     if (state.tokenVersion === null || state.tokenVersion !== tv || state.sessionRevoked) {
       throw new UnauthorizedError();
     }
-    return { id: sub, sid, tv };
+    return { id: sub, sid, tv, exp };
   }
 
   async #sessionState(userId: string, sid: string): Promise<SessionCacheState> {
