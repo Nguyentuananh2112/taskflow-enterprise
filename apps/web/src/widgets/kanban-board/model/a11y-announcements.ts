@@ -1,4 +1,4 @@
-import { Accessibility } from '@dnd-kit/dom';
+import { Accessibility, StyleInjector } from '@dnd-kit/dom';
 import type { DragDropManagerInput } from '@dnd-kit/dom';
 import type { TaskStatus } from '@taskflow/contracts/task';
 
@@ -48,11 +48,21 @@ const announcements = {
   },
 };
 
-/** Plugin mặc định + Accessibility cấu hình tiếng Việt (descriptor sau ghi đè tùy chọn mặc định). */
-export const boardPlugins: NonNullable<DragDropManagerInput['plugins']> = (defaults) => [
-  ...defaults,
-  Accessibility.configure({
-    announcements,
-    screenReaderInstructions: { draggable: SCREEN_READER_INSTRUCTIONS },
-  }),
-];
+/**
+ * Plugin mặc định + Accessibility tiếng Việt + nonce CSP cho StyleInjector. StyleInjector là plugin
+ * LÕI (manager luôn thêm) và là nơi DUY NHẤT của @dnd-kit/dom 0.5.0 tạo thẻ `<style>` (khi kéo:
+ * con trỏ, overlay, chặn chọn chữ) — thiếu nonce ⇒ CSP prod chặn ⇒ overlay kẹt, không thả được.
+ * Descriptor sau ghi đè tùy chọn của plugin cùng lớp (PluginRegistry.values).
+ */
+export function createBoardPlugins(
+  nonce: string | undefined,
+): NonNullable<DragDropManagerInput['plugins']> {
+  return (defaults) => [
+    ...defaults,
+    Accessibility.configure({
+      announcements,
+      screenReaderInstructions: { draggable: SCREEN_READER_INSTRUCTIONS },
+    }),
+    StyleInjector.configure(nonce ? { nonce } : {}),
+  ];
+}
