@@ -46,7 +46,7 @@ yq '(.. | select(tag == "!!str")) |= (sub("__GHCR_OWNER__"; "<owner>") | sub("__
      | sub("__GIT_SHA__"; strenv(GIT_SHA)) | sub("example.com"; "<domain>"))' .do/app.yaml > /tmp/app.yaml
 doctl apps create --spec /tmp/app.yaml   # in ra APP_ID → biến environment DO_APP_ID
 ```
-Job `backup` (SCHEDULED, 19:00 UTC = 02:00 giờ VN) cần thêm: `BACKUP_DATABASE_URL` (taskflow_backup), `BACKUP_AGE_RECIPIENTS` (public key age), bucket/endpoint S3 **ngoài DigitalOcean**, credential **PutObject-only**, `BACKUP_HEARTBEAT_URL` (heartbeat uptime monitor gói free — không ping > 26 h ⇒ email). Chi tiết bucket/lifecycle/khóa: `docs/runbook/backup-restore.md` §3–4.
+Job `backup` (SCHEDULED, 19:00 UTC = 02:00 giờ VN) cần thêm: `BACKUP_DATABASE_URL` (taskflow_backup, **không** kèm mật khẩu) + `PGPASSWORD` (SECRET), `BACKUP_AGE_RECIPIENTS` (public key age), bucket/endpoint S3 **ngoài DigitalOcean**, credential **PutObject-only**, `BACKUP_HEARTBEAT_URL` (heartbeat uptime monitor gói free — không ping > 26 h ⇒ email). Chi tiết bucket/lifecycle/khóa: `docs/runbook/backup-restore.md` §3–4.
 
 Sau đó điền các env `type: SECRET` đang là `CHANGE_ME` (DATABASE_URL của **taskflow_app**, JWT_ACCESS_SECRET, METRICS_TOKEN, SENTRY_DSN) qua giao diện hoặc `doctl apps update` — DO mã hóa thành `EV[…]`, các lần deploy sau giữ nguyên.
 ### A.4 Deploy thường xuyên

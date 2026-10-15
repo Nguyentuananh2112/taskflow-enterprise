@@ -9,7 +9,7 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
+  workflow_dispatch: # chỉ từ main (job `if` bên dưới)
 
 permissions:
   contents: read
@@ -24,9 +24,16 @@ env:
 jobs:
   publish:
     name: build + push GHCR (sha-${{ github.event.workflow_run.head_sha || github.sha }})
+    # G1 H1: bộ lọc `branches: [main]` của workflow_run so TÊN nhánh ⇒ PR từ fork có nhánh tên `main` cũng
+    # khớp. Chỉ nhận CI của PUSH vào main của CHÍNH repo này; dispatch chỉ từ refs/heads/main.
     if: >-
       vars.ENABLE_RELEASE == 'true' &&
-      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:

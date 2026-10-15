@@ -226,7 +226,7 @@ stage migrate       : FROM node slim → COPY --from=migrate-files /migrate · U
                         → CMD ["node","node_modules/prisma/build/index.js","migrate","deploy"]   (CLI 7.10.0 ghim; KHÔNG npx — ADR-061)
 stage runtime       : FROM node slim → COPY --from=build /out (node_modules prod) + dist · USER node · HEALTHCHECK · CMD ["node","dist/main.js"]
 ```
-- Hai target build từ cùng commit: `api` và `api-migrate`. Cả hai cùng tag `GIT_SHA`.
+- Hai target build từ cùng commit trong `apps/api/Dockerfile`: `runtime` (image `taskflow-api`) và `migrate` (image `taskflow-api-migrate`). Cả hai cùng tag `sha-<GIT_SHA>` (G2 O3: tên target thật là `runtime`/`migrate`, không phải `api`/`api-migrate`).
 - Image runtime **không chứa** prisma CLI, devDependencies, test, `.env`.
 - Image migrate **chỉ chứa** Prisma CLI + migrations (không pnpm, không source app) — số đo trước/sau ở `docs/reviews/T-022-report.md`.
 - **Kiểm chứng argon2 trong container (ADR-065, bắt buộc ở T-011):** CI chạy trên image runtime vừa build:
@@ -256,7 +256,7 @@ stage runtime       : FROM node slim → COPY --from=build /out (node_modules pr
 - Dùng image Debian thay alpine cho Postgres để collation theo glibc giống bản managed. Điều này ảnh hưởng `ORDER BY` trên các cột text không phải `rank`.
 - App (api/web) chạy trên máy bằng `pnpm dev` để hot reload; compose chỉ lo hạ tầng.
 - `docker-compose.prodlike.yml`: chạy **image đã build** của api, web, migrate và Caddy. Dùng cho E2E trong CI, và sẽ là file deploy staging ở Phase 5.
-- Lệnh chuẩn trong `package.json` gốc: `pnpm infra:up`, `pnpm db:deploy`, `pnpm db:seed`, `pnpm infra:down` (bổ sung vào scripts gốc của T-001 §10).
+- Lệnh chuẩn: `pnpm infra:up` / `pnpm infra:down` ở `package.json` gốc; migrate/seed nằm ở package api: `pnpm --filter @taskflow/api db:deploy`, `pnpm --filter @taskflow/api db:seed` (G2 O1: gốc **không** có `db:deploy`).
 
 ---
 
@@ -264,8 +264,8 @@ stage runtime       : FROM node slim → COPY --from=build /out (node_modules pr
 
 ### 4.1 Khi nào chạy `prisma migrate deploy` (ADR-074)
 - **Không bao giờ chạy trong app start.** Lý do: nhiều instance sẽ tranh lock; migrate lỗi làm app crash-loop; và app sẽ có quyền DDL thừa.
-- Chạy như **job riêng trước rollout**, dùng image `api-migrate` cùng `GIT_SHA`, lệnh `pnpm exec prisma migrate deploy`:
-  - Local: `pnpm db:deploy` (hoặc `pnpm --filter @taskflow/api exec prisma migrate dev` khi phát triển schema).
+- Chạy như **job riêng trước rollout**, dùng image `taskflow-api-migrate` (target `migrate`) cùng `GIT_SHA`, lệnh mặc định của image `node migrate.mjs` = `prisma migrate deploy` **+** `docker/migrate/grant-app.sql` (G2 O2: không gọi `prisma migrate deploy` trần — thiếu grant cho `taskflow_app`):
+  - Local: `pnpm --filter @taskflow/api db:deploy` (= migrate deploy + grant-app.sql; hoặc `pnpm --filter @taskflow/api exec prisma migrate dev` khi phát triển schema).
   - CI: chạy vào DB template trước test integration (§8.3).
   - Staging: `docker compose run --rm migrate` trước `docker compose up -d api web`.
   - Prod: PRE_DEPLOY job của nền tảng nếu có (⚠ KIỂM CHỨNG Phase 5); nếu không thì workflow chạy container migrate **trước** bước cập nhật app.
@@ -341,7 +341,7 @@ Repo public → file backup, dump và dữ liệu thật **không bao giờ** n�
 ### 5.1 Workflow `ci.yml` — mọi PR và push `main` (T-011, bổ sung T-022)
 ```
 gitleaks · actionlint
-static ──── build       (pnpm build; docker build api/api-migrate/web không push; argon2 + smoke api/web; trivy)
+static ──── build       (pnpm build; docker build runtime/migrate/web không push; argon2 + smoke api/web; trivy)
               └── e2e   (từ Phase 4: compose prodlike + Playwright)
 unit        (pnpm test + coverage api có ngưỡng)
 integration (postgres:18.6 + valkey:9.1.2 services; migrate template + drift; test:integration trên DB taskflow_it)

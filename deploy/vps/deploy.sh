@@ -56,6 +56,7 @@ fi
 
 [ $# -ge 4 ] || { echo 'Cách dùng: deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest> [backup_digest]' >&2; exit 2; }
 for d in "$2" "$3" "$4" ${5:+"$5"}; do [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Digest sai: $d" >&2; exit 2; }; done
+[[ "$1" =~ ^[0-9a-f]{40}$ ]] || { echo "git_sha phải là 40 ký tự hex: $1" >&2; exit 2; } # G1 Low: chặn ký tự lạ vào sed/.env
 
 cp .env .env.previous
 set_digests "$@"

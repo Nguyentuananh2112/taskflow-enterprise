@@ -74,7 +74,9 @@ jobs:
     instance_count: 1
     envs:
       # taskflow_backup: CHỈ SELECT (runbook deploy §A.2) — không dùng taskflow_app/migrator/doadmin
+      # postgresql://taskflow_backup@<host>:25060/taskflow?sslmode=require — KHÔNG kèm mật khẩu (backup.sh từ chối)
       - { key: BACKUP_DATABASE_URL, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
+      - { key: PGPASSWORD, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
       - { key: BACKUP_AGE_RECIPIENTS, value: CHANGE_ME, scope: RUN_TIME } # public key age — không phải secret
       - { key: BACKUP_S3_BUCKET, value: CHANGE_ME, scope: RUN_TIME }
       - { key: BACKUP_S3_ENDPOINT, value: CHANGE_ME, scope: RUN_TIME }
