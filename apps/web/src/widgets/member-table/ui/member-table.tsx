@@ -50,35 +50,38 @@ export function MemberTable({ wsId, permission, onLeft }: Props) {
         <p className="text-sm text-text-muted">Không có thành viên khớp.</p>
       )}
       {rows.length > 0 && (
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-text-muted">
-            <tr>
-              <th scope="col" className="py-2 pr-3 font-medium">
-                Thành viên
-              </th>
-              <th scope="col" className="py-2 pr-3 font-medium">
-                Vai trò
-              </th>
-              <th scope="col" className="hidden py-2 pr-3 font-medium sm:table-cell">
-                Tham gia
-              </th>
-              <th scope="col" className="py-2 font-medium">
-                <span className="sr-only">Thao tác</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((member) => (
-              <MemberRow
-                key={member.userId}
-                wsId={wsId}
-                member={member}
-                permission={permission}
-                onLeft={onLeft}
-              />
-            ))}
-          </tbody>
-        </table>
+        // Màn hẹp: email dài + ô vai trò ⇒ cuộn ngang TRONG bảng, không đẩy cả trang (E3).
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-text-muted">
+              <tr>
+                <th scope="col" className="py-2 pr-3 font-medium">
+                  Thành viên
+                </th>
+                <th scope="col" className="py-2 pr-3 font-medium">
+                  Vai trò
+                </th>
+                <th scope="col" className="hidden py-2 pr-3 font-medium sm:table-cell">
+                  Tham gia
+                </th>
+                <th scope="col" className="py-2 font-medium">
+                  <span className="sr-only">Thao tác</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((member) => (
+                <MemberRow
+                  key={member.userId}
+                  wsId={wsId}
+                  member={member}
+                  permission={permission}
+                  onLeft={onLeft}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {members.hasNextPage && (
         <Button

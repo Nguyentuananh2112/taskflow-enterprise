@@ -47,7 +47,7 @@ export function BoardToolbar({ scope, project, canCreate, onReload }: Props) {
           )}
         </div>
         {canCreate && !project.isArchived && (
-          <div className="ml-auto">
+          <div className="w-full sm:ml-auto sm:w-auto">
             <QuickCreateTask scope={scope} />
           </div>
         )}
