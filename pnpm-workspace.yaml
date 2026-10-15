@@ -25,6 +25,7 @@ catalog:
   '@vitest/coverage-v8': 5.0.4
   cors: 2.8.6
   dependency-cruiser: 18.6.0
+  fractional-indexing: 4.0.0
   eslint: 10.12.0
   eslint-config-prettier: 10.1.8
   eslint-plugin-react-hooks: 7.1.1

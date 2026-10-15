@@ -32,6 +32,7 @@
     "cors": "catalog:",
     "express": "catalog:",
     "express-rate-limit": "catalog:",
+    "fractional-indexing": "catalog:",
     "helmet": "catalog:",
     "jose": "catalog:",
     "pg": "catalog:",
