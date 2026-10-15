@@ -120,6 +120,27 @@ describe('đăng nhập / kết thúc phiên', () => {
     await expect(hooks.refresh()).resolves.toBe(false);
   });
 
+  it.each([
+    ['đăng xuất ở tab này', 'self'],
+    ['tin "logout" từ tab khác', 'other-tab'],
+  ] as const)(
+    'refresh đang bay khi phiên kết thúc (%s) ⇒ KHÔNG đặt lại token (G1 W1, W-TOKEN-1)',
+    async (_label, via) => {
+      let release!: (token: typeof TOKEN) => void;
+      const refresh = vi.fn(() => new Promise<typeof TOKEN>((resolve) => (release = resolve)));
+      const { controller, hooks, fromOtherTab } = setup({ refresh });
+      controller.signIn(TOKEN, USER);
+      const renewing = hooks.refresh();
+      await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+      if (via === 'self') await controller.logout();
+      else fromOtherTab({ type: 'logout' });
+      release({ accessToken: 'at-late', expiresIn: 900 });
+      await expect(renewing).resolves.toBe(false);
+      expect(tokenStore.get()).toBeNull();
+      expect(sessionStore.get().status).toBe('anonymous');
+    },
+  );
+
   it('logout OK ⇒ true, không có gì chờ xác nhận', async () => {
     const { controller } = setup();
     controller.signIn(TOKEN, USER);

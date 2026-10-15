@@ -9,6 +9,7 @@ import { usePermission } from '@/entities/workspace';
 import { ArchiveProjectButton } from '@/features/project-archive';
 import { ProjectGeneralForm } from '@/features/project-edit';
 import { isApiError } from '@/shared/api';
+import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
@@ -44,6 +45,12 @@ export function ProjectSettingsPage() {
           <Skeleton className="h-10" />
           <Skeleton className="h-24" />
         </div>
+      )}
+      {project.isError && !data && (
+        <EmptyState
+          title="Không tải được dự án"
+          action={<Button onClick={() => void project.refetch()}>Thử lại</Button>}
+        />
       )}
       {data?.isArchived && (
         <p role="status" className="rounded-control border-l-4 border-warning px-3 py-2 text-sm">

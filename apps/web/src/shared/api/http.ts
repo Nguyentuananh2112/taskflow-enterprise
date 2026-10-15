@@ -83,7 +83,8 @@ export function createHttpClient(deps: HttpDeps) {
         method,
         headers,
         body: body === undefined ? null : JSON.stringify(body),
-        // Cookie refresh chỉ sống ở Path=/api/v1/auth (security.md §2.3).
+        // Chỉ route /auth/* cần cookie refresh. Staging/prod: `__Host-tf_rt; Path=/` (ADR-109 — trình
+        // duyệt gửi cho mọi path nên FE tự giới hạn `include`); dev: `tf_rt; Path=/api/v1/auth`.
         credentials: path.startsWith('/auth/') ? 'include' : 'omit',
         signal: opts.signal ?? null,
       });

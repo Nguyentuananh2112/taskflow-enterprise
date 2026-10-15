@@ -42,9 +42,10 @@ export function QuickCreateTask({ scope }: Readonly<{ scope: TaskScope }>) {
       noValidate
       onSubmit={(event) => void onSubmit(event)}
       aria-label="Tạo task mới"
-      className="flex items-end gap-2"
+      className="flex w-full items-end gap-2 sm:w-auto"
     >
-      <div className="w-72 max-w-full">
+      {/* 360px: ô nhập co theo chỗ còn lại (không tràn ngang); từ sm cố định 18rem (E3). */}
+      <div className="min-w-0 flex-1 sm:w-72 sm:flex-none">
         <Input
           label="Task mới"
           placeholder="Tiêu đề task…"
