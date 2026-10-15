@@ -15,6 +15,9 @@ export const DEFAULT_PURGE_BATCH = 50;
  * Một workspace lỗi KHÔNG dừng cả lô (G1 F4 — trước đây workspace lỗi có `purge_at` cũ nhất đứng
  * đầu mọi lượt ⇒ không workspace nào được purge nữa): log `workspace.purge_failed`, đếm `failed`,
  * đi tiếp; lượt sau tự thử lại. Riêng `PurgeRunStopped` (instance khác đang chạy) dừng cả lượt.
+ *
+ * `signal` hủy (graceful shutdown — G1 F7) ⇒ dừng TRƯỚC workspace kế tiếp; workspace đang purge
+ * chạy hết transaction của nó (không cắt giữa chừng). Phần còn lại để lượt sau — idempotent.
  */
 export class PurgeDeletedWorkspacesJob {
   constructor(
@@ -28,7 +31,7 @@ export class PurgeDeletedWorkspacesJob {
   ) {}
 
   async execute(
-    input: { batchSize?: number } = {},
+    input: { batchSize?: number; signal?: AbortSignal } = {},
   ): Promise<{ purged: number; skipped: number; failed: number }> {
     const now = this.d.clock.now();
     const ids = await this.d.workspaces.listPurgeable(now, input.batchSize ?? DEFAULT_PURGE_BATCH);
@@ -36,6 +39,7 @@ export class PurgeDeletedWorkspacesJob {
     let skipped = 0;
     let failed = 0;
     for (const workspaceId of ids) {
+      if (input.signal?.aborted) break;
       let done: boolean;
       try {
         done = await this.d.uow.run(() => this.d.purger.purge(workspaceId, now));

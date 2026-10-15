@@ -175,6 +175,22 @@ describe('purgeWorkspacesJob', () => {
     });
   });
 
+  it('F7 (G1): signal hủy GIỮA lượt ⇒ dừng trước workspace kế tiếp; tổng kết có aborted, không coi là lỗi', async () => {
+    const stop = new AbortController();
+    let calls = 0;
+    const { job: j, logger } = deps(() => {
+      calls += 1;
+      stop.abort(); // shutdown tới trong lúc workspace đầu đang purge
+      return Promise.resolve(true);
+    });
+    await expect(j.run(stop.signal)).resolves.toBeUndefined();
+    expect(calls).toBe(1);
+    expect(logger.entries.find((e) => e.msg === 'maintenance.purge_summary')?.data).toMatchObject({
+      purged: 1,
+      aborted: true,
+    });
+  });
+
   it('instance khác đang giữ khóa lô ⇒ bỏ lượt (info), không coi là lỗi', async () => {
     const { job: j, logger } = deps(() => Promise.reject(new PurgeRunBusyError()));
     await expect(j.run(new AbortController().signal)).resolves.toBeUndefined();
