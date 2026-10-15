@@ -1,4 +1,5 @@
 import type { IWorkspacePurger } from '../../application/ports/collaborators.port';
+import { PurgeRunStopped } from '../../application/purge-errors';
 import type { DbProvider } from '../persistence/prisma/db';
 
 /**
@@ -8,7 +9,7 @@ import type { DbProvider } from '../persistence/prisma/db';
 export const PURGE_RUN_LOCK_KEY = 'taskflow:purge-run';
 
 /** Instance khác đang chạy một lô purge ⇒ dừng lượt này (không phải lỗi). */
-export class PurgeRunBusyError extends Error {
+export class PurgeRunBusyError extends PurgeRunStopped {
   constructor() {
     super('Instance khác đang chạy purge — bỏ lượt này.');
     this.name = 'PurgeRunBusyError';

@@ -119,14 +119,25 @@ export function purgeWorkspacesJob(d: {
     jitterMs: d.jitterMs,
     async run() {
       try {
-        const { purged, skipped } = await job.execute();
-        d.logger.info({ purged, skipped }, 'maintenance.purge_summary');
+        const { purged, skipped, failed } = await job.execute();
+        d.logger.info({ purged, skipped, failed }, 'maintenance.purge_summary');
+        // G1 F4: lỗi từng workspace không còn dừng cả lô, nhưng lượt vẫn phải tính là THẤT BẠI để
+        // `maintenance.run_failed` + metric `scheduled_job_runs_total{result="failure"}` còn báo động.
+        if (failed > 0) throw new PurgeIncompleteError(failed);
       } catch (err) {
         if (!(err instanceof PurgeRunBusyError)) throw err;
         d.logger.info({}, 'maintenance.purge_skipped_busy');
       }
     },
   };
+}
+
+/** Lượt purge xong nhưng có workspace lỗi (đã log `workspace.purge_failed` từng cái). */
+export class PurgeIncompleteError extends Error {
+  constructor(readonly failed: number) {
+    super(`Purge chưa xong: ${failed} workspace lỗi — thử lại lượt sau.`);
+    this.name = 'PurgeIncompleteError';
+  }
 }
 
 /** Mặc định: bật ở staging/production, tắt ở local/test (env ghi đè được). */
