@@ -11,11 +11,12 @@ import { startTempValkey, type TempValkey } from './harness/valkey-container';
 // afterAll chạy ngược (stack) ⇒ dừng API rồi mới xóa container.
 
 const T020 = 'T-020 Prisma + Valkey (ADR-104/105)';
+const T032 = 'T-032 sid-revoked fallback DB khi cache miss';
 const env: Record<string, string> = {};
 let valkey: TempValkey | undefined;
 
 beforeAll(async () => {
-  if (!runPending(T020)) return; // case bị skip ⇒ không dựng container cho tốn RAM
+  if (!runPending(T020) && !runPending(T032)) return; // case bị skip ⇒ không dựng container cho tốn RAM
   valkey = await startTempValkey();
   env.REDIS_URL = valkey.url;
 }, 120_000);
@@ -76,6 +77,44 @@ describe('Valkey sự cố', () => {
         actors.json('POST', '/auth/login', undefined, { email: user.email, password });
       expect((await login(user.password)).status, 'mật khẩu cũ vẫn đúng').toBe(200);
       expect((await login(newPassword)).status, 'mật khẩu mới không được ghi').toBe(401);
+    },
+  );
+
+  // Cổng T-032 (đọc chéo T-028 X3): `sid-revoked` chỉ sống trong Valkey (không persistence). Cache miss
+  // `tv` sau restart không được coi phiên đã thu hồi là sống — phải hỏi DB (`isSessionRevoked`).
+  pendingRoute(
+    'SEC-24e',
+    'Logout 1 thiết bị ⇒ Valkey restart (mất sid-revoked) ⇒ access token của phiên đó vẫn 401 (đọc DB)',
+    T032,
+    async () => {
+      if (!valkey) throw new Error('container Valkey tạm chưa dựng');
+      await waitValkeyReconnected();
+      const user = await actors.register('sid-restart');
+      const other = await actors.json('POST', '/auth/login', undefined, {
+        email: user.email,
+        password: user.password,
+      });
+      expect(other.status).toBe(200);
+      const otherToken = (other.json as { data: { accessToken: string } }).data.accessToken;
+
+      const logout = await api.request({
+        method: 'POST',
+        path: '/api/v1/auth/logout',
+        headers: {
+          'content-type': 'application/json',
+          origin: api.webOrigin,
+          cookie: user.refreshCookie,
+        },
+        body: '',
+      });
+      expect(logout.status).toBe(204);
+      expect((await me(user.accessToken)).status, 'ngay sau logout').toBe(401);
+
+      valkey.kill();
+      await valkey.restart(); // cache trống: không còn auth:sid-revoked / auth:tv
+      await waitValkeyReconnected();
+      expect((await me(user.accessToken)).status, 'phiên đã logout sau Valkey restart').toBe(401);
+      expect((await me(otherToken)).status, 'đối chứng: phiên khác vẫn sống').toBe(200);
     },
   );
 });
