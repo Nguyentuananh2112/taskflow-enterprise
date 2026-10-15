@@ -431,6 +431,10 @@ server: Zod validate → SELECT membership(workspaceId, user) JOIN workspace(del
 ### 5.3 Token hết hạn khi socket đang mở
 - Server đặt timer theo `exp` của token. Trước hạn, client refresh qua HTTP rồi gửi `'auth:renew', { token }, ack`. Server verify đầy đủ (2.5), **`sub` phải trùng** user hiện tại (khác → ngắt). Thành công → đặt lại timer, cập nhật `sid` room nếu đổi, và **kiểm tra lại membership mọi phòng đang join** (lưới an toàn ~15 phút/lần nếu lỡ mất sự kiện thu hồi).
 - Timer chạy hết mà chưa renew → `emit('auth:expired')` rồi `disconnect(true)`. Client refresh và kết nối lại, join lại các phòng.
+- **Rate limit `auth:renew` (T-030, finding M5 của T-028):**
+  - Mỗi lần renew có thể tốn tới ~20 truy vấn DB (recheck membership mọi phòng). Vì vậy giới hạn chạy **trước mọi việc khác**: **5/phút/socket** và **30/phút/user** (`AUTH_RENEW_LIMIT`, `core/http/rate-limit/rules.ts`).
+  - Bộ đếm in-memory theo instance; giới hạn user dùng chung mọi socket của instance.
+  - Vượt hạn ⇒ ack `{ ok: false, code: 'RATE_LIMITED' }`, **không gọi DB, không ngắt socket**: client thử lại sau; nếu token hết hạn thì timer `auth:expired` tự ngắt.
 
 ### 5.4 Thu hồi quyền khi socket đang mở
 Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`io.in(room).socketsLeave/disconnectSockets`) để hoạt động xuyên node khi bật `@socket.io/redis-adapter`.
@@ -443,6 +447,14 @@ Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`i
 | Đổi role | Không cần rời phòng (mọi role đều đọc được); `io.to('user:{uid}').emit('member:role-changed', { workspaceId, role })` để FE cập nhật UI. UI chỉ là hiển thị — server vẫn kiểm role mỗi request |
 | Logout 1 thiết bị | `io.in('session:{sid}').disconnectSockets(true)` |
 | Logout-all / đổi mật khẩu / xóa user | `io.in('user:{uid}').disconnectSockets(true)` |
+
+**Valkey lỗi khi chạy nhiều instance (T-030, finding H3 của T-028):**
+- `pubClient.publish` của `@socket.io/redis-adapter` được bọc: lỗi chỉ log `realtime.adapter_publish_failed`, có throttle, **không làm sập process**.
+- Mọi lệnh thu hồi chạy **local-first** (`io.local.in(room)…`) trước, rồi mới phát qua adapter. Instance xử lý request luôn thu hồi socket của chính nó, kể cả khi Valkey chết.
+- **Giới hạn đã biết — rủi ro chấp nhận cho chế độ nhiều instance:** khi Valkey chết, các instance **khác** không nhận được lệnh thu hồi (logout, logout-all, đổi mật khẩu, xóa member, xóa workspace). Socket ở instance khác có thể tiếp tục nhận event cho tới khi gặp một trong các lưới an toàn:
+  1. lần `auth:renew` kế tiếp: verify lại `tv` / `sid` (fallback DB) và recheck membership mọi phòng;
+  2. token hết hạn: timer `auth:expired` ngắt socket.
+- Cửa sổ rủi ro **≤ TTL access token (15 phút)**. Lỗi chỉ ảnh hưởng **đọc** event realtime: mọi request HTTP vẫn kiểm `tv` / `sid-revoked` với fallback DB (2.5), nên không ghi hay đọc qua REST được.
 
 ---
 
