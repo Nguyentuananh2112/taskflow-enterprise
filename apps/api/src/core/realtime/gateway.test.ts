@@ -1,7 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 
 import { Server, type Namespace, type ServerOptions } from 'socket.io';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   connectError,
@@ -19,6 +19,8 @@ import { clientIp } from './gateway';
 const WS = '0199e5a2-7c1e-7cc3-9a3b-000000000001';
 const P1 = '0199e5a2-7c1e-7cc3-9a3b-0000000000a1';
 const P2 = '0199e5a2-7c1e-7cc3-9a3b-0000000000a2';
+const WS2 = '0199e5a2-7c1e-7cc3-9a3b-000000000002';
+const P3 = '0199e5a2-7c1e-7cc3-9a3b-0000000000a3';
 const CLIENT = '3b241101-e2bb-4255-8caf-4136c566a962';
 
 let rt: Awaited<ReturnType<typeof startRealtime>>;
@@ -356,6 +358,36 @@ describe('project:join / project:leave', () => {
     expect([...(server?.rooms ?? [])].filter((r) => r.startsWith('project:'))).toHaveLength(20);
   });
 
+  it('review B L1 (vòng 2): hai join CÙNG phòng song song, join đầu thất bại ⇒ suất của join sau vẫn được giữ', async () => {
+    rt = await startRealtime();
+    const ids = Array.from(
+      { length: 21 },
+      (_, i) => `0199e5a2-7c1e-7cc3-9a3b-${String(i).padStart(12, '0')}`,
+    );
+    ids.forEach((id) => rt.accessChecker.allow('u1', WS, id));
+    const socket = rt.client();
+    await connected(socket);
+    for (const id of ids.slice(0, 19))
+      await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: id });
+    const base = rt.accessChecker.checks;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // Join A lần 1: kiểm lỗi ngay. Join A lần 2: kiểm bị giữ ⇒ vẫn đang giữ suất phòng A.
+    rt.accessChecker.interleave = (check) =>
+      check === base + 1 ? 'throw' : check === base + 2 ? held : undefined;
+    const a = { workspaceId: WS, projectId: ids[19] };
+    const first = emitWithAck(socket, 'project:join', a);
+    const second = emitWithAck(socket, 'project:join', a);
+    expect(await first).toEqual({ ok: false, code: 'SERVICE_UNAVAILABLE' });
+    expect(
+      await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: ids[20] }),
+    ).toEqual({ ok: false, code: 'BUSINESS_RULE_VIOLATION' });
+    release();
+    expect(await second).toEqual({ ok: true });
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])].filter((r) => r.startsWith('project:'))).toHaveLength(20);
+  });
+
   it('event không có ack bị bỏ qua (không crash)', async () => {
     rt = await startRealtime();
     const socket = rt.client();
@@ -458,6 +490,71 @@ describe('thu hồi quyền phía server (security §5.4) — gọi sau commit',
       { actorId: 'pm' },
     );
     expect((await changed).data).toEqual({ workspaceId: WS, role: 'VIEWER' });
+  });
+
+  it('review B G1: revokeWorkspaceAccess rời CẢ phòng project không có trong projectIds (ảnh chụp tx thiếu project mới) — chỉ của workspace đó', async () => {
+    rt = await startRealtime();
+    rt.accessChecker.allow('u1', WS, P1).allow('u1', WS2, P3);
+    const socket = rt.client({ token: 'user:u1:s1' });
+    await connected(socket);
+    await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 });
+    await emitWithAck(socket, 'project:join', { workspaceId: WS2, projectId: P3 });
+    // P1 được tạo SAU khi use case đọc listIds ⇒ projectIds rỗng.
+    await rt.gateway.revokeWorkspaceAccess(
+      { userId: 'u1', workspaceId: WS, projectIds: [] },
+      { actorId: 'owner' },
+    );
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])]).not.toContain(`project:${P1}`);
+    expect([...(server?.rooms ?? [])]).toContain(`project:${P3}`);
+    const leaked = noEvent(socket, 'task:updated');
+    await rt.gateway.emitToProject(
+      { projectId: P1, type: 'task:updated', data: {} },
+      { actorId: 'owner' },
+    );
+    expect(await leaked).toBe(true);
+  });
+
+  it('review B G1: closeWorkspace rời phòng theo `joined` của MỌI socket (projectIds thiếu project)', async () => {
+    rt = await startRealtime();
+    rt.accessChecker.allow('u1', WS, P1).allow('u2', WS, P1).allow('u2', WS2, P3);
+    const a = rt.client({ token: 'user:u1:s1' });
+    const b = rt.client({ token: 'user:u2:s2' });
+    await Promise.all([connected(a), connected(b)]);
+    await emitWithAck(a, 'project:join', { workspaceId: WS, projectId: P1 });
+    await emitWithAck(b, 'project:join', { workspaceId: WS, projectId: P1 });
+    await emitWithAck(b, 'project:join', { workspaceId: WS2, projectId: P3 });
+    await rt.gateway.closeWorkspace(
+      { workspaceId: WS, projectIds: [], memberUserIds: ['u1', 'u2'] },
+      { actorId: 'owner' },
+    );
+    const roomsOf = (await rt.gateway.io.fetchSockets()).flatMap((s) => [...s.rooms]);
+    expect(roomsOf).not.toContain(`project:${P1}`);
+    expect(roomsOf).toContain(`project:${P3}`);
+  });
+
+  it('review B G1: có adapter cụm ⇒ báo instance khác qua serverSideEmit; nhận message từ instance khác ⇒ rời phòng theo joined', async () => {
+    rt = await startRealtime({ adapter: lossyClusterAdapter() });
+    const broadcast = vi.spyOn(rt.gateway.io, 'serverSideEmit').mockImplementation(() => true);
+    rt.accessChecker.allow('u1', WS, P1);
+    const socket = rt.client({ token: 'user:u1:s1' });
+    await connected(socket);
+    await rt.gateway.revokeWorkspaceAccess(
+      { userId: 'u1', workspaceId: WS, projectIds: [] },
+      { actorId: 'owner' },
+    );
+    expect(broadcast).toHaveBeenCalledWith('workspace:leave-rooms', {
+      workspaceId: WS,
+      userId: 'u1',
+    });
+
+    // Instance khác thu hồi: message tới instance này.
+    await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 });
+    const nsp = rt.gateway.io.of('/') as unknown as { _onServerSideEmit(args: unknown[]): void };
+    nsp._onServerSideEmit(['workspace:leave-rooms', { workspaceId: WS, userId: 'u1' }]);
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])]).not.toContain(`project:${P1}`);
+    expect(server?.data.joined.size).toBe(0);
   });
 
   it('closeWorkspace: mọi thành viên nhận access-revoked (kể cả không ở phòng project), rồi rời phòng', async () => {

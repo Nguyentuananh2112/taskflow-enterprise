@@ -16,6 +16,7 @@ import {
   rooms,
   type AckFn,
   type ClientToServerEvents,
+  type InterServerEvents,
   type ServerToClientEvents,
   type SocketData,
 } from './events';
@@ -25,7 +26,7 @@ import { SlidingWindow } from '../http/rate-limit/sliding-window';
 export type AppSocket = Socket<
   ClientToServerEvents,
   ServerToClientEvents,
-  Record<string, never>,
+  InterServerEvents,
   SocketData
 >;
 
@@ -72,8 +73,11 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
   const timers = new WeakMap<AppSocket, NodeJS.Timeout>();
   const joinHits: number[] = [];
   const renews = new SlidingWindow(AUTH_RENEW_LIMIT.socket);
-  /** Join đang chạy (giữa kiểm quyền và vào phòng) — giữ suất phòng ĐỒNG BỘ (review B L1). */
-  const pendingJoins = new Set<string>();
+  /**
+   * Join đang chạy (giữa kiểm quyền và vào phòng) — giữ suất phòng ĐỒNG BỘ (review B L1). Đếm theo
+   * phòng: hai join CÙNG phòng song song ⇒ join xong trước không được xóa suất của join còn chạy.
+   */
+  const pendingJoins = new Map<string, number>();
   scheduleExpiry(socket, deps, timers);
   socket.on('disconnect', () => clearTimeout(timers.get(socket)));
 
@@ -98,7 +102,7 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
     // Đếm theo phòng thực tế (thu hồi phía server — socketsLeave — không cập nhật `joined`) CỘNG các
     // join đang chạy: đếm rồi mới await ⇒ nhiều join song song cùng lọt qua giới hạn (review B L1).
     const projectRooms = [...socket.rooms].filter((r) => r.startsWith('project:'));
-    const reserved = [...pendingJoins].filter((r) => !socket.rooms.has(r)).length;
+    const reserved = [...pendingJoins.keys()].filter((r) => !socket.rooms.has(r)).length;
     if (
       !socket.rooms.has(room) &&
       !pendingJoins.has(room) &&
@@ -106,11 +110,13 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
     ) {
       return ack({ ok: false, code: 'BUSINESS_RULE_VIOLATION' });
     }
-    pendingJoins.add(room);
+    pendingJoins.set(room, (pendingJoins.get(room) ?? 0) + 1);
     try {
       await join(room, workspaceId, projectId, userId, joined, ack);
     } finally {
-      pendingJoins.delete(room);
+      const left = (pendingJoins.get(room) ?? 1) - 1;
+      if (left > 0) pendingJoins.set(room, left);
+      else pendingJoins.delete(room);
     }
   });
 
@@ -147,6 +153,9 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
       joined.delete(projectId);
       return ack({ ok: false, code: 'RESOURCE_NOT_FOUND' });
     }
+    // BẤT BIẾN (review B G1): KHÔNG await giữa lần kiểm lại và `joined.set` — thu hồi theo workspace
+    // (`workspace:leave-rooms`) đọc `joined`; chạy sau đây thì thấy phòng này, chạy trước thì lần
+    // kiểm lại đã thất bại.
     joined.set(projectId, workspaceId);
     ack({ ok: true });
   }
