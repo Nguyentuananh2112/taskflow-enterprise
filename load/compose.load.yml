@@ -1,5 +1,7 @@
 # Hạ tầng TẠM cho đo tải T-027 — project riêng `taskflow-load` (không đụng compose `taskflow` dùng chung, ADR-106).
 # Không map cổng nào ra host; network khai báo ở đây (không cần `docker network create`). Dọn: run.sh down.
+# KHÔNG volume nào (kể cả volume ẩn danh do image khai VOLUME): dữ liệu Postgres/Valkey nằm trên tmpfs ⇒ `down`
+# thường đã xóa sạch — không cần `down --volumes` (bị cấm theo luật không xóa dữ liệu).
 #   docker compose -p taskflow-load -f load/compose.load.yml …   (run.sh gọi sẵn)
 name: taskflow-load
 
@@ -15,6 +17,9 @@ services:
     environment: *db
     volumes:
       - ../docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    # Image khai VOLUME /var/lib/postgresql (PG 18) ⇒ phủ bằng tmpfs để không sinh volume ẩn danh.
+    tmpfs:
+      - /var/lib/postgresql:size=2g
     command:
       - -c
       - shared_preload_libraries=pg_stat_statements
@@ -34,6 +39,8 @@ services:
   valkey:
     image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
     command: ['valkey-server', '--save', '', '--appendonly', 'no']
+    tmpfs:
+      - /data:size=256m
     networks: [load]
 
   migrate:

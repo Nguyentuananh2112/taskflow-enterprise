@@ -15,7 +15,8 @@ PW_HASH='$argon2id$v=19$m=47104,t=1,p=1$BPqjDkGQFpVDnTaU7BVg3A$FWRyFuMb/F0/RVsmV
 host_path() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else echo "$1"; fi; }
 dc() { docker compose -p taskflow-load -f "$(host_path "$ROOT/load/compose.load.yml")" "$@"; }
 
-down() { dc --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true; }
+# Không `--volumes`: compose không có volume nào (tmpfs) — down thường đã dọn sạch.
+down() { dc --profile tools down --remove-orphans >/dev/null 2>&1 || true; }
 if [ "${1:-}" = down ]; then down; exit 0; fi
 [ "${KEEP:-0}" = 1 ] || trap down EXIT
 
