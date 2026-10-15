@@ -445,11 +445,17 @@ Image trên GHCR của repo public mặc định là public. Image không đư�
 ### 6.3 Error tracking — Sentry gói miễn phí (ADR-073)
 - Dùng cho cả api và web, với `release = GIT_SHA`, `environment = APP_ENV`.
 - Source map upload lúc build trong CI, cần token **chỉ có ở environment staging/production** → PR từ fork không upload. Web **không** phục vụ source map công khai.
-- `beforeSend` xóa `authorization`, `cookie` và body của `/auth/*`. Không gửi PII ngoài `userId`.
-- Chỉ gửi lỗi 5xx và exception không bắt được. Đặt `sampleRate`/`tracesSampleRate` thấp để nằm trong quota gói miễn phí. ⚠ Kiểm quota khi chọn hosting.
+- **Hiện thực (T-035):** `beforeSend` theo **danh sách cho phép** — dựng event mới chỉ từ trường an toàn; phần lỗi dùng chung serializer allow-list của log (T-031 mục 0): không email / hash / token / cookie / body / query; bỏ `request`, `user`, breadcrumbs, biến cục bộ, dòng mã nguồn. Sentry 11 thay `sendDefaultPii` bằng `dataCollection` (mặc định THU cookie, header, body, query) ⇒ tắt hết tại nguồn. Tag `reqId` để nối với log.
+- Chỉ gửi lỗi 5xx và exception không bắt được (graceful shutdown báo qua `onFatal`; integration OnUncaught/OnUnhandled của Sentry bị tắt). `SENTRY_TRACES_SAMPLE_RATE` (API, mặc định 0.05); web không trace. ⚠ Kiểm quota khi chọn hosting.
+- **Thiếu `SENTRY_DSN` ở staging/production ⇒ cảnh báo `observability.sentry_disabled_missing_dsn`, KHÔNG chặn khởi động** (giám sát không được làm sập app).
+- API: `main.ts` khởi tạo Sentry rồi mới dynamic import phần còn lại (`start-server.ts`) để instrumentation ESM móc được http/express/pg — không đổi lệnh chạy hay Dockerfile.
+- Web: event trình duyệt đi qua **tunnel cùng origin `/monitoring`** ⇒ CSP không đổi (`connect-src 'self'` đủ). Route chỉ chuyển tiếp envelope có DSN trùng DSN cấu hình (khác ⇒ 403, không DSN ⇒ 404, > 200 kB ⇒ 413). DSN/environment/release đưa xuống trình duyệt qua `<meta>` của root layout.
+- Cấu hình dashboard (cảnh báo email, scrubber phía Sentry, uptime): `docs/runbook/alerts.md`.
 
 ### 6.4 Metrics tối thiểu
-`prom-client` expose `/metrics` trên **cổng nội bộ riêng** (9464). Nếu nền tảng không cho cổng nội bộ thì đặt sau `Authorization: Bearer METRICS_TOKEN`.
+`prom-client` expose `/metrics` trên **cổng nội bộ riêng** (`METRICS_PORT`, mặc định 9464; server HTTP riêng, không qua app Express công khai — T-035). `METRICS_TOKEN` (bắt buộc ở production) ⇒ thêm `Authorization: Bearer` làm lớp thứ hai. Nhãn `route` là **mẫu** (`/api/v1/workspaces/:wsId/members`), route không khớp ⇒ `unmatched` — không bao giờ có id/query.
+
+**Đã hiện thực (T-035):** `http_request_duration_seconds{route,method,status}`, `http_errors_total{code}`, `db_pool_{total,idle,waiting}`, `socketio_connected_clients`, `scheduled_job_runs_total{job,result}` + `scheduled_job_last_success_timestamp{job}` (API `metrics.recordJobRun` cho scheduler T-033), metric mặc định của process. Các dòng còn lại của bảng dưới: bổ sung khi module tương ứng cần.
 
 | Metric | Loại | Mục đích |
 |---|---|---|
