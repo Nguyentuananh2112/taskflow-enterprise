@@ -92,7 +92,16 @@ describe.runIf(available)('redis adapter khi Valkey sập (T-028 H3)', () => {
       );
 
       await proxy.cut();
-      await until(() => logger.messages('warn').includes('realtime.adapter_valkey_error'));
+      // Chờ tới khi CHÍNH kết nối pub đã biết Valkey mất (publish thất bại) — lỗi của kết nối sub
+      // có thể tới trước, khi đó publish còn ghi vào socket đã hủy và chỉ lỗi về sau (dễ chập chờn
+      // khi máy bận). Phát thử tới khi guard log `adapter_publish_failed`.
+      await until(() => {
+        void rt.gateway.emitToProject(
+          { projectId: P1, type: 'task:updated', data: {} },
+          { actorId: 'probe' },
+        );
+        return logger.messages('warn').includes('realtime.adapter_publish_failed');
+      });
 
       // Xóa thành viên (SEC-37) — afterCommit gọi revokeWorkspaceAccess.
       await rt.gateway.revokeWorkspaceAccess(
@@ -114,9 +123,9 @@ describe.runIf(available)('redis adapter khi Valkey sập (T-028 H3)', () => {
         { projectId: P1, type: 'task:created', data: {} },
         { actorId: 'owner' },
       );
-      await new Promise((r) => setTimeout(r, 100));
+      // Rejection (nếu có) của các publish trên xảy ra trong vài tick — chờ rộng tay khi máy bận.
+      await new Promise((r) => setTimeout(r, 300));
       expect(unhandled).toEqual([]);
-      expect(logger.messages('warn')).toContain('realtime.adapter_publish_failed');
       expect(member.connected).toBe(true);
     } finally {
       process.off('unhandledRejection', onUnhandled);
