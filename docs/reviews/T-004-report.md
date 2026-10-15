@@ -40,3 +40,57 @@ Q1 hosting/region/ngân sách · Q2 domain · Q3 GitHub public/private + gói ·
 ## Đề xuất ngoài phạm vi
 - Phase 1: thêm các env ở mục 5 vào `.env.example`; tạo `docs/runbooks/` và `docs/ops/` (restore-drills, go-live).
 - DECISIONS: nếu duyệt, nên ghi thành ADR các mục: hosting (Q1), websocket-only, migrate là job riêng trước rollout, chính sách backup/RPO/RTO.
+
+---
+
+# T-004b — Đồng bộ devops.md theo ADR-060 → ADR-074
+
+**Ngày:** 2026-10-15 · **File sửa:** `docs/design/devops.md` (viết lại toàn bộ, giữ nguyên cấu trúc 10 mục), `docs/reviews/T-004-report.md` (nối mục này).
+
+## Đã làm
+- **Phiên bản:** thêm bảng "Phiên bản đã chốt" ở đầu tài liệu, lấy từ ADR-060 và stack-versions.md. Gồm: Node 24.22.0 bookworm-slim, pnpm 11.28.2, Prisma 7.10.0, Postgres 18.6, Valkey 9.1.2, node-redis 6.3.0, argon2, Vitest 5.0.4, Playwright 1.64.1, k6 2.3.0, tsdown, gitleaks v8.30.1. Đã thay mọi chỗ `<ver: T-001>`.
+- **Mục 0 mới "Hiện trạng":**
+  - ADR-070: làm local trước. Staging, deploy và go-live dời sang Phase 5.
+  - ADR-071: chưa có domain.
+  - Nói rõ thế nào là "không gắn chặt nhà cung cấp": chỉ workflow deploy ở Phase 5 được dùng thứ riêng của nền tảng.
+- **ADR-061:**
+  - Mọi lệnh Prisma đổi sang `pnpm exec prisma`. CI thêm bước grep cấm `npx prisma`.
+  - Bỏ `DIRECT_DATABASE_URL`: `prisma.config.ts` chỉ đọc `DATABASE_URL`, nên job migrate dùng cùng tên biến, trỏ tới user `taskflow_migrator`.
+- **ADR-063 (Valkey):** compose, CI services, metric (`valkey_fallback_active`), readyz đều đổi sang Valkey. Giữ tên biến `REDIS_URL` vì đó là giao thức RESP.
+- **ADR-065 (argon2id):**
+  - Bỏ `BCRYPT_COST`; tham số argon2 là hằng số trong code.
+  - RAM api ≥ 1 GiB (~46 MiB mỗi lần băm × 4 luồng).
+  - Thêm bước CI smoke argon2 trong image runtime.
+  - Thêm metric `password_hash_duration_seconds`.
+- **Postgres 18:** volume mount `/var/lib/postgresql`. Dùng image Debian `18.6-bookworm` (không phải alpine) để collation glibc giống bản managed.
+- **ADR-072 (repo public):**
+  - Chặn rò secret 3 lớp: pre-commit, CI, GitHub push protection.
+  - CI an toàn với PR từ fork: không dùng `pull_request_target`, workflow PR không có secret, phải duyệt contributor lần đầu.
+  - Bật required reviewers cho environment `production` và branch protection.
+  - `.gitignore` chặn file dump/backup. Image GHCR để public nên không được chứa secret.
+- **ADR-073:** Sentry free + uptime monitor free; mọi cảnh báo gửi qua email. Ghi rủi ro chấp nhận: không có cam kết phản hồi ngoài giờ.
+- **ADR-074:** 8 quyết định đã ghi thành quy định trong các mục tương ứng.
+- **ADR-047/050:** thêm job purge workspace (advisory lock, test không purge nhầm), thêm runbook khôi phục workspace bị purge nhầm bằng PITR.
+- **ADR-090:** chiến lược test trỏ tới 2 file test-spec. Bộ SEC mở rộng tới SEC-55.
+- **ADR-084 / frontend.md §3.6:** `API_URL` gồm cả `/api/v1`; `WS_URL` là origin.
+- **Q1–Q8:** đã đóng trong §10 kèm căn cứ ADR. Các điểm còn mở được giao cho ticket cụ thể, chủ yếu T-011 và Phase 5.
+
+## Mâu thuẫn phát hiện ngoài phạm vi (Tech Lead xử lý)
+- `docs/design/frontend.md:431` vẫn ghi `io(env.NEXT_PUBLIC_WS_URL, …)`. Dòng này trái với §3.6 của chính file đó và ADR-074; nên đổi thành `getRuntimeConfig().wsUrl` (thuộc Engineer E).
+- `DECISIONS.md` ADR-030 vẫn ghi "(bcrypt cost 12)". Sau ADR-065 nên sửa thành argon2id.
+- `stack-versions.md` §10 (khung monorepo) vẫn ghi `redis:8.10.2` trong compose. ADR-063 đã chọn Valkey; T-011 sẽ làm theo ADR.
+
+## Còn mở (giao cho ticket, không cần người dùng quyết)
+| Điểm | Phụ trách |
+|---|---|
+| `pnpm fetch`/`deploy` ở pnpm 11 | T-011 |
+| Trình quản lý git hook + cách cài gitleaks trên Windows | T-011 |
+| Cú pháp `migrate diff` 7.10 | T-011 |
+| Prisma có bọc migration trong transaction không | T-011 / Phase 2 |
+| Cấu trúc standalone Next 16.4 | T-011 |
+| Tag pin của mailpit và Trivy | T-011 |
+| Option `max` của PrismaPg | T-008 / T-011 |
+| `io.local.disconnectSockets` | Phase 3 |
+| Thư viện scheduler | Phase 2 |
+| CA tự ký cho Playwright | Phase 4 |
+| PoC hosting, client đo fan-out realtime | Phase 5 |

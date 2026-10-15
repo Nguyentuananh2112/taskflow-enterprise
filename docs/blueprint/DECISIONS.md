@@ -45,7 +45,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-045 ✅ Project archived cấm cả xóa task (Q5).
 - ADR-046 ✅ Luật LAST_OWNER phải chống race: khóa các dòng OWNER của workspace (`SELECT … FOR UPDATE`) trong transaction trước khi hạ role/xóa/rời.
 - ADR-047 ✅ **Workspace xóa mềm** với thời gian ân hạn 30 ngày (`deleted_at`), sau đó job purge. Lý do: production thật, xóa workspace cascade toàn bộ dữ liệu + audit — không được để một cú bấm làm mất hết. Engineer C bổ sung schema ở Phase 1.
-- ADR-048 🟡 Băm mật khẩu: giữ bcrypt cost 12 + giới hạn 72 byte **trừ khi** T-001 xác nhận argon2id (không có giới hạn 72 byte) dùng tốt trên Node 24 + Docker alpine/slim — khi đó chuyển sang argon2id.
+- ADR-048 ⛔ (THAY BỞI ADR-065 — argon2id) Băm mật khẩu: giữ bcrypt cost 12 + giới hạn 72 byte **trừ khi** T-001 xác nhận argon2id (không có giới hạn 72 byte) dùng tốt trên Node 24 + Docker alpine/slim — khi đó chuyển sang argon2id.
 - ADR-049 ✅ (Người dùng chốt) Register với email đã tồn tại trả `409 EMAIL_ALREADY_EXISTS` ở v1, giảm thiểu bằng rate-limit; **xác minh email đưa vào lộ trình sau v1**. Mật khẩu tối thiểu **12 ký tự** + chặn danh sách mật khẩu phổ biến (danh sách cục bộ, không gọi dịch vụ ngoài); tối đa theo ADR-048. Lệch NIST 800-63B-4 (15) có chủ đích — ghi rõ trong security.md.
 - ADR-050 ✅ **Khôi phục workspace ở v1**: OWNER được `POST /workspaces/:wsId/restore` trong 30 ngày ân hạn (ân hạn không có khôi phục thì vô nghĩa). Slug được giữ chỗ trong thời gian ân hạn. Áp dụng đủ yêu cầu bảo mật mục 3.6 security.md (một kiểu 404 cho mọi thất bại, UPDATE có điều kiện `purge_at > now()`, rate-limit, log sự kiện bảo mật) — SEC-51..55 thành bắt buộc.
 - ADR-051 ✅ Thêm index `(workspace_id, role)` trên `workspace_members` (phục vụ khóa dòng OWNER, ADR-046).
@@ -84,4 +84,4 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-096 ✅ Lỗi validation **không trả lại input** của người dùng (tránh phản xạ dữ liệu nhạy cảm như mật khẩu vào log/response).
 
 ## Hiệu năng
-- ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (bcrypt cost 12). Đo bằng k6 ở Phase 5.
+- ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.

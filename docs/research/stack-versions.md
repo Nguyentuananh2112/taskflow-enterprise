@@ -94,7 +94,7 @@
 | Image | Tag đề xuất | Nguồn | Lưu ý |
 |---|---|---|---|
 | postgres | **18.6** (dev/CI: `postgres:18.6-alpine` được; prod theo nhà cung cấp) | https://www.postgresql.org/support/versioning/ · https://hub.docker.com/_/postgres | 18 EOL 2030-11-14 (17: 2029-11-08). ⚠️ **Image 18 đổi volume**: mount `/var/lib/postgresql` (PGDATA = `/var/lib/postgresql/18/docker`), không phải `/var/lib/postgresql/data` như ≤17. PG18 có `uuidv7()` native, nhưng Prisma sinh uuid ở client nên không phụ thuộc. |
-| redis | **8.10.2** (`redis:8.10.2-alpine` cho dev) | https://redis.io/legal/licenses/ · https://hub.docker.com/_/redis | Giấy phép: ≤7.2 BSD; 7.4–7.8 RSALv2/SSPLv1 (không OSI); **8+ thêm AGPLv3**. Dùng Redis như dịch vụ backend không sửa source → không phát sinh nghĩa vụ AGPL thực tế; nếu pháp chế không chấp nhận AGPL → **Valkey 9.1.2** (BSD — UNVERIFIED, Linux Foundation fork; giao thức tương thích). 🟡 Tech Lead/chủ dự án chọn. |
+| redis | ⛔ **Không dùng — chọn Valkey 9.1.2 (ADR-063).** Ghi chú gốc: 8.10.2 (`redis:8.10.2-alpine` cho dev) | https://redis.io/legal/licenses/ · https://hub.docker.com/_/redis | Giấy phép: ≤7.2 BSD; 7.4–7.8 RSALv2/SSPLv1 (không OSI); **8+ thêm AGPLv3**. Dùng Redis như dịch vụ backend không sửa source → không phát sinh nghĩa vụ AGPL thực tế; nếu pháp chế không chấp nhận AGPL → **Valkey 9.1.2** (BSD — UNVERIFIED, Linux Foundation fork; giao thức tương thích). 🟡 Tech Lead/chủ dự án chọn. |
 | node (runtime API) | **node:24.22.0-bookworm-slim** | https://hub.docker.com/_/node | Chọn slim (glibc) thay alpine: Prisma/Playwright/prebuilt native ổn định nhất trên glibc. Alpine cũng chạy được (bcrypt/argon2/@node-rs đều có prebuild musl) nếu cần image nhỏ. Có cả tag `24.22.0-trixie-slim`. |
 
 ---
@@ -213,7 +213,7 @@ TaskFlow_Enterprise/
 ├─ eslint.config.mjs         # flat config root, import từ @taskflow/config
 ├─ .dependency-cruiser.cjs
 ├─ vitest.config.ts          # test.projects: ["apps/*", "packages/*"]
-├─ docker-compose.yml        # postgres:18.6, redis:8.10.2 (dev)
+├─ docker-compose.yml        # postgres:18.6, valkey 9.1.2 (dev — ADR-063)
 ├─ .nvmrc                    # 24.22.0
 ├─ apps/
 │  ├─ api/                   # @taskflow/api — Express 5
