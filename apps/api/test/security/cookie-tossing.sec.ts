@@ -1,3 +1,4 @@
+import { decodeJwt } from 'jose';
 import { describe, expect } from 'vitest';
 
 import { Actors, refreshCookieOf, type Actor } from './harness/actors';
@@ -17,8 +18,9 @@ const actors = new Actors(api);
 /** Giá trị token (không kèm tên) của cookie refresh mà API đặt khi đăng ký. */
 const tokenOf = (actor: Actor) => actor.refreshCookie.slice(actor.refreshCookie.indexOf('=') + 1);
 const refreshWith = (cookieHeader: string) => actors.refresh(cookieHeader);
+/** Refresh trả `{ accessToken, expiresIn }` (security.md §2.1) ⇒ chủ phiên = `sub` của access token. */
 const userIdOf = (res: RawResponse) =>
-  (res.json as { data: { user: { id: string } } }).data.user.id;
+  decodeJwt((res.json as { data: { accessToken: string } }).data.accessToken).sub;
 
 function expectInvalid(res: RawResponse, ctx: string) {
   expect(res.status, `${ctx}: ${res.text.slice(0, 200)}`).toBe(401);
