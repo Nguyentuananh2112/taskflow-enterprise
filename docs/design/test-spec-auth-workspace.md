@@ -17,6 +17,16 @@
 | **I** | Integration — HTTP thật (app Express) + Postgres + Valkey thật (Docker) | Vitest + supertest + client socket.io | Transaction, khóa dòng, unique constraint, middleware, cookie/header, rate limit, Redis, socket |
 | **E** | E2E trình duyệt | Playwright | Chỉ ghi tham chiếu, không thuộc phạm vi tài liệu này |
 
+**Tầng I chạy ở đâu (thực tế, G2 T3 — 2026-10-15):** tầng I được tách thành 3 runner — chọn theo thứ cần chứng minh:
+
+| Runner | File | Hạ tầng | Lệnh |
+|---|---|---|---|
+| HTTP không DB (middleware, cookie/header, envelope, IDOR với backend in-memory) | `apps/api/test/http/*.http.test.ts` | không Postgres (project `api`) | `pnpm test` |
+| Postgres thật (transaction, khóa dòng, unique, race) | `apps/api/test/integration/**/*.int.ts` | 1 DB `taskflow_it`, **tuần tự** (`fileParallelism: false`, truncate danh sách bảng cố định) | `pnpm --filter @taskflow/api test:integration` |
+| Hộp đen HTTP + Postgres + Valkey (app thật) | `apps/api/test/security/*.sec.ts` | DB `taskflow_sec`, Valkey db 15 | `pnpm --filter @taskflow/api test:security` |
+
+Test race nằm ở `test/integration/workspace/workspace-races.int.ts`, `workspace-version-races.int.ts`, `test/integration/auth/auth-races.int.ts`, `auth-refresh-races.int.ts`, `test/security/workspace-races.sec.ts`.
+
 **Không chứng minh ở U:** race / `FOR UPDATE` / `FOR SHARE`, unique constraint của DB, cookie, rate limit. InMemory repo không mô phỏng khóa. Mọi test race là **I**, lặp 20 lần, dùng 2 kết nối DB riêng (`Promise.all` trên 2 request HTTP).
 
 ### 0.2 Fake dùng ở tầng U (port ở `application/ports`)
@@ -370,5 +380,5 @@ SEC thuộc phạm vi tài liệu này và nơi hiện thực:
 
 1. Bắt đầu bằng Policy (`MemberPolicy`, `WorkspacePolicy`, `ProjectPolicy`): test dạng bảng role × tình huống, thuần U, không cần repo.
 2. Test U của UseCase dùng một builder chung (`givenWorkspaceA()`) để dựng dữ liệu §0.3. Không lặp code seed trong từng file.
-3. Test I chạy theo schema riêng mỗi worker (hoặc truncate giữa các file) để có thể chạy song song. Test race (ROL-05, ROL-07, REM-07, REF-06, WSR-05) gom vào một file chạy tuần tự, đặt timeout rõ ràng.
+3. Test I (Postgres) chạy **tuần tự** trên một DB `taskflow_it` (truncate giữa các file) — không có schema riêng mỗi worker (xem bảng "Tầng I chạy ở đâu" ở §0.1). Test race (ROL-05, ROL-07, REM-07, REF-06, WSR-05) gom vào một file chạy tuần tự, đặt timeout rõ ràng.
 4. `SpyRealtimeNotifier` + `FakeUnitOfWork` phải cho phép khẳng định "notifier chỉ gọi sau commit". Nếu thiết kế UoW không hỗ trợ `afterCommit` thì đó là tín hiệu thiết kế sai (ADR-012).
