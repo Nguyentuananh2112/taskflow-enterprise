@@ -117,7 +117,7 @@ enum RefreshTokenRevokeReason { // chốt với T-002
 model User {
   id                String    @id @default(uuid(7)) @db.Uuid
   email             String    @unique @db.VarChar(254) // trim+lowercase+NFC ở app; CHECK (email = lower(email)) bằng SQL tay
-  passwordHash      String    @map("password_hash")    // argon2id PHC string (ADR-065)
+  passwordHash      String    @map("password_hash")    // argon2id PHC string `$argon2id$v=19$…` (ADR-065)
   fullName          String    @map("full_name") @db.VarChar(100)
   tokenVersion      Int       @default(0) @map("token_version")          // ADR-025
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
@@ -447,10 +447,10 @@ AuditLogDto   = { id, taskId, action, actor: UserRefDto, oldValue, newValue, cre
 | POST | `/auth/logout` | Cookie refresh + kiểm Origin | — | **`204`** không body; xóa cookie (idempotent) | `403 ORIGIN_NOT_ALLOWED` |
 | POST | `/auth/logout-all` | Bearer | — | **`204`** không body; xóa cookie | — |
 | GET | `/auth/me` | Bearer | — | `{ user: UserDto, memberships: MembershipDto[] }` | — |
-| PATCH | `/auth/me` | Bearer | body `{ fullName }` (ADR-083; đổi email/mật khẩu **không** qua đây) | `UserDto` | — |
+| PATCH | `/auth/me` | Bearer, rate limit 30/giờ/user | body strict `{ fullName }` (trim, 1–100, không ký tự điều khiển; field lạ ⇒ 400). ADR-083; đổi email/mật khẩu **không** qua đây | `UserDto` | `429 RATE_LIMITED` |
 | POST | `/auth/change-password` | Bearer | body `{ currentPassword, newPassword }` | `AuthTokenDto` + cookie mới (phiên mới cho thiết bị hiện tại; mọi phiên khác bị thu hồi) | `400 INVALID_CURRENT_PASSWORD` (cố ý không 401) |
 
-Luật trường (T-002): `password` 12–256 ký tự (ADR-049, ADR-065: argon2id `@node-rs/argon2` m=47104 t=1 p=1, không còn giới hạn 72 byte; trần 256 chống DoS), không luật thành phần, chặn danh sách mật khẩu phổ biến, không trùng email; `fullName` trim, 1–100 ký tự; `email` trim + lowercase + NFC. FE chỉ tự gọi refresh khi `code = TOKEN_EXPIRED`, không phải mọi 401.
+Luật trường (T-002): `password` 12–256 ký tự, **đếm theo code point sau NFC** (ADR-049, ADR-065: argon2id `@node-rs/argon2` m=47104 t=1 p=1, không còn giới hạn 72 byte; trần 256 chống DoS), không luật thành phần, chặn danh sách mật khẩu phổ biến, không trùng email; `fullName` trim, 1–100 ký tự; `email` trim + lowercase + NFC. FE chỉ tự gọi refresh khi `code = TOKEN_EXPIRED`, không phải mọi 401.
 
 ### 2.5. Workspaces & members
 
@@ -462,7 +462,7 @@ Luật trường (T-002): `password` 12–256 ký tự (ADR-049, ADR-065: argon2
 | PATCH | `/workspaces/:wsId` | `workspace:update` | body `{ name?, slug? }` (≥1 trường) | `WorkspaceDto` | `409 RESOURCE_CONFLICT` (slug) |
 | DELETE | `/workspaces/:wsId` | `workspace:delete` | body `{ confirmSlug }` | `DeletedWorkspaceDto` (xóa mềm, mục 1.7) | `400 VALIDATION_ERROR` nếu `confirmSlug` sai |
 | POST | `/workspaces/:wsId/restore` | `workspace:restore` (OWNER; route chỉ thấy workspace đã xóa) | — | `WorkspaceDto` | `404` (không phải OWNER / chưa xóa / quá hạn) |
-| GET | `/workspaces/:wsId/members` | `member:read` | query `{ q?, cursor?, limit? (1–100, mặc định 50) }`. `q` (ADR-083): trim, 1–100 ký tự, tìm chuỗi con **không phân biệt hoa thường** trong `fullName` hoặc `email` (`ILIKE` với `%`, `_`, `\` đã escape). Sắp theo `joinedAt`, `id` | `MemberDto[]` + `meta.page` | — |
+| GET | `/workspaces/:wsId/members` | `member:read` | query `{ q?, cursor?, limit? (1–100, mặc định 50) }`. `q` (ADR-083): trim, tối đa 100 ký tự (dài hơn ⇒ 400), rỗng sau trim ⇒ không lọc; luôn giới hạn trong workspace trên URL; tìm chuỗi con (khớp theo nghĩa đen) **không phân biệt hoa thường** trong `fullName` hoặc `email` (`ILIKE` với `%`, `_`, `\` đã escape). Sắp theo `joinedAt`, `id` | `MemberDto[]` + `meta.page` | — |
 | POST | `/workspaces/:wsId/members` | `member:add` | body `{ email, role }` (thêm user đã có tài khoản; lời mời qua email là Phase sau) | `201 MemberDto` | `404 RESOURCE_NOT_FOUND` (không có user), `409 RESOURCE_CONFLICT` (đã là thành viên), `403` (PM cấp role PM/OWNER) |
 | PATCH | `/workspaces/:wsId/members/:userId` | `member:update-role` (OWNER) | body `{ role }` | `{ member: MemberDto, unassignedTaskCount }` (> 0 khi hạ xuống VIEWER, ADR-044) | `422 BUSINESS_RULE_VIOLATION` (`LAST_OWNER`) |
 | DELETE | `/workspaces/:wsId/members/:userId` | `member:leave` (min VIEWER); người khác cần thêm `member:remove` (Policy — xem 2.2) | — | `{ userId, unassignedTaskCount }` | `403` (PM xóa OWNER/PM), `422 BUSINESS_RULE_VIOLATION` (`LAST_OWNER`) |
@@ -569,7 +569,7 @@ Map class lỗi (blueprint §7, polymorphism): `ValidationError`→400, `Unautho
 ## 4. WebSocket contract (Socket.io 4.x)
 
 ### 4.1. Kết nối & phòng
-- Handshake: `io(WS_URL, { auth: { token: accessToken, clientId } })`. JWT sai/hết hạn ⇒ `connect_error` với `err.data = { code: "UNAUTHORIZED" | "TOKEN_EXPIRED" }` (ADR-027). Gia hạn token khi socket đang mở: `auth:renew` / `auth:expired` — luồng chi tiết ở `docs/design/security.md` mục 5 (T-002).
+- Handshake: `io(WS_URL, { transports: ["websocket"], auth: { token: accessToken, clientId } })`. Client và server **chỉ** dùng transport `websocket` (không long-polling, không cần sticky session — ADR-074). Server kiểm `Origin` ở handshake theo whitelist CORS; Origin lạ hoặc thiếu ⇒ từ chối kết nối (T-002). JWT sai/hết hạn ⇒ `connect_error` với `err.data = { code: "UNAUTHORIZED" | "TOKEN_EXPIRED" }` (ADR-027). Gia hạn token khi socket đang mở: `auth:renew` / `auth:expired` — luồng chi tiết ở `docs/design/security.md` mục 5 (T-002).
 - Phòng: `project:{projectId}` (dữ liệu board) và `user:{userId}` (server tự join khi connect, dùng cho thông báo thu hồi quyền).
 
 ### 4.2. Client → Server (dùng ack callback)
@@ -668,7 +668,7 @@ packages/contracts/src/
 - Hậu tố: `…Body` (request body), `…Query` (query string, dùng `z.coerce` cho số), `…Params` (path params), `…Dto` (dữ liệu trả về), `…Response` (khi `data` không phải 1 Dto), `…Event` (payload socket), `…Details` (`error.details` có cấu trúc).
 - Enum: `z.enum([...])` tên số ít PascalCase (`TaskStatus`), giá trị UPPER_SNAKE khớp Prisma enum. Prisma enum **không** import vào contracts — một test ở `apps/api` khẳng định hai bên khớp.
 - Field primitive dùng lại (`TaskTitle = z.string().trim().min(3).max(150)`) để FE form và BE validate cùng một luật.
-- `Password = z.string().min(12).max(256)` (ADR-049, ADR-065). Kiểm danh sách mật khẩu phổ biến và "không trùng email" nằm ở **application** của API (danh sách lớn, cần ngữ cảnh), không nằm trong contracts.
+- `Password`: chuẩn hóa NFC rồi đếm **code point** trong khoảng 12–256 (ADR-049, ADR-065), vd `z.string().transform(s => s.normalize("NFC")).refine(s => { const n = [...s].length; return n >= 12 && n <= 256; })`. Không dùng `.min/.max` vì chúng đếm UTF-16 code unit. Kiểm danh sách mật khẩu phổ biến và "không trùng email" nằm ở **application** của API (danh sách lớn, cần ngữ cảnh), không nằm trong contracts.
 - Zod 4.6 (đã kiểm, stack-versions §8.6): `import * as z from "zod"`; `z.uuid()` cho mọi id (nhận v4 và v7, không khóa version); `z.email()`; `z.iso.date()` cho `dueDate`; `z.iso.datetime()` (chỉ nhận `Z`, server luôn trả `toISOString()`); thông điệp tùy chỉnh dùng `{ error: "…" }` (không còn `message`). API gọi `z.config(z.locales.vi())` một lần ở composition root (ADR-081).
 - DTO dùng `z.object` (strip mặc định); Body dùng `z.strictObject` để từ chối field lạ (vd client gửi `version`, `createdById`).
 
