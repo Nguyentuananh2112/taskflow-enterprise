@@ -5,6 +5,7 @@ import { Membership } from '../../domain/membership';
 import { isWorkspaceRole, type WorkspaceRole } from '../../domain/roles';
 import type { IUserDirectory } from '../ports/collaborators.port';
 import type { IMembershipRepository } from '../ports/repositories.port';
+import { lockOwnersAndReloadActor } from './owner-guard';
 import {
   normalizeEmail,
   requirePermission,
@@ -51,6 +52,13 @@ export class AddMemberUseCase {
     if (!user) throw new ResourceNotFoundError('user');
 
     return this.d.uow.run(async () => {
+      // X6: role của người gọi đọc lại sau khóa owners — PM vừa bị hạ / xóa không thêm được ai.
+      const { actor: fresh } = await lockOwnersAndReloadActor(
+        this.d.memberships,
+        actor,
+        'member:add',
+      );
+      if (!canGrant(fresh.role, role)) throw new ForbiddenError('member:add');
       const membership = Membership.create({
         id: this.d.ids.next(),
         workspaceId: actor.workspaceId,

@@ -37,11 +37,9 @@ export class ChangeMemberRoleUseCase {
     const role = parseRole(input.role);
 
     return this.d.uow.run(async () => {
-      const { owners, target } = await lockOwnersAndLoadTarget(
-        this.d.memberships,
-        actor.workspaceId,
-        input.userId,
-      );
+      const loaded = await lockOwnersAndLoadTarget(this.d.memberships, actor, input.userId);
+      const { owners, target } = loaded;
+      requirePermission(loaded.actor, 'member:update-role'); // X6: role mới nhất
       if (role !== 'OWNER') assertNotLastOwner(owners, target);
       const user = await this.d.users.findById(target.userId);
       if (!user) throw new ResourceNotFoundError('user');

@@ -34,12 +34,14 @@ export class RemoveMemberUseCase {
     requirePermission(actor, isSelf ? 'member:leave' : 'member:remove');
 
     return this.d.uow.run(async () => {
-      const { owners, target } = await lockOwnersAndLoadTarget(
-        this.d.memberships,
-        actor.workspaceId,
-        input.userId,
-      );
-      if (!isSelf && actor.role === 'PM' && (target.role === 'OWNER' || target.role === 'PM')) {
+      const loaded = await lockOwnersAndLoadTarget(this.d.memberships, actor, input.userId);
+      const { owners, target } = loaded;
+      requirePermission(loaded.actor, isSelf ? 'member:leave' : 'member:remove'); // X6: role mới nhất
+      if (
+        !isSelf &&
+        loaded.actor.role === 'PM' &&
+        (target.role === 'OWNER' || target.role === 'PM')
+      ) {
         throw new ForbiddenError('member:remove');
       }
       assertNotLastOwner(owners, target);
