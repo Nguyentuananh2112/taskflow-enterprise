@@ -21,7 +21,7 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 ## D — QA/DevOps (`taskflow-enterprise-a5`)
 | # | Việc | Ghi chú | Đang làm |
 |---|---|---|---|
-| D1 | `pnpm verify` gom mọi bước CI chạy được local (lint, typecheck, test, check-env-example, migrate diff khi có DB) | đã đề xuất | |
+| D1 | `pnpm verify` gom mọi bước CI chạy được local (lint, typecheck, test, check-env-example, migrate diff khi có DB) | đã đề xuất |D — 2026-10-15 (branch chore/verify-script) |
 | D2 | T-027 đo k6 | khi Tech Lead báo "máy rảnh" | |
 | D3 | Chuẩn bị deploy KHÔNG tốn tiền cho cả 2 phương án (ADR-070): (a) DigitalOcean App Platform `app.yaml` + Managed PG/Valkey, (b) 1 VPS + Docker Compose + Caddy (HTTPS tự động); workflow deploy staging/prod (environment protection, migrate job trước rollout, smoke sau deploy, rollback); KHÔNG tạo tài khoản/tài nguyên thật | để người dùng chốt hosting xong là chạy được | |
 

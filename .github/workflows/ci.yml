@@ -89,10 +89,8 @@ jobs:
           if git grep -nE 'npx +prisma' -- ':!*.md' ':!.github/workflows/ci.yml'; then
             echo "::error::Dùng 'pnpm exec prisma', không dùng 'npx prisma' (ADR-061)"; exit 1
           fi
-      - name: apps/api/.env.example khớp 1-1 env.ts (ADR-098)
-        run: node .github/scripts/check-env-example.mjs
       - run: pnpm typecheck
-      # prettier --check + ESLint (luật kiến trúc ADR-004/093) + dependency-cruiser.
+      # prettier --check + ESLint (luật kiến trúc ADR-004/093) + dependency-cruiser + .env.example ↔ env.ts (ADR-098).
       - run: pnpm lint
       - name: pnpm audit (prod, fail khi high/critical)
         run: pnpm audit --prod --audit-level high

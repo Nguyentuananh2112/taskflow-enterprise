@@ -80,6 +80,12 @@ minimumReleaseAge: 1440
 
 engineStrict: true
 
+# pnpm 11 mặc định `install` cho `pnpm run`/`pnpm exec` ⇒ node_modules lệch lockfile là pnpm TỰ cài — trên máy dùng
+# chung nhiều worktree gây tranh khóa store/treo (hook, test). `error` ⇒ dừng với hướng dẫn "pnpm install", không tự
+# cài, không chạy test trên deps cũ (warn sẽ cho kết quả sai mà không ai biết). CI luôn install trước nên không ảnh hưởng.
+# https://pnpm.io/settings/build#verifydepsbeforerun — Tech Lead quyết (D1, sau fix lefthook 78dcd88).
+verifyDepsBeforeRun: error
+
 # Ngoại lệ có chủ đích: bản vá bảo mật phát hành 2026-10-14 (< 24h) phải dùng ngay.
 #  - react/react-dom 19.3.1: GHSA-xqc2-xf4c-x3h3 (critical, RCE trong React Server Components)
 #  - next 16.4.1: GHSA-673q-mjm6-r5xr, GHSA-2464-fhr4-w9xw (critical, RCE), GHSA-p3m5-59mp-jv5r (high)

@@ -50,6 +50,9 @@ pnpm install              # cũng cài git hook (lefthook) qua script "prepare"
 - pnpm 11 không cài bản phát hành < 24h (`minimumReleaseAge`) và chặn install script ngoài danh sách `allowBuilds` — lỗi kiểu `ERR_PNPM_IGNORED_BUILDS` nghĩa là có gói mới cần Tech Lead duyệt vào `allowBuilds`, **không** tự chạy `pnpm approve-builds`.
 - Git worktree dùng chung thư mục hook với repo chính → chỉ cần cài một lần. Worktree chưa `pnpm install` thì hook in "Can't find lefthook in PATH" rồi **cho qua** — CI (job `gitleaks`) vẫn là lớp chặn bắt buộc.
 
+- **Repo đặt `verifyDepsBeforeRun: error`** (pnpm-workspace.yaml): `node_modules` lệch lockfile (vd sau `git pull`/rebase) ⇒ `pnpm test`/`pnpm lint`/`pnpm run …` dừng ngay với `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN … Run "pnpm install"` — **pnpm không tự cài** (mặc định pnpm 11 tự cài, gây tranh khóa store/treo trên máy chung). Gặp lỗi đó: chạy `pnpm install` rồi chạy lại. Git hook gọi thẳng `node_modules/.bin/*`, không qua pnpm.
+- **Một lệnh như CI:** `pnpm verify` (lint gồm `.env.example` ↔ `env.ts`, typecheck, test, audit; thêm `VERIFY_DB_URL=<DB riêng của bạn trên postgres-test, user migrator>` để chạy cả migrate + grant + drift). Chạy hết các bước rồi in bảng exit code; chỉ tin exit code.
+
 ### 2.1 Cài chậm trên Windows — nguyên nhân đo được và cách xử lý (T-022)
 Đo trên máy dev ngày 2026-10-15 (12 luồng, 32 GB RAM, nhiều phiên agent chạy song song, Docker Desktop đang build):
 | Lần cài (`--frozen-lockfile`, ~800 gói) | Store | Cách nhập file | Thời gian |
