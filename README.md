@@ -83,13 +83,13 @@ docs/         thiết kế, quyết định (ADR), runbook, báo cáo review
 
 ## Tài liệu
 
-| Bạn cần                              | Đọc                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------ |
-| Hiểu kiến trúc trong 10 phút         | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**                               |
-| Đóng góp code (quy trình, DoD, hook) | [CONTRIBUTING.md](CONTRIBUTING.md)                                             |
-| Báo lỗ hổng bảo mật                  | [SECURITY.md](SECURITY.md) — **không** mở issue công khai                      |
-| Mọi quyết định và lý do              | [docs/blueprint/DECISIONS.md](docs/blueprint/DECISIONS.md)                     |
-| API & dữ liệu                        | [docs/design/data-and-api.md](docs/design/data-and-api.md)                     |
-| Bảo mật                              | [docs/design/security.md](docs/design/security.md)                             |
-| Frontend                             | [docs/design/frontend.md](docs/design/frontend.md)                             |
-| Vận hành, deploy, giám sát           | [docs/design/devops.md](docs/design/devops.md), [docs/runbook/](docs/runbook/) |
+| Bạn cần                              | Đọc                                                                                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hiểu kiến trúc trong 10 phút         | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**                                                                                                           |
+| Đóng góp code (quy trình, DoD, hook) | [CONTRIBUTING.md](CONTRIBUTING.md)                                                                                                                         |
+| Báo lỗ hổng bảo mật                  | [SECURITY.md](SECURITY.md) — **không** mở issue công khai                                                                                                  |
+| Mọi quyết định và lý do              | [docs/blueprint/DECISIONS.md](docs/blueprint/DECISIONS.md)                                                                                                 |
+| API & dữ liệu                        | [docs/design/data-and-api.md](docs/design/data-and-api.md); OpenAPI 3.1 sinh từ contracts: `GET http://localhost:4000/api/docs` (chỉ `APP_ENV` local/test) |
+| Bảo mật                              | [docs/design/security.md](docs/design/security.md)                                                                                                         |
+| Frontend                             | [docs/design/frontend.md](docs/design/frontend.md)                                                                                                         |
+| Vận hành, deploy, giám sát           | [docs/design/devops.md](docs/design/devops.md), [docs/runbook/](docs/runbook/)                                                                             |

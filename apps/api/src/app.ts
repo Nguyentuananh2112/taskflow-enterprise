@@ -6,6 +6,7 @@ import type { IClock } from './core/domain';
 import { HttpResponder } from './core/http/envelope';
 import { globalErrorHandler, notFoundHandler } from './core/http/error-handler';
 import { markRouteBase, type AppMetrics } from './core/observability/metrics';
+import { buildOpenApiDocument } from '@taskflow/contracts/openapi';
 import type { IErrorReporter } from './core/observability/sentry';
 import { healthRouter, type ReadinessProbe } from './core/http/health';
 import {
@@ -24,6 +25,8 @@ export interface AppConfig {
   /** HSTS chỉ khi `APP_ENV ∈ {staging, production}` (ADR-101) — không bao giờ ở local/E2E http. */
   hsts: boolean;
   bodyLimit: string;
+  /** `GET /api/docs` (OpenAPI sinh từ contracts — A2): CHỈ local/test (`APP_ENV`), không lộ ở prod. */
+  apiDocs?: boolean;
 }
 
 export function appConfigFromEnv(env: Env): AppConfig {
@@ -34,6 +37,7 @@ export function appConfigFromEnv(env: Env): AppConfig {
     production: isDeployed(env.APP_ENV),
     hsts: isDeployed(env.APP_ENV),
     bodyLimit: '100kb', // ADR-028, security.md §6.7
+    apiDocs: env.APP_ENV === 'local' || env.APP_ENV === 'test',
   };
 }
 
@@ -87,6 +91,13 @@ export function createApp(deps: AppDependencies): Express {
     next();
   });
   if (deps.rateLimit?.length) app.use(...deps.rateLimit);
+  if (config.apiDocs) {
+    let spec: unknown;
+    app.get('/api/docs', (_req, res) => {
+      spec ??= buildOpenApiDocument({ version: config.gitSha });
+      res.json(spec);
+    });
+  }
   for (const { path, router } of deps.routers ?? []) {
     app.use(`/api/v1${path}`, markRouteBase(`/api/v1${path}`), router);
   }
