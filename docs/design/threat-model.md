@@ -176,12 +176,12 @@ Các lớp mới được thêm **sau khi** rà soát tìm ra lỗ hổng thật
 | R5 | Valkey chết khi chạy nhiều instance ⇒ instance khác không nhận lệnh thu hồi socket; socket còn nhận event ≤ 15 phút (TTL access token). REST vẫn kiểm `tv` / `sid` với fallback DB | Lưới an toàn: recheck ở `auth:renew` + hết hạn token | ADR-105, `security.md` §5.4 | Có Valkey HA / pub-sub bền |
 | R6 | Ghi thu hồi trước commit rồi rollback ⇒ token hợp lệ có thể bị 401 tối đa 60s / 905s | Hướng an toàn (fail-closed) | ADR-105 | — |
 | R7 | Cookie refresh `Path=/` đi kèm mọi request tới API origin | Bắt buộc bởi `__Host-`; vẫn HttpOnly + SameSite=Strict; header Cookie đã redact | ADR-109 | — |
-| R8 | JWT HS256 đối xứng: lộ `JWT_ACCESS_SECRET` = giả mạo được access token | Một service vừa ký vừa xác minh; xoay khóa có runbook (không giữ khóa lộ làm `_PREVIOUS`) | `security.md` §2.1, go-live §9 — **đề xuất ghi vào ADR-113** | Có service thứ hai cần xác minh token (chuyển EdDSA / RS256) |
-| R9 | Thiếu `SENTRY_DSN` ở staging / production ⇒ app vẫn chạy, chỉ cảnh báo | Giám sát không được làm sập app | T-035 — **đề xuất ADR-113** | — (go-live §6.3 bắt kiểm log khởi động) |
+| R8 | JWT HS256 đối xứng: lộ `JWT_ACCESS_SECRET` = giả mạo được access token | Một service vừa ký vừa xác minh; xoay khóa có runbook (không giữ khóa lộ làm `_PREVIOUS`) | **ADR-113**; `security.md` §2.1, go-live §9 | ≥ 2 dịch vụ kiểm token ⇒ chuyển EdDSA / ES256 (ADR-113) |
+| R9 | Thiếu `SENTRY_DSN` ở staging / production ⇒ app vẫn chạy, chỉ cảnh báo | Giám sát không được làm sập app | **ADR-113** (T-035) | Go-live **bắt buộc** đặt DSN (ADR-113; go-live §6.3) |
 | R10 | Chưa có quên mật khẩu / xác minh email / quản lý phiên trên UI | Cần hạ tầng email; schema đã sẵn | `security.md` §1.9 | Lộ trình sau v1 |
 | R12 | Log gói miễn phí có thể giữ < 90 ngày | Chi phí; phương án xuất log bảo mật | ADR-073, `devops.md` §6 | Có ngân sách giám sát |
 | R13 | Cảnh báo chỉ qua email (không đánh thức ai) | Gói miễn phí | ADR-073 | Có on-call |
-| R15 | Bất kỳ ai có thể gửi event lỗi qua tunnel (trong hạn mức rate limit) — tốn quota Sentry | DSN trình duyệt công khai theo thiết kế của Sentry; chỉ item `event` | T-035 — **đề xuất ADR-113** | Quota bị cạn thực tế |
+| R15 | Bất kỳ ai có thể gửi event lỗi qua tunnel (trong hạn mức rate limit) — tốn quota Sentry | DSN trình duyệt công khai theo thiết kế của Sentry; chỉ item `event` | **ADR-113** (T-035) | Quota Sentry bị đốt thực tế (ADR-113) |
 | R16 | Mất cả tài khoản hosting ⇒ RPO ≤ 24h (bản logic hằng ngày) | PITR của nền tảng phủ RPO ≤ 5 phút trong trường hợp thường | `devops.md` §4.3, B2 | Yêu cầu RPO chặt hơn |
 | R17 | Event realtime đang phát dở lúc shutdown bị mất | Client reconnect + refetch | ADR-012 | — |
 | R19 | XSS trên một subdomain anh em vẫn nguy hiểm cho người dùng (dù không còn tossing được cookie) | Phụ thuộc vệ sinh DNS (go-live §2.5) | ADR-029, ADR-109 | Có subdomain do bên thứ ba vận hành |
