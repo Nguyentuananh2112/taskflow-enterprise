@@ -37,8 +37,13 @@ export class InMemoryWorkspaceRepository
   add(workspace: Workspace): Promise<void> {
     return this.#write(workspace.toSnapshot());
   }
-  save(workspace: Workspace): Promise<void> {
-    return this.#write(workspace.toSnapshot());
+  /** ADR-110: cùng ngữ nghĩa bản Prisma — có điều kiện `version` + chưa xóa, rồi `version + 1`. */
+  async save(workspace: Workspace): Promise<boolean> {
+    const row = workspace.toSnapshot();
+    const current = this.byId.get(row.id);
+    if (!current || current.deletedAt !== null || current.version !== row.version) return false;
+    await this.#write({ ...row, version: row.version + 1 });
+    return true;
   }
   restoreIfWithinGrace(id: string, now: Date): Promise<boolean> {
     const row = this.byId.get(id);
@@ -51,6 +56,7 @@ export class InMemoryWorkspaceRepository
       purgeAt: null,
       deletedById: null,
       updatedAt: now,
+      version: row.version + 1,
     });
     return Promise.resolve(true);
   }
@@ -137,9 +143,23 @@ export class InMemoryProjectRepository
     this.byId.set(row.id, row);
     return Promise.resolve();
   }
-  save(project: Project): Promise<void> {
-    this.byId.set(project.id, project.toSnapshot());
-    return Promise.resolve();
+  /**
+   * ADR-110: có điều kiện `version` rồi `version + 1`; giữ `nextTaskNumber` hiện tại (chỉ
+   * `allocateTaskNumber` tăng). Bản InMemory không thấy bảng workspace — điều kiện "workspace chưa
+   * xóa" của bản Prisma do use case kiểm trước (membership 404).
+   */
+  save(project: Project): Promise<boolean> {
+    const row = project.toSnapshot();
+    const current = this.byId.get(row.id);
+    if (!current || current.workspaceId !== row.workspaceId || current.version !== row.version) {
+      return Promise.resolve(false);
+    }
+    this.byId.set(row.id, {
+      ...row,
+      nextTaskNumber: current.nextTaskNumber,
+      version: row.version + 1,
+    });
+    return Promise.resolve(true);
   }
   listIds(workspaceId: string): Promise<string[]> {
     return Promise.resolve(

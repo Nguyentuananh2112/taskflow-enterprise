@@ -1,6 +1,7 @@
 import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError, ValidationError } from '../../../../core/errors';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { saveWorkspaceOrFail } from '../optimistic-save';
 import type { IWorkspaceRepository } from '../ports/repositories.port';
 import { isReservedSlug } from '../slug-rules';
 import { slugConflict } from '../workspace-creator';
@@ -33,7 +34,8 @@ export class UpdateWorkspaceUseCase {
         ws.changeSlug(input.slug, now); // định dạng sai ⇒ 400
         if (isReservedSlug(input.slug)) throw slugConflict(); // cùng lỗi với slug đã có người dùng
       }
-      await this.d.workspaces.save(ws); // trùng slug ⇒ 409 từ unique constraint
+      // ADR-110: có điều kiện version + chưa xóa (X2). Trùng slug ⇒ 409 từ unique constraint.
+      await saveWorkspaceOrFail(this.d.workspaces, ws);
       return toWorkspaceView(ws.toSnapshot(), actor.role);
     });
   }

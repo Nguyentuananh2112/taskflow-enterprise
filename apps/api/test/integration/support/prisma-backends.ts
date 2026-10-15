@@ -49,6 +49,7 @@ class TestWorkspaceRepository extends PrismaWorkspaceRepository {
         deletedAt: true,
         purgeAt: true,
         deletedById: true,
+        version: true,
         createdAt: true,
         updatedAt: true,
       },

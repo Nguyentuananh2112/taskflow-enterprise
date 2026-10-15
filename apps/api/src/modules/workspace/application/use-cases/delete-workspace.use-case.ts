@@ -1,6 +1,7 @@
 import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError, ValidationError } from '../../../../core/errors';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { saveWorkspaceOrFail } from '../optimistic-save';
 import type { IWorkspaceRealtimeNotifier } from '../ports/collaborators.port';
 import type {
   IMembershipRepository,
@@ -44,7 +45,7 @@ export class DeleteWorkspaceUseCase {
         ]);
       }
       ws.softDelete(actor.userId, this.d.clock.now());
-      await this.d.workspaces.save(ws);
+      await saveWorkspaceOrFail(this.d.workspaces, ws); // ADR-110: PATCH ‖ DELETE không hồi sinh (X2)
 
       // Đọc TRONG transaction: danh sách đúng tại thời điểm xóa.
       const projectIds = await this.d.projects.listIds(ws.id);

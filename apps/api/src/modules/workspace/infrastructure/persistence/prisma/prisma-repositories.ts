@@ -27,6 +27,7 @@ const WS = {
   deletedAt: true,
   purgeAt: true,
   deletedById: true,
+  version: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -43,17 +44,39 @@ export class PrismaWorkspaceRepository implements IWorkspaceRepository {
       this.db().workspace.create({ data: workspace.toSnapshot(), select: { id: true } }),
     );
   }
-  async save(workspace: Workspace): Promise<void> {
-    const { id, createdAt: _c, ...data } = workspace.toSnapshot();
-    await mapConflicts(() =>
-      this.db().workspace.update({ where: { id }, data, select: { id: true } }),
+  /**
+   * ADR-110: `UPDATE … WHERE id AND version AND deleted_at IS NULL` + `version + 1`. Không bao giờ
+   * ghi đè một workspace đã xóa mềm bằng snapshot cũ (X2: PATCH ‖ DELETE từng hồi sinh workspace).
+   */
+  async save(workspace: Workspace): Promise<boolean> {
+    const s = workspace.toSnapshot();
+    const { count } = await mapConflicts(() =>
+      this.db().workspace.updateMany({
+        where: { id: s.id, version: s.version, deletedAt: null },
+        data: {
+          name: s.name,
+          slug: s.slug,
+          deletedAt: s.deletedAt,
+          purgeAt: s.purgeAt,
+          deletedById: s.deletedById,
+          updatedAt: s.updatedAt,
+          version: { increment: 1 },
+        },
+      }),
     );
+    return count === 1;
   }
   /** Loại trừ với purge: chỉ khôi phục khi `deleted_at IS NOT NULL AND purge_at > now` (WSR-05). */
   async restoreIfWithinGrace(id: string, now: Date): Promise<boolean> {
     const { count } = await this.db().workspace.updateMany({
       where: { id, deletedAt: { not: null }, purgeAt: { gt: now } },
-      data: { deletedAt: null, purgeAt: null, deletedById: null, updatedAt: now },
+      data: {
+        deletedAt: null,
+        purgeAt: null,
+        deletedById: null,
+        updatedAt: now,
+        version: { increment: 1 },
+      },
     });
     return count === 1;
   }
@@ -134,6 +157,7 @@ const PROJECT = {
   description: true,
   nextTaskNumber: true,
   archivedAt: true,
+  version: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -154,13 +178,18 @@ export class PrismaProjectRepository implements IProjectRepository {
       this.db().project.create({ data: project.toSnapshot(), select: { id: true } }),
     );
   }
-  /** Không ghi `next_task_number` — cột đó chỉ do `allocateTaskNumber` tăng (UPDATE … RETURNING). */
-  async save(project: Project): Promise<void> {
-    const { id, workspaceId, name, description, archivedAt, updatedAt } = project.toSnapshot();
-    await this.db().project.updateMany({
-      where: { id, workspaceId },
-      data: { name, description, archivedAt, updatedAt },
+  /**
+   * ADR-110: có điều kiện `version` + workspace chưa xóa mềm; tăng `version` (X8: rename ‖ archive
+   * từng gỡ archive). Không ghi `next_task_number` — cột đó chỉ do `allocateTaskNumber` tăng.
+   */
+  async save(project: Project): Promise<boolean> {
+    const { id, workspaceId, name, description, archivedAt, updatedAt, version } =
+      project.toSnapshot();
+    const { count } = await this.db().project.updateMany({
+      where: { id, workspaceId, version, workspace: { deletedAt: null } },
+      data: { name, description, archivedAt, updatedAt, version: { increment: 1 } },
     });
+    return count === 1;
   }
   async listIds(workspaceId: string): Promise<string[]> {
     const rows = await this.db().project.findMany({

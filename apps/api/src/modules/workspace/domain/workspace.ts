@@ -11,6 +11,8 @@ export interface WorkspaceSnapshot {
   deletedAt: Date | null;
   purgeAt: Date | null;
   deletedById: string | null;
+  /** ADR-110: optimistic lock — repository ghi `WHERE version = ?` rồi tăng. */
+  version: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +31,7 @@ export class Workspace extends Entity {
       deletedAt: null,
       purgeAt: null,
       deletedById: null,
+      version: 1,
       createdAt: input.now,
       updatedAt: input.now,
     });
@@ -52,6 +55,9 @@ export class Workspace extends Entity {
   }
   get purgeAt(): Date | null {
     return this.s.purgeAt;
+  }
+  get version(): number {
+    return this.s.version;
   }
   get createdAt(): Date {
     return this.s.createdAt;

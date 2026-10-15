@@ -1,6 +1,7 @@
 import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError } from '../../../../core/errors';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { saveProjectOrFail } from '../optimistic-save';
 import type { IProjectRepository } from '../ports/repositories.port';
 import {
   requirePermission,
@@ -25,7 +26,7 @@ export class SetProjectArchivedUseCase {
       if (!project) throw new ResourceNotFoundError('project');
       const now = this.d.clock.now();
       const changed = input.archived ? project.archive(now) : project.unarchive(now);
-      if (changed) await this.d.projects.save(project);
+      if (changed) await saveProjectOrFail(this.d.projects, project); // ADR-110 (X8)
       return toProjectView(project.toSnapshot());
     });
   }

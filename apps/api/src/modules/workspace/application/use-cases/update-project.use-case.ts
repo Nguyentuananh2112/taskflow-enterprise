@@ -1,6 +1,7 @@
 import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError, ValidationError } from '../../../../core/errors';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { saveProjectOrFail } from '../optimistic-save';
 import type { IProjectRepository } from '../ports/repositories.port';
 import {
   requirePermission,
@@ -35,7 +36,7 @@ export class UpdateProjectUseCase {
       const project = await this.d.projects.findInWorkspace(actor.workspaceId, input.projectId);
       if (!project) throw new ResourceNotFoundError('project');
       project.update(changes, this.d.clock.now());
-      await this.d.projects.save(project);
+      await saveProjectOrFail(this.d.projects, project); // ADR-110: rename ‖ archive (X8)
       return toProjectView(project.toSnapshot());
     });
   }

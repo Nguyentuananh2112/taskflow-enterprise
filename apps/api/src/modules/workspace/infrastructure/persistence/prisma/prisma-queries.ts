@@ -18,6 +18,7 @@ const WS = {
   deletedAt: true,
   purgeAt: true,
   deletedById: true,
+  version: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -28,6 +29,7 @@ const PROJECT = {
   keyPrefix: true,
   description: true,
   nextTaskNumber: true,
+  version: true,
   archivedAt: true,
   createdAt: true,
   updatedAt: true,

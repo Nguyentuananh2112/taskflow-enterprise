@@ -13,6 +13,8 @@ export interface ProjectSnapshot {
   description: string | null;
   nextTaskNumber: number;
   archivedAt: Date | null;
+  /** ADR-110: optimistic lock — repository ghi `WHERE version = ?` rồi tăng. */
+  version: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +64,7 @@ export class Project extends Entity {
       description: normalizeDescription(input.description),
       nextTaskNumber: 1,
       archivedAt: null,
+      version: 1,
       createdAt: input.now,
       updatedAt: input.now,
     });
@@ -76,6 +79,9 @@ export class Project extends Entity {
   }
   get keyPrefix(): string {
     return this.s.keyPrefix;
+  }
+  get version(): number {
+    return this.s.version;
   }
   get isArchived(): boolean {
     return this.s.archivedAt !== null;
