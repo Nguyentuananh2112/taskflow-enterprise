@@ -75,3 +75,15 @@ $ pnpm --filter @taskflow/api mutation:core-runtime               88.48%   [exit
 
 ## Bổ sung sau review — thống nhất thứ tự 404 trước 403 cho route project (quyết định TL)
 Route `/workspaces/:wsId/projects/:projectId*` (T-021) giờ tra project bằng `GetProjectQuery` (mọi role có `project:read`) **trước** `permit` ⇒ VIEWER PATCH/archive/unarchive project không tồn tại nhận **404 `project`** (trước đây 403); project có thật ⇒ 403; body sai từ người không có quyền ⇒ 403. Test trong `project.http.test.ts`; kiểm tra đột biến: bỏ bước này ⇒ test đỏ. DoD sau thay đổi: typecheck / lint / **110 file, 1164 test** — exit 0.
+
+## Additions after B's audit (T-028, 4 Low findings plus 1 Info), commit 47af195
+
+| # | Fix | Test |
+|---|---|---|
+| F1 | The task router is mounted **before** `/workspaces`. The workspace router's catch-all `authenticate` + `api-user` limiter used to run first, so each task request was counted twice (effective limit 150 per minute). | `"api-user"` `r` decreases by exactly 1 per request. With the old mount order the test fails (decrease of 2). |
+| F2 | `validateOrForbid` takes a list of minimum permissions, any one of which is enough. assign/delete accept `:own` or `:any`. | OWNER/PM sending an invalid body/query get 400. VIEWER still gets 403 (`required: task:assign:own`). |
+| F3 | `Cache-Control: no-store` on every task response, including errors. | Checked on 200 and on 401. |
+| F4 | More than one `charset` parameter, or one that cannot be parsed, gives 415. body-parser uses the last charset, while we used the first. | `app.test.ts`, 3 variants. |
+| Info | `requireTaskScope` checks the project, and the live task (except on audit-logs, which stays readable after deletion), **before** body/query validation. This follows security.md order. | An invalid body against a missing project/task gives 404, including for a VIEWER. |
+
+DoD after rebasing onto main f1355ce: typecheck, lint and test (120 files, 1280 tests) all exit 0.
