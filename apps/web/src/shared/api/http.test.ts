@@ -12,8 +12,9 @@ import {
 const BASE = 'http://localhost:4000/api/v1';
 const CLIENT_ID = '0192f0a0-0000-7000-8000-000000000001';
 
+const TS = '2026-10-15T03:00:00.000Z';
 const ok = (data: unknown, meta: object = { requestId: 'req-1' }, status = 200) =>
-  new Response(JSON.stringify({ success: true, data, meta }), {
+  new Response(JSON.stringify({ success: true, data, meta: { timestamp: TS, ...meta } }), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
@@ -22,7 +23,7 @@ const fail = (status: number, code: string, details: unknown = null) =>
     JSON.stringify({
       success: false,
       error: { code, message: `msg ${code}`, details },
-      meta: { requestId: 'req-e' },
+      meta: { timestamp: TS, requestId: 'req-e' },
     }),
     { status, headers: { 'Content-Type': 'application/json' } },
   );
@@ -158,6 +159,8 @@ describe('http — lỗi có kiểu', () => {
     ['không phải JSON (502 HTML từ proxy)', new Response('<html>502</html>', { status: 502 })],
     ['JSON nhưng sai envelope', new Response('{"foo":1}', { status: 200 })],
     ['data không khớp schema contracts', ok({ id: 123 })],
+    ['error.code lạ (không có trong ErrorCode của contracts)', fail(400, 'SOMETHING_NEW')],
+    ['envelope thành công thiếu meta.requestId', ok({ id: 'a' }, { requestId: '' })],
   ])('%s ⇒ BAD_RESPONSE', async (_label, response) => {
     const { http } = setup([response]);
     const error = await http.get('/x', { schema: Item }).catch((e: unknown) => e);

@@ -1,6 +1,5 @@
-export { ApiError, CLIENT_ERROR_CODES, isApiError } from './api-error';
+export { ApiError, CLIENT_ERROR_CODES, isApiError, type ApiErrorCode } from './api-error';
 export { http, setAuthHooks } from './client';
-export type { PageMeta } from './envelope';
 export {
   createHttpClient,
   type ApiResult,

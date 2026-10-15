@@ -1,7 +1,11 @@
+import {
+  ApiError as ApiErrorEnvelope,
+  apiSuccess,
+  type PageMeta,
+} from '@taskflow/contracts/common';
 import type * as z from 'zod';
 
 import { ApiError, CLIENT_ERROR_CODES } from './api-error';
-import { ApiEnvelope, type PageMeta } from './envelope';
 import { createSingleFlight } from './single-flight';
 
 // Fetch wrapper duy nhất của web (ADR-060: không axios; frontend.md §3.3). Nơi duy nhất được gọi fetch.
@@ -96,16 +100,23 @@ export function createHttpClient(deps: HttpDeps) {
       if (!empty.success) throw bad(empty.error);
       return { data: empty.data, page: undefined, requestId: headerRequestId };
     }
-    const envelope = ApiEnvelope.safeParse(await response.json().catch((e: unknown) => e));
-    if (!envelope.success) throw bad(envelope.error);
-    const requestId = envelope.data.meta?.requestId ?? headerRequestId;
-    if (!envelope.data.success) {
-      const { code, message, details } = envelope.data.error;
+    // Envelope theo @taskflow/contracts (data-and-api §3.1): rẽ theo `success`, rồi parse chặt.
+    const body: unknown = await response.json().catch((e: unknown) => e);
+    const isFailure =
+      typeof body === 'object' && body !== null && 'success' in body && body.success === false;
+    if (isFailure) {
+      const failure = ApiErrorEnvelope.safeParse(body);
+      if (!failure.success) throw bad(failure.error);
+      const { code, message, details } = failure.data.error;
+      const requestId = failure.data.meta.requestId;
       throw new ApiError({ status: response.status, code, message, details, requestId });
     }
-    const data = schema.safeParse(envelope.data.data);
-    if (!data.success) throw bad(data.error);
-    return { data: data.data, page: envelope.data.meta?.page, requestId };
+    const success = apiSuccess(schema).safeParse(body);
+    if (!success.success) throw bad(success.error);
+    // Với S generic, TS không suy được khóa `data` của z.object({ data: S }) ⇒ ép về output của S
+    // (giá trị đã được chính `schema` parse ở trên).
+    const { data, meta } = success.data as { data: z.output<S>; meta: typeof success.data.meta };
+    return { data, page: meta.page, requestId: meta.requestId };
   }
 
   /** Có token mới hơn token đã gửi chưa? Request khác vừa refresh xong ⇒ dùng luôn, không refresh lại. */

@@ -1,6 +1,6 @@
 # T-012 — Báo cáo: nền apps/web (token, shared/ui, fetch wrapper, runtime config, CSP)
 
-**Người làm:** Engineer E (phiên thay thế `taskflow-enterprise-37`, tiếp từ snapshot `b079029` của phiên crash) · **Branch:** `feat/T-012` (đã rebase lên `main` @ `c266a88`) · **Ngày:** 2026-10-15
+**Người làm:** Engineer E (phiên thay thế `taskflow-enterprise-37`, tiếp từ snapshot `b079029` của phiên crash) · **Branch:** `feat/T-012` (đã rebase lên `main` @ `4e186ac`, sau khi T-010 merge) · **Ngày:** 2026-10-15
 
 ## 1. Review lại snapshot b079029
 Tôi đọc lại toàn bộ 71 file của snapshot, đối chiếu với frontend.md §2/§3.3/§3.6/§6, security.md §6.8 và DECISIONS. Code đúng thiết kế, không có lỗi chặn. Tôi sửa / bổ sung các điểm sau:
@@ -13,6 +13,7 @@ Tôi đọc lại toàn bộ 71 file của snapshot, đối chiếu với fronte
 | 4 | Không có favicon ⇒ 404 trong console (Lighthouse best-practices 92) | Thêm `app/icon.svg` theo quy ước file của Next |
 | 5 | Không có mẫu env cho web | Thêm `apps/web/.env.example` (`API_URL`, `WS_URL`, `APP_ENV`, không có `NEXT_PUBLIC_*`) |
 | 6 | Xung đột `pnpm-lock.yaml` khi rebase | Lấy lockfile của main rồi chạy `pnpm install` để sinh lại |
+| 7 | Envelope tạm `shared/api/envelope.ts` | T-010 đã merge ⇒ **xóa file tạm**, `http.ts` dùng `ApiError` (envelope lỗi) + `apiSuccess(schema)` + `PageMeta` từ `@taskflow/contracts/common`; `ApiError.code` có kiểu `ErrorCode \| NETWORK_ERROR \| BAD_RESPONSE`, `isApiError(err, code)` kiểm kiểu theo enum |
 
 Tôi gộp snapshot và các sửa trên thành **một commit** `feat(T-012)` (Tech Lead đã cho phép squash).
 
@@ -20,7 +21,7 @@ Tôi gộp snapshot và các sửa trên thành **một commit** `feat(T-012)` (
 1. **Cây FSD** (§2.1): route mỏng ở `app/` (gốc), các layer ở `src/{app,views,widgets,features,entities,shared}`. Layer chưa có slice giữ bằng `.gitkeep`. Slice nào cũng có `index.ts`; `shared/ui` mỗi component một thư mục + index riêng, không có barrel chung. `test/structure.test.ts` chặn việc tạo `pages/` và `src/pages/`.
 2. **Token + Tailwind 4** (§6.1): biến ngữ nghĩa sáng/tối + `@theme inline`, thang chữ 12–24 với line-height ≥ 1.5, bo góc, bóng. `<html lang="vi">`. Font Inter tự host (xem QĐ-1).
 3. **shared/ui**: Button (4 biến thể, loading, asChild), Input, Select, Badge, Avatar, Dialog, Drawer, Toast/Toaster, Skeleton, EmptyState, Spinner. Mọi file ≤ 150 dòng (ESLint ép). Mỗi component có test render + axe-core (tắt `color-contrast` vì jsdom không có layout; tương phản được đo bằng Lighthouse ở dưới). Headless: `radix-ui` 1.8.1.
-4. **shared/api**: `createHttpClient` + instance `http`. Base URL lấy từ runtime config; parse envelope (file tạm `envelope.ts` đã được duyệt); `ApiError {status, code, message, details, requestId}` + `isApiError(err, code)`; mã client `NETWORK_ERROR`/`BAD_RESPONSE`; `X-Client-Id` cho request ghi; `credentials: 'include'` chỉ cho `/auth/*`; `data` bắt buộc parse bằng schema. Hook auth `setAuthHooks` (Phase 4 nối): gắn Bearer, single-flight refresh, request mới xếp hàng chờ refresh, `TOKEN_EXPIRED` chỉ thử lại 1 lần, `UNAUTHORIZED` có token ⇒ `onSessionEnded('revoked')`. 21 unit test.
+4. **shared/api**: `createHttpClient` + instance `http`. Base URL lấy từ runtime config; parse envelope bằng schema của `@taskflow/contracts/common`; `ApiError {status, code, message, details, requestId}` + `isApiError(err, code)`; mã client `NETWORK_ERROR`/`BAD_RESPONSE`; `X-Client-Id` cho request ghi; `credentials: 'include'` chỉ cho `/auth/*`; `data` bắt buộc parse bằng schema. Hook auth `setAuthHooks` (Phase 4 nối): gắn Bearer, single-flight refresh, request mới xếp hàng chờ refresh, `TOKEN_EXPIRED` chỉ thử lại 1 lần, `UNAUTHORIZED` có token ⇒ `onSessionEnded('revoked')`. 21 khối test `it`/`it.each` (gồm: `error.code` lạ ⇒ `BAD_RESPONSE`, thiếu `meta.requestId` ⇒ `BAD_RESPONSE`).
 5. **Runtime config** (§3.6): `src/app/config/server-env.ts` parse `API_URL`/`WS_URL`/`APP_ENV` bằng Zod lúc chạy, sai thì throw. Root layout truyền **chỉ** `{apiUrl, wsUrl, appEnv}` xuống `RuntimeConfigBoot`. Store dùng `z.strictObject` nên khóa lạ bị từ chối. `getRuntimeConfig()` gọi trước khi boot thì throw. Có test khẳng định secret không lọt xuống client. **Kiểm thực tế:** `next build` chạy được khi **không** có `API_URL` (mọi route `ƒ Dynamic`), `API_URL` chỉ được đọc ở `next start`.
 6. **CSP nonce** (`proxy.ts` + `src/app/security/csp.ts`): nonce 16 byte `crypto.getRandomValues` → base64; policy W-CSP-2; dev nới theo W-CSP-3; header W-CSP-4, HSTS chỉ ở prod. Cơ chế làm theo https://nextjs.org/docs/app/guides/content-security-policy (đặt `x-nonce` + CSP lên request headers). Nguồn cho việc Next 16 đổi `middleware` → `proxy`: stack-versions §3. Zod dùng locale `vi` (`z.config(vi())`, ADR-081).
 7. **Trang `/` và `/login`** placeholder dùng Badge/Button/Input/Dialog/Toast.
@@ -49,17 +50,17 @@ Tôi gộp snapshot và các sửa trên thành **một commit** `feat(T-012)` (
 
 ## 5. Rủi ro / câu hỏi mở
 1. **`upgrade-insecure-requests` + HSTS khi chạy prod trên http://localhost** (`next start`, Docker E2E của D): Chrome hiện bỏ qua cả hai cho localhost nên trang vẫn chạy (Lighthouse đo được). Nhưng nếu E2E chạy với host khác `localhost` qua http (vd tên service Docker `http://web:3001`), CSS/JS sẽ bị nâng lên https và gãy. Đề xuất: bật hai thứ này theo `APP_ENV ∈ {staging, production}` thay vì theo `NODE_ENV`. Việc này đổi W-CSP-2/4 nên cần Tech Lead/B quyết; tôi **chưa** đổi.
-2. **Envelope tạm** `shared/api/envelope.ts` (đã duyệt): T-010 chưa merge nên vẫn còn file tạm. Cần follow-up thay bằng import từ `@taskflow/contracts` (cả enum `ErrorCode` cho `isApiError`).
+2. **Envelope parse chặt theo contracts**: server trả `error.code` chưa có trong enum `ErrorCode` (API deploy trước web) ⇒ FE coi là `BAD_RESPONSE` (toast lỗi chung, vẫn giữ `status`). Tôi chọn chặt cho đúng hợp đồng. Nếu muốn chịu được lệch phiên bản API/web thì có thể nới để giữ `code` dạng string — cần Tech Lead quyết.
 3. `pnpm test` toàn repo có một lần bị lỗi "Timeout waiting for worker to respond" khi máy đang tải nặng. Chạy lại thì xanh. Nếu CI gặp lại, nên đặt `maxWorkers` trong `vitest.config.ts` gốc (ngoài phạm vi của tôi).
 4. Proxy chạy cho cả request prefetch của router (docs Next gợi ý có thể loại trừ bằng `missing`). Không sai, chỉ tốn thêm công sinh nonce. Để Phase 4 đo rồi quyết.
 
 ## 6. File (tất cả nằm trong `apps/web/**` + báo cáo này)
 `app/{layout.tsx,page.tsx,icon.svg,(auth)/login/page.tsx}` · `proxy.ts` · `package.json` · `tsconfig.json` · `vitest.config.ts` · `.env.example` · `src/app/{config,fonts,providers,security,styles}/**` · `src/shared/{api,config,lib,ui}/**` · `src/views/{home,login}/**` · `test/{a11y.ts,structure.test.ts}` · `pnpm-lock.yaml`.
 
-## 7. Definition of Done (chạy trong worktree sau khi rebase lên main `c266a88`)
+## 7. Definition of Done (chạy trong worktree sau khi rebase lên main `4e186ac`)
 ```
 $ pnpm typecheck   → exit 0 (config, contracts, api, web: next typegen && tsc --noEmit)
-$ pnpm lint        → exit 0 (prettier, eslint --max-warnings=0; depcruise web: 78 modules, 123 deps, 0 vi phạm)
-$ pnpm test        → Test Files 27 passed (27) · Tests 246 passed (246) · exit 0
+$ pnpm lint        → exit 0 (prettier, eslint --max-warnings=0; depcruise web: 92 modules, 170 deps, 0 vi phạm)
+$ pnpm test        → Test Files 59 passed (59) · Tests 602 passed (602) · exit 0
 $ pnpm --filter @taskflow/web build → OK, mọi route ƒ Dynamic, Proxy (Middleware) có mặt
 ```
