@@ -46,6 +46,7 @@ import {
   InMemoryProjectRepository,
   InMemoryWorkspaceRepository,
 } from './infrastructure/persistence/in-memory/in-memory-repositories';
+import { requireProject } from './presentation/membership';
 import { ProjectController } from './presentation/project.controller';
 import { WorkspaceController } from './presentation/workspace.controller';
 import { workspaceRoutes } from './presentation/workspace.routes';
@@ -126,10 +127,11 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     }),
     responder: d.responder,
   });
+  const getProject = new GetProjectQuery({ projects });
   const projectController = new ProjectController({
     list: new ListProjectsQuery({ queries }),
     create: new CreateProjectUseCase({ projects, uow, ids, clock }),
-    get: new GetProjectQuery({ projects }),
+    get: getProject,
     update: new UpdateProjectUseCase({ projects, uow, clock }),
     setArchived: new SetProjectArchivedUseCase({ projects, uow, clock }),
     responder: d.responder,
@@ -141,6 +143,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
         workspaces: workspaceController,
         projects: projectController,
         access,
+        projectExists: requireProject(getProject),
         authenticate,
         limit: d.limit,
       }),

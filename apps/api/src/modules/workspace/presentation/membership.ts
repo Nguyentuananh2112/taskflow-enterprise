@@ -2,6 +2,7 @@ import type { Request, RequestHandler } from 'express';
 
 import { requireUser } from '../../../core/http/request-user';
 import type { WorkspaceAccess } from '../application/adapters/workspace-access';
+import type { GetProjectQuery } from '../application/use-cases/project.queries';
 import { requirePermission, type Actor } from '../application/workspace-shared';
 import type { ParentPermission, Permission } from '../domain/roles';
 
@@ -23,6 +24,19 @@ export function loadMembership(access: Pick<WorkspaceAccess, 'resolveActor'>): R
   return async (req, _res, next) => {
     const wsId = (req.params as { wsId: string }).wsId;
     req.actor = await access.resolveActor(wsId, requireUser(req).id);
+    next();
+  };
+}
+
+/**
+ * Lớp 2 của tenant guard cho route `/projects/:projectId`: project ∉ workspace ⇒ 404 TRƯỚC khi kiểm
+ * quyền (thứ tự security.md: 401 → 400 → 404 → 403 → 400 body). Dùng `GetProjectQuery` (mọi role
+ * có `project:read`) ⇒ không bao giờ trả 403 ở bước này.
+ */
+export function requireProject(getProject: Pick<GetProjectQuery, 'execute'>): RequestHandler {
+  return async (req, _res, next) => {
+    const { projectId } = req.params as { projectId: string };
+    await getProject.execute(actorOf(req), { projectId });
     next();
   };
 }

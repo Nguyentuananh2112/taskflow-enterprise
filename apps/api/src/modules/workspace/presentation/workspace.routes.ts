@@ -28,6 +28,8 @@ export interface WorkspaceRouteDeps {
   workspaces: WorkspaceController;
   projects: ProjectController;
   access: Pick<WorkspaceAccess, 'resolveActor'>;
+  /** `requireProject(getProject)` — 404 project trước 403 cho route `/projects/:projectId`. */
+  projectExists: RequestHandler;
   authenticate: RequestHandler;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
 }
@@ -51,6 +53,7 @@ export function workspaceRoutes(d: WorkspaceRouteDeps): Router {
   ): RequestHandler[] => [
     validate({ params }),
     loadMembership(d.access),
+    ...(params === ProjectParams ? [d.projectExists] : []),
     permit(permission),
     ...(input.body || input.query ? [validate(input)] : []),
   ];

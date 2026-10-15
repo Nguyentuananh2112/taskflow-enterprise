@@ -129,4 +129,35 @@ describe('projects', () => {
     expect((await patch({ keyPrefix: 'NEW' })).status).toBe(400);
     expect((await patch({})).status).toBe(400);
   });
+
+  it('thứ tự security.md (TL quyết ở T-024): project không tồn tại ⇒ 404 TRƯỚC 403; có project ⇒ 403; body sai không lộ ⇒ 403', async () => {
+    await request(t.app)
+      .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
+      .set(alice.auth)
+      .send({ email: bob.email, role: 'VIEWER' });
+    const missing = '0199e5a2-7c1e-7cc3-9a3b-ffffffffffff';
+    const existing =
+      (envelopeOf<{ id: string }[]>(
+        await request(t.app).get(projects(alice.workspaceId)).set(alice.auth),
+      ).data ?? [])[0]?.id ?? '';
+    const patch = (pid: string, body: object) =>
+      request(t.app)
+        .patch(projects(alice.workspaceId, `/${pid}`))
+        .set(bob.auth)
+        .send(body);
+
+    const notFound = await patch(missing, { name: 'Mới' });
+    expect(notFound.status).toBe(404);
+    expect(errorOf(notFound).details).toEqual({ resource: 'project' });
+    for (const action of ['archive', 'unarchive']) {
+      const res = await request(t.app)
+        .post(projects(alice.workspaceId, `/${missing}/${action}`))
+        .set(bob.auth)
+        .set('Content-Type', 'application/json');
+      expect(res.status).toBe(404);
+    }
+
+    expect((await patch(existing, { name: 'Mới' })).status).toBe(403);
+    expect((await patch(existing, { bogus: true })).status).toBe(403);
+  });
 });
