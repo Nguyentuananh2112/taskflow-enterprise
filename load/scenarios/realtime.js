@@ -37,7 +37,12 @@ export const options = {
     'http_req_duration{name:PATCH move}': ['p(95)<300'],
   },
   scenarios: {
-    realtime: { executor: 'per-vu-iterations', vus: VUS, iterations: 1, maxDuration: `${DURATION_S + 60}s` },
+    realtime: {
+      executor: 'per-vu-iterations',
+      vus: VUS,
+      iterations: 1,
+      maxDuration: `${DURATION_S + 60}s`,
+    },
   },
 };
 
@@ -92,13 +97,16 @@ export default function (data) {
   ws.onmessage = (event) => {
     const msg = String(event.data);
     if (msg === '2') return ws.send('3');
-    if (msg.startsWith('0')) return ws.send(`40${JSON.stringify({ token: listener.token, clientId: listener.clientId })}`);
+    if (msg.startsWith('0'))
+      return ws.send(`40${JSON.stringify({ token: listener.token, clientId: listener.clientId })}`);
     if (msg.startsWith('44')) {
       connectErrors.add(1);
       return ws.close();
     }
     if (msg.startsWith('40')) {
-      return ws.send(`420${JSON.stringify(['project:join', { workspaceId: listener.ws.id, projectId }])}`);
+      return ws.send(
+        `420${JSON.stringify(['project:join', { workspaceId: listener.ws.id, projectId }])}`,
+      );
     }
     if (msg.startsWith('430')) {
       const ack = JSON.parse(msg.slice(3))[0];

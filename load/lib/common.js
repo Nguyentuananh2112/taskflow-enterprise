@@ -18,7 +18,7 @@ export const emailOf = (w, u) => `load.w${w}.u${u}@example.test`;
  * giống thực tế — tránh mọi VU dồn vào giới hạn theo IP (1000/phút) của một máy k6.
  */
 export function ipOf(index) {
-  return `10.${(index >> 16) & 255}.${(index >> 8) & 255}.${(index & 255) || 1}`;
+  return `10.${(index >> 16) & 255}.${(index >> 8) & 255}.${index & 255 || 1}`;
 }
 
 /** uuid v4 (định dạng hợp lệ cho X-Client-Id / clientId của socket). */
@@ -63,7 +63,10 @@ export function loginAll() {
       const res = http.post(
         `${API}/auth/login`,
         JSON.stringify({ email: emailOf(w, u), password: PASSWORD }),
-        { headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip }, tags: { kind: 'setup' } },
+        {
+          headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip },
+          tags: { kind: 'setup' },
+        },
       );
       const body = json(res);
       if (!check(res, { 'login 200': (r) => r.status === 200 }) || !body?.data?.accessToken) {
@@ -75,11 +78,16 @@ export function loginAll() {
   // Workspace + project: hỏi bằng user OWNER (u=1) của mỗi workspace.
   const workspaces = [];
   for (const owner of users.filter((x) => x.u === 1)) {
-    const me = json(http.get(`${API}/auth/me`, { headers: headers(owner), tags: { kind: 'setup' } }));
+    const me = json(
+      http.get(`${API}/auth/me`, { headers: headers(owner), tags: { kind: 'setup' } }),
+    );
     const wsId = me?.data?.memberships?.[0]?.workspaceId;
     if (!wsId) fail(`không lấy được workspace của user w${owner.w}`);
     const pj = json(
-      http.get(`${API}/workspaces/${wsId}/projects`, { headers: headers(owner), tags: { kind: 'setup' } }),
+      http.get(`${API}/workspaces/${wsId}/projects`, {
+        headers: headers(owner),
+        tags: { kind: 'setup' },
+      }),
     );
     const projectIds = (pj?.data ?? []).map((p) => p.id);
     if (projectIds.length === 0) fail(`workspace ${wsId} không có project`);

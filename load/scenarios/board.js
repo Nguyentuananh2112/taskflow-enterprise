@@ -32,7 +32,9 @@ for (const rps of STAGES) {
   thresholds[`http_req_failed{stage:${rps}}`] = ['rate<0.01'];
 }
 for (const name of ['GET tasks', 'POST tasks', 'PATCH task', 'PATCH move']) {
-  thresholds[`http_req_duration{name:${name}}`] = [name === 'GET tasks' ? 'p(95)<150' : 'p(95)<300'];
+  thresholds[`http_req_duration{name:${name}}`] = [
+    name === 'GET tasks' ? 'p(95)<150' : 'p(95)<300',
+  ];
 }
 
 export const options = {
@@ -103,7 +105,15 @@ export default function (data) {
     return;
   }
   if (r < MIX.read + MIX.create) {
-    const res = call('POST', base, { title: `k6 ${Date.now()}`, priority: 'MEDIUM' }, user, 'POST tasks', 'write', stage);
+    const res = call(
+      'POST',
+      base,
+      { title: `k6 ${Date.now()}`, priority: 'MEDIUM' },
+      user,
+      'POST tasks',
+      'write',
+      stage,
+    );
     check(res, { 'create 201': (x) => x.status === 201 || x.status === 200 });
     return;
   }
@@ -138,5 +148,9 @@ export default function (data) {
 }
 
 export function handleSummary(data) {
-  return summarize(data, { scenario: 'board', stages: STAGES, outDir: __ENV.OUT_DIR || '/load/results' });
+  return summarize(data, {
+    scenario: 'board',
+    stages: STAGES,
+    outDir: __ENV.OUT_DIR || '/load/results',
+  });
 }

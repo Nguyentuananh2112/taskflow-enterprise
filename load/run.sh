@@ -17,6 +17,7 @@ VK_IMAGE='valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5
 K6_IMAGE='grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34'
 API_IMAGE="${API_IMAGE:-taskflow-api:load}"
 MIGRATE_IMAGE="${MIGRATE_IMAGE:-taskflow-api-migrate:load}"
+# shellcheck disable=SC2016 # hash argon2id có ký tự $ — cố ý không expand
 PW_HASH='$argon2id$v=19$m=47104,t=1,p=1$BPqjDkGQFpVDnTaU7BVg3A$FWRyFuMb/F0/RVsmVtIOMgGNgHroYtCd/KSlSvqX2TI'
 RESULTS="$ROOT/load/results/$(date -u +%Y%m%dT%H%M%SZ)"
 host_path() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else echo "$1"; fi; }

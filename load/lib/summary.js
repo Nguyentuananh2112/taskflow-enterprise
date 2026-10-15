@@ -38,7 +38,10 @@ function stageTable(data, stages) {
 function endpointTable(data) {
   return Object.keys(data.metrics)
     .filter((k) => k.startsWith('http_req_duration{name:'))
-    .map((k) => ({ endpoint: k.slice('http_req_duration{name:'.length, -1), ...data.metrics[k].values }))
+    .map((k) => ({
+      endpoint: k.slice('http_req_duration{name:'.length, -1),
+      ...data.metrics[k].values,
+    }))
     .sort((a, b) => b['p(95)'] - a['p(95)']);
 }
 
@@ -70,16 +73,26 @@ export function summarize(data, { scenario, stages = [], outDir, extra = '' }) {
     lines.push(
       '| Endpoint | P50 | P95 | P99 | Max | (ms) |',
       '|---|---|---|---|---|---|',
-      ...endpoints.map((e) => `| ${e.endpoint} | ${fmt(e.med)} | ${fmt(e['p(95)'])} | ${fmt(e['p(99)'])} | ${fmt(e.max)} | |`),
+      ...endpoints.map(
+        (e) =>
+          `| ${e.endpoint} | ${fmt(e.med)} | ${fmt(e['p(95)'])} | ${fmt(e['p(99)'])} | ${fmt(e.max)} | |`,
+      ),
       '',
     );
   }
-  lines.push(`409 VERSION_CONFLICT (tranh chấp, không tính lỗi): ${conflicts} · 429 RATE_LIMITED: ${limited}`, '');
+  lines.push(
+    `409 VERSION_CONFLICT (tranh chấp, không tính lỗi): ${conflicts} · 429 RATE_LIMITED: ${limited}`,
+    '',
+  );
   if (extra) lines.push(extra, '');
   const md = lines.join('\n');
   return {
     stdout: `${md}\n`,
-    [`${outDir}/${scenario}-summary.json`]: JSON.stringify({ breakingRps: breaking, stages: rows, endpoints, raw: data }, null, 2),
+    [`${outDir}/${scenario}-summary.json`]: JSON.stringify(
+      { breakingRps: breaking, stages: rows, endpoints, raw: data },
+      null,
+      2,
+    ),
     [`${outDir}/${scenario}-summary.md`]: md,
   };
 }
