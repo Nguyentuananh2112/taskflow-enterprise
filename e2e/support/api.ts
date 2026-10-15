@@ -261,3 +261,10 @@ export async function apiMoveBetween(
     200,
   );
 }
+
+export function apiGetWorkspace(
+  request: APIRequestContext,
+  s: Seeded,
+): Promise<{ name: string; slug: string }> {
+  return call(request, 'GET', `/workspaces/${s.workspaceId}`, s.accessToken, undefined, 200);
+}
