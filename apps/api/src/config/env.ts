@@ -39,7 +39,8 @@ const EnvSchema = z
     // `kid` suy ra từ secret trong adapter (T-013) ⇒ không có biến JWT_ACCESS_KID riêng.
     JWT_ACCESS_SECRET: jwtSecret,
     JWT_ACCESS_SECRET_PREVIOUS: jwtSecret.optional(),
-    CORS_ORIGINS: originList,
+    // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
+    CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10),
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),

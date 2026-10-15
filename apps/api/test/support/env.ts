@@ -6,7 +6,7 @@ export function testEnvVars(overrides: Record<string, string | undefined> = {}):
     DATABASE_URL: 'postgresql://taskflow_app:test@127.0.0.1:5433/taskflow_test',
     REDIS_URL: 'redis://127.0.0.1:6379',
     JWT_ACCESS_SECRET: 'test-only-jwt-secret-0123456789abcdef',
-    CORS_ORIGINS: 'http://localhost:3000',
+    CORS_ORIGINS: 'http://localhost:3001',
     COOKIE_SECURE: 'false',
     TRUST_PROXY_HOPS: '0',
     GIT_SHA: 'test-sha',

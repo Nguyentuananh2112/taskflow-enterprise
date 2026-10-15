@@ -3,7 +3,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod';
 
-import { FakeClock } from '../../../test/support';
+import { envelopeOf, FakeClock } from '../../../test/support';
 import { requestContext } from '../context/request-context';
 import { ResourceNotFoundError, ValidationError } from '../errors';
 import { decodeCursor, encodeCursor } from './cursor';
@@ -33,7 +33,7 @@ describe('HttpResponder', () => {
 
   it('ok với page ⇒ meta.page', async () => {
     const res = await request(app).get('/page');
-    expect(res.body.meta.page).toEqual({ nextCursor: 'c', hasMore: true, limit: 2 });
+    expect(envelopeOf(res).meta.page).toEqual({ nextCursor: 'c', hasMore: true, limit: 2 });
   });
 
   it('created ⇒ 201', async () => {

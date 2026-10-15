@@ -119,7 +119,10 @@ describe('graceful shutdown (devops.md §7.3)', () => {
 });
 
 describe('installProcessHandlers', () => {
-  const fakeProcess = () => new EventEmitter() as unknown as NodeJS.Process;
+  const fakeProcess = () => {
+    const emitter = new EventEmitter();
+    return { emitter, proc: emitter as unknown as NodeJS.Process };
+  };
 
   it.each([
     ['SIGTERM', 0],
@@ -127,9 +130,9 @@ describe('installProcessHandlers', () => {
   ])('%s ⇒ shutdown, exit %i', async (signal, code) => {
     const { server } = await startSlowServer(0);
     const { shutdown, exits } = setup(server);
-    const proc = fakeProcess();
+    const { emitter, proc } = fakeProcess();
     shutdown.installProcessHandlers(proc);
-    proc.emit(signal);
+    emitter.emit(signal);
     await shutdown.shutdown('again');
     expect(exits).toEqual([code]);
   });
@@ -140,9 +143,9 @@ describe('installProcessHandlers', () => {
   ])('%s ⇒ log fatal, exit 1', async (event, msg) => {
     const { server } = await startSlowServer(0);
     const { shutdown, exits, logger } = setup(server);
-    const proc = fakeProcess();
+    const { emitter, proc } = fakeProcess();
     shutdown.installProcessHandlers(proc);
-    proc.emit(event, new Error('bug'));
+    emitter.emit(event, new Error('bug'));
     await shutdown.shutdown('again');
     expect(logger.messages('fatal')).toEqual([msg]);
     expect(exits).toEqual([1]);

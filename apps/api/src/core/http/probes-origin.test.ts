@@ -6,7 +6,7 @@ import { HttpResponder } from './envelope';
 import { globalErrorHandler, toAppError } from './error-handler';
 import { databaseProbe, valkeyProbe } from './health';
 import { requireAllowedOrigin, resolveRequestId } from './middleware';
-import { FakeClock, SpyLogger } from '../../../test/support';
+import { errorOf, FakeClock, SpyLogger } from '../../../test/support';
 import { InternalError, UnauthorizedError } from '../errors';
 
 describe('databaseProbe / valkeyProbe', () => {
@@ -57,7 +57,7 @@ describe('requireAllowedOrigin (endpoint dùng cookie — security.md §6.3)', (
     const req = request(app).post('/auth/refresh');
     const res = await (origin ? req.set('Origin', origin) : req);
     expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(errorOf(res).code).toBe('ORIGIN_NOT_ALLOWED');
   });
 });
 
@@ -67,7 +67,7 @@ describe('error handler — chi tiết', () => {
     expect(toAppError(known)).toBe(known);
     expect(toAppError('string thrown')).toBeInstanceOf(InternalError);
     expect(toAppError(null)).toBeInstanceOf(InternalError);
-    expect(toAppError({ type: 'unknown.body.error' })).toBeInstanceOf(InternalError);
+    expect(toAppError({ type: 'errorOf(unknown)' })).toBeInstanceOf(InternalError);
   });
 
   it('lỗi 5xx được log error kèm nguyên nhân; 4xx không log ở handler', async () => {

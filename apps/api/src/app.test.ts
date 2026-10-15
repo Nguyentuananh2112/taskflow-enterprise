@@ -3,7 +3,7 @@ import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod';
 
-import { FakeClock, productionEnvVars } from '../test/support';
+import { errorOf, FakeClock, productionEnvVars } from '../test/support';
 import { appConfigFromEnv, createApp, type AppConfig } from './app';
 import { loadEnv } from './config/env';
 import { requestContext } from './core/context/request-context';
@@ -148,7 +148,7 @@ describe('body & Content-Type', () => {
       .set('Content-Type', 'text/plain')
       .send('title=abc');
     expect(res.status).toBe(415);
-    expect(res.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    expect(errorOf(res).code).toBe('UNSUPPORTED_MEDIA_TYPE');
   });
 
   it('POST thiếu Content-Type (không body) ⇒ 415 — buộc preflight', async () => {
@@ -160,7 +160,7 @@ describe('body & Content-Type', () => {
       .post(TASK)
       .send({ title: 'x'.repeat(2_000) });
     expect(res.status).toBe(413);
-    expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(errorOf(res).code).toBe('PAYLOAD_TOO_LARGE');
   });
 
   it('JSON hỏng ⇒ 400 VALIDATION_ERROR invalid_json', async () => {
@@ -169,7 +169,7 @@ describe('body & Content-Type', () => {
       .set('Content-Type', 'application/json')
       .send('{"title":');
     expect(res.status).toBe(400);
-    expect(res.body.error.details.issues[0].code).toBe('invalid_json');
+    expect(errorOf(res).details?.issues?.[0]?.code).toBe('invalid_json');
   });
 });
 
@@ -187,7 +187,7 @@ describe('validate(schemas)', () => {
   it('param không phải uuid ⇒ 400 trước khi đọc body', async () => {
     const res = await request(build()).post('/api/v1/tasks/abc').send({ title: 'ok!' });
     expect(res.status).toBe(400);
-    expect(res.body.error.details.issues[0]).toMatchObject({
+    expect(errorOf(res).details?.issues?.[0]).toMatchObject({
       path: ['taskId'],
       code: 'invalid_format',
     });
@@ -199,7 +199,7 @@ describe('validate(schemas)', () => {
       .send({ title: 'ab', password: 'hunter2-secret', role: 'OWNER' });
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).not.toContain('hunter2-secret');
-    const issues = res.body.error.details.issues as {
+    const issues = errorOf(res).details?.issues as {
       path: string[];
       code: string;
       message: string;
@@ -237,13 +237,13 @@ describe('error handler (đa hình)', () => {
   it('ZodError ném từ handler ⇒ 400 VALIDATION_ERROR', async () => {
     const res = await request(build()).get('/api/v1/zod');
     expect(res.status).toBe(400);
-    expect(res.body.error.details.issues[0].path).toEqual(['a']);
+    expect(errorOf(res).details?.issues?.[0]?.path).toEqual(['a']);
   });
 
   it('lỗi lạ trong handler async (Express 5) ⇒ 500, prod không lộ message/stack', async () => {
     const res = await request(build({ production: true })).get('/api/v1/async-crash');
     expect(res.status).toBe(500);
-    expect(res.body.error).toEqual({
+    expect(errorOf(res)).toEqual({
       code: 'INTERNAL_ERROR',
       message: expect.any(String) as string,
       details: null,
@@ -253,7 +253,7 @@ describe('error handler (đa hình)', () => {
 
   it('ngoài production, lỗi 500 kèm details.debug để gỡ lỗi', async () => {
     const res = await request(build()).get('/api/v1/async-crash');
-    expect(res.body.error.details.debug).toMatchObject({
+    expect(errorOf(res).details?.debug).toMatchObject({
       name: 'Error',
       message: 'db password=hunter2',
     });
@@ -262,7 +262,7 @@ describe('error handler (đa hình)', () => {
   it('route không tồn tại ⇒ 404 RESOURCE_NOT_FOUND trong envelope', async () => {
     const res = await request(build()).get('/api/v1/nope');
     expect(res.status).toBe(404);
-    expect(res.body.error).toMatchObject({
+    expect(errorOf(res)).toMatchObject({
       code: 'RESOURCE_NOT_FOUND',
       details: { resource: 'route' },
     });

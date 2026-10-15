@@ -26,13 +26,19 @@ describe('loadEnv — hợp lệ', () => {
       SOCKET_REDIS_ADAPTER: false,
       SHUTDOWN_TIMEOUT_MS: 20_000,
       READINESS_DRAIN_MS: 5_000,
-      CORS_ORIGINS: ['http://localhost:3000'],
+      CORS_ORIGINS: ['http://localhost:3001'],
     });
   });
 
   it('CORS_ORIGINS nhiều giá trị, bỏ khoảng trắng và phần rỗng', () => {
     const env = loadEnv(testEnvVars({ CORS_ORIGINS: ' http://a.test:3000 , https://b.test,' }));
     expect(env.CORS_ORIGINS).toEqual(['http://a.test:3000', 'https://b.test']);
+  });
+
+  it('thiếu CORS_ORIGINS ngoài production ⇒ mặc định web local :3001 (ADR-097)', () => {
+    expect(loadEnv(testEnvVars({ CORS_ORIGINS: undefined })).CORS_ORIGINS).toEqual([
+      'http://localhost:3001',
+    ]);
   });
 
   it('bộ biến production hợp lệ được chấp nhận', () => {
@@ -79,6 +85,11 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
   it.each([
     ['COOKIE_SECURE=false ⇒ từ chối khởi động', { COOKIE_SECURE: 'false' }, 'COOKIE_SECURE'],
     ['Valkey không TLS', { REDIS_URL: 'redis://valkey:6379' }, 'REDIS_URL'],
+    [
+      'thiếu CORS_ORIGINS (mặc định http local bị chặn)',
+      { CORS_ORIGINS: undefined },
+      'CORS_ORIGINS',
+    ],
     [
       'CORS http://',
       { CORS_ORIGINS: 'https://a.example.com,http://b.example.com' },

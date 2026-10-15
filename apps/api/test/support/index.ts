@@ -10,3 +10,4 @@ export {
   type SpyCall,
 } from './spies';
 export { FakeClock, FakeRandom, SequentialIdGenerator } from './time-and-ids';
+export { envelopeOf, errorOf, type EnvelopeBody } from './http';

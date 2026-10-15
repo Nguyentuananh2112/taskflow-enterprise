@@ -1,6 +1,8 @@
-import { defineProject } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 
-export default defineProject({
+// defineConfig (không phải defineProject): coverage chỉ cấu hình được ở config gốc —
+// `pnpm --filter @taskflow/api test:coverage` chạy file này làm gốc để áp ngưỡng core ≥ 90%.
+export default defineConfig({
   test: {
     name: 'api',
     environment: 'node',
