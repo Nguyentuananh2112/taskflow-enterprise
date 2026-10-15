@@ -10,7 +10,7 @@
     "dev": "pnpm --parallel --filter \"./apps/**\" dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "prettier --check . --log-level warn && eslint . --max-warnings=0 && pnpm -r lint:deps && node .github/scripts/check-env-example.mjs",
+    "lint": "pnpm --filter @taskflow/api exec prisma generate --no-hints && prettier --check . --log-level warn && eslint . --max-warnings=0 && pnpm -r lint:deps && node .github/scripts/check-env-example.mjs",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",

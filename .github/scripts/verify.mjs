@@ -54,4 +54,10 @@ if (!dbUrl)
   console.log(
     '\n(bỏ qua migrate/drift — đặt VERIFY_DB_URL tới DB riêng của bạn trên postgres-test để chạy)',
   );
+if (results.find((r) => r.name.startsWith('test'))?.status) {
+  console.log(
+    '\nTest đỏ? Nếu log có "Timeout waiting for worker" / "Failed to start forks worker" là máy quá tải, ' +
+      'không phải lỗi code: chạy lại với VITEST_MAX_WORKERS=2 (runbook local-dev §7).',
+  );
+}
 process.exit(results.some((r) => r.status !== 0) ? 1 : 0);
