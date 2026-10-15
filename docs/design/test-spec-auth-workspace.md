@@ -14,7 +14,7 @@
 | Ký hiệu | Tầng | Công cụ | Dùng khi |
 |---|---|---|---|
 | **U** | Unit — UseCase/Policy/Entity với InMemory repo và fake | Vitest, không I/O | Luật nghiệp vụ, nhánh lỗi, thứ tự gọi port, tính toán thời gian |
-| **I** | Integration — HTTP thật (app Express) + Postgres + Redis thật (Docker) | Vitest + supertest + client socket.io | Transaction, khóa dòng, unique constraint, middleware, cookie/header, rate limit, Redis, socket |
+| **I** | Integration — HTTP thật (app Express) + Postgres + Valkey thật (Docker) | Vitest + supertest + client socket.io | Transaction, khóa dòng, unique constraint, middleware, cookie/header, rate limit, Redis, socket |
 | **E** | E2E trình duyệt | Playwright | Chỉ ghi tham chiếu, không thuộc phạm vi tài liệu này |
 
 **Không chứng minh ở U:** race / `FOR UPDATE` / `FOR SHARE`, unique constraint của DB, cookie, rate limit. InMemory repo không mô phỏng khóa. Mọi test race là **I**, lặp 20 lần, dùng 2 kết nối DB riêng (`Promise.all` trên 2 request HTTP).
@@ -23,13 +23,14 @@
 
 | Port | Fake | Khả năng cần có cho test |
 |---|---|---|
-| `IUserRepository`, `IRefreshTokenRepository`, `IWorkspaceRepository`, `IWorkspaceMemberRepository`, `IProjectRepository`, `ITaskAssignmentRepository` | `InMemory*` | Cùng implement interface với bản Prisma (LSP). Có thể "seed" và đọc lại trạng thái |
+| `IUserRepository`, `IRefreshTokenRepository`, `IWorkspaceRepository`, `IWorkspaceMemberRepository`, `IProjectRepository` | `InMemory*` | Cùng implement interface với bản Prisma (LSP). Có thể "seed" và đọc lại trạng thái |
+| `ITaskAssignmentCleaner` — port do **module Workspace** định nghĩa, module Task hiện thực, wire ở composition root (ADR-093) | `SpyTaskAssignmentCleaner` | Ghi lại `unassignAllInWorkspace(wsId, userId, actorId)`; trả số task bỏ gán cấu hình được. Test U của Workspace **không** import gì từ module Task |
 | `IUnitOfWork` | `FakeUnitOfWork` | Ghi lại thứ tự `begin/commit/rollback`; chạy callback sau commit; lỗi trong callback ⇒ rollback toàn bộ trạng thái InMemory (snapshot) |
-| `IPasswordHasher` | `FakePasswordHasher` | `hash(p) = "h:" + p`, ghi lại các lần `compare(p, hash)` (để kiểm DUMMY_HASH), `needsRehash` cấu hình được |
+| `IPasswordHasher` | `FakePasswordHasher` | `hash(p) = "h:" + p`, ghi lại các lần `verify(hash, p)` (để kiểm DUMMY_HASH), `needsRehash` cấu hình được. Bản thật argon2id có test riêng ở T-013 |
 | `ITokenService` | `FakeTokenService` hoặc bản thật với secret test | Ký/verify thật (JWT là logic thuần, chạy được ở U) |
 | `IClock` | `FakeClock` | `now()` cố định, `advance(ms)` |
 | `IRandom` | `FakeRandom` | Hàng đợi giá trị định sẵn cho refresh token, slug suffix, uuid |
-| `ISessionCache` (Redis `auth:tv`, `auth:sid-revoked`) | `InMemorySessionCache` | Bật/tắt chế độ "lỗi" để test fallback |
+| `ISessionCache` (Valkey `auth:tv`, `auth:sid-revoked`) | `InMemorySessionCache` | Bật/tắt chế độ "lỗi" để test fallback |
 | `IRealtimeNotifier` (socket) | `SpyRealtimeNotifier` | Ghi lại lệnh `disconnectUser`, `disconnectSession`, `revokeWorkspaceAccess`, `emitRoleChanged`; khẳng định chỉ được gọi **sau** commit |
 | `ISecurityLog` | `SpySecurityLog` | Ghi lại sự kiện bảo mật |
 | `ICommonPasswordList` | `SetCommonPasswordList` | Danh sách nhỏ cho test |
@@ -59,7 +60,7 @@
 | REG-02 | U | — | Register với email `"  Alice@Example.COM "` | User lưu email `alice@example.com` | |
 | REG-03 | U, I | Đã có `alice@example.com` | Register lại cùng email (kể cả khác hoa/thường) | `409 EMAIL_ALREADY_EXISTS`; số dòng users/workspaces/members/projects/refresh_tokens không đổi (I: lỗi từ unique constraint, không phải từ SELECT trước) | SEC-40 |
 | REG-04 | U | — | Password 11 ký tự / 12 ký tự | `400 VALIDATION_ERROR` / `201` (ADR-049) | SEC-32 |
-| REG-05 | U | Hasher là bcrypt | Password 73 byte UTF-8 (vd 25 ký tự có dấu 3 byte) | `400 VALIDATION_ERROR`; hasher **không** được gọi | SEC-32 |
+| REG-05 | U | — | Password 257 ký tự / 256 ký tự / 100 ký tự tiếng Việt có dấu (~250 byte) | `400 VALIDATION_ERROR` và hasher **không** được gọi / `201` / `201` (ADR-065: không còn giới hạn byte) | SEC-32 |
 | REG-06 | U | `password123456` nằm trong danh sách phổ biến | Register với mật khẩu đó | `400 VALIDATION_ERROR` | SEC-32 |
 | REG-07 | U | — | Password chứa phần local của email (`alice` trong `alice-secret-pw1`) | `400 VALIDATION_ERROR` | SEC-32 |
 | REG-08 | U | — | `fullName` = `"   "` / 101 ký tự / `"  Alice "` | `400` / `400` / lưu `"Alice"` | |
@@ -84,12 +85,12 @@
 | LOG-03 | U | Alice tồn tại | Sai mật khẩu | `401 INVALID_CREDENTIALS`; không tạo refresh token; `lastLoginAt` không đổi | |
 | LOG-04 | U | Không có `ghost@example.com` | Login email đó | `401 INVALID_CREDENTIALS` **cùng message** với LOG-03; hasher đã `compare` với `DUMMY_HASH` đúng 1 lần | SEC-27 |
 | LOG-05 | U | Alice có `deletedAt` | Login đúng mật khẩu | `401 INVALID_CREDENTIALS`, giống LOG-03 | |
-| LOG-06 | U | Hash của Alice có cost thấp hơn cấu hình (`needsRehash = true`) | Login đúng | Hash mới được lưu; login thành công | |
+| LOG-06 | U | Hash của Alice có tham số argon2 khác cấu hình (`needsRehash = true`) | Login đúng | Hash mới được lưu; login thành công. `needsRehash = false` ⇒ hash không đổi | |
 | LOG-07 | U | — | Login thành công | Payload access token: có `sub, tv, sid, jti, iat, exp, iss="taskflow-api", aud="taskflow-web"`; `exp - iat = 900`; **không** có `role`, `workspaceId`, `email` | |
 | LOG-08 | I | — | 20 lần login "không có email" và 20 lần "sai mật khẩu" | Chênh lệch trung vị thời gian < 50ms | SEC-27 |
 | LOG-09 | I | — | 6 lần login sai cùng IP + email trong 15 phút | Lần 6 `429` + `Retry-After`; login **đúng** không làm tăng bộ đếm thất bại | SEC-28 |
 | LOG-10 | I | `NODE_ENV=production` (config test) / `development` | Login | Prod: `__Secure-tf_rt; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, không `Domain`. Dev: `tf_rt`, không `Secure`, còn lại giống | SEC-34 |
-| LOG-11 | I | Redis tắt | Login | `503 SERVICE_UNAVAILABLE` (rate limit fail-closed cho login, security.md 6.4); không gọi bcrypt | |
+| LOG-11 | I | Valkey tắt | Login; register; gọi `GET /readyz`; gọi `GET /auth/me` bằng access token hợp lệ | Login/register `503 SERVICE_UNAVAILABLE` và không gọi hasher (fail-closed, security.md 6.4); `/readyz` vẫn xanh (ADR-074); `/auth/me` `200` (fallback DB) | |
 | LOG-12 | I | — | Login với `Content-Type: text/plain` | `415 UNSUPPORTED_MEDIA_TYPE` | SEC-31 |
 | LOG-13 | I | — | Response login | Có `Cache-Control: no-store` | |
 
@@ -127,9 +128,9 @@
 |---|---|---|---|---|---|
 | ALL-01 | U | Alice `tokenVersion = 0`, có 3 phiên | Logout-all | `204`; `tokenVersion = 1`; mọi token chưa thu hồi ⇒ `LOGOUT_ALL`; cache `tv` = 1 được ghi **sau** commit; notifier `disconnectUser(alice)` sau commit | |
 | ALL-02 | I | Alice có access token còn hạn + refresh token ở 2 thiết bị | Logout-all, rồi dùng token cũ | Access ⇒ `401 UNAUTHORIZED`; refresh ⇒ `401 REFRESH_TOKEN_INVALID`; socket của Alice bị ngắt | SEC-21 |
-| ALL-03 | I | Redis tắt | Logout-all, rồi gọi API bằng access token cũ | `401` (fallback đọc `tv` từ DB) | SEC-24 |
+| ALL-03 | I | Valkey tắt | Logout-all, rồi gọi API bằng access token cũ | `401` (fallback đọc `tv` từ DB) | SEC-24 |
 | ALL-04 | U | `SessionCache` ở chế độ lỗi khi ghi | Logout-all | Vẫn `204` (DB là nguồn sự thật), có log cảnh báo | |
-| ALL-05 | I | Redis bật, key `auth:tv:alice` chưa có | Một request đọc `tv` (miss ⇒ load DB) chạy chen với logout-all | Sau khi cả hai xong, giá trị Redis = `tv` mới (reader dùng `SET NX`, writer ghi đè) | |
+| ALL-05 | I | Valkey bật, key `auth:tv:alice` chưa có | Một request đọc `tv` (miss ⇒ load DB) chạy chen với logout-all | Sau khi cả hai xong, giá trị trong Valkey = `tv` mới (reader dùng `SET NX`, writer ghi đè) | |
 
 ### 1.6 ChangePasswordUseCase — `POST /auth/change-password`
 
@@ -156,7 +157,19 @@
 | MW-07 | U | Cache lỗi và DB lỗi | Gọi API | `503 SERVICE_UNAVAILABLE` | |
 | MW-08 | U | Token hợp lệ | Gọi API | `req.user = { id, sid, tv }`; cache được đọc bằng **1** lệnh `MGET` | |
 | MW-09 | I | JWT ký bằng `JWT_ACCESS_SECRET_PREVIOUS` với `kid` cũ | Gọi API | Qua (hỗ trợ xoay khóa) | |
-| MW-10 | I | — | Handshake socket không token / token sai / `tv` cũ | `connect_error` với `data.code` lần lượt `UNAUTHORIZED` / `UNAUTHORIZED` / `UNAUTHORIZED`; token hết hạn ⇒ `TOKEN_EXPIRED` | SEC-35 |
+| MW-10 | I | — | Handshake socket không token / token sai / `tv` cũ | `connect_error` với `data.code = UNAUTHORIZED` cho cả 3; token hết hạn ⇒ `TOKEN_EXPIRED` | SEC-35 |
+| MW-11 | I | Token hợp lệ | Handshake với `Origin` lạ / không có Origin / transport `polling` | Bị từ chối cả 3 (chỉ websocket + kiểm Origin, ADR-074) | SEC-56 |
+
+### 1.8 UpdateProfileUseCase — `PATCH /auth/me` (ADR-083)
+
+| ID | Tầng | Given | When | Then | SEC |
+|---|---|---|---|---|---|
+| ME-01 | U, I | Alice đăng nhập | `PATCH /auth/me {fullName:"  Alice Tran "}` | `200`, `fullName = "Alice Tran"`; `tokenVersion` và mọi phiên không đổi | |
+| ME-02 | U | — | `fullName` rỗng sau trim / 101 ký tự / chứa ký tự điều khiển | `400 VALIDATION_ERROR` | |
+| ME-03 | U, I | — | Body có `email` / `tokenVersion` / `id` / `passwordHash` | `400 VALIDATION_ERROR` (strict); không trường nào đổi | SEC-57 |
+| ME-04 | I | — | Không có access token | `401` | |
+| ME-05 | I | — | 31 lần trong 1 giờ | Lần 31 `429` | |
+| ME-06 | I | Alice là member A | Đổi tên rồi Pam `GET /workspaces/A/members` | Thấy tên mới (không cache tên trong membership) | |
 
 ---
 
@@ -225,6 +238,16 @@
 
 ## 3. Member
 
+### 3.0 ListMembersQuery — `GET ws/members?q=` (ADR-083)
+
+| ID | Tầng | Given | When | Then | SEC |
+|---|---|---|---|---|---|
+| MLS-01 | I | — | Vic `GET /workspaces/A/members?q=mia` | `200`, chỉ Mia (khớp không phân biệt hoa thường theo tên hoặc email) | |
+| MLS-02 | I | Bob chỉ thuộc B | Alice `GET /workspaces/A/members?q=bob` | Danh sách rỗng — tìm kiếm luôn giới hạn trong ws A | SEC-58 |
+| MLS-03 | I | — | `q=%` / `q=_` / `q=\` | Chỉ khớp member có đúng ký tự đó trong tên/email (thường là rỗng), **không** trả toàn bộ | SEC-58 |
+| MLS-04 | U | — | `q` 101 ký tự / `q="   "` | `400` / coi như không lọc | |
+| MLS-05 | I | — | Bob `GET /workspaces/A/members?q=a` | 404 chuẩn | SEC-01 |
+
 ### 3.1 AddMemberUseCase — `POST ws/members`
 
 | ID | Tầng | Given | When | Then | SEC |
@@ -250,7 +273,8 @@
 | ROL-03 | U, I | Alice là OWNER duy nhất | Alice tự hạ xuống PM | `422 BUSINESS_RULE_VIOLATION`, `details.rule = "LAST_OWNER"`; role không đổi | SEC-15 |
 | ROL-04 | U | A có Alice và Olga là OWNER | Alice hạ Olga xuống PM | `200` | |
 | ROL-05 | I | A có đúng 2 OWNER Alice, Olga | Alice hạ Olga **đồng thời** với Olga hạ Alice (lặp 20 lần) | Mỗi lần đúng 1 `200`, 1 `422 LAST_OWNER`; cuối cùng còn đúng 1 OWNER; không deadlock (không có lỗi `40P01`) | SEC-46 |
-| ROL-06 | U, I | Mia được gán 3 task: T1, T2 (chưa xóa), T3 (đã xóa mềm) | Alice hạ Mia xuống VIEWER | `200 { unassignedTaskCount: 2 }`; T1, T2: `assigneeId = null`, `version + 1`, mỗi task 1 audit `ASSIGNEE_CHANGED` actor = Alice; T3 không đổi; tất cả trong cùng transaction; sau commit event `task:updated` cho T1, T2 và `member:role-changed` | SEC-44 |
+| ROL-06 | U, I | Mia được gán 3 task: T1, T2 (chưa xóa), T3 (đã xóa mềm) | Alice hạ Mia xuống VIEWER | `200 { unassignedTaskCount: 2 }`; U: `ITaskAssignmentCleaner.unassignAllInWorkspace(A, Mia, Alice)` được gọi đúng 1 lần **trong** transaction; I: T1, T2 có `assigneeId = null`, `version + 1`, mỗi task 1 audit `ASSIGNEE_CHANGED` actor = Alice; T3 không đổi; sau commit event `task:updated` cho T1, T2 và `member:role-changed` | SEC-44 |
+| ROL-06b | U, I | Mia được gán T4 thuộc project **archived** | Alice hạ Mia xuống VIEWER (hoặc xóa Mia) | T4 cũng bị bỏ gán, có audit — ngoại lệ có chủ đích của ADR-045 (ADR-092) | SEC-44 |
 | ROL-07 | I | — | Pam gán T1 cho Mia **đồng thời** với Alice hạ Mia xuống VIEWER (lặp 20 lần) | Không lần nào kết thúc với task gán cho Mia khi Mia là VIEWER | SEC-45 |
 | ROL-08 | U | Mia là MEMBER | Alice đổi Mia sang MEMBER (không đổi) | `200`, `unassignedTaskCount: 0`; không audit, không event | |
 | ROL-09 | U, I | Nina không thuộc A | Alice đổi role Nina | 404 chuẩn (`resource: "user"` theo contract) | |
@@ -317,7 +341,7 @@ SEC thuộc phạm vi tài liệu này và nơi hiện thực:
 
 | SEC | Test | SEC | Test |
 |---|---|---|---|
-| SEC-01 | WSL-03, WSD-04, MEM-08, PRJ-07 | SEC-24 | ALL-03, MW-06 |
+| SEC-01 | WSL-03, WSD-04, MEM-08, PRJ-07, MLS-05 | SEC-24 | ALL-03, MW-06 |
 | SEC-02 | PRU-05, ARC-04 | SEC-25 | MW-02 |
 | SEC-04 | REG-09, WSC-05, PRJ-06 | SEC-26 | MW-03 |
 | SEC-10 | ARC-06 (chính ở Task) | SEC-27 | LOG-04, LOG-08 |
@@ -329,13 +353,14 @@ SEC thuộc phạm vi tài liệu này và nơi hiện thực:
 | SEC-18 | REF-04 | SEC-34 | LOG-10, REG-17 |
 | SEC-19 | REF-05, REF-06 | SEC-35 | MW-10 |
 | SEC-20 | REF-07, REF-08 | SEC-37 | REM-09 |
-| SEC-21 | ALL-02, MW-04 | SEC-44 | ROL-06 |
+| SEC-21 | ALL-02, MW-04 | SEC-44 | ROL-06, ROL-06b |
 | SEC-22 | OUT-03, MW-05 | SEC-45 | ROL-07 |
 | SEC-23 | PWD-05 | SEC-46 | ROL-05, REM-07 |
 | SEC-40 | REG-03, REG-15 | SEC-47 | WSL-01, WSD-06, WSD-07 |
 | SEC-51 | WSR-02 | SEC-52 | WSR-03, WSR-04 |
 | SEC-53 | WSR-05 | SEC-54 | WSL-02 |
-| SEC-55 | WSD-06, WSR-07 | | |
+| SEC-55 | WSD-06, WSR-07 | SEC-56 | MW-11 |
+| SEC-57 | ME-03 | SEC-58 | MLS-02, MLS-03 |
 
 **Ngoài phạm vi tài liệu này** (thuộc Task domain / socket project / E2E): SEC-03, 05–09, 11, 12, 12b, 12c, 30, 36, 38, 39, 41, 42, 43, 48–50. SEC-30 (CORS) và SEC-36/38/39 (socket join/renew) nên có test spec riêng khi làm Socket gateway ở Phase 3.
 

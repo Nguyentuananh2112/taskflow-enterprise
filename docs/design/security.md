@@ -1,6 +1,6 @@
 # Thiết kế bảo mật — Auth, phân quyền, đa tenant (T-002)
 
-**Tác giả:** Engineer B (`taskflow-enterprise-87`) · **Phase:** 0 · **Trạng thái:** ✅ chính thức (ADR-040) · đã cập nhật theo ADR-041 → ADR-051
+**Tác giả:** Engineer B (`taskflow-enterprise-87`) · **Phase:** 0 · **Trạng thái:** ✅ chính thức (ADR-040) · đã cập nhật theo ADR-041 → ADR-093 (T-002c)
 **Căn cứ:** `DECISIONS.md` v1.1 (ADR-014, ADR-020 → ADR-030), PRD v1.0 mục 1.2 & 6. Thống nhất cột DB + mã lỗi với Engineer C (T-003).
 
 > Quy ước: "phải/không được" = bắt buộc khi code ở Phase 2–3. Phiên bản thư viện cụ thể do T-001 (`docs/research/stack-versions.md`) chốt; tài liệu này chỉ mô tả hành vi.
@@ -14,7 +14,8 @@
 | Dữ liệu workspace khác | IDOR (đoán/đổi id trong URL, socket) | Route lồng + membership middleware + query có phạm vi tenant + 404 (mục 4) |
 | Phiên người dùng | Trộm refresh token (XSS không đọc được vì HttpOnly; malware/log/proxy) | Rotation + phát hiện reuse + thu hồi family (mục 1.4) |
 | Access token | XSS đọc bộ nhớ JS | TTL 15 phút, `tv`/`sid` thu hồi được, CSP ở web (mục 6.2) |
-| Mật khẩu | Brute force, credential stuffing, rò DB | bcrypt cost 12, rate limit đa khóa, chặn mật khẩu phổ biến (mục 6) |
+| Mật khẩu | Brute force, credential stuffing, rò DB | argon2id (ADR-065), rate limit đa khóa, chặn mật khẩu phổ biến (mục 6) |
+| Mã nguồn công khai (ADR-072) | Lộ secret qua git; kẻ tấn công đọc được toàn bộ logic | Không có secret trong repo, quét gitleaks (6.9); thiết kế không dựa vào việc giấu code |
 | Endpoint dùng cookie | CSRF | SameSite=Strict + kiểm tra `Origin` + bắt buộc `application/json` |
 | Quyền | Leo thang (MEMBER xóa task người khác, VIEWER ghi, PM tự lên OWNER) | Middleware role tối thiểu + Policy object (mục 3) |
 
@@ -31,7 +32,7 @@ sequenceDiagram
   participant DB as PostgreSQL
   C->>A: {email, password, fullName}
   A->>A: Zod validate, chuẩn hóa email (trim, NFC, lowercase), kiểm tra chính sách mật khẩu (6.4)
-  A->>A: bcrypt.hash(password, 12)  ← NGOÀI transaction (≈250ms, không giữ tx mở)
+  A->>A: argon2id hash(password)  ← NGOÀI transaction (≈27ms + 46 MiB, không giữ tx mở)
   A->>DB: BEGIN
   A->>DB: INSERT users
   A->>DB: INSERT workspaces (slug sinh từ fullName theo R19 của T-003)
@@ -49,11 +50,11 @@ sequenceDiagram
 
 ### 1.2 Login — `POST /api/v1/auth/login` (Public)
 
-1. Rate limit (6.3) **trước** mọi thao tác DB/bcrypt.
+1. Rate limit (6.4) **trước** mọi thao tác DB/băm mật khẩu.
 2. Zod validate; chuẩn hóa email.
-3. `findUnique({ email })`. Nếu **không có** hoặc `deletedAt != null` → vẫn chạy `bcrypt.compare(password, DUMMY_HASH)` (DUMMY_HASH tạo lúc khởi động với cost 12) để thời gian phản hồi tương đương, rồi `401 INVALID_CREDENTIALS`.
-4. `bcrypt.compare` sai → `401 INVALID_CREDENTIALS` (cùng message: "Email hoặc mật khẩu không đúng").
-5. Đúng → nếu hash có cost < cấu hình hiện tại thì rehash và cập nhật (nâng cost về sau không cần reset mật khẩu).
+3. `findUnique({ email })`. Nếu **không có** hoặc `deletedAt != null` → vẫn chạy `verify(DUMMY_HASH, password)` (DUMMY_HASH tạo lúc khởi động bằng **cùng tham số argon2id**, không commit vào repo) để thời gian phản hồi tương đương, rồi `401 INVALID_CREDENTIALS`.
+4. `verify` sai → `401 INVALID_CREDENTIALS` (cùng message: "Email hoặc mật khẩu không đúng").
+5. Đúng → nếu tham số trong chuỗi PHC của hash (`m`, `t`, `p`) khác cấu hình hiện tại thì băm lại và cập nhật (đổi tham số về sau không cần reset mật khẩu). `@node-rs/argon2` không có hàm `needsRehash` sẵn → adapter tự đọc tham số từ chuỗi PHC (T-013 kiểm chứng).
 6. Tạo refresh token (family mới, `familyExpiresAt = now + 30 ngày`), cập nhật `lastLoginAt`, ký access token với `tv = user.tokenVersion`, `sid = familyId`.
 7. `200 {accessToken, expiresIn, user}` + `Set-Cookie`.
 
@@ -73,7 +74,7 @@ sequenceDiagram
   participant C as Client
   participant A as API
   participant DB as PostgreSQL
-  participant R as Redis
+  participant R as Valkey
   C->>A: POST /auth/refresh (Cookie rt)
   A->>A: hash = sha256(rt)
   A->>DB: SELECT refresh_tokens JOIN users WHERE token_hash = hash
@@ -122,7 +123,7 @@ Cookie + kiểm tra `Origin`. Không cần access token (có thể đã hết h�
 ### 1.7 Đổi mật khẩu — `POST /api/v1/auth/change-password` (Bearer)
 
 Body `{ currentPassword, newPassword }`. Rate limit 5/15 phút/user.
-1. `bcrypt.compare(currentPassword)` sai → `400 INVALID_CURRENT_PASSWORD` (cố ý không dùng 401 để interceptor FE không nhầm là hết hạn token).
+1. `verify(currentPassword)` sai → `400 INVALID_CURRENT_PASSWORD` (cố ý không dùng 401 để interceptor FE không nhầm là hết hạn token).
 2. `newPassword` qua chính sách 6.4 và phải khác mật khẩu cũ.
 3. Hash mới ngoài transaction. Transaction: cập nhật `passwordHash`, `passwordChangedAt`, `tokenVersion + 1`; thu hồi **mọi** refresh token (`reason = PASSWORD_CHANGED`); tạo family mới cho thiết bị hiện tại.
 4. Sau commit: `SET auth:tv:{userId}`, ngắt mọi socket của user (`user:{userId}`) — tab hiện tại tự kết nối lại bằng token mới.
@@ -130,8 +131,9 @@ Body `{ currentPassword, newPassword }`. Rate limit 5/15 phút/user.
 
 **Phải thu hồi:** mọi refresh token, mọi access token (qua `tv`), mọi socket. Lý do: đổi mật khẩu thường là phản ứng khi nghi bị lộ.
 
-### 1.8 `GET /api/v1/auth/me` (Bearer)
-Trả `{ user: {id, email, fullName}, memberships: [{workspaceId, workspaceName, slug, role}] }`. Lọc theo `req.user.id`, không nhận tham số id.
+### 1.8 `GET` / `PATCH /api/v1/auth/me` (Bearer)
+- `GET`: trả `{ user: {id, email, fullName}, memberships: [{workspaceId, workspaceName, slug, role}] }`. Lọc theo `req.user.id`, không nhận tham số id.
+- `PATCH` (ADR-083): body **strict** `{ fullName }` (trim, 1–100 ký tự, không ký tự điều khiển). Chỉ sửa user của chính token (`req.user.id`) — không có tham số id nên không có đường IDOR. **Không** đổi được `email`, mật khẩu, `tokenVersion` hay bất kỳ trường nào khác qua endpoint này (field lạ ⇒ `400`). Rate limit 30/giờ/user. Không thu hồi phiên.
 
 ### 1.9 Ngoài phạm vi v1 (ghi nhận)
 Quên mật khẩu / xác minh email (cần hạ tầng email), MFA, danh sách & thu hồi từng phiên trên UI (schema đã đủ dữ liệu để làm sau: `userAgent`, `ip`, `familyId`).
@@ -144,7 +146,7 @@ Quên mật khẩu / xác minh email (cần hạ tầng email), MFA, danh sách 
 
 | Mục | Giá trị |
 |---|---|
-| Thuật toán | **HS256** (một service vừa ký vừa xác minh, không cần khóa công khai). Khi verify **phải** truyền whitelist `algorithms: ['HS256']` (chống `alg: none` / nhầm thuật toán). |
+| Thuật toán | **HS256** (một service vừa ký vừa xác minh, không cần khóa công khai). Thư viện **jose 6** (ADR-060): ký bằng `new SignJWT(claims).setProtectedHeader({ alg: 'HS256', kid })`, verify bằng `jwtVerify(token, key, { algorithms: ['HS256'], issuer, audience, clockTolerance: 5 })` — **phải** truyền whitelist `algorithms` (chống `alg: none` / nhầm thuật toán). Khóa = `new TextEncoder().encode(secret)`. |
 | Khóa | `JWT_ACCESS_SECRET` ≥ 32 byte ngẫu nhiên (base64), kiểm tra độ dài bằng Zod lúc khởi động; dev và prod khác nhau. Header có `kid`; env cho phép `JWT_ACCESS_SECRET_PREVIOUS` để xoay khóa không làm rớt phiên (verify thử theo `kid`). |
 | TTL | 15 phút (`expiresIn: 900` trong response). `clockTolerance` 5s. |
 | Lưu trữ FE | Chỉ trong bộ nhớ (ADR-026). Gửi bằng `Authorization: Bearer`. Không bao giờ ở localStorage/cookie/URL. |
@@ -170,7 +172,7 @@ Claims:
 | Mục | Giá trị |
 |---|---|
 | Sinh | `crypto.randomBytes(32)` → base64url (43 ký tự), 256 bit entropy |
-| Lưu DB | `tokenHash = sha256(token)` dạng hex (64 ký tự), `@unique`. SHA-256 (không bcrypt) vì token đã có entropy cao và cần tra cứu theo hash (ADR-024). So khớp bằng tra cứu index nên không có vấn đề timing. |
+| Lưu DB | `tokenHash = sha256(token)` dạng hex (64 ký tự), `@unique`. SHA-256 (không dùng hàm băm mật khẩu chậm như argon2) vì token đã có entropy cao và cần tra cứu theo hash (ADR-024). So khớp bằng tra cứu index nên không có vấn đề timing. |
 | Hạn | Trượt 7 ngày, tuyệt đối 30 ngày (1.3) |
 | Dọn dẹp | Job hằng ngày xóa dòng có `expiresAt < now − 7 ngày` (giữ 7 ngày để điều tra) |
 
@@ -191,7 +193,9 @@ Claims:
 - Xóa cookie: `Set-Cookie` cùng tên/Path với `Max-Age=0`.
 - FE gọi các endpoint `/auth/*` với `credentials: 'include'`.
 
-### 2.4 Redis
+### 2.4 Valkey (ADR-063)
+
+Valkey (giấy phép BSD) thay Redis, client `node-redis` 6 (ADR-060). Tên key và hành vi không đổi; trong tài liệu này "cache" = Valkey.
 
 | Key | Giá trị | TTL | Ghi bởi | Đọc bởi |
 |---|---|---|---|---|
@@ -201,14 +205,14 @@ Claims:
 
 - Writer `SET` vô điều kiện còn reader `SET NX`: nếu reader đọc giá trị DB cũ trước khi writer commit, writer luôn ghi đè sau đó → không giữ giá trị cũ suốt TTL.
 - Middleware gọi `MGET auth:tv:{sub} auth:sid-revoked:{sid}` — **1 round-trip** mỗi request.
-- **Redis lỗi:** `tv` fallback đọc DB (ADR-025); `sid-revoked` fallback `SELECT 1 FROM refresh_tokens WHERE family_id = $sid AND revoked_reason IN ('LOGOUT','REUSE_DETECTED') LIMIT 1` (dùng index `family_id`). DB cũng lỗi → `503 SERVICE_UNAVAILABLE` (fail-closed). Log cảnh báo khi đang ở chế độ fallback.
-- Email trong key rate-limit được băm SHA-256 (không lưu email thô trong Redis).
+- **Valkey lỗi:** `tv` fallback đọc DB (ADR-025); `sid-revoked` fallback `SELECT 1 FROM refresh_tokens WHERE family_id = $sid AND revoked_reason IN ('LOGOUT','REUSE_DETECTED') LIMIT 1` (dùng index `family_id`). DB cũng lỗi → `503 SERVICE_UNAVAILABLE` (fail-closed). Log cảnh báo khi đang ở chế độ fallback.
+- Email trong key rate-limit được băm SHA-256 (không lưu email thô trong Valkey).
 
 ### 2.5 Middleware `authenticate`
 
 1. Lấy `Authorization: Bearer <jwt>`; thiếu → `401 UNAUTHORIZED`.
 2. Verify chữ ký/alg/iss/aud/exp. Hết hạn → `401 TOKEN_EXPIRED` (FE **chỉ** tự refresh với code này); lỗi khác → `401 UNAUTHORIZED`.
-3. `MGET` Redis (2.4): `tv` khác claim hoặc `sid` bị thu hồi → `401 UNAUTHORIZED`.
+3. `MGET` Valkey (2.4): `tv` khác claim hoặc `sid` bị thu hồi → `401 UNAUTHORIZED`.
 4. Gắn `req.user = { id, sid, tv }` (kiểu khai báo bằng module augmentation, ADR-014, cấm `as any`).
 
 ---
@@ -287,13 +291,14 @@ Tiền tố `/api/v1`. `ws` = `/workspaces/:wsId`, `p` = `/projects/:projectId`,
 | `POST /auth/register`, `/auth/login` | Public + rate limit | |
 | `POST /auth/refresh`, `/auth/logout` | Cookie + Origin + rate limit | |
 | `POST /auth/logout-all`, `/auth/change-password`, `GET /auth/me` | `authenticate` | |
+| `PATCH /auth/me` (ADR-083) | `authenticate` | chỉ `fullName`, chỉ chính mình (1.8) |
 | `GET /workspaces` (của tôi) | `authenticate` | lọc theo userId, `deleted_at IS NULL`; `?deleted=true` ⇒ chỉ ws đã xóa mà tôi là OWNER |
 | `POST /workspaces` | `authenticate` | người tạo thành OWNER (cùng transaction); rate limit 10/giờ/user |
 | `GET ws` | `workspace:read` | |
 | `PATCH ws` | `workspace:update` | |
 | `DELETE ws` | `workspace:delete` | xóa mềm (3.6) |
 | `POST ws/restore` (ADR-050) | `requireMembership(includeDeleted, OWNER)` — không qua `loadMembership` | điều kiện `deleted_at IS NOT NULL AND purge_at > now()` (3.6) |
-| `GET ws/members` | `member:read` | |
+| `GET ws/members` (có `q`, ADR-083) | `member:read` | `q` chỉ tìm trong member của ws này (6.7) |
 | `POST ws/members` | `member:add` | role được cấp ≤ quyền người mời |
 | `PATCH ws/members/:userId` | `member:update-role` | LAST_OWNER |
 | `DELETE ws/members/:userId` | `member:leave` (VIEWER) | Policy: chính mình ⇒ leave; người khác ⇒ cần `member:remove` + luật PM/OWNER + LAST_OWNER |
@@ -402,8 +407,8 @@ Nguyên tắc: **chỉ trả 403 khi người gọi đã được phép biết t
 Socket là kênh **chỉ đọc** (server → client). Mọi thao tác ghi đi qua REST. Vì vậy quyền chỉ cần kiểm ở bước join.
 
 ### 5.1 Handshake
-- Client: `io(WS_URL, { auth: (cb) => cb({ token: getAccessToken(), clientId }), withCredentials: false })`. Token **không** đặt trong query string (bị ghi vào log proxy). `clientId` = uuid theo tab (giống header REST `X-Client-Id`), Zod validate uuid, lưu `socket.data.clientId`.
-- Server: `cors` cùng whitelist với HTTP; `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' }` → client nhận ở `connect_error`, refresh rồi kết nối lại.
+- Client: `io(WS_URL, { transports: ['websocket'], auth: (cb) => cb({ token: getAccessToken(), clientId }), withCredentials: false })` — **chỉ websocket** (ADR-074), không long-polling. Token **không** đặt trong query string (bị ghi vào log proxy). `clientId` = uuid theo tab (giống header REST `X-Client-Id`), Zod validate uuid, lưu `socket.data.clientId`.
+- Server: `transports: ['websocket']`. **Trình duyệt không áp dụng CORS cho WebSocket**, nên phải tự kiểm `Origin` trong `allowRequest`: Origin không thuộc whitelist (hoặc thiếu) ⇒ từ chối handshake. Đây là chặn tấn công cross-site WebSocket hijacking. Rủi ro vốn đã thấp vì xác thực bằng token trong `auth` chứ không bằng cookie, nhưng vẫn bắt buộc (phòng thủ nhiều lớp). Sau đó `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' }` → client nhận ở `connect_error`, refresh rồi kết nối lại.
 - Thành công: `socket.data.user = { id, sid, exp }`; tự join `user:{userId}` và `session:{sid}` (dùng cho logout / logout-all).
 - Rate limit kết nối: 20 handshake/phút/IP.
 
@@ -459,8 +464,8 @@ Header của web (Next.js) và CSP nonce: xem **6.8** (yêu cầu cho ticket Pha
 - `methods`: GET, POST, PATCH, DELETE. `allowedHeaders`: `Content-Type, Authorization, X-Request-Id, X-Client-Id`. `exposedHeaders`: `X-Request-Id, Retry-After, RateLimit-Policy, RateLimit`. `maxAge`: 600.
 - CSRF cho endpoint cookie (`/auth/refresh`, `/auth/logout`): SameSite=Strict + **kiểm tra header `Origin` ∈ whitelist** (thiếu Origin cũng từ chối) → `403 ORIGIN_NOT_ALLOWED`. Mọi POST/PATCH bắt buộc `Content-Type: application/json` (`415 UNSUPPORTED_MEDIA_TYPE`), buộc trình duyệt preflight.
 
-### 6.4 Rate limit (Redis store, ADR-028)
-Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit`. Key tính theo IP thật (sau `trust proxy`).
+### 6.4 Rate limit (Valkey store, ADR-028)
+Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-limit` 8, `standardHeaders: "draft-8"`, store `rate-limit-redis` qua node-redis). Key tính theo IP thật (sau `trust proxy`). `keyGenerator` tự viết có dùng IP **phải** đi qua `ipKeyGenerator(ip)` — IPv6 được gom theo /56, nếu không kẻ tấn công xoay địa chỉ trong một dải IPv6 để né giới hạn.
 
 | Endpoint | Giới hạn | Khóa |
 |---|---|---|
@@ -471,6 +476,7 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit`. Key tính theo IP
 | `POST /auth/refresh` | 60 / 5 phút | IP |
 | `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user |
 | `POST /auth/change-password` | 5 / 15 phút | user |
+| `PATCH /auth/me` | 30 / giờ | user |
 | `POST ws/members` | 30 / giờ | user |
 | `POST /workspaces` | 10 / giờ | user |
 | `POST ws/restore` | 10 / giờ | user |
@@ -479,25 +485,27 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit`. Key tính theo IP
 | Socket handshake | 20 / phút | IP |
 | Socket `project:join` | 30 / phút | socket |
 
-Redis lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register** — tránh brute force tự do khi Redis chết (bcrypt cost 12 cũng tự làm chậm).
+Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register** (`503 SERVICE_UNAVAILABLE`) — tránh brute force tự do khi Valkey chết. `/readyz` **không** đỏ khi chỉ Valkey lỗi (ADR-074): API vẫn phục vụ người đã đăng nhập (fallback DB, 2.4), chỉ login/register tạm từ chối. Phải có cảnh báo vận hành riêng cho Valkey vì readyz không báo.
 
 ### 6.5 Mật khẩu & chống user enumeration
-- Chính sách (ADR-049): **tối thiểu 12 ký tự**, **tối đa 72 byte UTF-8** khi dùng bcrypt (giới hạn đầu vào của bcrypt; từ chối thay vì để bcrypt cắt cụt im lặng — xem ADR-048), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ ~10k mục, không gọi dịch vụ ngoài), không được chứa phần local của email. Tiếng Việt có dấu tốn 2–3 byte/ký tự nên 72 byte ≈ 24–36 ký tự có dấu.
-- **Lệch NIST có chủ đích:** NIST SP 800-63B-4 yêu cầu tối thiểu 15 ký tự cho mật khẩu dùng làm yếu tố duy nhất (hệ thống chưa có MFA). Người dùng chọn 12 vì trải nghiệm (ADR-049). Bù lại bằng danh sách mật khẩu phổ biến, rate limit login đa khóa (6.4) và bcrypt cost 12. Xem lại khi có MFA hoặc khi có yêu cầu tuân thủ.
-- bcrypt cost 12 (ADR-030), rehash khi đăng nhập nếu cost thấp hơn cấu hình.
-- **ADR-048 (🟡):** nếu T-001 xác nhận argon2id dùng tốt trên Node 24 + Docker thì chuyển sang argon2id và bỏ giới hạn 72 byte; không thì giữ như trên. Không làm pre-hash.
+- Chính sách (ADR-049, ADR-065): **tối thiểu 12 ký tự**, **tối đa 256 ký tự** (chống DoS — argon2 không có giới hạn đầu vào như bcrypt; đếm theo code point sau chuẩn hóa NFC), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh cục bộ ~10k mục, không gọi dịch vụ ngoài), không được chứa phần local của email. Body limit 100kb (6.7) vẫn chặn trước ở tầng HTTP.
+- **Lệch NIST có chủ đích:** NIST SP 800-63B-4 yêu cầu tối thiểu 15 ký tự cho mật khẩu dùng làm yếu tố duy nhất (hệ thống chưa có MFA). Người dùng chọn 12 vì trải nghiệm (ADR-049). Bù lại bằng danh sách mật khẩu phổ biến, rate limit login đa khóa (6.4) và argon2id. Xem lại khi có MFA hoặc khi có yêu cầu tuân thủ.
+- **Băm (ADR-065):** argon2id qua `@node-rs/argon2`, `memoryCost: 47104` (46 MiB), `timeCost: 1`, `parallelism: 1` (mức OWASP; ≈27 ms/hash đo trên máy dev, T-001 §9). Chuỗi lưu dạng PHC `$argon2id$v=19$…`. Rehash khi tham số đổi (1.2 bước 5). Không pre-hash.
+- **Bộ nhớ là tài nguyên bị tấn công:** mỗi lần băm/verify chiếm ~46 MiB. Số lần băm đồng thời bị chặn bởi threadpool libuv (mặc định 4 ⇒ ~184 MiB đỉnh). **Không** tăng `UV_THREADPOOL_SIZE` khi chưa tính lại RAM container. Rate limit login/register/change-password chạy **trước** khi băm. Nếu container RAM thấp: dùng mức OWASP thay thế m=19456/t=2 (ghi ADR mới).
+- Phải kiểm chứng `@node-rs/argon2` chạy trong image Docker ở Phase 1 (ADR-065).
 - Login: cùng message + cùng thời gian (DUMMY_HASH) cho "không có email" và "sai mật khẩu"; rate limit không phân biệt hai trường hợp.
 - Register (ADR-049): v1 trả `409 EMAIL_ALREADY_EXISTS` — **chấp nhận** lộ email đã đăng ký. Giảm thiểu: rate limit 5/giờ/IP. Xác minh email (luôn trả 202 + gửi mail) nằm trong lộ trình sau v1.
 - `member:add` theo email (contract T-003): email không có tài khoản ⇒ `404 RESOURCE_NOT_FOUND` (`resource: "user"`). Vì register đã lộ email đã đăng ký (ADR-049) nên đây không phải rò rỉ mới; endpoint chỉ dành cho PM/OWNER đã đăng nhập và có rate limit 30/giờ/user (6.4) để chặn dò hàng loạt. Khi có xác minh email (sau v1) thì xem lại cả hai chỗ.
 
 ### 6.6 So sánh an toàn thời gian
-- Mật khẩu: `bcrypt.compare` (tự an toàn thời gian).
+- Mật khẩu: `verify` của argon2 (so sánh trong thư viện, an toàn thời gian; T-013 kiểm chứng trong docs/source `@node-rs/argon2`).
 - Refresh token: tra theo hash có index — không so chuỗi trong JS.
 - Bất kỳ so sánh bí mật nào khác (VD token nội bộ/webhook sau này): `crypto.timingSafeEqual` trên Buffer cùng độ dài (băm SHA-256 hai vế trước để cân độ dài).
 
 ### 6.7 Body, input, lỗi, log
 - `express.json({ limit: '100kb' })`; không bật `urlencoded`. Vượt → `413 PAYLOAD_TOO_LARGE`. Socket: `maxHttpBufferSize: 100_000`.
 - Zod `.strict()` cho body (từ chối field lạ — chặn mass assignment như gửi `role`, `createdById`, `version`).
+- **Tìm kiếm `q` (`GET ws/members`, ADR-083):** luôn kết hợp với điều kiện `workspaceId` của URL (không bao giờ tìm trên toàn bảng users); trim, tối đa 100 ký tự; dùng truy vấn tham số hóa của Prisma (`contains`, `mode: 'insensitive'`) và escape `%`/`_`/`\` để ký tự đại diện được hiểu theo nghĩa đen; tối thiểu 1 ký tự sau trim, chuỗi rỗng ⇒ coi như không lọc.
 - Error handler prod: không trả stack/message nội bộ; lỗi không xác định → `500 INTERNAL_ERROR` + `requestId`.
 - pino `redact`: `req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.currentPassword`, `*.newPassword`, `*.token`, `*.accessToken`, `*.refreshToken`. Log sự kiện bảo mật (login thất bại, reuse, logout-all, đổi role, xóa member) ở mức `warn`/`info` có `userId`, `ip`, `requestId`.
 - Env được validate bằng Zod lúc khởi động; thiếu/yếu → không chạy.
@@ -544,9 +552,20 @@ upgrade-insecure-requests
 
 **Test E2E bắt buộc (Playwright, Phase 4/5):** SEC-48 → SEC-50 ở mục 7.
 
+### 6.9 Repo công khai (ADR-072)
+
+Mã nguồn và cả tài liệu này đều công khai. Thiết kế **không** dựa vào việc giấu code (rate limit, tham số băm, cấu trúc token được phép công khai). Bắt buộc:
+- **Không bao giờ commit:** `.env*` (trừ `.env.example`), `JWT_ACCESS_SECRET*`, mật khẩu DB/Valkey, khóa, dump DB, dữ liệu người dùng thật, file log. `.gitignore` chặn sẵn; gitleaks chạy ở pre-commit **và** CI (CI đỏ = không merge).
+- `.env.example` chỉ chứa placeholder rõ ràng (`JWT_ACCESS_SECRET=change-me-min-32-bytes`). App **từ chối khởi động** khi `NODE_ENV=production` mà secret trùng placeholder hoặc ngắn hơn 32 byte.
+- Secret cho test/CI sinh ngẫu nhiên lúc chạy (hoặc giá trị test cố định có tiền tố `test-only-`) và **không bao giờ** được chấp nhận ở production (cùng kiểm tra trên).
+- `DUMMY_HASH` sinh lúc khởi động, không commit. Danh sách mật khẩu phổ biến được commit (dữ liệu công khai, ghi rõ nguồn và giấy phép của danh sách).
+- Seed/fixture chỉ dùng email `@example.com` và mật khẩu giả.
+- **Nếu lỡ commit secret:** coi như đã lộ — xoay secret ngay (với `JWT_ACCESS_SECRET`: đặt secret cũ vào `_PREVIOUS` rồi bỏ sau 15 phút, hoặc bỏ luôn nếu nghi bị khai thác — mọi access token mất hiệu lực, người dùng tự refresh). Xóa khỏi lịch sử git **không** đủ.
+- Không để lộ thông tin nhạy cảm trong issue/PR công khai (log thật, request có token).
+
 ## 7. Danh sách test bảo mật bắt buộc (Phase 3)
 
-Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob). Integration test chạy Postgres + Redis thật (ADR-003).
+Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob). Integration test chạy Postgres + Valkey thật (ADR-003, ADR-063).
 
 | ID | Kịch bản | Kỳ vọng |
 |---|---|---|
@@ -556,9 +575,9 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-04 | Mia gửi body có `workspaceId`/`projectId`/`createdById`/`role`/`version` lạ | 400 VALIDATION_ERROR (Zod strict), không ghi được |
 | SEC-05 | Vic tạo / sửa / move / assign / xóa task | 403 FORBIDDEN_ACCESS cho cả 5 |
 | SEC-06 | Mia xóa task do Pam tạo | 403; task còn nguyên |
-| SEC-07 | Mia xóa task do chính Mia tạo | 204 |
-| SEC-08 | Pam xóa task của Mia; Alice xóa task bất kỳ | 204 |
-| SEC-09 | Task có `createdById = null`: Mia xóa / Pam xóa | 403 / 204 |
+| SEC-07 | Mia xóa task do chính Mia tạo | `200 { id, version }` (ADR-082); task bị xóa mềm |
+| SEC-08 | Pam xóa task của Mia; Alice xóa task bất kỳ | `200 { id, version }` |
+| SEC-09 | Task có `createdById = null`: Mia xóa / Pam xóa | `403` / `200 { id, version }` |
 | SEC-10 | Mia tạo/sửa/move/xóa (task của mình) trong project archived; Pam xóa task bất kỳ trong project archived | 422 PROJECT_ARCHIVED cho tất cả (ADR-045); Vic làm cùng việc ⇒ 403 (thứ tự kiểm tra) |
 | SEC-11 | Mia gán task cho Bob (không phải member ws A) | 422, message không xác nhận Bob tồn tại |
 | SEC-12 | Mia đổi assignee task do Pam tạo sang Vic | 403 (`task:assign:own` không thỏa) |
@@ -575,7 +594,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-21 | Sau logout-all: access token cũ (còn hạn) + mọi refresh token của user | 401 UNAUTHORIZED / 401 REFRESH_TOKEN_INVALID; socket của user bị ngắt |
 | SEC-22 | Sau logout 1 thiết bị: access token của phiên đó vs phiên khác | Phiên đó 401; phiên khác vẫn 200 |
 | SEC-23 | Sau đổi mật khẩu: phiên khác (access + refresh) / phiên hiện tại dùng token mới | 401 / 200 |
-| SEC-24 | Logout-all khi Redis tắt | Access token cũ vẫn bị từ chối (fallback DB) |
+| SEC-24 | Logout-all khi Valkey tắt | Access token cũ vẫn bị từ chối (fallback DB) |
 | SEC-25 | JWT `alg: none`, ký bằng secret sai, sửa `sub`, thiếu `tv`, sai `iss`/`aud` | 401 UNAUTHORIZED |
 | SEC-26 | JWT hết hạn | 401 TOKEN_EXPIRED |
 | SEC-27 | Login email không tồn tại vs sai mật khẩu | cùng status, code, message; chênh lệch thời gian trung vị < 50ms (đo 20 lần) |
@@ -583,7 +602,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-29 | `POST /auth/refresh` với `Origin` lạ hoặc thiếu Origin | 403 ORIGIN_NOT_ALLOWED, token không bị xoay |
 | SEC-30 | Request CORS từ origin ngoài whitelist | không có `Access-Control-Allow-Origin` |
 | SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |
-| SEC-32 | Mật khẩu 11 ký tự; 73 byte (khi dùng bcrypt); nằm trong danh sách phổ biến; chứa phần local của email | 400 VALIDATION_ERROR. Mật khẩu 12 ký tự hợp lệ ⇒ 201 |
+| SEC-32 | Mật khẩu 11 ký tự; 257 ký tự; nằm trong danh sách phổ biến; chứa phần local của email | 400 VALIDATION_ERROR. Mật khẩu 12 ký tự và 256 ký tự (kể cả 100 ký tự tiếng Việt có dấu) hợp lệ ⇒ 201 |
 | SEC-33 | Log của login/refresh/register/change-password | không chứa password, access token, refresh token, header Cookie/Authorization |
 | SEC-34 | Cookie refresh ở prod | có `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, tên `__Secure-tf_rt`, không `Domain` |
 | SEC-35 | Socket handshake không token / token sai / `tv` cũ | `connect_error` với `data.code` tương ứng |
@@ -607,6 +626,9 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-53 | Alice restore A đúng lúc job purge chạy trên A (`purgeAt` vừa tới) | Chỉ một bên thành công; không có trạng thái nửa vời (ws còn mà dữ liệu con đã mất) |
 | SEC-54 | `GET /workspaces?deleted=true` của Pam và Bob | Không chứa A (Pam không phải OWNER, Bob không phải member) |
 | SEC-55 | Gọi route khác (vd `GET /workspaces/A/projects`) trên ws A đã xóa, kể cả Alice | 404 (chứng minh `includeDeleted` chỉ có ở route restore) |
+| SEC-56 | Handshake websocket với `Origin: https://evil.example` / không có Origin (token hợp lệ); thử transport `polling` | Bị từ chối cả 3 trường hợp (ADR-074, 5.1) |
+| SEC-57 | `PATCH /auth/me` với body có `email`, `tokenVersion`, `id` của người khác | `400 VALIDATION_ERROR`; không trường nào đổi |
+| SEC-58 | Alice `GET /workspaces/A/members?q=bob` (Bob chỉ thuộc B); `q=%` ; `q=_` | Không trả Bob; `%` và `_` khớp theo nghĩa đen (không trả toàn bộ member) |
 
 ---
 
@@ -616,7 +638,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | `email` | String `@unique` | App chuẩn hóa trim + NFC + lowercase. Không dùng citext. Tùy chọn `CHECK (email = lower(email))` qua raw SQL migration |
-| `password_hash` | String | bcrypt `$2b$`, cost 12 |
+| `password_hash` | String | argon2id, chuỗi PHC `$argon2id$v=19$m=47104,t=1,p=1$…` (ADR-065) |
 | `token_version` | Int `@default(0)` | ADR-025 |
 | `password_changed_at` | DateTime? | |
 | `last_login_at` | DateTime? | |
@@ -649,4 +671,5 @@ Index: `[user_id, revoked_at]` (thu hồi hàng loạt), `[family_id]` (thu hồ
 ## Nguồn
 - NIST SP 800-63B-4 (8/2025): tối thiểu 15 ký tự cho mật khẩu một yếu tố (v1 lệch có chủ đích, ADR-049) — trích qua [sakimura.org](https://www.sakimura.org/en/2025/10/7710/), [netwrix.com](https://netwrix.com/en/resources/blog/nist-password-guidelines/). Cần đối chiếu bản gốc NIST khi Phase 2.
 - Cookie `Secure` trên `http://localhost` (Chrome 89+, Firefox 75+ chấp nhận; Chrome từ chối tiền tố `__Secure-`/`__Host-`; Safari từ chối): [httpwg/http-extensions#2605](https://github.com/httpwg/http-extensions/issues/2605), [flaviocopes — Safari](https://flaviocopes.com/cookie-not-being-set-in-safari).
-- bcrypt giới hạn đầu vào 72 byte; API Socket.io 4 `socketsLeave`/`disconnectSockets` hoạt động xuyên node với adapter; helmet, express-rate-limit + Redis store — tên package/phiên bản do T-001 xác nhận trước khi code.
+- Phiên bản thư viện và đo đạc argon2id: `docs/research/stack-versions.md` (T-001) — jose 6.2.12 (`jwtVerify` với `algorithms: ["HS256"]`), `@node-rs/argon2` 2.2.2, socket.io 4.8.4 (`socketsLeave`/`disconnectSockets` xuyên node), helmet 8.3.0, express-rate-limit 8.7.1 (`ipKeyGenerator`, IPv6 /56) + rate-limit-redis 6.0.1, node-redis 6.3.0.
+- OWASP Password Storage Cheat Sheet (tham số argon2id): https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html

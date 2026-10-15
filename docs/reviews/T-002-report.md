@@ -55,3 +55,26 @@ Chỉ sửa `docs/design/security.md`:
 Lưu ý cho Engineer C / Phase 1: luật bỏ gán khi hạ role và khóa LAST_OWNER cần `workspace_members` có index `(workspace_id, role)` để câu `FOR UPDATE` không quét cả bảng (đề xuất, C quyết).
 
 - **T-002c (đồng bộ T-003b):** thêm yêu cầu bảo mật cho `POST /workspaces/:wsId/restore` và `GET /workspaces?deleted=true` (C đề xuất, **chưa có ADR** — ghi là chờ duyệt), ghi rõ không có cache membership; test SEC-51 → SEC-55 (chỉ áp dụng nếu restore được duyệt).
+
+## T-002c (đồng bộ ADR-060 → ADR-093, 2026-10-15)
+Chỉ sửa `docs/design/security.md` và `docs/design/test-spec-auth-workspace.md`.
+
+**security.md**
+- ADR-065: bcrypt → argon2id (`@node-rs/argon2`, m=47104 t=1 p=1) ở 1.1, 1.2, 1.7, 6.5, 6.6, mục 8 (`password_hash` dạng PHC). Bỏ giới hạn 72 byte, max 256 ký tự. Thêm: bộ nhớ ~46 MiB/hash là tài nguyên bị tấn công — không tăng `UV_THREADPOOL_SIZE` khi chưa tính RAM; rate limit chạy trước khi băm. `needsRehash` phải tự đọc tham số PHC (thư viện không có sẵn — T-013 kiểm chứng).
+- ADR-063/060: Redis → Valkey (2.4, 2.5, 6.4, sơ đồ, test); jose 6 với cách gọi `SignJWT`/`jwtVerify` cụ thể (2.1); express-rate-limit 8 phải dùng `ipKeyGenerator` (IPv6 /56).
+- ADR-074: `/readyz` không đỏ khi chỉ Valkey lỗi, login/register vẫn fail-closed — ghi rõ cần cảnh báo vận hành riêng cho Valkey. Socket chỉ websocket ⇒ **bổ sung kiểm `Origin` trong `allowRequest`** vì trình duyệt không áp CORS cho WebSocket (chống cross-site WebSocket hijacking).
+- ADR-072: mục mới **6.9 Repo công khai** (không commit secret, gitleaks, placeholder bị từ chối ở prod, secret test có tiền tố `test-only-`, quy trình khi lỡ lộ secret). Thêm dòng vào mô hình mối đe dọa.
+- ADR-082: SEC-07..09 sửa thành `200 { id, version }`.
+- ADR-083: `PATCH /auth/me` (1.8, 3.4, rate limit 30/giờ/user); tìm kiếm `q` ở `GET members` (6.7: luôn giới hạn trong ws, escape `%`/`_`/`\`, ≤100 ký tự).
+- Test mới: SEC-56 (Origin/transport socket), SEC-57 (`PATCH /auth/me` mass assignment), SEC-58 (`q` không vượt tenant, ký tự đại diện). Tổng SEC-01..58.
+
+**test-spec-auth-workspace.md** (156 → 169 case)
+- Valkey thay Redis; `ITaskAssignmentCleaner` là port do module Workspace định nghĩa (ADR-093), test U của Workspace dùng spy, không import module Task.
+- REG-05 (256/257 ký tự, tiếng Việt dài), LOG-06 (rehash theo tham số argon2), LOG-11 (Valkey tắt: login 503, readyz xanh, API đã đăng nhập vẫn chạy).
+- Mới: MW-11, ME-01..06 (`PATCH /auth/me`), MLS-01..05 (`GET members?q`), ROL-06b (bỏ gán cả trong project archived, ADR-092). Ma trận phủ SEC cập nhật.
+
+**Quyết định tự đưa ra (nhỏ)**
+1. Giới hạn 256 ký tự đếm theo code point sau NFC.
+2. Rate limit `PATCH /auth/me` 30/giờ/user.
+3. `q` tối đa 100 ký tự; `q` rỗng sau trim = không lọc.
+4. Kiểm `Origin` ở handshake websocket là **bắt buộc** (không có trong ADR-074 — tôi suy ra từ việc bỏ polling).
