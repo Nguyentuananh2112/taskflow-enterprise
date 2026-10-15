@@ -84,7 +84,7 @@
 | # | Việc | Cách kiểm | Bằng chứng |
 |---|---|---|---|
 | 7.1 | **gitleaks quét toàn bộ lịch sử** xanh trên commit sẽ deploy (job CI trên `main`). | Link run CI. | Link |
-| 7.2 | GitHub **Secret scanning + Push protection** bật cho repo; Dependabot alerts bật. | Cài đặt repo → Code security. | Ảnh |
+| 7.2 | GitHub **Secret scanning + Push protection** bật; Dependabot alerts bật; **Private vulnerability reporting bật** (mặc định TẮT — `SECURITY.md` dựa hoàn toàn vào kênh này để nhận báo lỗ hổng riêng tư). | Cài đặt repo → Code security: ba mục đều Enabled; mở tab Security ⇒ có nút "Report a vulnerability". | Ảnh |
 | 7.3 | Branch protection trên `main` (PR bắt buộc, CI xanh, không force push); Environment `production` có required reviewers; workflow PR từ fork không có secret. | Cài đặt repo. | Ảnh |
 | 7.4 | 2FA bắt buộc cho mọi tài khoản: GitHub, hosting, GHCR, Sentry, DNS / registrar, uptime monitor, object storage backup. | Danh sách tài khoản + trạng thái 2FA. | Bảng |
 | 7.5 | Image public trên GHCR không chứa secret: Trivy `vuln,secret` xanh; `docker history` không có `ENV`/`ARG` chứa secret. | Run CI Trivy. | Link |

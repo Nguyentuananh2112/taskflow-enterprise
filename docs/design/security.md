@@ -9,15 +9,21 @@
 
 ## 0. Mô hình mối đe dọa (tóm tắt)
 
+> Threat model **đầy đủ** (STRIDE theo thành phần, biên tin cậy, tác nhân, cách mỗi biện pháp được kiểm chứng tự động, và **danh sách rủi ro chấp nhận có chủ đích kèm ADR**): [`threat-model.md`](threat-model.md). Bảng dưới chỉ là tóm tắt.
+
 | Tài sản | Mối đe dọa chính | Lớp phòng thủ |
 |---|---|---|
-| Dữ liệu workspace khác | IDOR (đoán/đổi id trong URL, socket) | Route lồng + membership middleware + query có phạm vi tenant + 404 (mục 4) |
-| Phiên người dùng | Trộm refresh token (XSS không đọc được vì HttpOnly; malware/log/proxy) | Rotation + phát hiện reuse + thu hồi family (mục 1.4) |
-| Access token | XSS đọc bộ nhớ JS | TTL 15 phút, `tv`/`sid` thu hồi được, CSP ở web (mục 6.2) |
-| Mật khẩu | Brute force, credential stuffing, rò DB | argon2id (ADR-065), rate limit đa khóa, chặn mật khẩu phổ biến (mục 6) |
-| Mã nguồn công khai (ADR-072) | Lộ secret qua git; kẻ tấn công đọc được toàn bộ logic | Không có secret trong repo, quét gitleaks (6.9); thiết kế không dựa vào việc giấu code |
-| Endpoint dùng cookie | CSRF | SameSite=Strict + kiểm tra `Origin` + bắt buộc `application/json` |
-| Quyền | Leo thang (MEMBER xóa task người khác, VIEWER ghi, PM tự lên OWNER) | Middleware role tối thiểu + Policy object (mục 3) |
+| Dữ liệu workspace khác | IDOR (đoán / đổi id trong URL, cursor, socket) | Route lồng + membership + query có phạm vi tenant + 404 đồng nhất (mục 4); cursor gắn `kind`, id phải uuid |
+| Phiên người dùng | Trộm refresh token; cookie tossing từ subdomain anh em | Rotation + phát hiện reuse + thu hồi family (1.4); cookie `__Host-` (2.3, ADR-109) |
+| Thu hồi phiên | Lost update, Valkey mất dữ liệu / lỗi khi ghi | Lệnh nguyên tử (ADR-104); ghi thu hồi trước commit, fail-closed (ADR-105); cache miss kiểm DB + khôi phục `sid-revoked` (2.4) |
+| Access token | XSS đọc bộ nhớ JS | TTL 15 phút, `tv` / `sid` thu hồi được, CSP nonce ở web (6.8) |
+| Mật khẩu | Brute force, credential stuffing, rò DB | argon2id (ADR-065), rate limit đa khóa chống khóa tài khoản (6.4, ADR-108), chặn mật khẩu phổ biến |
+| Quyền | Leo thang; request đang bay của người vừa bị hạ quyền | Role tối thiểu + Policy (mục 3); đọc lại role trong transaction (3.5) |
+| Toàn vẹn dữ liệu | Ghi đồng thời làm hồi sinh / gỡ archive | Optimistic lock `version` (ADR-110) |
+| Log / Sentry | Rò email, hash, token, dòng DB | Serializer allow-list, redact, Sentry `dataCollection` tắt + `beforeSend` allow-list |
+| Bản sao lưu | Lộ, bị xóa, không khôi phục được | age phía client, credential PutObject-only, diễn tập khôi phục hằng tuần (`docs/runbook/backup-restore.md`) |
+| Mã nguồn công khai (ADR-072) | Lộ secret qua git | gitleaks pre-commit + CI toàn lịch sử, push protection (6.9) |
+| Endpoint dùng cookie | CSRF | SameSite=Strict + kiểm `Origin` + bắt buộc `application/json` |
 
 ---
 
