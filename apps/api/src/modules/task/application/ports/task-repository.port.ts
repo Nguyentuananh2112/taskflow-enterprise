@@ -28,6 +28,20 @@ export interface ITaskRepository {
    * Bản Prisma: `SELECT … FOR UPDATE` (data-and-api §1.9).
    */
   listAssignedForUpdate(workspaceId: string, userId: string): Promise<Task[]>;
+  /**
+   * Khóa ghi rank của một cột tới hết transaction (T-033): `pg_advisory_xact_lock` theo
+   * `(project, status)`. Mọi lệnh tính rank từ hàng xóm (create, move) và rebalance đều lấy khóa
+   * này TRƯỚC khi đọc hàng xóm ⇒ không tính rank theo dữ liệu cột đang được tính lại.
+   */
+  lockColumn(projectId: string, status: TaskStatus): Promise<void>;
+  /** Task sống của cột, theo `rank, id` (collation "C"). Gọi sau `lockColumn`. */
+  listColumn(projectId: string, status: TaskStatus): Promise<Task[]>;
+  /**
+   * Pha 1 của rebalance: đổi rank mọi task sống trong cột sang khóa tạm duy nhất `~<id>`
+   * (không đổi version) để pha 2 ghi rank mới không va unique `tasks_rank_live_key` giữa chừng.
+   * Khóa tạm chỉ tồn tại trong transaction — pha 2 ghi đè hết trước commit.
+   */
+  stashColumnRanks(projectId: string, status: TaskStatus): Promise<void>;
   /** Trùng `(project, status, rank)` của task sống ⇒ ném `RankConflictError` (unique partial). */
   add(task: Task): Promise<void>;
   /**

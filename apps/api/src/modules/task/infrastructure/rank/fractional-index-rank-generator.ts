@@ -1,4 +1,4 @@
-import { generateKeyBetween } from 'fractional-indexing';
+import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 
 import type { IRankGenerator } from '../../application/ports/collaborators.port';
 
@@ -11,5 +11,9 @@ export class FractionalIndexRankGenerator implements IRankGenerator {
       throw new Error(`Rank không hợp lệ: "${before}" phải đứng trước "${after}"`);
     }
     return generateKeyBetween(before, after);
+  }
+
+  spread(n: number): string[] {
+    return n === 0 ? [] : generateNKeysBetween(null, null, n);
   }
 }

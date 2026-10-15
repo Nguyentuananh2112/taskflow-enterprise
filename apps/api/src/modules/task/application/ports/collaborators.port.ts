@@ -47,6 +47,8 @@ export interface IUserRefReader {
 /** Sinh rank giữa hai khóa (`fractional-indexing`); `null` = đầu/cuối cột. */
 export interface IRankGenerator {
   between(before: string | null, after: string | null): string;
+  /** `n` khóa tăng dần, cách đều, ngắn nhất có thể — dùng khi cân bằng lại cột (T-033). */
+  spread(n: number): string[];
 }
 
 /**

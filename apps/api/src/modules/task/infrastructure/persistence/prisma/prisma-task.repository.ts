@@ -87,6 +87,27 @@ export class PrismaTaskRepository implements ITaskRepository {
     return rows.map((r) => Task.reconstitute(toProps(r)));
   }
 
+  /** `pg_advisory_xact_lock` trả `void` — Prisma không đọc được cột void ⇒ dùng `$executeRaw`. */
+  async lockColumn(projectId: string, status: TaskStatus): Promise<void> {
+    await this.db().$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`taskflow:rank:${projectId}:${status}`}, 0))`;
+  }
+
+  async listColumn(projectId: string, status: TaskStatus): Promise<Task[]> {
+    const rows = await this.db().task.findMany({
+      where: { projectId, status, deletedAt: null },
+      orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+    });
+    return rows.map((r) => Task.reconstitute(toProps(r)));
+  }
+
+  /** Một câu UPDATE: id duy nhất ⇒ `~<id>` duy nhất, không va unique; version giữ nguyên. */
+  async stashColumnRanks(projectId: string, status: TaskStatus): Promise<void> {
+    await this.db().$executeRaw`
+      UPDATE tasks SET rank = '~' || id::text
+       WHERE project_id = ${projectId}::uuid AND status = ${status}::"TaskStatus" AND deleted_at IS NULL`;
+  }
+
   async add(task: Task): Promise<void> {
     const p = task.toPrimitives();
     await this.db()

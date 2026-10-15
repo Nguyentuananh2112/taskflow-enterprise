@@ -42,6 +42,27 @@ export class InMemoryTaskRepository implements ITaskRepository {
     return Promise.resolve(rows.map((r) => Task.reconstitute(r)));
   }
 
+  /** Một luồng JS ⇒ không có ghi xen giữa; khóa cột là no-op (bản Prisma mới cần). */
+  lockColumn(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  listColumn(projectId: string, status: TaskStatus): Promise<Task[]> {
+    const rows = [...this.db.state.tasks.values()]
+      .filter((t) => t.projectId === projectId && t.status === status && t.deletedAt === null)
+      .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : 1));
+    return Promise.resolve(rows.map((r) => Task.reconstitute(r)));
+  }
+
+  stashColumnRanks(projectId: string, status: TaskStatus): Promise<void> {
+    for (const t of this.db.state.tasks.values()) {
+      if (t.projectId === projectId && t.status === status && t.deletedAt === null) {
+        t.rank = `~${t.id}`;
+      }
+    }
+    return Promise.resolve();
+  }
+
   add(task: Task): Promise<void> {
     const row = task.toPrimitives();
     const project = this.db.state.projects.get(row.projectId);

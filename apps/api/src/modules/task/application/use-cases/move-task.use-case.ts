@@ -6,6 +6,7 @@ import type { Task } from '../../domain/task';
 import { assertTransition, type TaskStatus } from '../../domain/task-status';
 import type { TaskScope } from '../task-actor';
 import { TaskCommands } from '../task-commands';
+import { RANK_REBALANCE_THRESHOLD, TaskRankRebalancer } from '../task-rank-rebalancer';
 
 export interface MoveTaskInput {
   expectedVersion: number;
@@ -31,22 +32,34 @@ export class MoveTaskUseCase {
     const { d } = this.c;
     const { actor, input } = scope;
     return this.c.inTransactionWithRankRetry(async () => {
-      const { project, task } = await this.c.loadTask(scope, scope.taskId);
+      const first = await this.c.loadTask(scope, scope.taskId);
       d.policy.assert(d.policy.can(actor, 'task:move'), 'task:move');
+      this.c.assertWritable(first.project);
+      const target = input.status ?? first.task.status;
+      // T-033: khóa cột đích TRƯỚC khi đọc hàng xóm, rồi đọc lại task — rebalance commit trong lúc
+      // chờ khóa không làm entity cũ (tránh 409 oan, không tính rank theo cột đang được tính lại).
+      await d.tasks.lockColumn(scope.projectId, target);
+      const { project, task } = await this.c.loadTask(scope, scope.taskId);
       this.c.assertWritable(project);
       await this.c.assertVersion(task, input.expectedVersion, project);
 
-      const target = input.status ?? task.status;
       assertTransition(task.status, target);
-      const rank = await this.resolveRank(scope, task, target, input);
+      let rank = await this.resolveRank(scope, task, target, input);
+      const meta = TaskCommands.metaOf(scope);
+      if (rank.length > RANK_REBALANCE_THRESHOLD) {
+        rank = await new TaskRankRebalancer(this.c).rebalance({
+          project,
+          target,
+          moving: task,
+          wanted: rank,
+          meta,
+        });
+      }
       const expectedVersion = task.version;
       if (!task.moveTo(target, Rank.of(rank), actor.userId, d.clock.now())) {
         return this.c.dto(task, project);
       }
-      return this.c.persist(task, project, TaskCommands.metaOf(scope), {
-        kind: 'save',
-        expectedVersion,
-      });
+      return this.c.persist(task, project, meta, { kind: 'save', expectedVersion });
     });
   }
 
