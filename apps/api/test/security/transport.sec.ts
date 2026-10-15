@@ -212,7 +212,8 @@ describe('Lỗi & request id (security.md §6.7, devops.md §6.1)', () => {
 
   it('/healthz và /readyz không lộ chi tiết hạ tầng', async () => {
     const health = await api.request({ path: '/healthz' });
-    expect(Object.keys(health.json as object).sort()).toEqual(['gitSha', 'status']);
+    // T-031 (Info của T-028): gitSha không còn ở /healthz công khai.
+    expect(Object.keys(health.json as object).sort()).toEqual(['status']);
     const ready = await api.request({ path: '/readyz' });
     expect(ready.status).toBe(200);
     expect(Object.keys(ready.json as object).sort()).toEqual(['db', 'valkey']);

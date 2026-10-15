@@ -21,7 +21,7 @@ import type {
   WorkspaceRole,
 } from './ports';
 import { AUTH_RENEW_LIMIT } from '../http/rate-limit/rules';
-import { SlidingWindow } from './sliding-window';
+import { SlidingWindow } from '../http/rate-limit/sliding-window';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
 export interface RealtimeGatewayOptions {

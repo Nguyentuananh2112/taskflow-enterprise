@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { productionEnvVars, testEnvVars } from '../../test/support';
+import { appConfigFromEnv } from '../app';
 import { EnvValidationError, loadEnv } from './env';
 
 const variablesOf = (source: NodeJS.ProcessEnv): readonly string[] => {
@@ -130,9 +131,67 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
   });
 
   it('T-020: APP_ENV=staging với NODE_ENV khác production vẫn cấm lưu trữ bộ nhớ', () => {
-    expect(variablesOf(testEnvVars({ APP_ENV: 'staging', PERSISTENCE: 'memory' }))).toEqual([
+    expect(variablesOf(testEnvVars({ APP_ENV: 'staging', PERSISTENCE: 'memory' }))).toContain(
       'PERSISTENCE',
-    ]);
+    );
+  });
+
+  it.each(['staging', 'production'])(
+    'L1 (T-031): APP_ENV=%s mà NODE_ENV≠production ⇒ MỌI ràng buộc production vẫn áp (không còn dựa NODE_ENV)',
+    (appEnv) => {
+      expect(variablesOf(testEnvVars({ APP_ENV: appEnv, NODE_ENV: 'development' }))).toEqual([
+        'COOKIE_SECURE',
+        'CORS_ORIGINS',
+        'JWT_ACCESS_SECRET',
+        'METRICS_TOKEN',
+        'NODE_ENV',
+        'REDIS_URL',
+        'SENTRY_DSN',
+      ]);
+      expect(variablesOf(productionEnvVars({ APP_ENV: appEnv, NODE_ENV: 'development' }))).toEqual([
+        'NODE_ENV',
+      ]);
+    },
+  );
+
+  it.each([[''], ['  '], [undefined], ['-1'], ['11'], ['1.5']])(
+    'L1 (T-031): TRUST_PROXY_HOPS=%j ⇒ lỗi (bắt buộc tường minh, 0…10 — rỗng KHÔNG thành 0)',
+    (value) => {
+      expect(variablesOf(testEnvVars({ TRUST_PROXY_HOPS: value }))).toEqual(['TRUST_PROXY_HOPS']);
+    },
+  );
+
+  it('JWT_ACCESS_TTL_SECONDS (E2E-11): hợp lệ CHỈ khi APP_ENV=test, 5–900; thiếu ⇒ undefined (900)', () => {
+    expect(loadEnv(testEnvVars({ APP_ENV: 'test', JWT_ACCESS_TTL_SECONDS: '5' }))).toMatchObject({
+      JWT_ACCESS_TTL_SECONDS: 5,
+    });
+    expect(loadEnv(testEnvVars()).JWT_ACCESS_TTL_SECONDS).toBeUndefined();
+    expect(
+      loadEnv(testEnvVars({ JWT_ACCESS_TTL_SECONDS: '' })).JWT_ACCESS_TTL_SECONDS,
+    ).toBeUndefined();
+    for (const bad of ['4', '901', '1.5', 'abc']) {
+      expect(variablesOf(testEnvVars({ APP_ENV: 'test', JWT_ACCESS_TTL_SECONDS: bad }))).toEqual([
+        'JWT_ACCESS_TTL_SECONDS',
+      ]);
+    }
+  });
+
+  it.each(['local', 'staging', 'production'])(
+    'JWT_ACCESS_TTL_SECONDS ở APP_ENV=%s ⇒ từ chối khởi động (không âm thầm bỏ qua)',
+    (appEnv) => {
+      const vars =
+        appEnv === 'local'
+          ? testEnvVars({ APP_ENV: appEnv, JWT_ACCESS_TTL_SECONDS: '60' })
+          : productionEnvVars({ APP_ENV: appEnv, JWT_ACCESS_TTL_SECONDS: '60' });
+      expect(variablesOf(vars)).toEqual(['JWT_ACCESS_TTL_SECONDS']);
+    },
+  );
+
+  it('appConfigFromEnv: production / hsts theo APP_ENV, không theo NODE_ENV', () => {
+    const local = appConfigFromEnv(loadEnv(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'test' })));
+    expect([local.production, local.hsts]).toEqual([false, false]);
+    const prod = appConfigFromEnv(loadEnv(productionEnvVars()));
+    expect([prod.production, prod.hsts]).toEqual([true, true]);
   });
 
   it('ràng buộc production không áp cho development', () => {

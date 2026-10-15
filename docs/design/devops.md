@@ -431,11 +431,15 @@ Image trên GHCR của repo public mặc định là public. Image không đư�
 ### 6.2 Health endpoints (api) — ADR-074
 | Endpoint | Kiểm tra | Dùng cho | Trả về |
 |---|---|---|---|
-| `GET /healthz` | Chỉ kiểm tiến trình còn sống — **không** chạm DB/Valkey | liveness, Docker HEALTHCHECK, uptime monitor ngoài | `200 {status:"ok", gitSha}` |
+| `GET /healthz` | Chỉ kiểm tiến trình còn sống — **không** chạm DB/Valkey | liveness, Docker HEALTHCHECK, uptime monitor ngoài | `200 {status:"ok"}` (không lộ gitSha — gitSha nằm trong mọi dòng log, T-031) |
 | `GET /readyz` | `SELECT 1` (timeout 1s) + Valkey `PING` (timeout 500ms) + cờ `shuttingDown` | readiness của LB, bước chờ khi deploy | `200 {db:"ok", valkey:"ok"\|"degraded"}`; `503` khi DB lỗi **hoặc** đang shutdown |
 
 - **Valkey lỗi không làm `/readyz` đỏ** (ADR-074). Trong lúc đó, login/register vẫn **fail-closed** theo T-002 §6.4; các API khác dùng fallback DB.
-- Hai endpoint này không qua rate limit, không log ở mức info, không lộ chi tiết lỗi.
+- Hai endpoint này không qua rate limit dùng Valkey, không log ở mức info, không lộ chi tiết lỗi.
+- **`/readyz` chống bị dùng để dội tải DB/Valkey** (M2 của T-028, T-031):
+  - kết quả probe được **dùng chung trong 1 giây** — mọi request trong cửa sổ (kể cả đang chờ) chung một lần `SELECT 1` + `PING`; cờ `shuttingDown` luôn đọc mới;
+  - hạn mức riêng **60 request/phút/IP**, đếm trong bộ nhớ của instance (readiness không phụ thuộc Valkey) ⇒ quá ngưỡng `429 {status:"rate_limited"}` + `Retry-After: 60`;
+  - **khuyến nghị (D, khi chọn hosting)**: chỉ cho LB / mạng nội bộ của nền tảng gọi `/readyz` — chặn ở edge / reverse proxy với Internet công khai. `/healthz` có thể để công khai cho uptime monitor.
 
 ### 6.3 Error tracking — Sentry gói miễn phí (ADR-073)
 - Dùng cho cả api và web, với `release = GIT_SHA`, `environment = APP_ENV`.

@@ -152,17 +152,63 @@ describe('POST /auth/login', () => {
     expect(errorOf(wrong).code).toBe('INVALID_CREDENTIALS');
   });
 
-  it('rate limit: lần sai thứ 6 cùng (IP, email) trong 15 phút ⇒ 429 + Retry-After', async () => {
+  const wrongFrom = (ip: string, email: string) =>
+    post('/login').set('X-Forwarded-For', ip).send({ email, password: 'wrong-password-1' });
+
+  it('rate limit (ADR-108): lần sai thứ 11 cùng (IP, email) trong 15 phút ⇒ 429 + Retry-After; IP khác không bị ảnh hưởng', async () => {
     const mia = await t.register('Mia');
-    for (let i = 0; i < 5; i++) {
-      expect(
-        (await post('/login').send({ email: mia.email, password: 'wrong-password-1' })).status,
-      ).toBe(401);
-    }
-    const res = await post('/login').send({ email: mia.email, password: PASSWORD });
+    const attacker = t.nextIp();
+    for (let i = 0; i < 10; i++) expect((await wrongFrom(attacker, mia.email)).status).toBe(401);
+    const res = await post('/login')
+      .set('X-Forwarded-For', attacker)
+      .send({ email: mia.email, password: PASSWORD });
     expect(res.status).toBe(429);
     expect(errorOf(res).code).toBe('RATE_LIMITED');
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+    const owner = await post('/login')
+      .set('X-Forwarded-For', mia.ip)
+      .send({ email: mia.email, password: PASSWORD });
+    expect(owner.status).toBe(200);
+  });
+
+  it('ADR-108 (M4): 10 IP gửi sai ⇒ chủ tài khoản vẫn đăng nhập được từ IP của mình cho tới ngưỡng email (100/giờ)', async () => {
+    const mia = await t.register('Mia');
+    const attackers = Array.from({ length: 10 }, () => t.nextIp());
+    for (const ip of attackers) {
+      for (let i = 0; i < 9; i++) expect((await wrongFrom(ip, mia.email)).status).toBe(401);
+    }
+    const login = () =>
+      post('/login').set('X-Forwarded-For', mia.ip).send({ email: mia.email, password: PASSWORD });
+    expect((await login()).status).toBe(200); // 90 lần sai — dưới ngưỡng email
+    for (let i = 0; i < 10; i++) expect((await wrongFrom(t.nextIp(), mia.email)).status).toBe(401);
+    expect((await login()).status).toBe(429); // đủ 100 lần sai theo email ⇒ chặn (rủi ro chấp nhận)
+  });
+
+  it('ADR-108: body sai định dạng (400) KHÔNG bị đếm vào limiter theo email / (IP, email)', async () => {
+    const mia = await t.register('Mia');
+    const ip = t.nextIp();
+    const malformed = () =>
+      post('/login').set('X-Forwarded-For', ip).send({ email: mia.email, password: '' });
+    for (let i = 0; i < 15; i++) expect((await malformed()).status).toBe(400);
+    const ok = await post('/login')
+      .set('X-Forwarded-For', ip)
+      .send({ email: mia.email, password: PASSWORD });
+    expect(ok.status).toBe(200);
+  });
+});
+
+describe('JWT_ACCESS_TTL_SECONDS (APP_ENV=test — E2E-11)', () => {
+  const lifetimeOf = (token: string) => {
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'),
+    ) as { iat: number; exp: number };
+    return payload.exp - payload.iat;
+  };
+
+  it('mặc định token sống 900 giây; cấu hình 5 ⇒ token sống 5 giây', async () => {
+    expect(lifetimeOf((await t.register('Mia')).token)).toBe(900);
+    t = createTestApp({ jwtAccessTtlSeconds: 5 });
+    expect(lifetimeOf((await t.register('Pam')).token)).toBe(5);
   });
 });
 

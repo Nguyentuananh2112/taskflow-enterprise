@@ -1,5 +1,6 @@
 import { pino, type DestinationStream, type Logger, type LevelWithSilent } from 'pino';
 
+import { requestContext } from '../context/request-context';
 import { errorSerializer } from './error-serializer';
 
 /**
@@ -49,6 +50,13 @@ export function createLogger(options: LoggerOptions, destination?: DestinationSt
       base: { gitSha: options.gitSha, appEnv: options.appEnv },
       redact: { paths: [...REDACT_PATHS], censor: '[REDACTED]' },
       serializers: { err: errorSerializer({ includeStack: includeStackFor(options.appEnv) }) },
+      // M3 (T-031): mọi log trong ngữ cảnh một request (access log, log của use case dùng logger
+      // gốc, sự kiện bảo mật) mang `reqId` + `ip` (IP thật sau trust proxy).
+      mixin: () => {
+        const context = requestContext.get();
+        if (!context) return {};
+        return { reqId: context.requestId, ...(context.ip ? { ip: context.ip } : {}) };
+      },
       timestamp: pino.stdTimeFunctions.isoTime,
       formatters: { level: (label) => ({ level: label }) },
     },

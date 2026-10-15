@@ -45,10 +45,29 @@ const bodyParserErrors: ErrorTranslator = {
   },
 };
 
+/**
+ * Lỗi do CLIENT gây ra mà thư viện gắn `status`/`statusCode` 4xx (L3 của T-028): path không giải mã
+ * được (URIError của router — 400), body-parser `request.aborted` / `request.size.invalid` (400)…
+ * ⇒ 4xx đúng nghĩa, không thành 500 + log error (ai cũng làm ngập alert được).
+ */
+const clientStatusErrors: ErrorTranslator = {
+  translate: (error) => {
+    const e = error as { status?: unknown; statusCode?: unknown } | null;
+    const status = typeof e?.status === 'number' ? e.status : e?.statusCode;
+    if (typeof status !== 'number' || status < 400 || status > 499) return undefined;
+    if (status === 413) return new PayloadTooLargeError();
+    if (status === 415) return new UnsupportedMediaTypeError();
+    return new ValidationError([
+      { path: [], code: 'bad_request', message: 'Yêu cầu không hợp lệ.' },
+    ]);
+  },
+};
+
 export const DEFAULT_TRANSLATORS: readonly ErrorTranslator[] = [
   appErrors,
   zodErrors,
   bodyParserErrors,
+  clientStatusErrors,
 ];
 
 export function toAppError(
@@ -85,6 +104,9 @@ export function globalErrorHandler(options: ErrorHandlerOptions): ErrorRequestHa
     const log = (req as { log?: ILogger }).log ?? logger;
     if (error.statusCode >= 500) {
       log.error({ err: error.cause ?? err, code: error.code }, 'http.unhandled_error');
+    } else if (!(err instanceof AppError) && !(err instanceof z.ZodError)) {
+      // Lỗi client do thư viện ném (URIError, body-parser…) — warn, không phải error (L3).
+      log.warn({ err, code: error.code }, 'http.client_error');
     }
     const body = responder.errorBody(error);
     if (exposeInternalErrors && error instanceof InternalError) {

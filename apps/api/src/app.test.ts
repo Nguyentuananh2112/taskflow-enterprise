@@ -35,6 +35,9 @@ const TaskParams = z.object({ taskId: z.uuid() });
 const Body = z.strictObject({ title: z.string().trim().min(3), password: z.string().optional() });
 const Query = z.object({ limit: z.coerce.number().int().max(50).default(20) });
 
+/** Logger gốc mà route `/whoami` dùng (mô phỏng use case không có `req.log`). */
+let rootLogger: ReturnType<typeof createLogger> | undefined;
+
 function testRouter(): Router {
   const router = Router();
   router.post(
@@ -57,6 +60,12 @@ function testRouter(): Router {
   });
   router.get('/prisma-validation', () => {
     throw prismaValidationError();
+  });
+  router.get('/whoami', (req, res) => {
+    req.user = { id: 'user-1', sid: 'sid-1' }; // như `authenticate`
+    (req as { log?: { info(o: object, m: string): void } }).log?.info({}, 'handler.req_log');
+    rootLogger?.info({ event: 'use-case' }, 'use_case.root_log'); // logger gốc (như use case)
+    res.json({ ok: true });
   });
   router.get('/context', (_req, res) => {
     res.json({ requestId: requestContext.requestId() });
@@ -374,11 +383,73 @@ describe('error handler (đa hình)', () => {
   });
 });
 
+describe('T-031 mục 5–8: lỗi client, no-store, access log', () => {
+  function captured(options: { production?: boolean } = {}) {
+    const lines: Record<string, unknown>[] = [];
+    const stream = new Writable({
+      write(chunk: Buffer, _enc, done) {
+        lines.push(JSON.parse(chunk.toString()) as Record<string, unknown>);
+        done();
+      },
+    });
+    const logger = createLogger({ level: 'info', gitSha: 'sha-1', appEnv: 'test' }, stream);
+    rootLogger = logger;
+    const app = createApp({
+      config: config({ production: options.production ?? false, trustProxyHops: 1 }),
+      logger,
+      clock: new FakeClock('2026-10-15T08:00:00.000Z'),
+      probes: [],
+      isShuttingDown: () => false,
+      apiRouter: testRouter(),
+    });
+    return { app, lines };
+  }
+
+  it('L3: path không giải mã được (URIError) ⇒ 400 VALIDATION_ERROR, log warn http.client_error — không error', async () => {
+    const { app, lines } = captured();
+    const res = await request(app)
+      .post('/api/v1/tasks/%E0%A4%A')
+      .set('Content-Type', 'application/json')
+      .send('{}');
+    expect(res.status).toBe(400);
+    expect(errorOf(res).code).toBe('VALIDATION_ERROR');
+    expect(lines.filter((l) => l['level'] === 'error')).toEqual([]);
+    expect(lines.some((l) => l['msg'] === 'http.client_error' && l['level'] === 'warn')).toBe(true);
+  });
+
+  it('L4: mọi response /api/v1 mặc định Cache-Control: no-store (thành công, lỗi, 404)', async () => {
+    const { app } = captured();
+    for (const path of ['/api/v1/context', '/api/v1/conflict', '/api/v1/nope']) {
+      expect((await request(app).get(path)).headers['cache-control']).toBe('no-store');
+    }
+  });
+
+  it('L5 + M3: access log ghi path (không query), ip thật sau trust proxy, userId, reqId; log của handler / logger gốc cũng có reqId + ip', async () => {
+    const { app, lines } = captured();
+    const res = await request(app)
+      .get('/api/v1/whoami?q=mia@example.com')
+      .set('X-Forwarded-For', '203.0.113.7');
+    expect(res.status).toBe(200);
+    const reqId = res.headers['x-request-id'];
+    const access = lines.find((l) => l['msg'] === 'request completed');
+    expect(access).toMatchObject({
+      req: { method: 'GET', path: '/api/v1/whoami' },
+      ip: '203.0.113.7',
+      userId: 'user-1',
+      reqId,
+    });
+    expect(JSON.stringify(lines)).not.toContain('mia@example.com');
+    for (const msg of ['handler.req_log', 'use_case.root_log']) {
+      expect(lines.find((l) => l['msg'] === msg)).toMatchObject({ reqId, ip: '203.0.113.7' });
+    }
+  });
+});
+
 describe('/healthz & /readyz (devops.md §6.2)', () => {
-  it('healthz: 200 {status, gitSha}, no-store, không đụng probe', async () => {
+  it('healthz: 200 {status} (KHÔNG lộ gitSha — T-031), no-store, không đụng probe', async () => {
     const res = await request(build({ probes: [probe('db', true, false)] })).get('/healthz');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'ok', gitSha: 'sha-1' });
+    expect(res.body).toEqual({ status: 'ok' });
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
@@ -407,6 +478,70 @@ describe('/healthz & /readyz (devops.md §6.2)', () => {
     const res = await request(app).get('/readyz');
     expect(res.status).toBe(status);
     expect(res.body).toEqual(body);
+  });
+
+  it('M2 (T-031): kết quả probe dùng chung trong 1 giây — request đồng thời / liền nhau chung MỘT lần kiểm', async () => {
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const slow: ReadinessProbe = {
+      name: 'db',
+      critical: true,
+      timeoutMs: 1_000,
+      check: () => {
+        calls++;
+        return new Promise<void>((resolve) => (release = resolve));
+      },
+    };
+    const clock = new FakeClock('2026-10-15T08:00:00.000Z');
+    const app = createApp({
+      config: config(),
+      logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
+      clock,
+      probes: [slow],
+      isShuttingDown: () => false,
+    });
+    const pending = Promise.all(
+      Array.from({ length: 5 }, () =>
+        request(app)
+          .get('/readyz')
+          .then((r) => r.status),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    expect(await pending).toEqual([200, 200, 200, 200, 200]);
+    expect((await request(app).get('/readyz')).status).toBe(200);
+    expect(calls).toBe(1);
+    clock.advance(1_000);
+    const next = request(app)
+      .get('/readyz')
+      .then((r) => r.status);
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    expect(await next).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  it('M2 (T-031): quá 60 lần/phút/IP ⇒ 429 + Retry-After; cờ shutdown không bị cache', async () => {
+    let shuttingDown = false;
+    const clock = new FakeClock('2026-10-15T08:00:00.000Z');
+    const app = createApp({
+      config: config({ trustProxyHops: 1 }),
+      logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
+      clock,
+      probes: [probe('db', true, true)],
+      isShuttingDown: () => shuttingDown,
+    });
+    const ready = (ip: string) => request(app).get('/readyz').set('X-Forwarded-For', ip);
+    for (let i = 0; i < 59; i++) expect((await ready('203.0.113.1')).status).toBe(200);
+    shuttingDown = true;
+    expect((await ready('203.0.113.1')).status).toBe(503);
+    const limited = await ready('203.0.113.1');
+    expect(limited.status).toBe(429);
+    expect(limited.headers['retry-after']).toBe('60');
+    expect((await ready('203.0.113.2')).status).toBe(503);
+    clock.advance(60_001);
+    expect((await ready('203.0.113.1')).status).toBe(503);
   });
 
   it('probe treo quá timeout ⇒ coi như lỗi', async () => {

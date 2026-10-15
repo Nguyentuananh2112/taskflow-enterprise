@@ -3,7 +3,8 @@ import * as z from 'zod';
 import { decodeCursor, encodeCursor } from './cursor';
 import type { PageMeta } from './envelope';
 
-const AfterKey = z.object({ after: z.string().min(1).max(100) });
+// Mọi keyset hiện tại theo id (uuid) — kiểm ngay ở helper chung (gợi ý của B, X5 T-032).
+const AfterKey = z.object({ after: z.uuid() });
 
 /**
  * Cầu nối cursor opaque của API (data-and-api §3.1) ↔ `after`/`nextAfter` của query application.

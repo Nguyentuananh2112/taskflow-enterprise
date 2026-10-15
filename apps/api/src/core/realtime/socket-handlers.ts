@@ -20,7 +20,7 @@ import {
   type SocketData,
 } from './events';
 import type { IProjectAccessChecker, ISocketAuthenticator } from './ports';
-import { SlidingWindow } from './sliding-window';
+import { SlidingWindow } from '../http/rate-limit/sliding-window';
 
 export type AppSocket = Socket<
   ClientToServerEvents,

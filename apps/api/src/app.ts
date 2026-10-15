@@ -1,7 +1,7 @@
 import express, { type Express, type RequestHandler, type Router } from 'express';
 import type { Logger } from 'pino';
 
-import type { Env } from './config/env';
+import { isDeployed, type Env } from './config/env';
 import type { IClock } from './core/domain';
 import { HttpResponder } from './core/http/envelope';
 import { globalErrorHandler, notFoundHandler } from './core/http/error-handler';
@@ -17,7 +17,7 @@ export interface AppConfig {
   gitSha: string;
   corsOrigins: readonly string[];
   trustProxyHops: number;
-  /** Ẩn chi tiết lỗi 500 (`NODE_ENV=production`). */
+  /** Ẩn chi tiết lỗi 500 — `APP_ENV ∈ {staging, production}` (L1 của T-028, không theo NODE_ENV). */
   production: boolean;
   /** HSTS chỉ khi `APP_ENV ∈ {staging, production}` (ADR-101) — không bao giờ ở local/E2E http. */
   hsts: boolean;
@@ -29,8 +29,8 @@ export function appConfigFromEnv(env: Env): AppConfig {
     gitSha: env.GIT_SHA,
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
-    production: env.NODE_ENV === 'production',
-    hsts: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
+    production: isDeployed(env.APP_ENV),
+    hsts: isDeployed(env.APP_ENV),
     bodyLimit: '100kb', // ADR-028, security.md §6.7
   };
 }
@@ -66,13 +66,19 @@ export function createApp(deps: AppDependencies): Express {
   app.use(securityHeaders({ corsOrigins: config.corsOrigins, hsts: config.hsts }));
   app.use(
     healthRouter({
-      gitSha: config.gitSha,
+      now: () => clock.now().getTime(),
       probes: deps.probes,
       isShuttingDown: deps.isShuttingDown,
     }),
   );
   app.use(requireJsonContentType);
   app.use(jsonBody(config.bodyLimit));
+  // L4 của T-028: mặc định KHÔNG cache mọi response API (dữ liệu có xác thực, PII như email thành
+  // viên). Route muốn cho cache tự đặt lại header sau middleware này.
+  app.use('/api/v1', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
   if (deps.rateLimit?.length) app.use(...deps.rateLimit);
   for (const { path, router } of deps.routers ?? []) app.use(`/api/v1${path}`, router);
   if (deps.apiRouter) app.use('/api/v1', deps.apiRouter);

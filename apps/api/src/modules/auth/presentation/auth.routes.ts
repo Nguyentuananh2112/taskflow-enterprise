@@ -36,7 +36,14 @@ export function authRoutes(d: AuthRouteDeps): Router {
     validate({ body: RegisterBody }),
     c.register,
   );
-  router.post('/login', ...d.limit(RATE_LIMIT_RULES.login), validate({ body: LoginBody }), c.login);
+  // ADR-108: limiter IP trước validate; limiter theo email (chỉ đếm 401) SAU validate.
+  router.post(
+    '/login',
+    ...d.limit(RATE_LIMIT_RULES.loginIp),
+    validate({ body: LoginBody }),
+    ...d.limit(RATE_LIMIT_RULES.login),
+    c.login,
+  );
   router.post('/refresh', d.requireAllowedOrigin, ...d.limit(RATE_LIMIT_RULES.refresh), c.refresh);
   router.post('/logout', d.requireAllowedOrigin, ...d.limit(RATE_LIMIT_RULES.logout), c.logout);
   router.post('/logout-all', ...authed, ...d.limit(RATE_LIMIT_RULES.logoutAll), c.logoutAll);

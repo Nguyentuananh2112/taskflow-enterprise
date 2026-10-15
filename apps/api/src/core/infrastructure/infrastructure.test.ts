@@ -1,8 +1,16 @@
+import { connect, createServer, type AddressInfo, type Socket } from 'node:net';
+
 import { describe, expect, it, vi } from 'vitest';
 
-import { SpyLogger } from '../../../test/support';
+import { integrationRequired, SpyLogger, testValkeyUrl } from '../../../test/support';
 import { CryptoRandom, SystemClock, UuidV7Generator } from './system';
-import { connectInBackground, createValkeyClient, type ValkeyClient } from './valkey';
+import {
+  connectInBackground,
+  createValkeyClient,
+  VALKEY_PING_INTERVAL_MS,
+  VALKEY_SOCKET_TIMEOUT_MS,
+  type ValkeyClient,
+} from './valkey';
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -73,4 +81,56 @@ describe('Valkey client', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(logger.messages('warn')).toEqual(['valkey.connect_failed']);
   });
+});
+
+describe('Valkey client: timeout khi Valkey treo (Info của T-028, T-031)', () => {
+  it(`kết nối nhàn rỗi vẫn sống (PING); Valkey treo ⇒ lệnh lỗi trong ~${VALKEY_SOCKET_TIMEOUT_MS}ms rồi tự phục hồi`, async (ctx) => {
+    const target = new URL(testValkeyUrl());
+    const probe = connect(Number(target.port || 6379), target.hostname);
+    const up = await new Promise<boolean>((resolve) => {
+      probe.once('connect', () => resolve(true));
+      probe.once('error', () => resolve(false));
+    });
+    probe.destroy();
+    if (!up) {
+      if (integrationRequired()) throw new Error(`Valkey không chạy ở ${target.host}`);
+      ctx.skip();
+    }
+    // Proxy tới Valkey thật; `mute` ⇒ nuốt mọi lệnh tiếp theo (Valkey "treo" nhưng TCP vẫn sống).
+    let mute = false;
+    const open: Socket[] = [];
+    const server = createServer((client) => {
+      const upstream = connect(Number(target.port || 6379), target.hostname);
+      open.push(client, upstream);
+      client.on('data', (chunk) => {
+        if (!mute) upstream.write(chunk);
+      });
+      upstream.pipe(client);
+      for (const s of [client, upstream]) s.on('error', () => undefined);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = new URL(target);
+    url.hostname = '127.0.0.1';
+    url.port = String((server.address() as AddressInfo).port);
+    const client = createValkeyClient(url.toString(), new SpyLogger());
+    try {
+      await client.connect();
+      expect(await client.ping()).toBe('PONG');
+      // Nhàn rỗi lâu hơn socketTimeout: PING định kỳ giữ kết nối, không bị coi là treo.
+      await new Promise((r) => setTimeout(r, VALKEY_SOCKET_TIMEOUT_MS + VALKEY_PING_INTERVAL_MS));
+      expect(client.isReady).toBe(true);
+      mute = true;
+      const started = Date.now();
+      await expect(client.ping()).rejects.toThrow(/timeout/i);
+      expect(Date.now() - started).toBeLessThan(VALKEY_SOCKET_TIMEOUT_MS + 1_000);
+      mute = false;
+      const deadline = Date.now() + 5_000;
+      while (!client.isReady && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+      expect(await client.ping()).toBe('PONG');
+    } finally {
+      client.destroy();
+      open.forEach((s) => s.destroy());
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 20_000);
 });

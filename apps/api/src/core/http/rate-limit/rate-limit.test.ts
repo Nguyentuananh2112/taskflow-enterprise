@@ -133,16 +133,22 @@ describe('createRateLimit', () => {
   });
 
   it('mỗi route chọn rule từ bảng security §6.4; register/refresh cũng fail-closed', () => {
-    expect(RATE_LIMIT_RULES.login.map((r) => [r.id, r.limit, r.windowMs])).toEqual([
-      ['login-fail-ip-email', 5, 900_000],
+    expect(RATE_LIMIT_RULES.loginIp.map((r) => [r.id, r.limit, r.windowMs])).toEqual([
       ['login-ip', 20, 900_000],
-      ['login-fail-email', 50, 3_600_000],
     ]);
-    for (const name of ['login', 'register', 'refresh'] as const) {
+    // ADR-108: chỉ đếm 401, (IP, email) 10/15 phút, email 100/giờ.
+    expect(
+      RATE_LIMIT_RULES.login.map((r) => [r.id, r.limit, r.windowMs, r.countOnlyStatuses]),
+    ).toEqual([
+      ['login-fail-ip-email', 10, 900_000, [401]],
+      ['login-fail-email', 100, 3_600_000, [401]],
+    ]);
+    const closed = ['login', 'loginIp', 'register', 'refresh', 'changePassword'] as const;
+    for (const name of closed) {
       expect(RATE_LIMIT_RULES[name].every((r) => r.failMode === 'closed')).toBe(true);
     }
     const others = Object.entries(RATE_LIMIT_RULES).filter(
-      ([n]) => !['login', 'register', 'refresh'].includes(n),
+      ([n]) => !(closed as readonly string[]).includes(n),
     );
     expect(others.flatMap(([, rules]) => rules).every((r) => r.failMode === 'open')).toBe(true);
     const ids = Object.values(RATE_LIMIT_RULES).flatMap((rules) => rules.map((r) => r.id));
