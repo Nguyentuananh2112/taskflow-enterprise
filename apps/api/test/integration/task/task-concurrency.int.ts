@@ -168,6 +168,36 @@ describe.each(rounds)('move/update/delete đồng thời — lượt %i', () => 
     expect((await h.row(a.id)).version).toBe(2);
   });
 
+  it('CC-AR01 (T-028 L1): 10 update khác task song song với archive P1 ⇒ chỉ 200 hoặc 422, không 500; sau archive không ghi được', async () => {
+    const tasks = [];
+    for (let i = 0; i < 10; i += 1) tasks.push(await h.seedTask({ rank: `a${i}` }));
+    const archive = (async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      await testPrisma().project.update({ where: { id: P1 }, data: { archivedAt: new Date() } });
+    })();
+    const [results] = await Promise.all([
+      settle(
+        tasks.map((t, i) =>
+          h.update.execute({
+            ...h.scope('Mia'),
+            taskId: t.id,
+            input: { expectedVersion: 1, title: `Đua ${i}` },
+          }),
+        ),
+      ),
+      archive,
+    ]);
+    for (const err of rejected(results)) expect(err).toMatchObject({ code: 'PROJECT_ARCHIVED' });
+    const after = await settle([
+      h.update.execute({
+        ...h.scope('Mia'),
+        taskId: tasks[0]!.id,
+        input: { expectedVersion: 9, title: 'Muộn' },
+      }),
+    ]);
+    expect(rejected(after)[0]).toMatchObject({ code: 'PROJECT_ARCHIVED' });
+  });
+
   it('CC-DL01: delete ‖ update cùng task v1 ⇒ đúng 1 thắng, bên kia 409 hoặc 404, không 500', async () => {
     const { a } = await board();
     const results = await settle([

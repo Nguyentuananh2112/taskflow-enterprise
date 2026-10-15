@@ -115,6 +115,8 @@ export class PrismaTaskReadModel implements ITaskReadModel {
 
   /** Mới nhất trước, phá hòa bằng id giảm dần (index `(task_id, created_at DESC, id DESC)`). */
   async listAuditLogs(
+    workspaceId: string,
+    projectId: string,
     taskId: string,
     cursor: AuditLogKey | null,
     limit: number,
@@ -123,6 +125,8 @@ export class PrismaTaskReadModel implements ITaskReadModel {
     const rows = await this.db().taskAuditLog.findMany({
       where: {
         taskId,
+        workspaceId,
+        projectId,
         ...(at && cursor
           ? { OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: cursor.id } }] }
           : {}),

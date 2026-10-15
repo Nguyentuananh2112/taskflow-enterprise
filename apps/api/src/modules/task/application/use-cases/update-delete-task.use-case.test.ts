@@ -6,7 +6,8 @@ import {
   ResourceNotFoundError,
   VersionConflictError,
 } from '../../../../core/errors';
-import { createTaskHarness, P1, P2, U } from '../../testing/task-harness';
+import { Task } from '../../domain/task';
+import { createTaskHarness, P1, P2, U, W2, type TaskHarness } from '../../testing/task-harness';
 
 // test-spec-task.md §3.4 (UpdateTask) và §3.5 (DeleteTask), tầng A.
 describe('UpdateTaskUseCase', () => {
@@ -205,5 +206,72 @@ describe('DeleteTaskUseCase', () => {
     await h.remove.execute({ ...h.scope('Mia'), taskId: t.id, input: {} });
     const dto = await h.create.execute({ ...h.scope('Mia'), input: { title: 'Thế chỗ' } });
     expect(dto.rank).toBe('a0');
+  });
+});
+
+// T-028 (audit bảo mật của B): ghi phải nguyên tử theo archive + có phạm vi tenant ngay trong UPDATE.
+describe('ghi có điều kiện archive + tenant (T-028 L1/L2)', () => {
+  type Write = (h: TaskHarness, taskId: string) => Promise<unknown>;
+  const writes: [string, Write][] = [
+    [
+      'update',
+      (h, taskId) =>
+        h.update.execute({
+          ...h.scope('Mia'),
+          taskId,
+          input: { expectedVersion: 1, title: 'Sau archive' },
+        }),
+    ],
+    [
+      'move',
+      (h, taskId) =>
+        h.move.execute({
+          ...h.scope('Mia'),
+          taskId,
+          input: { expectedVersion: 1, status: 'IN_PROGRESS' },
+        }),
+    ],
+    [
+      'assign',
+      (h, taskId) =>
+        h.assign.execute({
+          ...h.scope('Pam'),
+          taskId,
+          input: { expectedVersion: 1, assigneeId: U.Max },
+        }),
+    ],
+    ['delete', (h, taskId) => h.remove.execute({ ...h.scope('Mia'), taskId, input: {} })],
+  ];
+
+  it.each(writes)(
+    'L1 %s: project bị archive SAU khi use case đã đọc ⇒ 422 PROJECT_ARCHIVED, task không đổi, không audit/event',
+    async (_, write) => {
+      const h = await createTaskHarness();
+      const t = await h.seedTask({ rank: 'a0', createdById: U.Mia });
+      const save = h.deps.tasks.save.bind(h.deps.tasks);
+      // Đúng khe race: archive commit giữa lúc kiểm assertWritable và lúc UPDATE task.
+      h.deps.tasks.save = async (task, expected, opts) => {
+        await h.backend.patchProject(P1, { archivedAt: new Date() });
+        return save(task, expected, opts);
+      };
+      await expect(write(h, t.id)).rejects.toBeInstanceOf(ProjectArchivedError);
+      expect(await h.row(t.id)).toMatchObject({
+        version: 1,
+        title: t.title,
+        status: 'TODO',
+        assigneeId: null,
+        deletedAt: null,
+      });
+      expect(await h.auditOf(t.id)).toHaveLength(0);
+      expect(h.emitted()).toHaveLength(0);
+    },
+  );
+
+  it('L2: save với task mang workspace/project khác dòng trong DB ⇒ không ghi', async () => {
+    const h = await createTaskHarness();
+    const t = await h.seedTask({ rank: 'a0' });
+    const forged = Task.reconstitute({ ...(await h.row(t.id)), workspaceId: W2, title: 'Giả mạo' });
+    expect(await h.deps.tasks.save(forged, 1)).toBe(false);
+    expect((await h.row(t.id)).title).toBe(t.title);
   });
 });

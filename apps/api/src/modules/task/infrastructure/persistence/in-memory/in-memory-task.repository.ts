@@ -1,6 +1,7 @@
 import {
   RankConflictError,
   type ITaskRepository,
+  type SaveOptions,
 } from '../../../application/ports/task-repository.port';
 import { Task, type TaskProps } from '../../../domain/task';
 import type { TaskStatus } from '../../../domain/task-status';
@@ -60,10 +61,18 @@ export class InMemoryTaskRepository implements ITaskRepository {
     return Promise.resolve();
   }
 
-  save(task: Task, expectedVersion: number): Promise<boolean> {
-    const current = this.db.state.tasks.get(task.id);
-    if (!current || current.version !== expectedVersion) return Promise.resolve(false);
+  save(task: Task, expectedVersion: number, opts: SaveOptions = {}): Promise<boolean> {
     const row = task.toPrimitives();
+    const current = this.db.state.tasks.get(task.id);
+    const project = this.db.liveProject(row.workspaceId, row.projectId);
+    const matches =
+      current !== undefined &&
+      current.projectId === row.projectId &&
+      current.workspaceId === row.workspaceId &&
+      current.version === expectedVersion &&
+      project !== undefined &&
+      (opts.allowArchivedProject === true || project.archivedAt === null);
+    if (!matches) return Promise.resolve(false);
     if (this.rankTaken(row)) return Promise.reject(new RankConflictError());
     this.db.state.tasks.set(row.id, row);
     return Promise.resolve(true);

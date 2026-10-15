@@ -2,6 +2,7 @@ import type { Task as TaskRow } from '../../../../../generated/prisma/client';
 import {
   RankConflictError,
   type ITaskRepository,
+  type SaveOptions,
 } from '../../../application/ports/task-repository.port';
 import { Task, type TaskProps } from '../../../domain/task';
 import type { TaskStatus } from '../../../domain/task-status';
@@ -103,11 +104,27 @@ export class PrismaTaskRepository implements ITaskRepository {
       .catch(mapRankConflict);
   }
 
-  /** ADR-010: `updateMany({ where: { id, version } })` — `count === 0` ⇒ có ghi khác chen giữa. */
-  async save(task: Task, expectedVersion: number): Promise<boolean> {
+  /**
+   * ADR-010 + T-028 L1/L2: một câu `UPDATE … WHERE id AND project_id AND workspace_id AND version
+   * AND EXISTS(project chưa archive, ws chưa xóa)`. Điều kiện archive nằm TRONG câu UPDATE nên
+   * archive đã commit trước đó luôn được thấy (READ COMMITTED đánh giá lại khi ghi).
+   */
+  async save(task: Task, expectedVersion: number, opts: SaveOptions = {}): Promise<boolean> {
     const p = task.toPrimitives();
     const { count } = await this.db()
-      .task.updateMany({ where: { id: p.id, version: expectedVersion }, data: mutableColumns(p) })
+      .task.updateMany({
+        where: {
+          id: p.id,
+          projectId: p.projectId,
+          workspaceId: p.workspaceId,
+          version: expectedVersion,
+          project: {
+            workspace: { deletedAt: null },
+            ...(opts.allowArchivedProject ? {} : { archivedAt: null }),
+          },
+        },
+        data: mutableColumns(p),
+      })
       .catch(mapRankConflict);
     return count === 1;
   }

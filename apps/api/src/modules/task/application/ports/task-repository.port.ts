@@ -31,10 +31,17 @@ export interface ITaskRepository {
   /** Trùng `(project, status, rank)` của task sống ⇒ ném `RankConflictError` (unique partial). */
   add(task: Task): Promise<void>;
   /**
-   * Ghi có điều kiện `version = expectedVersion` (ADR-010: `updateMany`). `false` ⇒ có ghi khác
-   * lọt vào giữa ⇒ use case trả 409. Trùng rank ⇒ `RankConflictError`.
+   * Ghi NGUYÊN TỬ, có điều kiện trong cùng một câu UPDATE: đúng tenant (`id` + `projectId` +
+   * `workspaceId`), `version = expectedVersion` (ADR-010) và — trừ khi `allowArchivedProject` —
+   * project chưa archive (ADR-023/045: archive commit trước thì câu UPDATE thấy và không ghi;
+   * T-028 L1). `false` ⇒ use case đọc lại để trả 422 hoặc 409. Trùng rank ⇒ `RankConflictError`.
+   * `allowArchivedProject` chỉ cho bỏ gán do hệ thống (ADR-092).
    */
-  save(task: Task, expectedVersion: number): Promise<boolean>;
+  save(task: Task, expectedVersion: number, opts?: SaveOptions): Promise<boolean>;
+}
+
+export interface SaveOptions {
+  allowArchivedProject?: boolean;
 }
 
 /** Vi phạm unique `tasks_rank_live_key` — use case thử lại cả transaction (data-and-api §1.3). */

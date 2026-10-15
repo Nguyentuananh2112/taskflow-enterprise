@@ -195,3 +195,45 @@ describe('TaskQueries.getTask / listAuditLogs', () => {
     ).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 });
+
+describe('phạm vi & validate đầu vào của truy vấn (T-028 L3/L4)', () => {
+  const cursorOf = (kind: string, v: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify({ k: kind, v }), 'utf8').toString('base64url');
+
+  it('L4: cursor đúng định dạng nhưng id không phải uuid / rank quá dài ⇒ 400 trên field cursor (không 500)', async () => {
+    const h = await createTaskHarness();
+    const bad = [
+      cursorOf('tasks', { status: 'TODO', rank: 'a0', id: 'x' }),
+      cursorOf('tasks', { status: 'TODO', rank: 'a'.repeat(1025), id: P1 }),
+    ];
+    for (const cursor of bad) {
+      const err = await h.queries
+        .listTasks({ ...h.scope('Mia'), query: { limit: 50, cursor } })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+    }
+    const t = await h.seedTask({ rank: 'a0' });
+    const auditCursor = cursorOf('task-audit-logs', {
+      createdAt: '2026-10-15T08:00:00.000Z',
+      id: 'x',
+    });
+    await expect(
+      h.queries.listAuditLogs({
+        ...h.scope('Mia'),
+        taskId: t.id,
+        query: { limit: 5, cursor: auditCursor },
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('L3: đọc lịch sử có phạm vi tenant ngay trong truy vấn (project khác ⇒ rỗng)', async () => {
+    const h = await createTaskHarness();
+    const dto = await h.create.execute({ ...h.scope('Mia'), input: { title: 'Có lịch sử' } });
+    expect(
+      await h.backend.readModel.listAuditLogs(dto.workspaceId, P1, dto.id, null, 10),
+    ).toHaveLength(1);
+    expect(await h.backend.readModel.listAuditLogs(dto.workspaceId, P3, dto.id, null, 10)).toEqual(
+      [],
+    );
+  });
+});

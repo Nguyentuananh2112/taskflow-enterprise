@@ -57,6 +57,8 @@ export class InMemoryTaskReadModel implements ITaskReadModel {
   }
 
   async listAuditLogs(
+    workspaceId: string,
+    projectId: string,
     taskId: string,
     after: AuditLogKey | null,
     limit: number,
@@ -68,7 +70,9 @@ export class InMemoryTaskReadModel implements ITaskReadModel {
     const desc = (a: { c: string; id: string }, b: { c: string; id: string }) =>
       byte(b.c, a.c) || byte(b.id, a.id);
     const rows = this.db.state.audit
-      .filter((a) => a.taskId === taskId)
+      .filter(
+        (a) => a.taskId === taskId && a.workspaceId === workspaceId && a.projectId === projectId,
+      )
       .sort((a, b) => desc(key(a), key(b)))
       .filter((a) => !after || desc(key(a), { c: after.createdAt, id: after.id }) > 0)
       .slice(0, limit);
