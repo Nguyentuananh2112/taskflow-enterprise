@@ -83,3 +83,35 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
     expect(setError.mock.calls[0]?.[1].message).toMatch(/kết nối/);
   });
 });
+
+describe('applyServerErrors — RESOURCE_CONFLICT theo details.field (T-034)', () => {
+  it('field thuộc form ⇒ lỗi tại field với câu tùy chỉnh', () => {
+    const setError = vi.fn();
+    const error = new ApiError({
+      status: 409,
+      code: 'RESOURCE_CONFLICT',
+      message: 'x',
+      details: { field: 'slug', reason: 'taken' },
+    });
+    applyServerErrors(setError, error, {
+      fields: ['slug'],
+      conflictMessages: { slug: 'Trùng slug' },
+    });
+    expect(setError).toHaveBeenCalledWith('slug', {
+      type: 'RESOURCE_CONFLICT',
+      message: 'Trùng slug',
+    });
+  });
+
+  it('field không thuộc form ⇒ lỗi gốc', () => {
+    const setError = vi.fn();
+    const error = new ApiError({
+      status: 409,
+      code: 'RESOURCE_CONFLICT',
+      message: 'Đã tồn tại',
+      details: { field: 'keyPrefix', reason: 'taken' },
+    });
+    applyServerErrors(setError, error, { fields: ['name'] });
+    expect(setError.mock.calls[0]?.[0]).toBe('root.server');
+  });
+});

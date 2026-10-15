@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { projectApi, type ProjectListFilter } from '../api/project.api';
 
 export const projectKeys = {
+  all: (wsId: string) => ['ws', wsId, 'projects'] as const,
   list: (wsId: string, archived: ProjectListFilter) =>
     ['ws', wsId, 'projects', { archived }] as const,
   detail: (wsId: string, projectId: string) => ['ws', wsId, 'project', projectId] as const,

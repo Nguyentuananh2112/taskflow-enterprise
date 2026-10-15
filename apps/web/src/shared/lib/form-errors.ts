@@ -1,4 +1,4 @@
-import { ValidationErrorDetails } from '@taskflow/contracts/common';
+import { ResourceConflictDetails, ValidationErrorDetails } from '@taskflow/contracts/common';
 
 import { isApiError } from '@/shared/api';
 
@@ -19,7 +19,12 @@ const GENERIC = 'Có lỗi xảy ra, vui lòng thử lại.';
 export function applyServerErrors(
   setError: SetFieldError,
   error: unknown,
-  opts: Readonly<{ fields: readonly string[]; fieldByCode?: Readonly<Record<string, string>> }>,
+  opts: Readonly<{
+    fields: readonly string[];
+    fieldByCode?: Readonly<Record<string, string>>;
+    /** `RESOURCE_CONFLICT` có `details.field` thuộc form ⇒ lỗi tại field đó (frontend.md §7.3). */
+    conflictMessages?: Readonly<Record<string, string>>;
+  }>,
 ): void {
   if (!isApiError(error)) {
     setError(ROOT_ERROR, { type: 'server', message: GENERIC });
@@ -29,6 +34,17 @@ export function applyServerErrors(
   if (field) {
     setError(field, { type: error.code, message: error.message });
     return;
+  }
+  const conflict = ResourceConflictDetails.safeParse(error.details);
+  if (error.code === 'RESOURCE_CONFLICT' && conflict.success) {
+    const name = conflict.data.field;
+    if (name && opts.fields.includes(name)) {
+      setError(name, {
+        type: error.code,
+        message: opts.conflictMessages?.[name] ?? 'Giá trị này đã được sử dụng.',
+      });
+      return;
+    }
   }
   const details = ValidationErrorDetails.safeParse(error.details);
   if (error.code === 'VALIDATION_ERROR' && details.success) {

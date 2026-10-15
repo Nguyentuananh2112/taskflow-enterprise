@@ -2,4 +2,6 @@
 export const workspaceKeys = {
   root: (wsId: string) => ['ws', wsId] as const,
   detail: (wsId: string) => ['ws', wsId] as const,
+  list: ['workspaces'] as const,
+  deleted: ['workspaces', 'deleted'] as const,
 };

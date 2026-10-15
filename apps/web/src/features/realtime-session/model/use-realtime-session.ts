@@ -4,17 +4,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
+import { memberKeys } from '@/entities/member';
 import { sessionKeys } from '@/entities/session';
-import { workspaceKeys } from '@/entities/workspace';
+import { ROLE_LABEL, workspaceKeys } from '@/entities/workspace';
 import { useRealtimeClient } from '@/shared/socket';
 import { toast } from '@/shared/ui/toast';
-
-const ROLE_LABEL = {
-  OWNER: 'Chủ sở hữu',
-  PM: 'Quản lý dự án',
-  MEMBER: 'Thành viên',
-  VIEWER: 'Người xem',
-} as const;
 
 /**
  * Sự kiện cấp ứng dụng (frontend.md §3.5): đổi role ⇒ usePermission cập nhật tức thì; mất quyền
@@ -40,6 +34,8 @@ export function useRealtimeSession(): void {
         (old) => old && { ...old, myRole: role },
       );
       void queryClient.invalidateQueries({ queryKey: sessionKeys.me });
+      // Bảng thành viên (T-034) hiển thị role của chính mình ⇒ làm mới.
+      void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
       toast({ title: `Vai trò của bạn đã đổi thành ${ROLE_LABEL[role]}` });
     });
     const offRevoked = client.on('workspace:access-revoked', (raw) => {
@@ -48,10 +44,14 @@ export function useRealtimeSession(): void {
       const { workspaceId } = event.data.data;
       queryClient.removeQueries({ queryKey: workspaceKeys.root(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: sessionKeys.me });
+      void queryClient.invalidateQueries({ queryKey: workspaceKeys.list });
       if (path.current.startsWith(`/w/${workspaceId}`)) {
         router.replace('/w');
+        // Do chính tab này gây ra (tự rời / xóa workspace) thì màn đó đã báo — không toast lần hai.
         // Payload không phân biệt bị xóa khỏi workspace hay workspace bị xóa — không đoán.
-        toast({ title: 'Bạn không còn truy cập được workspace này' });
+        if (event.data.originClientId !== client.clientId) {
+          toast({ title: 'Bạn không còn truy cập được workspace này' });
+        }
       }
     });
     return () => {

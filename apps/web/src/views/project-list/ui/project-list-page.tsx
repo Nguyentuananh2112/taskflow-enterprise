@@ -12,6 +12,8 @@ import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
+import { ProjectListHeader } from './project-list-header';
+
 const TABS: ReadonlyArray<{ value: ProjectListFilter; label: string }> = [
   { value: 'false', label: 'Đang hoạt động' },
   { value: 'true', label: 'Đã lưu trữ' },
@@ -36,7 +38,7 @@ export function ProjectListPage() {
   }
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold">Dự án</h1>
+      <ProjectListHeader wsId={wsId} canCreate={can('project:create')} />
       <nav aria-label="Lọc dự án" className="flex gap-2">
         {TABS.map((tab) => (
           <Link
@@ -75,7 +77,7 @@ export function ProjectListPage() {
         <EmptyState
           title={archived === 'true' ? 'Không có dự án đã lưu trữ' : 'Chưa có dự án nào'}
           {...(can('project:create') && archived === 'false'
-            ? { description: 'Tạo dự án mới sẽ có ở bản sau.' }
+            ? { description: 'Bấm "Tạo dự án" để bắt đầu.' }
             : {})}
         />
       )}
