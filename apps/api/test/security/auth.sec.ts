@@ -307,3 +307,44 @@ describe('Ngoài phạm vi API (Playwright Phase 4/5)', () => {
     'E2E Playwright',
   );
 });
+
+// Cổng T-032 X4 (đọc chéo T-028): refresh ‖ logout-all / change-password không được để lại refresh token
+// sống (Y chèn bởi transaction chưa commit, ngoài snapshot của updateMany). Cửa sổ vài ms ⇒ lặp nhiều vòng.
+describe('Refresh ‖ thu hồi toàn bộ (X4)', () => {
+  const T032 = 'T-032 X4 refresh race';
+  const ROUNDS = 40;
+  pendingRoute(
+    'X4',
+    `refresh ‖ logout-all và refresh ‖ change-password ×${String(ROUNDS)} ⇒ không còn refresh token nào sống (trừ phiên mới của change-password)`,
+    T032,
+    async () => {
+      for (let round = 0; round < ROUNDS; round += 1) {
+        await flushRateLimitCounters();
+        const user = await actors.register(`x4-${String(round)}`);
+        const useChange = round % 2 === 1;
+        const [rf, revoke] = await Promise.all([
+          actors.refresh(user.refreshCookie),
+          useChange
+            ? actors.json('POST', '/auth/change-password', user.accessToken, {
+                currentPassword: user.password,
+                newPassword: `x4-new-passphrase-${String(round)}-xyz`,
+              })
+            : actors.json('POST', '/auth/logout-all', user.accessToken),
+        ]);
+        const ctx = `vòng ${String(round)} (${useChange ? 'change-password' : 'logout-all'} ${String(revoke.status)}, refresh ${String(rf.status)})`;
+        expect(revoke.status, ctx).toBe(useChange ? 200 : 204);
+        await flushRateLimitCounters();
+        // Token gốc vừa bị xoay < 10s ⇒ trong ân hạn trả 409 REFRESH_IN_PROGRESS (không cấp gì — §2.3);
+        // ngoài ra 401. Không bao giờ 200.
+        const original = await actors.refresh(user.refreshCookie);
+        expect([401, 409], `${ctx}: token gốc ${String(original.status)}`).toContain(
+          original.status,
+        );
+        if (rf.status === 200) {
+          const rotated = await actors.refresh(refreshCookieOf(rf));
+          expect(rotated.status, `${ctx}: token xoay trong lúc thu hồi vẫn sống`).toBe(401);
+        }
+      }
+    },
+  );
+});

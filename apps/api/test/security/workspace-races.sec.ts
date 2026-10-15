@@ -21,6 +21,7 @@ describe('Lost update workspace / project', () => {
     `PATCH ‖ DELETE workspace ×${String(ROUNDS)} ⇒ DELETE thành công thì workspace KHÔNG BAO GIỜ sống lại`,
     T032,
     async () => {
+      let deleted = 0;
       for (let round = 0; round < ROUNDS; round += 1) {
         await flushRateLimitCounters();
         const owner = await actors.register(`ws-race-${String(round)}`);
@@ -35,13 +36,19 @@ describe('Lost update workspace / project', () => {
         ]);
         const ctx = `vòng ${String(round)} (patch ${String(patch.status)}, delete ${String(del.status)})`;
         expect(patch.status, `${ctx}: ${patch.text.slice(0, 200)}`).toBeLessThan(500);
-        expect(
-          ok(del.status),
-          `${ctx}: DELETE phải thắng hoặc thử lại được — ${del.text.slice(0, 200)}`,
-        ).toBe(true);
         const after = await actors.json('GET', `/workspaces/${ws}`, owner.accessToken);
-        expect(after.status, `${ctx}: workspace đã xóa mềm sống lại`).toBe(404);
+        if (ok(del.status)) {
+          deleted += 1;
+          expect(after.status, `${ctx}: workspace đã xóa mềm sống lại`).toBe(404);
+        } else {
+          // ADR-110: DELETE thua race (PATCH đổi version trước) ⇒ 409 VERSION_CONFLICT, workspace còn nguyên.
+          expect(del.status, `${ctx}: ${del.text.slice(0, 200)}`).toBe(409);
+          expect(errorEnvelope(del).error.code, ctx).toBe('VERSION_CONFLICT');
+          expect(after.status, `${ctx}: DELETE thua thì workspace phải còn`).toBe(200);
+        }
       }
+      // Không xanh giả: phải có vòng DELETE thắng thì mới kiểm được chuyện hồi sinh.
+      expect(deleted, 'số vòng DELETE thắng').toBeGreaterThan(0);
     },
   );
 

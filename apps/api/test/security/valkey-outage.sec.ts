@@ -12,6 +12,8 @@ import { startTempValkey, type TempValkey } from './harness/valkey-container';
 
 const T020 = 'T-020 Prisma + Valkey (ADR-104/105)';
 const T032 = 'T-032 sid-revoked fallback DB khi cache miss';
+/** kill + start container + chờ API nối lại (backoff ≤ 5s): máy dev tải nặng vượt 20s mặc định. */
+const RESTART_TIMEOUT_MS = 120_000;
 const env: Record<string, string> = {};
 let valkey: TempValkey | undefined;
 
@@ -78,6 +80,7 @@ describe('Valkey sự cố', () => {
       expect((await login(user.password)).status, 'mật khẩu cũ vẫn đúng').toBe(200);
       expect((await login(newPassword)).status, 'mật khẩu mới không được ghi').toBe(401);
     },
+    RESTART_TIMEOUT_MS,
   );
 
   // Cổng T-032 (đọc chéo T-028 X3): `sid-revoked` chỉ sống trong Valkey (không persistence). Cache miss
@@ -116,5 +119,41 @@ describe('Valkey sự cố', () => {
       expect((await me(user.accessToken)).status, 'phiên đã logout sau Valkey restart').toBe(401);
       expect((await me(otherToken)).status, 'đối chứng: phiên khác vẫn sống').toBe(200);
     },
+    RESTART_TIMEOUT_MS,
+  );
+
+  pendingRoute(
+    'SEC-24f',
+    'Hai phiên S1, S2; logout S1 ⇒ Valkey restart ⇒ S2 gọi TRƯỚC (nạp lại tv) ⇒ S1 vẫn 401',
+    T032,
+    async () => {
+      if (!valkey) throw new Error('container Valkey tạm chưa dựng');
+      await waitValkeyReconnected();
+      const user = await actors.register('sid-prime');
+      const s2 = await actors.json('POST', '/auth/login', undefined, {
+        email: user.email,
+        password: user.password,
+      });
+      expect(s2.status).toBe(200);
+      const s2Token = (s2.json as { data: { accessToken: string } }).data.accessToken;
+      const logout = await api.request({
+        method: 'POST',
+        path: '/api/v1/auth/logout',
+        headers: {
+          'content-type': 'application/json',
+          origin: api.webOrigin,
+          cookie: user.refreshCookie,
+        },
+        body: '',
+      });
+      expect(logout.status).toBe(204);
+
+      valkey.kill();
+      await valkey.restart();
+      await waitValkeyReconnected();
+      expect((await me(s2Token)).status, 'S2 gọi trước, nạp lại cache tv').toBe(200);
+      expect((await me(user.accessToken)).status, 'S1 đã logout vẫn bị từ chối').toBe(401);
+    },
+    RESTART_TIMEOUT_MS,
   );
 });

@@ -97,13 +97,20 @@ export function runPending(blockedBy: string): boolean {
   return tags.some((tag) => blockedBy.includes(tag));
 }
 
-export function pendingRoute(id: string, title: string, blockedBy: string, fn?: () => unknown) {
+export function pendingRoute(
+  id: string,
+  title: string,
+  blockedBy: string,
+  fn?: () => unknown,
+  /** Case dựng/hủy hạ tầng (vd restart container Valkey) cần lâu hơn `testTimeout` 20s khi máy tải. */
+  timeoutMs?: number,
+) {
   const name = `[PENDING-ROUTE ${blockedBy}] ${id} — ${title}`;
   // Nghiệm thu branch có route: `SEC_RUN_PENDING=all` hoặc danh sách nhãn (vd `auth,workspaces`) khớp
   // chuỗi con của `blockedBy` ⇒ chạy thật các case ĐÃ có thân test. Case chưa có thân luôn là todo —
   // không bao giờ xanh giả.
   if (!fn) return it.todo(name);
-  return runPending(blockedBy) ? it(name, fn) : it.skip(name, fn);
+  return runPending(blockedBy) ? it(name, fn, timeoutMs) : it.skip(name, fn, timeoutMs);
 }
 
 /** Case thuộc tầng khác (Playwright/k6) — chỉ liệt kê để ma trận SEC đầy đủ. */
