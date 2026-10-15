@@ -55,16 +55,17 @@ Kiểm tra: <http://localhost:4000/healthz> trả `{"status":"ok"}`, mở <http:
 
 ## Lệnh hay dùng
 
-| Lệnh                                           | Việc                                                                               |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `pnpm dev`                                     | API + web ở chế độ watch                                                           |
-| `pnpm typecheck` · `pnpm lint` · `pnpm test`   | Definition of Done — **kiểm exit code** của cả ba                                  |
-| `pnpm format`                                  | Prettier ghi đè                                                                    |
-| `pnpm build`                                   | Build production (`apps/api/dist`, `apps/web/.next/standalone`)                    |
-| `pnpm infra:up` · `infra:down` · `infra:reset` | Hạ tầng Docker local (`reset` xóa sạch dữ liệu)                                    |
-| `pnpm --filter @taskflow/api test:integration` | Test với Postgres thật — `DATABASE_URL_TEST` trỏ DB **riêng của bạn** (runbook §5) |
-| `pnpm --filter @taskflow/api test:security`    | Suite bảo mật đầu-cuối (SEC-01…58)                                                 |
-| `pnpm docker:build`                            | Build image api + web                                                              |
+| Lệnh                                           | Việc                                                                                                              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                                     | API + web ở chế độ watch                                                                                          |
+| `pnpm verify`                                  | Definition of Done: lint · typecheck · test · audit (+ migrate/drift khi có `VERIFY_DB_URL`) — **kiểm exit code** |
+| `pnpm typecheck` · `pnpm lint` · `pnpm test`   | Từng bước lẻ                                                                                                      |
+| `pnpm format`                                  | Prettier ghi đè                                                                                                   |
+| `pnpm build`                                   | Build production (`apps/api/dist`, `apps/web/.next/standalone`)                                                   |
+| `pnpm infra:up` · `infra:down` · `infra:reset` | Hạ tầng Docker local (`reset` xóa sạch dữ liệu)                                                                   |
+| `pnpm --filter @taskflow/api test:integration` | Test với Postgres thật — `DATABASE_URL_TEST` trỏ DB **riêng của bạn** (runbook §5)                                |
+| `pnpm --filter @taskflow/api test:security`    | Suite bảo mật đầu-cuối (SEC-01…58)                                                                                |
+| `pnpm docker:build`                            | Build image api + web                                                                                             |
 
 > **Không bao giờ** `npx prisma` (kéo nhầm bản khác — ADR-061): dùng `pnpm exec prisma` hoặc script `db:*`.
 
