@@ -41,10 +41,12 @@ export class LogoutAllUseCase {
       const events = user.pullDomainEvents();
       this.d.uow.afterCommit(async () => {
         this.d.logger.info({ userId: id }, 'auth.logout_all');
+        // Ngắt socket TRƯỚC: tv mới đã nằm trong Valkey từ trước commit (ADR-105), lần ghi lại này chỉ
+        // là dự phòng — Valkey chậm không được làm trễ việc ngắt (G1 realtime, Info).
+        await this.d.notifier.disconnectUser(id);
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { userId: id }, () =>
           this.d.store.setTokenVersion(id, tokenVersion),
         );
-        await this.d.notifier.disconnectUser(id);
         await this.d.events.publish(events);
       });
     });
