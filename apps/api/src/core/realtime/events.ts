@@ -1,20 +1,16 @@
+import type { SocketAck } from '@taskflow/contracts';
 import * as z from 'zod';
 
 import type { IClock, IIdGenerator } from '../domain';
-import type { ErrorCode } from '../errors';
 import type { RealtimeEventMeta } from './ports';
 
-// Hợp đồng WebSocket (data-and-api §4). TODO(T-010 merge): thay bằng schema/kiểu trong
-// `@taskflow/contracts/realtime` (REALTIME_EVENTS, SocketAck, *Payload) — cùng hình dạng.
+// Hợp đồng WebSocket (data-and-api §4) — schema payload & ack lấy từ contracts (T-010).
+export { AuthRenewPayload, ProjectJoinPayload, ProjectLeavePayload } from '@taskflow/contracts';
 
-const Uuid = z.uuid();
-export const ProjectJoinPayload = z.strictObject({ workspaceId: Uuid, projectId: Uuid });
-export const ProjectLeavePayload = z.strictObject({ projectId: Uuid });
-export const AuthRenewPayload = z.strictObject({ token: z.string().min(1) });
 /** `clientId` theo tab — không hợp lệ ⇒ coi như null (security §5.2). */
-export const ClientId = Uuid.nullable().catch(null);
+export const ClientId = z.uuid().nullable().catch(null);
 
-export type SocketAck = { ok: true } | { ok: false; code: ErrorCode };
+export type { SocketAck };
 export type AckFn = (ack: SocketAck) => void;
 
 /** Vỏ chung mọi event server → client (data-and-api §4.3). */

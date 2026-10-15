@@ -16,7 +16,7 @@ $ pnpm --filter @taskflow/api test:coverage
   src/core/realtime       Stmts 99.35 | Branch 95.45 | Funcs 97.29 | Lines 100.00
   src/core/http/rate-limit Stmts 96.47 | Branch 91.42 | Funcs 96.00 | Lines 96.20  [exit 0 — ≥ 90%]
 ```
-(Số test/coverage chạy lại sau rebase ở cuối — xem mục "Rebase".)
+(Số trên là trước rebase; sau rebase: 50 file / 556 test — xem mục "Rebase".)
 
 **Chạy thật `tsx src/main.ts`** (Valkey thật, không DB):
 - `GET /api/v1/x` → header `RateLimit: "api-ip"; r=98; t=49` + `RateLimit-Policy: "api-ip"; q=100; w=60` (đếm trên Valkey).
@@ -72,7 +72,6 @@ $ pnpm --filter @taskflow/api test:coverage
 3. `project:join` rate limit + giới hạn 20 phòng đếm **trong bộ nhớ của socket** (trạng thái gắn với kết nối, mất khi ngắt — đúng ngữ nghĩa "mỗi socket"); handshake đếm trên Valkey (theo IP, xuyên instance).
 4. Ack code ngoài danh sách contract: `RATE_LIMITED`, `BUSINESS_RULE_VIOLATION` (vượt 20 phòng), `SERVICE_UNAVAILABLE` (checker lỗi) — đều nằm trong `ErrorCode`, hợp lệ với `SocketAck` của T-010.
 5. Handshake rate limit **fail-open** (Valkey chết vẫn cho kết nối; xác thực vẫn chạy) — security §6.4 chỉ yêu cầu fail-closed cho login/register (+refresh theo ticket).
-6. Kiểu event/payload khai báo tạm trong `core/realtime/events.ts` (cùng hình dạng contract T-010) — `TODO(T-010 merge)` thay bằng import từ `@taskflow/contracts`.
 
 ## Rủi ro / việc để lại
 
@@ -82,4 +81,6 @@ $ pnpm --filter @taskflow/api test:coverage
 
 ## Rebase
 
-(cập nhật khi rebase lên `main` trước khi báo DONE)
+Rebase lên `main` @ 4e186ac (đã có T-010 contracts + Prisma, T-015/T-018 tickets). Xung đột catalog/`package.json` với T-010 giải bằng hợp (lockfile tạo lại). Sau rebase:
+- `core/realtime/events.ts` **dùng schema của contracts** (`ProjectJoinPayload`, `ProjectLeavePayload`, `AuthRenewPayload`, `SocketAck`) thay bản khai tạm — bỏ `TODO(T-010 merge)`.
+- DoD chạy lại: install --frozen-lockfile / typecheck / lint (api 146 module, 0 vi phạm) / **test 50 file, 556 test** / build — tất cả exit 0; coverage không đổi (realtime 99.35/95.45, rate-limit 96.47/91.42).
