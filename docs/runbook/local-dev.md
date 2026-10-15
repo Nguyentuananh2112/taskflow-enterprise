@@ -48,7 +48,25 @@ cd TaskFlow_Enterprise
 pnpm install              # cũng cài git hook (lefthook) qua script "prepare"
 ```
 - pnpm 11 không cài bản phát hành < 24h (`minimumReleaseAge`) và chặn install script ngoài danh sách `allowBuilds` — lỗi kiểu `ERR_PNPM_IGNORED_BUILDS` nghĩa là có gói mới cần Tech Lead duyệt vào `allowBuilds`, **không** tự chạy `pnpm approve-builds`.
-- Git worktree dùng chung thư mục hook với repo chính → chỉ cần cài một lần.
+- Git worktree dùng chung thư mục hook với repo chính → chỉ cần cài một lần. Worktree chưa `pnpm install` thì hook in "Can't find lefthook in PATH" rồi **cho qua** — CI (job `gitleaks`) vẫn là lớp chặn bắt buộc.
+
+### 2.1 Cài chậm trên Windows — nguyên nhân đo được và cách xử lý (T-022)
+Đo trên máy dev ngày 2026-10-15 (12 luồng, 32 GB RAM, nhiều phiên agent chạy song song, Docker Desktop đang build):
+| Lần cài (`--frozen-lockfile`, ~800 gói) | Store | Cách nhập file | Thời gian |
+|---|---|---|---|
+| Bản sao repo trên C:, `--offline --ignore-scripts` | `D:.pnpm-store` (khác ổ) | **copy** | 37 phút 46 giây |
+| Worktree T-022 trên D: | `D:.pnpm-store` (cùng ổ) | **hardlink** (đã kiểm bằng `fsutil hardlink list`) | ~41 phút |
+
+Kết luận: **pnpm 11 đã tự dùng store cùng ổ** (`D:.pnpm-store`) khi store mặc định ở C: không hardlink được (cảnh báo "store … is not used because packages cannot be hard linked … Using the store at D:.pnpm-store"). Hardlink vẫn chậm ⇒ nút thắt là **tải chung của máy**, không phải copy/hardlink:
+- **Microsoft Defender** quét từng file mới ghi vào `node_modules` (MsMpEng luôn bận khi cài).
+- **Hết RAM/commit**: `vmmemWSL` (Docker Desktop) ~8,4 GB; khi commit trống < 4 GB, Git Bash chết với `Win32 error 1455` (paging file).
+- **Nhiều phiên cài cùng lúc** tranh nhau một store và một ổ đĩa.
+
+Đề xuất (cần người dùng duyệt — **không tự đổi cấu hình máy**):
+1. Loại trừ Defender cho thư mục cài (quyền admin): `Add-MpPreference -ExclusionPath 'D:.pnpm-store','D:TaskFlow_Enterprise','D:TaskFlow_wt'` — hoặc tốt hơn: đặt repo + store trên **Dev Drive** (ReFS, Defender chế độ hiệu năng).
+2. Giới hạn RAM cho Docker Desktop/WSL (`%UserProfile%.wslconfig`: `[wsl2] memory=6GB`), tắt container không dùng.
+3. **Không cài nhiều worktree cùng lúc** — xếp hàng; worktree mới có thể tái dùng `node_modules` bằng `pnpm install --offline` sau khi store đã đủ gói.
+4. Ghi rõ store (không bắt buộc, chỉ để khỏi phụ thuộc cơ chế tự chọn): `pnpm config set store-dir D:.pnpm-store --location global`. Không ghi `store-dir` vào `pnpm-workspace.yaml` (đường dẫn phụ thuộc máy).
 
 ## 3. Hạ tầng local (Postgres 18.6 + Valkey 9.1.2)
 Mở Docker Desktop trước (biểu tượng cá voi chuyển xanh).
@@ -69,6 +87,10 @@ Copy-Item apps/web/.env.example apps/web/.env.local
 Giá trị mẫu chạy được ngay với compose. **Không bao giờ commit** `.env`/`.env.local` (đã có trong `.gitignore`, gitleaks chặn thêm một lớp).
 
 ## 5. Migrate, seed, integration test
+Đặt một lần cho phiên PowerShell (CI/Docker đã đặt sẵn): Prisma CLI không gọi mạng kiểm tra phiên bản/telemetry — trên mạng chậm có thể treo 120 s+ làm migrate/test đỏ oan (T-022):
+```powershell
+$env:CHECKPOINT_DISABLE = '1'; $env:PRISMA_HIDE_UPDATE_MESSAGE = '1'
+```
 Luôn `pnpm exec prisma …` hoặc script `db:*`, **không** `npx` (ADR-061 — `npx` kéo Prisma 8 RC).
 Migrate/seed phải chạy bằng user `taskflow_migrator` (app dùng `taskflow_app`, không có quyền DDL). `prisma.config.ts` đọc `DATABASE_URL` và chỉ nạp `apps/api/.env` cho biến **chưa có** trong môi trường ⇒ đặt tạm biến trong shell:
 ```powershell
@@ -79,12 +101,25 @@ pnpm --filter @taskflow/api db:migrate       # chỉ khi sửa schema: tạo mig
 pnpm --filter @taskflow/api db:check-drift   # schema.prisma ↔ DB phải khớp (CI cũng chạy)
 Remove-Item Env:DATABASE_URL
 ```
-Integration test chạy trên **postgres-test** (cổng 5434). **Harness xóa sạch schema `public` của DB này** — không bao giờ trỏ vào DB dev:
+Postgres-test (cổng 5434) dùng chung ⇒ **mỗi người/việc một DB riêng** (ADR-106, TEAM.md). Harness integration và suite bảo mật đều **xóa schema `public`** của DB đích; cấm trỏ vào `taskflow_template` hoặc DB dev (5435):
+| DB | Dùng cho | Ghi chú |
+|---|---|---|
+| `taskflow_it` | `test:integration` mặc định (CI cũng dùng) | init script tạo sẵn (`TASKFLOW_EXTRA_DBS`) |
+| `taskflow_<ticket>` (vd `taskflow_t020`) | integration của từng engineer khi chạy song song | tự tạo: `CREATE DATABASE taskflow_t020` bằng `taskflow_migrator` (có CREATEDB) |
+| `taskflow_sec` | suite bảo mật `test:security` | harness tự tạo + migrate, giữ khóa advisory để 2 lần chạy không giẫm nhau |
 ```powershell
-$env:DATABASE_URL_TEST = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434/taskflow_template'
+# Integration
+$env:DATABASE_URL_TEST = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434/taskflow_it'
 pnpm --filter @taskflow/api test:integration
 Remove-Item Env:DATABASE_URL_TEST
+
+# Suite bảo mật (mặc định đã trỏ postgres-test 5434 / Valkey 6380 db 15 / DB taskflow_sec)
+pnpm --filter @taskflow/api test:security
 ```
+Compose tạo trước T-022 chưa có `taskflow_it`: `docker compose exec -T -e PGPASSWORD=migrator_local_only postgres-test psql -h 127.0.0.1 -U taskflow_migrator -d postgres -c 'CREATE DATABASE taskflow_it'` (không cần recreate).
+> Suite bảo mật xóa bộ đếm Valkey **db 15**: hai người chạy cùng lúc trên Valkey dùng chung sẽ làm `rate-limit.sec.ts` đỏ oan — đặt `SEC_REDIS_URL=redis://127.0.0.1:6380/<db riêng>` hoặc chạy lần lượt.
+
+Mutation test (Stryker, chậm — CI chạy hằng tuần, workflow `Mutation (weekly)`): `pnpm --filter @taskflow/api mutation:<nhóm>` (vd `mutation:core-http`), báo cáo ở `apps/api/coverage/mutation/`.
 
 ## 6. Chạy ứng dụng
 ```powershell
@@ -92,6 +127,8 @@ pnpm dev                  # api http://localhost:4000 (GET /healthz) + web http:
 ```
 
 ## 7. Kiểm tra trước khi đẩy code (Definition of Done)
+> **Luôn xét EXIT CODE, không đọc chữ** (T-022). Khi máy quá tải, Vitest có thể in `Test Files … passed` kèm `Unhandled Errors` / `Failed to start forks worker` — các file không khởi động được **không được đếm** trong dòng "passed", nhưng exit code = 1. PowerShell: `$LASTEXITCODE`; Git Bash: `$?`. Mặc định 4 worker (`vitest.config.ts`); máy đang bận thì `$env:VITEST_MAX_WORKERS = '2'`.
+
 ```powershell
 pnpm typecheck; if ($?) { pnpm lint }; if ($?) { pnpm test }; if ($?) { pnpm build }
 ```

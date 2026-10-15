@@ -1,5 +1,5 @@
 // Fake/spy dùng chung cho test U/A/I của mọi module (test-spec-*.md §0).
-export { testEnvVars, productionEnvVars } from './env';
+export { testEnvVars, productionEnvVars, testValkeyUrl, integrationRequired } from './env';
 export { FakeUnitOfWork, type Snapshottable, type UowStep } from './fake-unit-of-work';
 export {
   SpyEventBus,

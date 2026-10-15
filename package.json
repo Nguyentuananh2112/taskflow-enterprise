@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "node -e \"if(require('node:fs').existsSync('.git'))require('node:child_process').execSync('lefthook install',{stdio:'inherit'})\"",
+    "prepare": "node -e \"const cp=require('node:child_process');try{const g=(a)=>cp.execFileSync('git',['rev-parse',a],{stdio:['ignore','pipe','ignore']}).toString().trim();if(g('--git-dir')!==g('--git-common-dir')){console.log('[prepare] git worktree: bỏ qua lefthook install (hook dùng chung ở repo chính)');}else{cp.execSync('lefthook install',{stdio:'inherit'});}}catch(e){console.log('[prepare] bỏ qua cài git hook: '+String(e.message).split(String.fromCharCode(10))[0]);}\"",
     "infra:up": "docker compose up -d --wait postgres postgres-test valkey",
     "infra:down": "docker compose down",
     "infra:reset": "docker compose down --volumes",

@@ -203,8 +203,9 @@ Thay đổi so với T-004:
 ### 3.1 Nguyên tắc chung
 - Base image `node:24.22.0-bookworm-slim`, **ghim thêm digest** (`@sha256:…`); Renovate/Dependabot cập nhật digest. Chọn slim (glibc) cho ổn định với Prisma, Playwright và module prebuilt (stack-versions §6).
 - pnpm: `corepack enable` (Node 24 vẫn có corepack) + `"packageManager": "pnpm@11.28.2"`. Lưu ý pnpm 11 **chặn install script mặc định** → `allowBuilds` trong `pnpm-workspace.yaml` (T-001 §10). `@node-rs/argon2` là prebuilt nên không cần mục này.
-- Gọi Prisma **chỉ** bằng `pnpm exec prisma …` trong mọi Dockerfile, script và CI (ADR-061). CI có bước grep chặn chuỗi `npx prisma` (§5.1).
-- Build cache: `pnpm fetch` theo `pnpm-lock.yaml`. Đã kiểm ở T-011 (pnpm 11.28.2): `pnpm fetch` → `pnpm install --offline --frozen-lockfile` chạy được; `pnpm deploy --prod` **không cần** `--legacy`. Không dùng cache mount (store nằm trong layer `deps`, chỉ đổi khi lockfile đổi).
+- Gọi Prisma **chỉ** bằng `pnpm exec prisma …` trong mọi Dockerfile, script và CI (ADR-061). CI có bước grep chặn chuỗi `npx prisma` (§5.1). Image migrate gọi thẳng file CLI đã ghim (`node node_modules/prisma/build/index.js`) — cùng tinh thần.
+- **`CHECKPOINT_DISABLE=1` + `PRISMA_HIDE_UPDATE_MESSAGE=1` ở mọi nơi chạy Prisma CLI** (Dockerfile stage base + migrate, env cấp workflow CI/mutation, runbook §5) — T-022. Lý do: CLI gọi mạng kiểm tra phiên bản/telemetry, có thể treo 120 s+ trên mạng chậm (QA F đo được) và production không được gửi dữ liệu ra ngoài.
+- Build cache: `pnpm fetch` theo `pnpm-lock.yaml`. Đã kiểm ở T-011 (pnpm 11.28.2): `pnpm fetch` → `pnpm install --offline --frozen-lockfile` chạy được; `pnpm deploy --prod` **không cần** `--legacy`. Không dùng cache mount BuildKit: cache `type=gha` của CI chỉ giữ **layer**, không giữ cache mount ⇒ store đặt trong layer `deps` (chỉ đổi khi lockfile đổi) thì CI tái dùng được. T-022: `pnpm deploy` thêm `--offline` (trước đó tự tải lại từ registry, ~11 phút trên máy dev).
 - Runtime chạy bằng user `node` (uid 1000). Không có compiler, pnpm, source TS.
 - `CMD ["node", "dist/main.js"]` dạng exec; **không** `pnpm start`. Compose đặt `init: true` để reap tiến trình con và chuyển tín hiệu.
 - `ENV NODE_ENV=production`; `ARG GIT_SHA` → `ENV GIT_SHA`; thêm label OCI `revision` và `source`.
@@ -214,22 +215,20 @@ Thay đổi so với T-004:
 
 ### 3.2 `apps/api/Dockerfile`
 ```
-stage deps     : FROM node:24.22.0-bookworm-slim AS deps → corepack enable → copy lockfile + pnpm-workspace.yaml → pnpm fetch
-stage build    : FROM deps AS build
-                   → copy source monorepo → pnpm install --offline --frozen-lockfile
-                   → pnpm --filter @taskflow/api exec prisma generate   (DATABASE_URL vắng → "" theo ADR-061, generate vẫn chạy)
-                   → pnpm --filter @taskflow/api build                   (tsdown: bundle + inline @taskflow/contracts + client Prisma sinh ở src/generated;
-                                                                          external: @prisma/*, pg, @node-rs/argon2)
-                   → pnpm deploy --filter @taskflow/api --prod /out      (chỉ còn dependencies runtime; pnpm 11 không cần --legacy — đã kiểm)
-stage migrate  : FROM build AS migrate
-                   → WORKDIR apps/api · USER node
-                   → CMD ["pnpm","exec","prisma","migrate","deploy"]     (prisma CLI 7.10.0 đã pin; KHÔNG npx)
-stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
-                   → COPY --from=build /out (node_modules prod) + dist
-                   → USER node · EXPOSE 4000 · HEALTHCHECK · CMD ["node","dist/main.js"]
+stage base          : node:24.22.0-bookworm-slim@digest · corepack pnpm 11.28.2 · CHECKPOINT_DISABLE=1 · PRISMA_HIDE_UPDATE_MESSAGE=1
+stage deps          : FROM base → copy lockfile + pnpm-workspace.yaml → pnpm fetch (store nằm trong layer, đổi khi lockfile đổi)
+stage install       : FROM deps → copy source → pnpm install --offline --frozen-lockfile
+stage migrate-files : FROM install → node docker/migrate/collect-prisma.mjs apps/api /migrate
+                        (Prisma CLI + phụ thuộc theo lockfile, bỏ studio/dev/pglite + peer optional; prisma/ + prisma.config.ts)
+stage build         : FROM install → pnpm --filter @taskflow/api build   (= prisma generate --no-hints && tsdown)
+                        → pnpm deploy --filter @taskflow/api --prod --prefer-offline /out
+stage migrate       : FROM node slim → COPY --from=migrate-files /migrate · USER node
+                        → CMD ["node","node_modules/prisma/build/index.js","migrate","deploy"]   (CLI 7.10.0 ghim; KHÔNG npx — ADR-061)
+stage runtime       : FROM node slim → COPY --from=build /out (node_modules prod) + dist · USER node · HEALTHCHECK · CMD ["node","dist/main.js"]
 ```
 - Hai target build từ cùng commit: `api` và `api-migrate`. Cả hai cùng tag `GIT_SHA`.
 - Image runtime **không chứa** prisma CLI, devDependencies, test, `.env`.
+- Image migrate **chỉ chứa** Prisma CLI + migrations (không pnpm, không source app) — số đo trước/sau ở `docs/reviews/T-022-report.md`.
 - **Kiểm chứng argon2 trong container (ADR-065, bắt buộc ở T-011):** CI chạy trên image runtime vừa build:
   ```
   docker run --rm taskflow-api:<sha> node -e "import('@node-rs/argon2').then(async a=>{const h=await a.hash('x'.repeat(20),{algorithm:2,memoryCost:47104,timeCost:1,parallelism:1});if(!h.startsWith('\$argon2id\$')||!(await a.verify(h,'x'.repeat(20))))process.exit(1)})"
@@ -338,14 +337,16 @@ Repo public → file backup, dump và dữ liệu thật **không bao giờ** n�
 
 ## 5. CI/CD (GitHub Actions)
 
-### 5.1 Workflow `ci.yml` — mọi PR và push `main` (làm ở T-011)
+### 5.1 Workflow `ci.yml` — mọi PR và push `main` (T-011, bổ sung T-022)
 ```
-setup ──┬── static      (typecheck · lint+depcruise · prettier · gitleaks · migrate-diff · cấm `npx prisma`)
-        ├── unit        (vitest project unit + coverage threshold)
-        ├── integration (vitest project integration; services: postgres:18.6-bookworm + valkey/valkey:9.1.2)
-        └── build       (pnpm build; docker build api/api-migrate/web không push; smoke argon2 trong image; trivy)
-                          └── e2e (từ Phase 4: compose prodlike + Playwright)
+gitleaks · actionlint
+static ──── build       (pnpm build; docker build api/api-migrate/web không push; argon2 + smoke api/web; trivy)
+              └── e2e   (từ Phase 4: compose prodlike + Playwright)
+unit        (pnpm test + coverage api có ngưỡng)
+integration (postgres:18.6 + valkey:9.1.2 services; migrate template + drift; test:integration trên DB taskflow_it)
+security    (cùng services; migrate template; test:security — suite đen SEC-xx của F, chặn merge)
 ```
+Workflow riêng `mutation.yml` (T-022): Stryker **hằng tuần** (thứ Hai 02:00 UTC) + chạy tay, ma trận theo các script `mutation:<nhóm>` của apps/api, upload báo cáo JSON/HTML, **không chặn PR**.
 - **Chung:**
   - Các bước: `actions/checkout` → `pnpm/action-setup` (đọc `packageManager` → pnpm 11.28.2) → `actions/setup-node` với `node-version-file: .nvmrc` (24.22.0) và `cache: 'pnpm'` → `pnpm install --frozen-lockfile`.
   - Mọi action **ghim theo commit SHA**.
@@ -366,8 +367,9 @@ setup ──┬── static      (typecheck · lint+depcruise · prettier · gi
 - **unit:** `vitest run --project unit --coverage`. Dưới ngưỡng ở §8.2 → đỏ. Upload báo cáo coverage làm artifact.
 - **integration:**
   - `services`: postgres `18.6-bookworm` (healthcheck `pg_isready`) + valkey `9.1.2`. Lưu ý: `services` không truyền được `command`, nên khi cần tham số Valkey thì khởi động bằng `docker run` trong step.
-  - Script init role → `pnpm db:deploy` vào DB template → `vitest run --project integration`. Bộ này gồm toàn bộ case trong `test-spec-auth-workspace.md` và `test-spec-task.md` (ADR-090), SEC-01…55, cùng test collation `"C"`.
-  - Timeout job 15 phút.
+  - Script init role (tạo thêm DB `taskflow_it`) → migrate `taskflow_template` + drift → `test:integration` với `DATABASE_URL_TEST` trỏ **`taskflow_it`** (harness xóa + dựng lại schema public; không được đụng template).
+  - Timeout job 20 phút.
+- **security (T-022):** cùng services; `pnpm --filter @taskflow/api test:security` với biến `SEC_*` (migrator, app = `taskflow_app`, DB `taskflow_sec` do harness tự tạo + migrate — ADR-106, Valkey db 15, `SEC_API_READY_TIMEOUT_MS=180000`). Mỗi file test spawn `src/main.ts` thật.
 - **build:**
   - `pnpm build`
   - `docker buildx build` cả 3 target, cache `type=gha`, **không push** trên PR
@@ -559,10 +561,16 @@ Thứ tự trong `main.ts` (composition root):
 
 Coverage không thay được việc kiểm tra test có assert ý nghĩa; PR review phải xem.
 
+### 8.2b Chạy Vitest an toàn (T-022)
+- `maxWorkers` mặc định **4** (`vitest.config.ts` gốc; `test:coverage` của api truyền `--maxWorkers=4`), ghi đè bằng `VITEST_MAX_WORKERS`; CI đặt 2 (runner 4 vCPU, chừa CPU cho service). Đo trên máy dev bận: 6 worker ⇒ 16 file web không khởi động được worker; 4 worker ⇒ 95 file / 1012 test xanh, nhanh gấp đôi.
+- **Chỉ tin EXIT CODE.** Đã thử (T-022, rồi gỡ probe): lỗi ngoài test (uncaught exception / unhandled rejection) và worker bị kill ⇒ Vitest **exit 1** dù vẫn in `Test Files … passed` — và file không khởi động được worker **không được đếm** trong dòng đó. Không nơi nào bật `dangerouslyIgnoreUnhandledErrors`. CI không có `| tee`, `|| true`, `continue-on-error` ở bước test.
+
 ### 8.3 DB test cô lập (ADR-074)
 - Dùng Postgres test riêng: `postgres-test` khi chạy local, `services` khi chạy CI.
-- `globalSetup` của project integration: tạo role `taskflow_app`/`taskflow_migrator` → `pnpm exec prisma migrate deploy` vào `taskflow_template` (chạy bằng migrator) **một lần**.
-- Mỗi worker Vitest: `CREATE DATABASE taskflow_w<N> TEMPLATE taskflow_template`. App dưới test kết nối bằng **`taskflow_app`**, để lỗi thiếu quyền lộ ra ở test. Valkey: mỗi worker một tiền tố key `test:w<N>:`.
+- Hiện trạng (T-010/T-017, chốt ở T-022): postgres-test có **2 DB, không trộn**:
+  - `taskflow_sec` — **suite bảo mật** (ADR-106): harness tự tạo bằng migrator, xóa schema + migrate đầu mỗi file, API chạy bằng **`taskflow_app`** để lỗi thiếu quyền lộ ra. Valkey db 15 riêng. `taskflow_template` không còn dùng cho test (harness từ chối).
+  - `taskflow_it` — **integration** (`DATABASE_URL_TEST`): harness xóa + dựng lại schema `public` rồi migrate. Nếu chạy vào template sẽ xóa luôn grant/default privileges của `taskflow_app` (gắn với schema) ⇒ suite bảo mật hỏng.
+- Khi cần chạy integration song song theo worker: clone `taskflow_w<N>` từ template như suite bảo mật (đã có cơ chế).
 - Giữa các test file: `TRUNCATE … RESTART IDENTITY CASCADE` toàn bộ bảng nghiệp vụ (lấy danh sách từ `pg_tables`, trừ `_prisma_migrations`). **Không** rollback transaction sau mỗi test, vì phải commit thật thì mới kiểm được ADR-012.
 - Không mock Prisma trong integration. Thời gian dùng clock tiêm vào (ADR-016).
 - Vitest 5 không tự tìm config ở thư mục cha → config project nằm ở root (`test.projects`) — T-001 §4.

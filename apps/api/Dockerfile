@@ -2,6 +2,9 @@
 # Image API — devops.md §3.1–3.2. Build từ GỐC monorepo:
 #   docker build -f apps/api/Dockerfile --target runtime -t taskflow-api:dev .
 #   docker build -f apps/api/Dockerfile --target migrate -t taskflow-api-migrate:dev .
+# Store pnpm nằm trong layer `deps` (chỉ đổi khi lockfile đổi): cache layer của CI (type=gha) giữ được nó,
+# còn cache mount BuildKit thì không (T-022). `install` chạy --offline; `deploy` cần metadata gói mà `pnpm fetch`
+# không lưu (ERR_PNPM_NO_OFFLINE_META) ⇒ --prefer-offline: tarball lấy từ store, chỉ lên mạng khi thiếu metadata.
 # Base image ghim tag + digest (Dependabot cập nhật). Debian slim (glibc) — stack-versions §6.
 ARG NODE_IMAGE=node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 
@@ -10,7 +13,11 @@ FROM ${NODE_IMAGE} AS base
 ENV CI=true \
     COREPACK_HOME=/opt/corepack \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
-    TF_PNPM_STORE=/opt/pnpm-store
+    TF_PNPM_STORE=/opt/pnpm-store \
+    CHECKPOINT_DISABLE=1 \
+    PRISMA_HIDE_UPDATE_MESSAGE=1
+# CHECKPOINT_DISABLE / PRISMA_HIDE_UPDATE_MESSAGE: Prisma CLI không gọi mạng kiểm tra phiên bản/telemetry
+# (có thể treo 120s+ trên mạng chậm; production không gửi dữ liệu ra ngoài) — T-022.
 WORKDIR /repo
 COPY package.json ./
 # Tải đúng pnpm trong "packageManager" (11.28.2) một lần, mở quyền đọc cho user node (stage migrate).
@@ -23,23 +30,35 @@ FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm fetch --frozen-lockfile --store-dir "$TF_PNPM_STORE"
 
-# ---------- build: cài offline, build, tách node_modules production ----------
-FROM deps AS build
+# ---------- install: cài offline toàn workspace (dùng chung cho build và migrate-files) ----------
+FROM deps AS install
 COPY . .
 RUN pnpm install --offline --frozen-lockfile --store-dir "$TF_PNPM_STORE"
-# Client Prisma (src/generated, gitignore) phải sinh trước khi tsdown bundle. ADR-061: chỉ `pnpm exec prisma`;
-# DATABASE_URL vắng ⇒ prisma.config.ts dùng "" — đủ cho generate.
-RUN pnpm --filter @taskflow/api exec prisma generate --no-hints
+
+# ---------- migrate-files: Prisma CLI + đúng phụ thuộc (theo lockfile) + prisma/ + prisma.config.ts ----------
+# Tách khỏi stage build ⇒ `--target migrate` không phải chờ build/deploy; BuildKit chạy hai nhánh song song.
+FROM install AS migrate-files
+RUN node docker/migrate/collect-prisma.mjs apps/api /migrate
+
+# ---------- build: build, tách node_modules production ----------
+FROM install AS build
+# Script build tự `prisma generate` (src/generated, gitignore) rồi tsdown (T-022). DATABASE_URL vắng ⇒ "" — đủ cho generate.
 RUN pnpm --filter @taskflow/api build
 # Chỉ dependencies runtime của api (gồm @node-rs/argon2 đúng nền tảng linux-x64-gnu/arm64-gnu).
-RUN pnpm --filter @taskflow/api deploy --prod --store-dir "$TF_PNPM_STORE" /out
+RUN pnpm --filter @taskflow/api deploy --prod --prefer-offline --store-dir "$TF_PNPM_STORE" /out
 
 # ---------- migrate: job chạy TRƯỚC rollout (devops.md §4.1), không chạy trong app start ----------
 # DATABASE_URL = user taskflow_migrator (DDL), kết nối thẳng — không qua pooler.
-FROM build AS migrate
-WORKDIR /repo/apps/api
+# Chỉ Prisma CLI đã ghim theo lockfile (không pnpm, không source app). Gọi thẳng file CLI trong node_modules —
+# cùng tinh thần ADR-061 (không bao giờ kéo bản Prisma chưa ghim như `npx`).
+FROM ${NODE_IMAGE} AS migrate
+ENV NODE_ENV=production \
+    CHECKPOINT_DISABLE=1 \
+    PRISMA_HIDE_UPDATE_MESSAGE=1
+WORKDIR /app
+COPY --from=migrate-files /migrate ./
 USER node
-CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
+CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
 
 # ---------- runtime: không pnpm, không devDependencies, không source TS ----------
 FROM ${NODE_IMAGE} AS runtime

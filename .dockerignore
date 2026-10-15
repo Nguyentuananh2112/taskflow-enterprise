@@ -27,6 +27,8 @@ backups/
 .idea
 docs
 docker
+# …trừ script gom Prisma CLI cho image migrate (T-022)
+!docker/migrate/collect-prisma.mjs
 lefthook.yml
 .gitleaks.toml
 **/Dockerfile

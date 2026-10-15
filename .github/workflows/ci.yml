@@ -18,6 +18,13 @@ concurrency:
 
 env:
   CI: true
+  # Prisma CLI: không gọi mạng checkpoint/telemetry (có thể treo 120s+) — T-022.
+  CHECKPOINT_DISABLE: '1'
+  PRISMA_HIDE_UPDATE_MESSAGE: '1'
+  # Worker Vitest (mặc định 4 trong vitest.config.ts); runner 4 vCPU ⇒ 2 để chừa CPU cho Postgres/Valkey.
+  VITEST_MAX_WORKERS: '2'
+  # Thiếu Postgres/Valkey ⇒ test tầng I FAIL, không skip (T-022). Job nào chạy test tầng I phải có service tương ứng.
+  REQUIRE_INTEGRATION: '1'
   # Ảnh công cụ ghim tag + digest (cập nhật bằng Dependabot / tay, ghi lý do trong PR).
   ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
   TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
@@ -95,6 +102,16 @@ jobs:
     name: unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # `pnpm test` gồm cả *.integration.test.ts tầng I dùng Valkey thật (rate-limit, redis-adapter — T-016).
+    services:
+      valkey:
+        image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      VALKEY_URL_TEST: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,6 +131,8 @@ jobs:
 
   # ---------------------------------------------------------------- integration
   # Postgres 18.6 + Valkey 9.1.2 thật (ADR-003). Tách 2 user DB như compose (ADR-074).
+  # Integration chạy trên DB riêng `taskflow_it`: harness của T-010 xóa + dựng lại schema public ⇒ nếu dùng chung
+  # template sẽ mất grant/default privileges mà suite bảo mật cần (T-022).
   integration:
     name: integration · migrate diff
     runs-on: ubuntu-24.04
@@ -135,38 +154,98 @@ jobs:
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
-    env:
-      DATABASE_URL: postgresql://taskflow_app:app_ci_only@127.0.0.1:5432/taskflow_template
-      MIGRATOR_DATABASE_URL: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_template
-      REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Tạo role taskflow_migrator / taskflow_app (cùng script với compose)
+      - name: Tạo role taskflow_migrator / taskflow_app + DB taskflow_it (cùng script với compose)
         env:
           PGHOST: 127.0.0.1
           PGPASSWORD: postgres_ci_only
           POSTGRES_USER: postgres
           POSTGRES_DB: taskflow_template
+          TASKFLOW_EXTRA_DBS: taskflow_it
           TASKFLOW_MIGRATOR_PASSWORD: migrator_ci_only
           TASKFLOW_APP_PASSWORD: app_ci_only
         run: bash docker/postgres/init/01-roles.sh
-      # Luôn `pnpm exec prisma` (ADR-061). Migrate bằng user có DDL; prisma.config.ts chỉ đọc DATABASE_URL.
-      - name: prisma validate + migrate deploy + drift rỗng (ADR-062)
+      # Luôn `pnpm exec prisma` (ADR-061). Migrate template bằng user có DDL; prisma.config.ts chỉ đọc DATABASE_URL.
+      - name: prisma validate + migrate deploy (taskflow_template) + drift rỗng (ADR-062)
         working-directory: apps/api
         env:
-          DATABASE_URL: ${{ env.MIGRATOR_DATABASE_URL }}
+          DATABASE_URL: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_template
         run: |
           pnpm exec prisma validate
           pnpm exec prisma migrate deploy
           pnpm run db:check-drift
-      # Harness của T-010 xóa + dựng lại schema public của DATABASE_URL_TEST ⇒ cần user sở hữu schema (migrator).
-      - name: Integration tests (Postgres thật)
+      - name: Integration tests (Postgres thật, DB taskflow_it)
         env:
-          DATABASE_URL_TEST: ${{ env.MIGRATOR_DATABASE_URL }}
+          DATABASE_URL_TEST: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_it
+          VALKEY_URL_TEST: redis://127.0.0.1:6379
         run: pnpm --filter @taskflow/api test:integration
+
+  # ---------------------------------------------------------------- security
+  # Bộ test bảo mật đen SEC-xx (T-017, Engineer F): spawn `src/main.ts` thật; harness tự tạo DB riêng
+  # `taskflow_sec` (ADR-106, migrator có CREATEDB), xóa schema + migrate đầu mỗi file; API chạy bằng
+  # taskflow_app; Valkey db 15. Chạy trên mọi PR, chặn merge.
+  security:
+    name: security suite (SEC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_only
+          POSTGRES_DB: taskflow_template
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d taskflow_template"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      valkey:
+        image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Tạo role taskflow_migrator / taskflow_app + DB taskflow_it (cùng script với compose)
+        env:
+          PGHOST: 127.0.0.1
+          PGPASSWORD: postgres_ci_only
+          POSTGRES_USER: postgres
+          POSTGRES_DB: taskflow_template
+          TASKFLOW_EXTRA_DBS: taskflow_it
+          TASKFLOW_MIGRATOR_PASSWORD: migrator_ci_only
+          TASKFLOW_APP_PASSWORD: app_ci_only
+        run: bash docker/postgres/init/01-roles.sh
+      # Luôn `pnpm exec prisma` (ADR-061). Migrate template bằng user có DDL; prisma.config.ts chỉ đọc DATABASE_URL.
+      - name: prisma validate + migrate deploy (taskflow_template) + drift rỗng (ADR-062)
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_template
+        run: |
+          pnpm exec prisma validate
+          pnpm exec prisma migrate deploy
+          pnpm run db:check-drift
+      - name: test:security
+        env:
+          SEC_PG_HOST: 127.0.0.1
+          SEC_PG_PORT: '5432'
+          SEC_PG_DB: taskflow_sec
+          SEC_PG_MIGRATOR_USER: taskflow_migrator
+          SEC_PG_MIGRATOR_PASSWORD: migrator_ci_only
+          SEC_PG_APP_USER: taskflow_app
+          SEC_PG_APP_PASSWORD: app_ci_only
+          SEC_REDIS_URL: redis://127.0.0.1:6379/15
+          # Lần chạy nguội (tsx biên dịch main.ts) có thể > 90 s trên runner — F đề xuất 180 s (T-022).
+          SEC_API_READY_TIMEOUT_MS: '180000'
+        run: pnpm --filter @taskflow/api test:security
 
   # ---------------------------------------------------------------- build
   build:

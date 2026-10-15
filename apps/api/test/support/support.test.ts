@@ -10,6 +10,8 @@ import {
   SpyEventBus,
   SpyLogger,
   createSpy,
+  integrationRequired,
+  testValkeyUrl,
   type Snapshottable,
 } from './index';
 
@@ -144,5 +146,21 @@ describe('spies', () => {
       { method: 'disconnectUser', args: ['after'], duringTransaction: false },
     ]);
     expect((notifier as unknown as { then?: unknown }).then).toBeUndefined();
+  });
+});
+
+describe('testValkeyUrl / integrationRequired (T-022)', () => {
+  it('ưu tiên VALKEY_URL_TEST, rồi tên cũ TEST_VALKEY_URL (deprecated), rồi mặc định 6380', () => {
+    expect(testValkeyUrl({ VALKEY_URL_TEST: 'redis://a:1', TEST_VALKEY_URL: 'redis://b:2' })).toBe(
+      'redis://a:1',
+    );
+    expect(testValkeyUrl({ TEST_VALKEY_URL: 'redis://b:2' })).toBe('redis://b:2');
+    expect(testValkeyUrl({})).toBe('redis://127.0.0.1:6380');
+  });
+
+  it('REQUIRE_INTEGRATION chỉ bật khi đúng "1"', () => {
+    expect(integrationRequired({ REQUIRE_INTEGRATION: '1' })).toBe(true);
+    expect(integrationRequired({ REQUIRE_INTEGRATION: 'true' })).toBe(false);
+    expect(integrationRequired({})).toBe(false);
   });
 });

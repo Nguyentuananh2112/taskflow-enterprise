@@ -1,0 +1,69 @@
+# Mutation testing hằng tuần (T-022) theo cấu hình Stryker của F (apps/api/stryker/*.config.mjs, T-017).
+# KHÔNG chặn PR: chỉ chạy theo lịch + chạy tay, upload báo cáo JSON/HTML làm artifact.
+# Nhóm lấy TỰ ĐỘNG từ các script `mutation:<nhóm>` trong apps/api/package.json — thêm nhóm không cần sửa file này.
+name: Mutation (weekly)
+
+on:
+  schedule:
+    - cron: '0 2 * * 1' # 02:00 UTC thứ Hai (09:00 giờ Việt Nam)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+env:
+  CI: true
+  CHECKPOINT_DISABLE: '1'
+  PRISMA_HIDE_UPDATE_MESSAGE: '1'
+
+jobs:
+  groups:
+    name: list mutation groups
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      groups: ${{ steps.list.outputs.groups }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: list
+        run: |
+          groups="$(node -e "const s=require('./apps/api/package.json').scripts;console.log(JSON.stringify(Object.keys(s).filter(k=>k.startsWith('mutation:')).map(k=>k.slice(9))))")"
+          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+          echo "Nhóm: $groups"
+
+  mutation:
+    name: stryker · ${{ matrix.group }}
+    needs: [groups]
+    if: needs.groups.outputs.groups != '[]'
+    runs-on: ubuntu-24.04
+    # Command runner chạy lại nguyên bộ test của nhóm cho mỗi mutant (T-017) ⇒ chậm.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.groups.outputs.groups) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Stryker ${{ matrix.group }}
+        env:
+          GROUP: ${{ matrix.group }}
+        run: pnpm --filter @taskflow/api "mutation:${GROUP}"
+      - name: Upload báo cáo
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-${{ matrix.group }}
+          path: |
+            apps/api/coverage/mutation/${{ matrix.group }}.json
+            apps/api/coverage/mutation/${{ matrix.group }}.html
+          if-no-files-found: warn
+          retention-days: 30
