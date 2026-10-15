@@ -14,7 +14,9 @@ test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => {
     window.__cspViolations = [];
     document.addEventListener('securitypolicyviolation', (e) => {
-      window.__cspViolations?.push(`${e.violatedDirective} ${e.blockedURI}`);
+      window.__cspViolations?.push(
+        `${e.violatedDirective} ${e.blockedURI} @ ${e.sourceFile}:${String(e.lineNumber)}:${String(e.columnNumber)}`,
+      );
     });
   });
 });
