@@ -2,6 +2,7 @@ import { move } from '@dnd-kit/helpers';
 import type { DragDropEventHandlers } from '@dnd-kit/react';
 import type { TaskDto, TaskStatus } from '@taskflow/contracts/task';
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { flushSync } from 'react-dom';
 
 import { allowedTargets, STATUS_LABEL, type BoardColumns } from '@/entities/task';
 import { computeMoveIntent, findColumn, toColumnIds, type MoveIntent } from '@/features/task-move';
@@ -49,9 +50,9 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
   }, []);
 
   const onDragOver = useCallback<NonNullable<Handlers['onDragOver']>>((event) => {
-    const { from, preview } = drag.current;
+    const { activeId, from, preview } = drag.current;
     const to = statusOf(event.operation.target?.data);
-    if (from === null || preview === null) return;
+    if (activeId === null || from === null || preview === null) return;
     if (to !== undefined && !allowedTargets(from).includes(to)) {
       event.preventDefault(); // chặn sắp xếp lạc quan mặc định; preview giữ nguyên
       return;
@@ -59,7 +60,15 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
     const next = move(preview as MutableColumns, event);
     if (next === preview) return;
     drag.current = { ...drag.current, preview: next };
-    dispatch({ type: 'over', preview: next });
+    // Đổi cột ⇒ commit NGAY: SortableKeyboardPlugin đọc `sortable.group/index` (gán trong layout effect
+    // của useSortable) ngay sau setDropTarget. Cột trống không có sortable nào để OptimisticSortingPlugin
+    // cập nhật hộ ⇒ nếu render trễ, plugin tưởng chưa đổi nhóm, bật lại collision và thẻ bị kéo về cột
+    // cũ (bàn phím vào cột trống — WCAG 2.1.1, E2).
+    if (findColumn(preview, activeId) !== findColumn(next, activeId)) {
+      flushSync(() => dispatch({ type: 'over', preview: next }));
+    } else {
+      dispatch({ type: 'over', preview: next });
+    }
   }, []);
 
   const onDragEnd = useCallback<NonNullable<Handlers['onDragEnd']>>((event) => {

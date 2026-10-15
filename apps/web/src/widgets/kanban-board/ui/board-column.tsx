@@ -70,6 +70,7 @@ function BoardColumnImpl(props: Props) {
           <SortableTaskCard
             key={task.id}
             task={task}
+            column={status}
             index={index}
             canDrag={canDrag}
             pending={pendingIds.has(task.id)}

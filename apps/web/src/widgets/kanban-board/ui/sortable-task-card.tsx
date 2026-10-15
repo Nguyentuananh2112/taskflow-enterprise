@@ -1,7 +1,7 @@
 'use client';
 
 import { useSortable } from '@dnd-kit/react/sortable';
-import type { TaskDto } from '@taskflow/contracts/task';
+import type { TaskDto, TaskStatus } from '@taskflow/contracts/task';
 import { memo } from 'react';
 
 import { TaskCard } from '@/entities/task';
@@ -11,6 +11,11 @@ import type { CardData } from '../model/a11y-announcements';
 
 type Props = Readonly<{
   task: TaskDto;
+  /**
+   * Cột ĐANG render thẻ — khác `task.status` trong lúc kéo (preview chỉ dời id). Là `group` của sortable
+   * và `status` trong data: SortableKeyboardPlugin so `group` để biết thẻ đã sang cột mới (E2).
+   */
+  column: TaskStatus;
   index: number;
   /** Có quyền kéo (`task:move` && project chưa lưu trữ). */
   canDrag: boolean;
@@ -27,6 +32,7 @@ type Props = Readonly<{
 /** Bọc TaskCard bằng useSortable (frontend.md §4.1). Tay kéo là nút riêng ⇒ click tiêu đề vẫn mở drawer. */
 export const SortableTaskCard = memo(function SortableTaskCard({
   task,
+  column,
   index,
   canDrag,
   pending,
@@ -36,11 +42,11 @@ export const SortableTaskCard = memo(function SortableTaskCard({
   getColumns,
   onMove,
 }: Props) {
-  const data: CardData = { status: task.status, key: task.key };
+  const data: CardData = { status: column, key: task.key };
   const { ref, handleRef, isDragSource } = useSortable({
     id: task.id,
     index,
-    group: task.status,
+    group: column,
     type: 'task',
     accept: 'task',
     data,
