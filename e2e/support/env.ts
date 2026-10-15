@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
  */
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const API_DIR = fileURLToPath(new URL('../../apps/api/', import.meta.url));
+export const E2E_DIR = fileURLToPath(new URL('../', import.meta.url));
 export const WEB_DIR = fileURLToPath(new URL('../../apps/web/', import.meta.url));
 
 export const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3100);

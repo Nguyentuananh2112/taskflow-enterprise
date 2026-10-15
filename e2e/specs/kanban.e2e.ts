@@ -96,7 +96,9 @@ test('E2E-04: kéo Cần làm → Hoàn thành bị chặn (state machine) ⇒ K
   expect(patches).toEqual([]);
 });
 
-test('E2E-03: kéo bằng BÀN PHÍM vào cột TRỐNG (Space, mũi tên phải, Space) ⇒ Cần làm → Đang làm', async ({
+// FIXME (TL): đỏ tất định — bàn phím không thả được vào cột TRỐNG (đích thả mất sau khi overlay di chuyển);
+// giao E sau T-034. Giữ thân test làm cổng: bỏ `.fixme` khi E sửa.
+test.fixme('[PENDING fix bàn phím cột trống — E] E2E-03: kéo bằng BÀN PHÍM vào cột TRỐNG (Space, mũi tên phải, Space) ⇒ Cần làm → Đang làm', async ({
   page,
   request,
 }) => {

@@ -11,7 +11,7 @@ import { API_DIR, E2E_DB, E2E_REDIS_URL, WEB_DIR } from './env';
  * Khóa giữ tới teardown ⇒ hai lần chạy E2E không xóa DB của nhau. Lỗi hạ tầng ⇒ báo rõ, không phải lỗi test.
  */
 export default async function globalSetup(): Promise<() => Promise<void>> {
-  if (!existsSync(join(WEB_DIR, '.next', 'BUILD_ID'))) {
+  if (!existsSync(join(WEB_DIR, '.next', 'standalone', 'apps', 'web', 'server.js'))) {
     throw new Error(
       '[hạ tầng E2E] web chưa build production — chạy `pnpm --filter @taskflow/web build` trước (T-026 chạy `next start`).',
     );

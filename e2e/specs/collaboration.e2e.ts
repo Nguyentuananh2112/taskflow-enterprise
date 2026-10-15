@@ -102,16 +102,19 @@ test('E2E-06: xung đột sửa tiêu đề ⇒ B thấy khối hòa giải; s�
   await openDrawer(page, 'TODO', 'Bản gốc');
   await openDrawer(userB.page, 'TODO', 'Bản gốc');
 
+  // Xung đột thật: B đang SỬA DỞ tiêu đề (form bẩn) thì A lưu. Nếu B chưa gõ gì, form B tự nhận bản
+  // của A qua realtime (rebase) ⇒ không có gì để hòa giải — đúng thiết kế.
+  await userB.page.getByRole('textbox', { name: 'Tiêu đề', exact: true }).fill('Tiêu đề của B');
+
   const savedA = patchOf(page);
-  await page.getByRole('dialog').getByLabel('Tiêu đề', { exact: true }).fill('Tiêu đề của A');
+  await page.getByRole('textbox', { name: 'Tiêu đề', exact: true }).fill('Tiêu đề của A');
   await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
   expect((await savedA).ok()).toBe(true);
   await closeDrawer(page);
   await expect(card(column(page, 'TODO'), 'Tiêu đề của A')).toBeVisible();
 
-  // B vẫn cầm version cũ ⇒ 409 + khối hòa giải nêu đúng trường "Tiêu đề".
+  // B (form bẩn, version cũ) lưu ⇒ 409 + khối hòa giải nêu đúng trường "Tiêu đề".
   const conflict = patchOf(userB.page);
-  await userB.page.getByRole('dialog').getByLabel('Tiêu đề', { exact: true }).fill('Tiêu đề của B');
   await userB.page.getByRole('button', { name: 'Lưu thay đổi' }).click();
   expect((await conflict).status()).toBe(409);
   const banner = userB.page.getByRole('alert').filter({ hasText: 'vừa được người khác sửa' });
@@ -132,7 +135,7 @@ test('E2E-06: xung đột sửa tiêu đề ⇒ B thấy khối hòa giải; s�
     (res) =>
       res.url().endsWith(`/tasks/${task.id}`) && res.request().method() === 'PATCH' && res.ok(),
   );
-  await userB.page.getByRole('dialog').getByLabel('Mô tả', { exact: true }).fill('Mô tả của B');
+  await userB.page.getByRole('textbox', { name: 'Mô tả', exact: true }).fill('Mô tả của B');
   await userB.page.getByRole('button', { name: 'Lưu thay đổi' }).click();
   await rebased;
   await expect(userB.page.getByRole('button', { name: 'Lưu thay đổi' })).toBeDisabled();
@@ -168,7 +171,10 @@ test('E2E-08: A lưu trữ project khi B đang mở board ⇒ B thấy banner ch
   const { sa, userB } = await ownerAndMember(page, browser, request, 'MEMBER');
   await expect(userB.page.getByRole('form', { name: 'Tạo task mới' })).toBeVisible();
   await apiArchiveProject(request, sa);
-  await expect(userB.page.getByText('Dự án đã được lưu trữ — chỉ đọc')).toBeVisible(REALTIME);
+  // Banner + vùng thông báo dùng 2 cách viết ("đã lưu trữ" / "đã được lưu trữ").
+  await expect(userB.page.getByText(/Dự án đã (được )?lưu trữ — chỉ đọc/).first()).toBeVisible(
+    REALTIME,
+  );
   await expect(userB.page.getByRole('form', { name: 'Tạo task mới' })).toHaveCount(0);
   await userB.close();
 });

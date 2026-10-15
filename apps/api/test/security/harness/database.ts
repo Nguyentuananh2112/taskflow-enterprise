@@ -22,6 +22,11 @@ const ident = (value: string) => `"${value.replaceAll('"', '""')}"`;
 
 async function connect(url: string): Promise<pg.Client> {
   const client = new pg.Client({ connectionString: url });
+  // Không có listener ⇒ Postgres ngắt kết nối (restart container, 57P01) làm SẬP cả tiến trình test
+  // (unhandled 'error'). Ghi rõ là lỗi hạ tầng; lệnh kế tiếp trên client sẽ ném lỗi bình thường.
+  client.on('error', (err) => {
+    console.error(`[hạ tầng test] mất kết nối Postgres (${err.message}) — không phải lỗi test`);
+  });
   await client.connect();
   return client;
 }

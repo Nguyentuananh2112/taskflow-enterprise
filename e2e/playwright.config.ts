@@ -9,7 +9,7 @@ import {
   E2E_DB,
   E2E_JWT_SECRET,
   E2E_REDIS_URL,
-  WEB_DIR,
+  E2E_DIR,
   WEB_ORIGIN,
   WEB_PORT,
 } from './support/env';
@@ -49,7 +49,10 @@ export default defineConfig({
       cwd: API_DIR,
       url: `${API_ORIGIN}/healthz`,
       reuseExistingServer: false,
-      timeout: 180_000,
+      timeout: 300_000, // máy dev dùng chung có lúc rất tải (khởi động nguội > 3 phút)
+      // Log khởi động hiện trong output ⇒ server không lên được thì biết ngay vì sao.
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         NODE_ENV: 'test',
         APP_ENV: 'test',
@@ -69,16 +72,22 @@ export default defineConfig({
     },
     {
       // Web bản build production (`next build` chạy trước — globalSetup kiểm .next/BUILD_ID).
-      command: `node node_modules/next/dist/bin/next start --port ${String(WEB_PORT)}`,
-      cwd: WEB_DIR,
+      // Giống image production: standalone server (Dockerfile web), không `next start`.
+      command: 'node support/start-web.mjs',
+      cwd: E2E_DIR,
       url: `${WEB_ORIGIN}/login`,
       reuseExistingServer: false,
-      timeout: 180_000,
+      timeout: 300_000, // máy dev dùng chung có lúc rất tải (khởi động nguội > 3 phút)
+      // Log khởi động hiện trong output ⇒ server không lên được thì biết ngay vì sao.
+      stdout: 'pipe',
+      stderr: 'pipe',
       // APP_MOCK_API cố ý KHÔNG đặt ⇒ web gọi API thật (mock-flag.ts).
       env: {
         NODE_ENV: 'production',
         APP_ENV: 'test',
         API_URL,
+        PORT: String(WEB_PORT),
+        HOSTNAME: '127.0.0.1',
         // T-035: E2E_SENTRY_DSN đặt ⇒ bật Sentry web (tunnel /monitoring). Dùng host `.invalid` (không bao giờ
         // phân giải) để không có request nào ra Internet thật. Trống ⇒ Sentry tắt.
         SENTRY_DSN: process.env.E2E_SENTRY_DSN ?? '',
