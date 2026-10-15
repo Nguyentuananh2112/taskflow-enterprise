@@ -215,20 +215,16 @@ Thay đổi so với T-004:
 
 ### 3.2 `apps/api/Dockerfile`
 ```
-stage deps     : FROM node:24.22.0-bookworm-slim AS deps → corepack enable → copy lockfile + pnpm-workspace.yaml → pnpm fetch
-stage build    : FROM deps AS build
-                   → copy source monorepo → pnpm install --offline --frozen-lockfile
-                   → pnpm --filter @taskflow/api build                   (script = prisma generate --no-hints && tsdown — T-022;
-                                                                          tsdown: bundle + inline @taskflow/contracts + client Prisma src/generated;
-                                                                          external: @prisma/*, pg, @node-rs/argon2)
-                   → pnpm deploy --filter @taskflow/api --prod --offline /out   (dependencies runtime; pnpm 11 không cần --legacy)
-                   → node docker/migrate/collect-prisma.mjs apps/api /migrate   (Prisma CLI + đúng phụ thuộc theo lockfile + prisma/ + prisma.config.ts)
-stage migrate  : FROM node:24.22.0-bookworm-slim AS migrate   (T-022: không còn kế thừa stage build)
-                   → COPY --from=build /migrate · USER node
-                   → CMD ["node","node_modules/prisma/build/index.js","migrate","deploy"]   (CLI 7.10.0 đã ghim; KHÔNG npx — ADR-061)
-stage runtime  : FROM node:24.22.0-bookworm-slim AS runtime
-                   → COPY --from=build /out (node_modules prod) + dist
-                   → USER node · EXPOSE 4000 · HEALTHCHECK · CMD ["node","dist/main.js"]
+stage base          : node:24.22.0-bookworm-slim@digest · corepack pnpm 11.28.2 · CHECKPOINT_DISABLE=1 · PRISMA_HIDE_UPDATE_MESSAGE=1
+stage deps          : FROM base → copy lockfile + pnpm-workspace.yaml → pnpm fetch (store nằm trong layer, đổi khi lockfile đổi)
+stage install       : FROM deps → copy source → pnpm install --offline --frozen-lockfile
+stage migrate-files : FROM install → node docker/migrate/collect-prisma.mjs apps/api /migrate
+                        (Prisma CLI + phụ thuộc theo lockfile, bỏ studio/dev/pglite + peer optional; prisma/ + prisma.config.ts)
+stage build         : FROM install → pnpm --filter @taskflow/api build   (= prisma generate --no-hints && tsdown)
+                        → pnpm deploy --filter @taskflow/api --prod --prefer-offline /out
+stage migrate       : FROM node slim → COPY --from=migrate-files /migrate · USER node
+                        → CMD ["node","node_modules/prisma/build/index.js","migrate","deploy"]   (CLI 7.10.0 ghim; KHÔNG npx — ADR-061)
+stage runtime       : FROM node slim → COPY --from=build /out (node_modules prod) + dist · USER node · HEALTHCHECK · CMD ["node","dist/main.js"]
 ```
 - Hai target build từ cùng commit: `api` và `api-migrate`. Cả hai cùng tag `GIT_SHA`.
 - Image runtime **không chứa** prisma CLI, devDependencies, test, `.env`.

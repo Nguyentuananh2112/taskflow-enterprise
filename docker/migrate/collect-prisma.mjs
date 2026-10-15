@@ -33,11 +33,12 @@ function storeEntryOf(pkgDir) {
   return { root: parts.slice(0, i + 1).join(sep), id: parts[i + 1] };
 }
 
-// Gói chỉ phục vụ `prisma studio` / `prisma dev` (Postgres nhúng pglite) — `migrate deploy` không nạp.
+// Postgres nhúng (pglite, 24 MB) chỉ dùng cho `prisma dev`. KHÔNG loại được @prisma/studio-core / @prisma/dev:
+// cli.js `require` chúng ngay khi khởi động (đã thử — MODULE_NOT_FOUND).
 // Bỏ để image migrate nhỏ (T-022); nếu Prisma đổi cách nạp, smoke `migrate deploy` trong CI/runbook sẽ đỏ ngay.
 // Ghi đè: COLLECT_PRISMA_EXCLUDE="a,b" (chuỗi rỗng = không loại gì).
 const EXCLUDE = new Set(
-  (process.env.COLLECT_PRISMA_EXCLUDE ?? '@prisma/studio-core,@prisma/dev,@electric-sql/pglite')
+  (process.env.COLLECT_PRISMA_EXCLUDE ?? '@electric-sql/pglite')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean),

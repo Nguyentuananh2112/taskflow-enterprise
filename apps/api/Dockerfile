@@ -30,16 +30,22 @@ FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm fetch --frozen-lockfile --store-dir "$TF_PNPM_STORE"
 
-# ---------- build: cài offline, build, tách node_modules production ----------
-FROM deps AS build
+# ---------- install: cài offline toàn workspace (dùng chung cho build và migrate-files) ----------
+FROM deps AS install
 COPY . .
 RUN pnpm install --offline --frozen-lockfile --store-dir "$TF_PNPM_STORE"
+
+# ---------- migrate-files: Prisma CLI + đúng phụ thuộc (theo lockfile) + prisma/ + prisma.config.ts ----------
+# Tách khỏi stage build ⇒ `--target migrate` không phải chờ build/deploy; BuildKit chạy hai nhánh song song.
+FROM install AS migrate-files
+RUN node docker/migrate/collect-prisma.mjs apps/api /migrate
+
+# ---------- build: build, tách node_modules production ----------
+FROM install AS build
 # Script build tự `prisma generate` (src/generated, gitignore) rồi tsdown (T-022). DATABASE_URL vắng ⇒ "" — đủ cho generate.
 RUN pnpm --filter @taskflow/api build
 # Chỉ dependencies runtime của api (gồm @node-rs/argon2 đúng nền tảng linux-x64-gnu/arm64-gnu).
 RUN pnpm --filter @taskflow/api deploy --prod --prefer-offline --store-dir "$TF_PNPM_STORE" /out
-# Bộ chạy migrate tối thiểu: Prisma CLI + đúng phụ thuộc của nó (theo lockfile) + prisma/ + prisma.config.ts.
-RUN node docker/migrate/collect-prisma.mjs apps/api /migrate
 
 # ---------- migrate: job chạy TRƯỚC rollout (devops.md §4.1), không chạy trong app start ----------
 # DATABASE_URL = user taskflow_migrator (DDL), kết nối thẳng — không qua pooler.
@@ -50,7 +56,7 @@ ENV NODE_ENV=production \
     CHECKPOINT_DISABLE=1 \
     PRISMA_HIDE_UPDATE_MESSAGE=1
 WORKDIR /app
-COPY --from=build /migrate ./
+COPY --from=migrate-files /migrate ./
 USER node
 CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
 
