@@ -268,6 +268,35 @@ describe('createSocketIoClient', () => {
       expect(fake.state.connectCalls).toBe(1);
     });
 
+    it.each([
+      ['thành công', true],
+      ['lỗi tạm', false],
+    ] as const)(
+      'refresh ĐANG BAY khi client disconnect (%s) ⇒ không connect lại, không lên lịch thử mới (review B)',
+      async (_label, succeed) => {
+        vi.useFakeTimers();
+        let settle!: () => void;
+        const renew = vi.fn(
+          () =>
+            new Promise<boolean>((resolve, reject) => {
+              settle = () => (succeed ? resolve(true) : reject(new Error('network')));
+            }),
+        );
+        const { client } = setup({ renew }, () => 1);
+        client.connect();
+        fake.fire('connect');
+        fake.fire('disconnect', 'io server disconnect');
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(renew).toHaveBeenCalledTimes(1);
+        client.disconnect();
+        settle();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(fake.state.connectCalls).toBe(1);
+        expect(renew).toHaveBeenCalledTimes(1);
+        expect(client.status()).toBe('offline');
+      },
+    );
+
     it('client tự disconnect (đăng xuất) khi đang chờ ⇒ hủy, không refresh/connect', async () => {
       vi.useFakeTimers();
       const { client, auth } = setup({}, () => 1);

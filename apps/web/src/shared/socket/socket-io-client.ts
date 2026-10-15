@@ -79,20 +79,25 @@ export function createSocketIoClient({
   let attempts = 0;
   let renewFailures = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Tăng ở `disconnect()`: refresh đang bay của "đời" cũ không được connect / lên lịch lại (review B). */
+  let epoch = 0;
   const refreshThenConnect = () => {
     clearTimeout(retryTimer);
     const delay = random() * Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** attempts);
     attempts += 1;
+    const started = epoch;
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
       auth.renew().then(
         (ok) => {
+          if (started !== epoch) return;
           renewFailures = 0;
           // `false` = phiên đã hết (401/thu hồi) ⇒ fail-closed, KHÔNG thử lại.
           if (ok) socket.connect();
           else setStatus('offline');
         },
         () => {
+          if (started !== epoch) return;
           renewFailures += 1;
           if (renewFailures < MAX_RENEW_FAILURES) refreshThenConnect();
           else setStatus('offline');
@@ -141,6 +146,7 @@ export function createSocketIoClient({
       socket.connect();
     },
     disconnect: () => {
+      epoch += 1;
       clearTimeout(retryTimer);
       retryTimer = undefined;
       socket.disconnect();
