@@ -42,6 +42,7 @@ export function RoleSelect({ wsId, member }: Props) {
     <>
       <Select
         label={`Vai trò của ${member.fullName}`}
+        hideLabel
         className="w-40"
         options={OPTIONS}
         value={member.role}

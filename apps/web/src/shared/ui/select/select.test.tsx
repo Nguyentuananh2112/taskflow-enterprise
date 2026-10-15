@@ -49,4 +49,17 @@ describe('Select', () => {
     expect(select.getAttribute('aria-describedby')).toBe(screen.getByText('Chọn một vai trò').id);
     await expectNoA11yViolations(container);
   });
+
+  it('hideLabel: nhãn chỉ cho trình đọc màn hình nhưng vẫn là tên truy cập', async () => {
+    const { container } = render(
+      <Select
+        label="Vai trò của An"
+        hideLabel
+        options={[{ value: 'MEMBER', label: 'Thành viên' }]}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Vai trò của An' })).toBeTruthy();
+    expect(screen.getByText('Vai trò của An').className).toContain('sr-only');
+    await expectNoA11yViolations(container);
+  });
 });
