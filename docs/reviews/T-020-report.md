@@ -151,7 +151,14 @@ Không có thao tác nào vượt chặn `migrate reset`. Global setup chỉ DRO
   - đổi bản sao cục bộ `IAssigneeDirectory` / `ITaskProjectStore` / `IUserRefReader` sang `import type` từ `modules/task` khi T-018 có trên main;
   - có thể đổi ROL-07 sang cleaner thật để chứng minh cả audit.
 - **Cổng bảo mật qua HTTP (quyết định Tech Lead):**
-  - **Bắt buộc cho T-020:** SEC-21c, SEC-23b, SEC-24c chạy qua HTTP (`test/security/auth.sec.ts`) trên Prisma + Valkey thật, lặp nhiều lần, xanh ổn định. F chạy, tỉ lệ qua ghi trong báo cáo của F.
+  - **Bắt buộc cho T-020:** SEC-21c, SEC-23b, SEC-24c chạy qua HTTP (`test/security/auth.sec.ts`) trên Prisma + Valkey thật, lặp nhiều lần, xanh ổn định.
+  - **Kết quả (F chạy, `9b466c0` + T-017c, `taskflow_sec`, Valkey db 15):**
+    - **ĐẠT:** 21c / 23b / 24c xanh 10/10 lần chạy (×20 vòng = 200/200 vòng mỗi case), mọi lần exit 0.
+    - **Probe thêm:** xóa Valkey sau race để ép đọc DB (40 vòng/case × 6 lần) ⇒ không có lost update `tv` / `passwordHash`.
+  - **Nhánh change-password thua race ⇒ 400** không xảy ra qua HTTP (120/120 vòng đều 200):
+    - login chỉ ghi `password_hash` khi cần rehash, nên race login ‖ change-password thông thường không làm change thua;
+    - nhánh này đã có test xác định ở tầng use case (`change-password.use-case.test.ts`, ca "ADR-104: mật khẩu bị đổi … giữa lúc verify và UPDATE"), chạy lại trên Postgres qua LSP;
+    - F sẽ sửa SEC-23b (T-017c) để kiểm trạng thái cuối theo từng nhánh, không ép `change = 200`.
   - **SEC-24b được chấp nhận ở tầng I** cho DONE T-020. `auth-valkey.int.ts` kiểm đúng hành vi cần chứng minh trên hạ tầng thật: Valkey chết khi ghi ⇒ 503 + rollback, `tv` / mật khẩu trong DB không đổi. Bản qua HTTP chỉ thêm lớp vận chuyển.
   - **Bản HTTP của SEC-24b** là follow-up của F (T-017c, cần container Valkey riêng do suite tự tạo/hủy). **Không chặn chuỗi merge.**
 - **A:** type `TransactionCapable` vs `PrismaClient` (xem trên). `createPrismaPersistence` đang cast có chú thích; bỏ cast khi core sửa type.
