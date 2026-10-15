@@ -1,0 +1,42 @@
+# Diễn tập sao lưu + khôi phục hằng tuần (B2, devops.md §4.4, ADR-074): chạy ĐÚNG script production
+# (docker/backup/backup.sh) trên Postgres nguồn có schema thật + dữ liệu GIẢ, đẩy bản mã hóa (age) lên
+# S3 tương thích (MinIO tạm), tải về, giải mã, pg_restore vào DB tạm rồi đối chiếu dữ liệu / index /
+# constraint / collation / quyền + pg_amcheck. Không dùng secret: khóa age, mật khẩu, bucket đều sinh
+# tạm trong job. Đỏ ⇒ backup production hiện tại có thể không khôi phục được ⇒ sửa trước khi deploy.
+name: Backup restore drill (weekly)
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # 03:00 UTC thứ Hai (sau mutation 02:00)
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docker/backup/**'
+      - 'docker/postgres/init/**'
+      - 'docker/migrate/grant-app.sql'
+      - 'apps/api/prisma/migrations/**'
+      - '.github/workflows/backup-drill.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-drill-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drill:
+    name: backup → restore → verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Drill (compose)
+        run: >-
+          docker compose -f docker/backup/drill.compose.yml up --build
+          --abort-on-container-exit --exit-code-from drill
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker/backup/drill.compose.yml down -v
