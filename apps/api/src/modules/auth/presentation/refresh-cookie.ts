@@ -43,18 +43,26 @@ export class RefreshCookie {
    * Đọc từ header Cookie (không cần cookie-parser). Nhiều cookie trùng tên ⇒ coi như KHÔNG có
    * (T-028): cookie của ta host-only nên chỉ có một; cookie thứ hai chỉ có thể do subdomain anh em
    * đặt với `Domain=` (cookie tossing) — lấy "cái đầu" sẽ đăng nhập nạn nhân vào phiên kẻ tấn công.
+   * Khi trùng, controller thu hồi MỌI token qua `readAll` (xem `AuthController`).
    */
   read(req: Request): string | undefined {
+    const values = this.readAll(req);
+    return values.length === 1 ? values[0] : undefined;
+  }
+
+  /** Mọi giá trị hợp lệ (giải mã được, không rỗng) của cookie mang tên này. */
+  readAll(req: Request): string[] {
     const values: string[] = [];
     for (const part of (req.headers.cookie ?? '').split(';')) {
       const eq = part.indexOf('=');
-      if (eq >= 0 && part.slice(0, eq).trim() === this.name) values.push(part.slice(eq + 1).trim());
+      if (eq < 0 || part.slice(0, eq).trim() !== this.name) continue;
+      try {
+        const value = decodeURIComponent(part.slice(eq + 1).trim());
+        if (value) values.push(value);
+      } catch {
+        // sai mã hóa ⇒ bỏ qua giá trị này
+      }
     }
-    if (values.length !== 1) return undefined;
-    try {
-      return decodeURIComponent(values[0]!) || undefined;
-    } catch {
-      return undefined;
-    }
+    return values;
   }
 }
