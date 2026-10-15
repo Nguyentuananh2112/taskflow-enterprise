@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { readPublicRuntimeConfig, readSentryConfig } from '@/app/config/server-env';
 import { SENTRY_META } from '@/app/observability/sentry-meta';
 import { AppProviders } from '@/app/providers';
+import { THEME_BOOT_SCRIPT } from '@/shared/lib/theme-boot';
 
 // Font Inter tự host qua @font-face trong globals.css (không next/font/google: build không phụ thuộc mạng).
 import '@/app/styles/globals.css';
@@ -23,15 +24,27 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const config = readPublicRuntimeConfig();
   const sentry = readSentryConfig();
   return (
-    <html lang="vi">
-      {/* T-035: cấu hình Sentry trình duyệt — instrumentation-client đọc đồng bộ trước hydrate. */}
-      {sentry.dsn ? (
-        <head>
-          <meta name={SENTRY_META.dsn} content={sentry.dsn} />
-          <meta name={SENTRY_META.environment} content={sentry.environment} />
-          {sentry.release ? <meta name={SENTRY_META.release} content={sentry.release} /> : null}
-        </head>
-      ) : null}
+    // suppressHydrationWarning: script theme đặt `data-theme` lên <html> TRƯỚC khi React hydrate.
+    <html lang="vi" suppressHydrationWarning>
+      <head>
+        {/*
+          Theme TRƯỚC khi paint (frontend.md §6.1): script inline mang nonce CSP của request (không nới CSP),
+          nội dung là text (không dangerouslySetInnerHTML). next/script beforeInteractive KHÔNG dùng được:
+          App Router chỉ xếp vào hàng `__next_s`, chạy sau khi tải JS ⇒ vẫn nháy màu.
+          suppressHydrationWarning: trình duyệt ẩn giá trị thuộc tính nonce sau khi parse.
+        */}
+        <script nonce={nonce} suppressHydrationWarning>
+          {THEME_BOOT_SCRIPT}
+        </script>
+        {/* T-035: cấu hình Sentry trình duyệt — instrumentation-client đọc đồng bộ trước hydrate. */}
+        {sentry.dsn ? (
+          <>
+            <meta name={SENTRY_META.dsn} content={sentry.dsn} />
+            <meta name={SENTRY_META.environment} content={sentry.environment} />
+            {sentry.release ? <meta name={SENTRY_META.release} content={sentry.release} /> : null}
+          </>
+        ) : null}
+      </head>
       <body className="min-h-screen bg-bg text-text antialiased">
         <AppProviders config={config} nonce={nonce}>
           {children}

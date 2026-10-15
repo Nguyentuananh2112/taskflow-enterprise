@@ -8,6 +8,7 @@ import { useState, type ReactNode } from 'react';
 import { CspNonceProvider, RuntimeConfigBoot, type PublicRuntimeConfig } from '@/shared/config';
 import { createQueryClient } from '@/shared/query';
 import { Toaster } from '@/shared/ui/toast';
+import { useThemeSync } from '@/shared/lib/theme';
 
 import { RealtimeProvider, type RealtimeClientFactory } from './realtime-provider';
 import { SessionEffects } from './session-effects';
@@ -34,6 +35,8 @@ export function AppProviders({ config, nonce, realtime, children }: Props) {
   if (nonce) setNonce(nonce);
   // Mỗi lần mount một QueryClient (không dùng chung giữa các request ở server).
   const [queryClient] = useState(createQueryClient);
+  // Theme "Theo hệ thống" theo dõi HĐH; đổi ở tab khác áp ngay (frontend.md §6.1).
+  useThemeSync();
   return (
     <RuntimeConfigBoot config={config}>
       <CspNonceProvider nonce={nonce}>

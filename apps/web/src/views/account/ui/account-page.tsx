@@ -4,6 +4,7 @@ import { useMe } from '@/entities/session';
 import { LogoutAllSection } from '@/features/auth-logout';
 import { ChangePasswordForm } from '@/features/change-password';
 import { ProfileForm } from '@/features/profile-edit';
+import { ThemeSelect } from '@/features/theme-switch';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -40,6 +41,12 @@ export function AccountPage() {
           Đổi mật khẩu
         </h2>
         <ChangePasswordForm />
+      </section>
+      <section aria-labelledby="appearance-heading" className={CARD}>
+        <h2 id="appearance-heading" className="text-base font-semibold">
+          Giao diện
+        </h2>
+        <ThemeSelect />
       </section>
       <div className={CARD}>
         <LogoutAllSection />
