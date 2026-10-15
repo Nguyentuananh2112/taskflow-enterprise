@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
 
-import { readPublicRuntimeConfig } from '@/app/config/server-env';
+import { readPublicRuntimeConfig, readSentryConfig } from '@/app/config/server-env';
+import { SENTRY_META } from '@/app/observability/sentry-client';
 import { AppProviders } from '@/app/providers';
 
 // Font Inter tự host qua @font-face trong globals.css (không next/font/google: build không phụ thuộc mạng).
@@ -20,8 +21,17 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   const config = readPublicRuntimeConfig();
+  const sentry = readSentryConfig();
   return (
     <html lang="vi">
+      {/* T-035: cấu hình Sentry trình duyệt — instrumentation-client đọc đồng bộ trước hydrate. */}
+      {sentry.dsn ? (
+        <head>
+          <meta name={SENTRY_META.dsn} content={sentry.dsn} />
+          <meta name={SENTRY_META.environment} content={sentry.environment} />
+          {sentry.release ? <meta name={SENTRY_META.release} content={sentry.release} /> : null}
+        </head>
+      ) : null}
       <body className="min-h-screen bg-bg text-text antialiased">
         <AppProviders config={config} nonce={nonce}>
           {children}
