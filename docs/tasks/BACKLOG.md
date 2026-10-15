@@ -43,5 +43,5 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 ## Chung (ai hết hàng thì lấy)
 | # | Việc | Đang làm |
 |---|---|---|
-| G1 | Đọc chéo một module KHÔNG phải của mình, tìm lỗi (bảo mật, đồng thời, xử lý lỗi), gửi findings cho chủ module + Tech Lead | |
+| G1 | Đọc chéo một module KHÔNG phải của mình, tìm lỗi (bảo mật, đồng thời, xử lý lỗi), gửi findings cho chủ module + Tech Lead | B (2026-10-15) — T-033 (C): scheduler bảo trì + rebalance rank |
 | G2 | Rà `docs/design/*` đối chiếu code hiện tại: chỗ nào tài liệu lệch thực tế ⇒ báo chủ tài liệu | |
