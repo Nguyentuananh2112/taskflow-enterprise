@@ -139,7 +139,7 @@ describe('Thu hồi phiên', () => {
         await flushRateLimitCounters();
         const user = await actors.register(`race-pw-${round}`);
         const newPassword = `brand-new-passphrase-${round}-xyz`;
-        await Promise.all([
+        const [racingLogin, change] = await Promise.all([
           actors.json('POST', '/auth/login', undefined, {
             email: user.email,
             password: user.password,
@@ -149,10 +149,15 @@ describe('Thu hồi phiên', () => {
             newPassword,
           }),
         ]);
+        // Đổi mật khẩu phải thành công — nếu không, vòng này không kiểm được gì (không xanh giả).
+        expect(change.status, `vòng ${round}: change-password ${change.text.slice(0, 200)}`).toBe(
+          200,
+        );
         const login = (password: string) =>
           actors.json('POST', '/auth/login', undefined, { email: user.email, password });
-        expect((await login(newPassword)).status, `vòng ${round}: mật khẩu mới`).toBe(200);
-        expect((await login(user.password)).status, `vòng ${round}: mật khẩu cũ`).toBe(401);
+        const ctx = `vòng ${round} (login song song: ${racingLogin.status})`;
+        expect((await login(newPassword)).status, `${ctx}: mật khẩu mới`).toBe(200);
+        expect((await login(user.password)).status, `${ctx}: mật khẩu cũ`).toBe(401);
       }
     },
   );

@@ -15,6 +15,8 @@ export interface SuiteDatabase {
 
 const LOCK_KEY = 'taskflow-security-suite';
 const LOCK_WAIT_MS = 120_000;
+/** Máy dev dùng chung có lúc rất tải (Stryker của người khác) ⇒ CLI Prisma khởi động chậm. */
+const MIGRATE_TIMEOUT_MS = Number(process.env.SEC_MIGRATE_TIMEOUT_MS ?? 300_000);
 const ident = (value: string) => `"${value.replaceAll('"', '""')}"`;
 
 async function connect(url: string): Promise<pg.Client> {
@@ -61,13 +63,20 @@ function migrate(apiDir: string, migratorUrl: string): void {
     env: {
       PATH: process.env.PATH ?? '',
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+      ...(process.env.TEMP ? { TEMP: process.env.TEMP, TMP: process.env.TEMP } : {}),
       DATABASE_URL: migratorUrl,
+      // CLI Prisma gọi mạng kiểm tra bản mới (checkpoint) — trên mạng chậm có thể treo hàng phút.
+      CHECKPOINT_DISABLE: '1',
+      PRISMA_HIDE_UPDATE_MESSAGE: '1',
     },
     encoding: 'utf8',
-    timeout: 120_000,
+    timeout: MIGRATE_TIMEOUT_MS,
   });
   if (result.status !== 0) {
-    throw new Error(`prisma migrate deploy thất bại:\n${result.stdout}\n${result.stderr}`);
+    const why = result.error
+      ? `${result.error.message} (signal ${result.signal ?? '-'})`
+      : `exit ${String(result.status)}`;
+    throw new Error(`prisma migrate deploy thất bại — ${why}:\n${result.stdout}\n${result.stderr}`);
   }
 }
 

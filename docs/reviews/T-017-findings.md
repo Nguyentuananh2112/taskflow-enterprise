@@ -217,3 +217,42 @@ Trạng thái: **✅** xanh · **❌** đỏ (có lỗi thật) · **⏳ có th�
 | Production | HSTS, CORS prod, không `details.debug`, readyz degraded | ✅ | không chạy | |
 
 **Tổng trên main:** 42 xanh · 3 đỏ (FINDING A5) · 15 skip · 49 todo · còn lại PENDING/todo. **Trên T-021:** 13 ID xanh, 1 ID đỏ (SEC-40/A6) + A5.
+
+---
+
+## D. Điều tra flaky lần chạy đầu của `test:security` (T-017c)
+
+**Hiện tượng (TL báo, a1076c1):** lần chạy đầu ở worktree mới, nguội: `1 failed | 3 passed | 2 skipped`; lần 2 ngay sau exit 0. Tôi gặp 2 lần tương tự: (1) file đầu không lên `/healthz` trong 90s, process không in dòng nào; (2) `prisma migrate deploy` (CLI trong worktree T-024) bị `spawnSync` cắt ở 120s, stdout/stderr rỗng.
+
+**Đo** (`scratchpad/coldstart.mjs`, máy dev, 2 lần liên tiếp):
+
+| Bước | Lần 1 | Lần 2 |
+|---|---|---|
+| Process API lên `/healthz` (có cache tsx) | **30 920 ms** | 1 117 ms |
+| Process API, `TSX_DISABLE_CACHE=1` | 3 851 ms | 2 314 ms |
+| `prisma migrate status` mặc định (checkpoint mạng) | **35 685 ms** | 828 ms |
+| `prisma migrate status`, `CHECKPOINT_DISABLE=1` | 940 ms | 876 ms |
+
+**Kết luận:** không phải lỗi test, không phải advisory lock, không phải cache tsx (tắt cache chỉ tốn 2–4s).
+
+1. **Lần spawn Node đầu tiên sau quãng nghỉ chậm ~30s**: file cache của OS / antivirus quét `node_modules`. Nặng nhất ở worktree mới.
+2. **CLI Prisma gọi mạng kiểm tra phiên bản (checkpoint)**: 35s đo được, từng >120s. Mạng máy dev rất chậm (`pnpm install` 10–33 phút).
+
+**Sửa (feat/T-017c):**
+
+- `globalSetup` (`harness/global-setup.ts`) chạy **một lần**: kiểm DB/cổng an toàn → chuẩn bị DB + migrate → khởi động process API thật tới `/healthz` rồi dừng. Timeout riêng `SEC_WARMUP_TIMEOUT_MS` (mặc định 300s). Lỗi ⇒ thông báo `[hạ tầng suite bảo mật] bước "…" lỗi — không phải lỗi test` + exit ≠ 0 (đã kiểm với cổng Postgres sai).
+- Migrate: `CHECKPOINT_DISABLE=1`, `PRISMA_HIDE_UPDATE_MESSAGE=1`, timeout `SEC_MIGRATE_TIMEOUT_MS` (300s); lỗi báo rõ `signal`/timeout thay vì stdout rỗng. D đặt `CHECKPOINT_DISABLE` ở Docker/CI/runbook (TL giao).
+- Giữ: `SEC_API_READY_TIMEOUT_MS` (90s) cho từng file — sau warm-up chỉ còn 1–3s.
+
+**Chưa làm:** tái hiện trong một worktree **hoàn toàn mới** (cần `pnpm install` 10–30 phút trên mạng hiện tại) — đang chạy nền, kết quả sẽ bổ sung vào đây.
+
+---
+
+## E. Suite task trên T-024 @ 7003b9c (InMemory)
+
+`SEC_RUN_PENDING="task routes,auth routes,workspaces/"`: **70 pass · 1 fail · 5 skip · 38 todo**.
+
+- **PASS (task, 19):** SEC-02, 03, 04, 05, 06, 07, 08, 10, 11, 12, 12b, 12c, 42, 43, 44, 45, TASK-LIST, TASK-VC (409 + `currentVersion`, no-op version cũ vẫn 409 — ADR-091, DELETE `?expectedVersion` cũ 409), TASK-VC-RACE (10 PATCH song song ⇒ đúng 1×200, 9×409).
+- **FAIL SEC-23b (không ổn định, 1/2 lần × 20 vòng) = A4 TÁI HIỆN BẰNG HỘP ĐEN:** change-password 200, login song song 200, sau đó **mật khẩu mới bị 401** — login đọc user ngoài UoW rồi `save` cả aggregate, đè hash cũ. Bằng chứng thực nghiệm cho ADR-104; sửa ở T-020. SEC-23b + SEC-21c là **cổng bắt buộc** của T-020: chạy lặp nhiều lần, ghi tỉ lệ.
+- **TODO:** SEC-09 (cần API xóa user ⇒ `createdById = null`); realtime không rò sang workspace khác (cần `socket.io-client` — TL đã duyệt).
+- Lỗi của chính tôi được sửa trong quá trình: title `'x'` vi phạm min 3 ký tự ⇒ 400 trước khi tới bước cần kiểm (SEC-03/10); SEC-23b thêm assertion change-password phải 200 (không xanh giả nếu đổi mật khẩu thất bại).

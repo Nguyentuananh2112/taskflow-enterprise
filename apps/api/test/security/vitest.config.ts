@@ -11,9 +11,11 @@ export default defineConfig({
     root: fileURLToPath(new URL('../../', import.meta.url)),
     environment: 'node',
     include: ['test/security/**/*.sec.ts'],
+    // Warm-up hạ tầng một lần (DB + migrate + process API nguội) với timeout riêng — T-017c.
+    globalSetup: ['test/security/harness/global-setup.ts'],
     // Mỗi file tự khởi động 1 process API + 1 DB clone ⇒ chạy tuần tự cho nhẹ RAM.
     fileParallelism: false,
     testTimeout: 20_000,
-    hookTimeout: 120_000,
+    hookTimeout: 600_000,
   },
 });
