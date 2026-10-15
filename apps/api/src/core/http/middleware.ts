@@ -106,7 +106,7 @@ const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH']);
 export function parseContentType(header: string | undefined): { type: string; charset?: string } {
   const [type = '', ...params] = (header ?? '').split(';').map((p) => p.trim().toLowerCase());
   const charset = params
-    .map((p) => /^charsets*=s*"?([^";s]+)"?$/.exec(p)?.[1])
+    .map((p) => /^charset\s*=\s*"?([^";\s]+)"?$/.exec(p)?.[1])
     .find((c): c is string => c !== undefined);
   return charset === undefined ? { type } : { type, charset };
 }
