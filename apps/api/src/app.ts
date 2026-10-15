@@ -66,7 +66,7 @@ export function createApp(deps: AppDependencies): Express {
   app.use(securityHeaders({ corsOrigins: config.corsOrigins, hsts: config.hsts }));
   app.use(
     healthRouter({
-      gitSha: config.gitSha,
+      now: () => clock.now().getTime(),
       probes: deps.probes,
       isShuttingDown: deps.isShuttingDown,
     }),

@@ -34,24 +34,33 @@ const HOUR = 60 * MINUTE;
 const rule = (r: RateLimitRule): RateLimitRule => r;
 
 export const RATE_LIMIT_RULES = {
-  /** Login: ba lớp — sai theo (IP, email), tổng theo IP, sai theo email (chống stuffing phân tán). */
+  /** Login, lớp 1 — tổng theo IP, chạy TRƯỚC validate (mọi request, kể cả body sai). */
+  loginIp: [
+    rule({ id: 'login-ip', windowMs: 15 * MINUTE, limit: 20, key: 'ip', failMode: 'closed' }),
+  ],
+  /**
+   * Login, lớp 2 (ADR-108 — chống khóa tài khoản từ xa, M4 của T-028): chạy SAU validate (400 không
+   * bị đếm, email đã chuẩn hóa) và CHỈ đếm `401 INVALID_CREDENTIALS`. Bucket chặt theo cặp
+   * (IP, emailHash) chặn dò từ một IP mà không khóa chủ tài khoản ở IP khác; bucket theo email đủ cao
+   * (100/giờ) để vài chục IP không khóa được người dùng thật, vẫn chặn stuffing phân tán quy mô lớn.
+   * Request bị 429 không được đếm (không phải 401) ⇒ chờ hết cửa sổ là mở, không gia hạn mãi.
+   */
   login: [
     rule({
       id: 'login-fail-ip-email',
       windowMs: 15 * MINUTE,
-      limit: 5,
+      limit: 10,
       key: 'ip+email',
       failMode: 'closed',
-      countFailedOnly: true,
+      countOnlyStatuses: [401],
     }),
-    rule({ id: 'login-ip', windowMs: 15 * MINUTE, limit: 20, key: 'ip', failMode: 'closed' }),
     rule({
       id: 'login-fail-email',
       windowMs: HOUR,
-      limit: 50,
+      limit: 100,
       key: 'email',
       failMode: 'closed',
-      countFailedOnly: true,
+      countOnlyStatuses: [401],
     }),
   ],
   register: [rule({ id: 'register-ip', windowMs: HOUR, limit: 5, key: 'ip', failMode: 'closed' })],
@@ -62,13 +71,14 @@ export const RATE_LIMIT_RULES = {
   logoutAll: [
     rule({ id: 'logout-all-user', windowMs: MINUTE, limit: 10, key: 'user', failMode: 'open' }),
   ],
+  /** Fail-CLOSED (L2 của T-028, ADR-108): Valkey chết ⇒ 503, không cho dò mật khẩu hiện tại tự do. */
   changePassword: [
     rule({
       id: 'change-password-user',
       windowMs: 15 * MINUTE,
       limit: 5,
       key: 'user',
-      failMode: 'open',
+      failMode: 'closed',
     }),
   ],
   updateMe: [

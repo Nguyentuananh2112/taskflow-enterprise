@@ -375,10 +375,10 @@ describe('error handler (đa hình)', () => {
 });
 
 describe('/healthz & /readyz (devops.md §6.2)', () => {
-  it('healthz: 200 {status, gitSha}, no-store, không đụng probe', async () => {
+  it('healthz: 200 {status} (KHÔNG lộ gitSha — T-031), no-store, không đụng probe', async () => {
     const res = await request(build({ probes: [probe('db', true, false)] })).get('/healthz');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'ok', gitSha: 'sha-1' });
+    expect(res.body).toEqual({ status: 'ok' });
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
@@ -407,6 +407,70 @@ describe('/healthz & /readyz (devops.md §6.2)', () => {
     const res = await request(app).get('/readyz');
     expect(res.status).toBe(status);
     expect(res.body).toEqual(body);
+  });
+
+  it('M2 (T-031): kết quả probe dùng chung trong 1 giây — request đồng thời / liền nhau chung MỘT lần kiểm', async () => {
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const slow: ReadinessProbe = {
+      name: 'db',
+      critical: true,
+      timeoutMs: 1_000,
+      check: () => {
+        calls++;
+        return new Promise<void>((resolve) => (release = resolve));
+      },
+    };
+    const clock = new FakeClock('2026-10-15T08:00:00.000Z');
+    const app = createApp({
+      config: config(),
+      logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
+      clock,
+      probes: [slow],
+      isShuttingDown: () => false,
+    });
+    const pending = Promise.all(
+      Array.from({ length: 5 }, () =>
+        request(app)
+          .get('/readyz')
+          .then((r) => r.status),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    expect(await pending).toEqual([200, 200, 200, 200, 200]);
+    expect((await request(app).get('/readyz')).status).toBe(200);
+    expect(calls).toBe(1);
+    clock.advance(1_000);
+    const next = request(app)
+      .get('/readyz')
+      .then((r) => r.status);
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    expect(await next).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  it('M2 (T-031): quá 60 lần/phút/IP ⇒ 429 + Retry-After; cờ shutdown không bị cache', async () => {
+    let shuttingDown = false;
+    const clock = new FakeClock('2026-10-15T08:00:00.000Z');
+    const app = createApp({
+      config: config({ trustProxyHops: 1 }),
+      logger: createLogger({ level: 'silent', gitSha: 'sha-1', appEnv: 'test' }),
+      clock,
+      probes: [probe('db', true, true)],
+      isShuttingDown: () => shuttingDown,
+    });
+    const ready = (ip: string) => request(app).get('/readyz').set('X-Forwarded-For', ip);
+    for (let i = 0; i < 59; i++) expect((await ready('203.0.113.1')).status).toBe(200);
+    shuttingDown = true;
+    expect((await ready('203.0.113.1')).status).toBe(503);
+    const limited = await ready('203.0.113.1');
+    expect(limited.status).toBe(429);
+    expect(limited.headers['retry-after']).toBe('60');
+    expect((await ready('203.0.113.2')).status).toBe(503);
+    clock.advance(60_001);
+    expect((await ready('203.0.113.1')).status).toBe(503);
   });
 
   it('probe treo quá timeout ⇒ coi như lỗi', async () => {
