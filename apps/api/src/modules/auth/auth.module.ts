@@ -118,6 +118,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     users,
     refreshTokens,
     logger,
+    clock,
   });
   const authenticate = createAuthenticate(authenticator);
 

@@ -215,6 +215,10 @@ Valkey (giấy phép BSD) thay Redis, client `node-redis` 6 (ADR-060). Tên key 
   - **Không dùng "DEL trước commit"**: request đọc xen giữa (cache miss) sẽ nạp lại `tv` CŨ từ DB chưa commit, và giá trị cũ đó sống tới hết TTL.
 - Writer `SET` vô điều kiện còn reader `SET NX`: read-through **không bao giờ** đè giá trị writer đã đặt; writer ghi lại sau commit đè mọi giá trị cũ còn sót. TTL `auth:tv` ngắn (60s) giới hạn thời gian một giá trị cũ có thể sống trong trường hợp xấu nhất.
 - Middleware gọi `MGET auth:tv:{sub} auth:sid-revoked:{sid}` — **1 round-trip** mỗi request.
+- **Cache miss = có thể Valkey vừa mất dữ liệu (X3, T-032).** Valkey không persistence ⇒ restart xóa mọi `auth:sid-revoked:*`. Vì vậy **thiếu khóa `sid-revoked` không có nghĩa là phiên còn sống**:
+  - Miss `auth:tv` ⇒ đọc **cả** `token_version` lẫn "phiên đã LOGOUT / REUSE_DETECTED" trong DB.
+  - Trước khi `SET NX` lại `tv`, khôi phục `sid-revoked` của mọi phiên của user bị thu hồi trong 900s gần nhất, với TTL = phần còn lại của cửa sổ. Khi đã trúng cache `tv`, request không hỏi DB về `sid` nữa, nên phải khôi phục `sid-revoked` trước; nếu không, một phiên đã đăng xuất khác của cùng user sẽ lọt qua.
+  - Khôi phục lỗi ⇒ **không** nạp `tv` ⇒ lần sau vẫn miss và hỏi DB (fail-closed).
 - **Valkey lỗi:** `tv` fallback đọc DB (ADR-025); `sid-revoked` fallback `SELECT 1 FROM refresh_tokens WHERE family_id = $sid AND revoked_reason IN ('LOGOUT','REUSE_DETECTED') LIMIT 1` (dùng index `family_id`). DB cũng lỗi → `503 SERVICE_UNAVAILABLE` (fail-closed). Log cảnh báo khi đang ở chế độ fallback.
 - Email trong key rate-limit được băm SHA-256 (không lưu email thô trong Valkey).
 

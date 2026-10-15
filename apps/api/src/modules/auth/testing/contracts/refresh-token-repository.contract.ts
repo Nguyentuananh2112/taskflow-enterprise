@@ -75,5 +75,32 @@ export function describeRefreshTokenRepositoryContract(
       expect(await p.refreshTokens.isSessionRevoked(loggedOut)).toBe(true);
       expect(await p.refreshTokens.isSessionRevoked(randomUUID())).toBe(false);
     });
+
+    it('listRevokedSessionsSince: chỉ LOGOUT/REUSE_DETECTED của user này, revokedAt ≥ since, một dòng mỗi family (X3)', async () => {
+      const other = newUser();
+      await p.users.add(other);
+      const [early, loggedOut, reused, rotated, foreign] = Array.from({ length: 5 }, () =>
+        randomUUID(),
+      );
+      await p.refreshTokens.add(newToken(userId, early));
+      await p.refreshTokens.revokeFamily(early, 'LOGOUT', T0); // trước `since`
+      for (const family of [loggedOut, loggedOut])
+        await p.refreshTokens.add(newToken(userId, family));
+      await p.refreshTokens.revokeFamily(loggedOut, 'LOGOUT', T1); // 2 dòng ⇒ 1 kết quả
+      await p.refreshTokens.add(newToken(userId, reused));
+      await p.refreshTokens.revokeFamily(reused, 'REUSE_DETECTED', T1);
+      const r1 = newToken(userId, rotated);
+      const r2 = newToken(userId, rotated);
+      await p.refreshTokens.add(r1);
+      await p.refreshTokens.add(r2);
+      await p.refreshTokens.markRotated(r1.id, r2.id, T1); // ROTATED ⇒ không tính
+      await p.refreshTokens.revokeAllForUser(userId, 'LOGOUT_ALL', T1); // tv lo, không tính
+      await p.refreshTokens.add(newToken(other.id, foreign));
+      await p.refreshTokens.revokeFamily(foreign, 'LOGOUT', T1); // user khác
+
+      const result = await p.refreshTokens.listRevokedSessionsSince(userId, T1);
+      expect(result.map((r) => r.familyId).sort()).toEqual([loggedOut, reused].sort());
+      expect(result.every((r) => r.revokedAt.getTime() === T1.getTime())).toBe(true);
+    });
   });
 }

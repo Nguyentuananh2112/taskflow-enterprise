@@ -23,6 +23,7 @@ async function setup() {
       users: h.users,
       refreshTokens: h.refreshTokens,
       logger: h.logger,
+      clock: h.clock,
     }),
   );
   rt = await startRealtime({ authenticator });
