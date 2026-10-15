@@ -94,7 +94,8 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
        WHERE m.workspace_id = ${workspaceId}::uuid
          AND (${pattern}::text IS NULL OR u.email ILIKE ${pattern} ESCAPE '\\' OR u.full_name ILIKE ${pattern} ESCAPE '\\')
          AND (${page.after ?? null}::uuid IS NULL OR (m.joined_at, m.id) > (
-              SELECT a.joined_at, a.id FROM workspace_members a WHERE a.id = ${page.after ?? null}::uuid))
+              SELECT a.joined_at, a.id FROM workspace_members a
+               WHERE a.id = ${page.after ?? null}::uuid AND a.workspace_id = ${workspaceId}::uuid))
        ORDER BY m.joined_at, m.id
        LIMIT ${page.limit + 1}`;
     return toPage(
