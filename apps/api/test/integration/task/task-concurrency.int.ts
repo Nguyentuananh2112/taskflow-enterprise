@@ -213,6 +213,45 @@ describe.each(rounds)('move/update/delete đồng thời — lượt %i', () => 
   });
 });
 
+describe.each(rounds)('rebalance rank đồng thời (T-033) — lượt %i', () => {
+  it('CC-RB01: move kích hoạt rebalance ‖ 6 move khác vào cùng cột ⇒ không mất task, không mất thứ tự, không còn khóa tạm', async () => {
+    const LONG = `a0${'V'.repeat(70)}`;
+    const a = await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: LONG });
+    const c = await h.seedTask({ rank: `${LONG}V` });
+    const x = await h.seedTask({ rank: 'a0', status: 'IN_PROGRESS' });
+    const others = [];
+    for (let i = 1; i <= 6; i += 1)
+      others.push(await h.seedTask({ rank: `a${i}`, status: 'IN_PROGRESS' }));
+    const anchors = [{ afterId: a.id }, { beforeId: c.id }, {}];
+    const mv = (taskId: string, input: object) =>
+      h.move.execute({
+        ...h.scope('Mia'),
+        taskId,
+        input: { expectedVersion: 1, status: 'TODO', ...input },
+      });
+
+    const results = await settle([
+      mv(x.id, { afterId: b.id }), // rank giữa B và C > 64 ký tự ⇒ rebalance
+      ...others.map((t, i) => mv(t.id, anchors[i % 3]!)),
+    ]);
+    expect(rejected(results)).toEqual([]);
+
+    const todo = await h.column('TODO');
+    expect(new Set(todo)).toEqual(new Set([a.id, b.id, c.id, x.id, ...others.map((t) => t.id)]));
+    const rows = (await h.backend.taskRows()).filter((t) => t.status === 'TODO');
+    expect(new Set(rows.map((r) => r.rank)).size).toBe(rows.length);
+    for (const r of rows) expect(r.rank.startsWith('~')).toBe(false);
+    // Thứ tự gốc A < B < X(ngay sau B) < C được giữ dù các move khác chen vào.
+    const pos = (id: string) => todo.indexOf(id);
+    expect(pos(a.id)).toBeLessThan(pos(b.id));
+    expect(pos(b.id)).toBeLessThan(pos(c.id));
+    expect(pos(x.id)).toBeGreaterThan(pos(b.id));
+    expect(pos(x.id)).toBeLessThan(pos(c.id));
+    expect(h.logger.messages('info')).toContain('task.rank_rebalanced');
+  });
+});
+
 describe.each(rounds)('bỏ gán khi hạ quyền đồng thời — lượt %i', () => {
   /** Mô phỏng ChangeMemberRole của Workspace: khóa ghi dòng membership, hạ VIEWER, gọi cleaner — cùng 1 tx. */
   const demoteMax = () =>

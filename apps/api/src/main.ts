@@ -7,6 +7,11 @@ import {
   createMemoryPersistence,
   createPrismaPersistence,
 } from './composition/persistence';
+import {
+  MaintenanceScheduler,
+  maintenanceEnabled,
+  purgeWorkspacesJob,
+} from './composition/maintenance-jobs';
 import { EnvValidationError, loadEnv, type Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
@@ -103,6 +108,25 @@ async function main(): Promise<void> {
   });
   container.realtime.bind(gateway);
 
+  // Job bảo trì (T-033, ADR-095): purge workspace hết ân hạn mỗi giờ, khóa advisory theo lô.
+  const maintenance =
+    maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED) && persistence.workspacePurger
+      ? new MaintenanceScheduler(
+          [
+            purgeWorkspacesJob({
+              workspaces: persistence.workspace.workspaces,
+              purger: persistence.workspacePurger,
+              uow: persistence.uow,
+              clock,
+              logger,
+              intervalMs: env.PURGE_INTERVAL_MS,
+              jitterMs: env.PURGE_JITTER_MS,
+            }),
+          ],
+          { logger },
+        )
+      : undefined;
+
   const lifecycle = createGracefulShutdown({
     server,
     logger,
@@ -110,6 +134,10 @@ async function main(): Promise<void> {
     timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
     realtime: [{ name: 'socket.io', close: () => gateway.close() }],
     resources: [
+      // Dừng job TRƯỚC Prisma/pool: không mở lượt mới, chờ lượt đang chạy (≤ một nửa ngân sách).
+      ...(maintenance
+        ? [{ name: 'maintenance-jobs', close: () => maintenance.stop(env.SHUTDOWN_TIMEOUT_MS / 2) }]
+        : []),
       ...(adapter ? [{ name: 'socket.io-adapter', close: () => adapter.close() }] : []),
       // Prisma ngắt TRƯỚC pool (adapter không tự đóng pool ngoài — core/persistence/database.ts).
       ...(prisma ? [{ name: 'prisma', close: () => prisma.$disconnect() }] : []),
@@ -121,6 +149,7 @@ async function main(): Promise<void> {
   lifecycle.installProcessHandlers();
 
   await listen(server, env.PORT);
+  maintenance?.start();
   logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, 'api.listening');
 }
 

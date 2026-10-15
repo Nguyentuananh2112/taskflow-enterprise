@@ -37,6 +37,8 @@ export class CreateTaskUseCase {
         const again = await d.projects.findInWorkspace({ workspaceId, projectId });
         throw again ? new ProjectArchivedError(projectId) : new ResourceNotFoundError('project');
       }
+      // T-033: cùng khóa cột với move/rebalance ⇒ `lastRank` không đọc khóa tạm `~<id>` giữa chừng.
+      await d.tasks.lockColumn(projectId, 'TODO');
       const task = Task.create({
         id: d.ids.next(),
         workspaceId,

@@ -28,6 +28,9 @@ import {
   PrismaAssigneeDirectory,
   PrismaTaskProjectStore,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
+import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persistence/prisma/prisma-workspace.purger';
+import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
+import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import {
   TaskMirroredMemberships,
@@ -46,6 +49,8 @@ export interface Persistence {
   workspace: WorkspaceRepositories;
   /** Module Task: Prisma (T-023) hoặc bộ nhớ có bản sao dữ liệu Workspace/Auth (T-024). */
   task: TaskRepositories;
+  /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
+  workspacePurger?: IWorkspacePurger;
   uow: IUnitOfWork;
 }
 
@@ -128,6 +133,7 @@ export function createPrismaPersistence(d: {
       users: new PrismaUserRefReader(db),
       audit: new PrismaTaskAuditLogRepository(db),
     },
+    workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     uow,
   };
 }
