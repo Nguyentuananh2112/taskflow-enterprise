@@ -54,7 +54,7 @@ export class RefreshSessionUseCase {
       case 'superseded':
         throw new RefreshInProgressError();
       case 'reused':
-        await this.#revokeReusedFamily(token, now);
+        await this.#revokeReusedFamily(token, now, input.meta);
         throw new RefreshTokenInvalidError();
       case 'expired':
       case 'revoked':
@@ -75,7 +75,7 @@ export class RefreshSessionUseCase {
     });
   }
 
-  async #revokeReusedFamily(token: RefreshToken, now: Date): Promise<void> {
+  async #revokeReusedFamily(token: RefreshToken, now: Date, meta: SessionMeta): Promise<void> {
     const { familyId, userId } = token;
     await this.d.uow.run(async () => {
       await this.d.refreshTokens.revokeFamily(familyId, 'REUSE_DETECTED', now);
@@ -84,7 +84,10 @@ export class RefreshSessionUseCase {
         this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
       );
       this.d.uow.afterCommit(async () => {
-        this.d.logger.warn({ userId, familyId }, 'refresh.reuse_detected');
+        this.d.logger.warn(
+          { userId, familyId, ip: meta.ip, userAgent: meta.userAgent },
+          'refresh.reuse_detected',
+        );
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { familyId }, () =>
           this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
         );

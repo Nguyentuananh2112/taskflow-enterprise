@@ -107,8 +107,23 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     restore: new RestoreWorkspaceUseCase({ workspaces, memberships, uow, clock, logger }),
     listMembers: new ListMembersQuery({ queries }),
     addMember: new AddMemberUseCase({ memberships, users, uow, ids, clock }),
-    changeRole: new ChangeMemberRoleUseCase({ memberships, users, cleaner, notifier, uow, clock }),
-    removeMember: new RemoveMemberUseCase({ memberships, projects, cleaner, notifier, uow }),
+    changeRole: new ChangeMemberRoleUseCase({
+      memberships,
+      users,
+      cleaner,
+      notifier,
+      uow,
+      clock,
+      logger,
+    }),
+    removeMember: new RemoveMemberUseCase({
+      memberships,
+      projects,
+      cleaner,
+      notifier,
+      uow,
+      logger,
+    }),
     responder: d.responder,
   });
   const projectController = new ProjectController({

@@ -1,4 +1,5 @@
 import { ForbiddenError } from '../../../../core/errors';
+import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type {
   ITaskAssignmentCleaner,
@@ -14,6 +15,7 @@ export interface RemoveMemberDeps {
   cleaner: ITaskAssignmentCleaner;
   notifier: IWorkspaceRealtimeNotifier;
   uow: IUnitOfWork;
+  logger: ILogger;
 }
 
 /**
@@ -50,12 +52,17 @@ export class RemoveMemberUseCase {
       });
       const projectIds = await this.d.projects.listIds(actor.workspaceId);
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };
-      this.d.uow.afterCommit(() =>
-        this.d.notifier.revokeWorkspaceAccess(
+      this.d.uow.afterCommit(() => {
+        // Sự kiện bảo mật (ASVS V16, T-028): mất quyền truy cập workspace.
+        this.d.logger.info(
+          { workspaceId: actor.workspaceId, userId: target.userId, actorId: actor.userId },
+          'member.removed',
+        );
+        return this.d.notifier.revokeWorkspaceAccess(
           { userId: target.userId, workspaceId: actor.workspaceId, projectIds },
           meta,
-        ),
-      );
+        );
+      });
       return { userId: target.userId, unassignedTaskCount };
     });
   }

@@ -1,5 +1,6 @@
 import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError } from '../../../../core/errors';
+import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type {
   ITaskAssignmentCleaner,
@@ -18,6 +19,7 @@ export interface ChangeMemberRoleDeps {
   notifier: IWorkspaceRealtimeNotifier;
   uow: IUnitOfWork;
   clock: IClock;
+  logger: ILogger;
 }
 
 /**
@@ -44,6 +46,7 @@ export class ChangeMemberRoleUseCase {
       const user = await this.d.users.findById(target.userId);
       if (!user) throw new ResourceNotFoundError('user');
 
+      const previousRole = target.role;
       if (!target.changeRole(role, this.d.clock.now())) {
         return { member: toMemberView(target.toSnapshot(), user), unassignedTaskCount: 0 }; // ROL-08
       }
@@ -60,12 +63,23 @@ export class ChangeMemberRoleUseCase {
           : 0;
 
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };
-      this.d.uow.afterCommit(() =>
-        this.d.notifier.notifyRoleChanged(
+      this.d.uow.afterCommit(() => {
+        // Sự kiện bảo mật (ASVS V16, T-028): thay đổi quyền.
+        this.d.logger.info(
+          {
+            workspaceId: actor.workspaceId,
+            userId: target.userId,
+            actorId: actor.userId,
+            from: previousRole,
+            to: role,
+          },
+          'member.role_changed',
+        );
+        return this.d.notifier.notifyRoleChanged(
           { userId: target.userId, workspaceId: actor.workspaceId, role },
           meta,
-        ),
-      );
+        );
+      });
       return { member: toMemberView(target.toSnapshot(), user), unassignedTaskCount };
     });
   }

@@ -132,7 +132,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
       ids,
       clock,
     }),
-    login: new LoginUseCase({ users, issuer, hasher, uow, clock }),
+    login: new LoginUseCase({ users, issuer, hasher, uow, clock, logger }),
     refresh: new RefreshSessionUseCase({
       users,
       refreshTokens,

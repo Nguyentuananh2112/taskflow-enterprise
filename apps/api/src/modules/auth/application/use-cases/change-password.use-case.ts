@@ -94,6 +94,7 @@ export class ChangePasswordUseCase {
 
       const events = user.pullDomainEvents();
       this.d.uow.afterCommit(async () => {
+        this.d.logger.info({ userId: id, ip: input.meta.ip }, 'auth.password_changed');
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { userId: id }, () =>
           this.d.store.setTokenVersion(id, tokenVersion),
         );

@@ -40,6 +40,7 @@ export class LogoutAllUseCase {
 
       const events = user.pullDomainEvents();
       this.d.uow.afterCommit(async () => {
+        this.d.logger.info({ userId: id }, 'auth.logout_all');
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { userId: id }, () =>
           this.d.store.setTokenVersion(id, tokenVersion),
         );

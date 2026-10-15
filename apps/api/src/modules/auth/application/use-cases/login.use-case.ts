@@ -1,5 +1,6 @@
 import type { IClock } from '../../../../core/domain';
 import { InvalidCredentialsError, ValidationError } from '../../../../core/errors';
+import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { Email } from '../../domain/email';
 import type { SessionMeta } from '../../domain/refresh-token';
@@ -25,6 +26,7 @@ export interface LoginDeps {
   hasher: IPasswordHasher;
   uow: IUnitOfWork;
   clock: IClock;
+  logger: ILogger;
 }
 
 /** security.md 1.2. Rate limit chạy ở middleware TRƯỚC use case. */
@@ -36,10 +38,10 @@ export class LoginUseCase {
     if (!user || user.isDeleted) {
       // Vẫn verify với hash giả ⇒ thời gian giống trường hợp sai mật khẩu (LOG-04).
       await this.d.hasher.verify(null, input.password);
-      throw new InvalidCredentialsError();
+      throw this.#failed(null, input.meta);
     }
     if (!(await this.d.hasher.verify(user.passwordHash, input.password))) {
-      throw new InvalidCredentialsError();
+      throw this.#failed(user.id, input.meta);
     }
     // Băm lại (nếu cần) NGOÀI transaction.
     const rehashed = this.d.hasher.needsRehash(user.passwordHash)
@@ -64,6 +66,15 @@ export class LoginUseCase {
       const session = await this.d.issuer.startNew({ id: user.id, tokenVersion }, input.meta);
       return { session, user: toUserView(user) };
     });
+  }
+
+  /**
+   * Sự kiện bảo mật (ASVS V16, security.md §6.7 — T-028): KHÔNG ghi email (PII) — `userId` khi
+   * tài khoản tồn tại (dò mật khẩu nhắm một người), `null` khi không (dò danh sách email).
+   */
+  #failed(userId: string | null, meta: SessionMeta): InvalidCredentialsError {
+    this.d.logger.warn({ userId, ip: meta.ip }, 'auth.login_failed');
+    return new InvalidCredentialsError();
   }
 
   /** Email sai định dạng ⇒ xử lý như không tồn tại (cùng lỗi, cùng thời gian). */

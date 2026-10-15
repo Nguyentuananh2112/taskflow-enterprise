@@ -101,8 +101,8 @@ export class AuthController {
   changePassword = async (req: Request, res: Response) => {
     const body = req.body as ChangePasswordBody;
     const result = await this.d.changePassword.execute({
+      ...body, // trường do server suy ra đặt SAU body: body không bao giờ ghi đè được (T-028)
       userId: requireUser(req).id,
-      ...body,
       meta: sessionMetaOf(req),
     });
     this.d.responder.ok(res, this.#issue(res, result.session));

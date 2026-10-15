@@ -61,7 +61,7 @@ export class WorkspaceController {
     const body = req.body as CreateWorkspaceBody;
     this.d.responder.created(
       res,
-      await this.d.create.execute({ userId: requireUser(req).id, ...body }),
+      await this.d.create.execute({ ...body, userId: requireUser(req).id }),
     );
   };
 

@@ -75,7 +75,12 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
       expect.objectContaining({
         level: 'warn',
         msg: 'refresh.reuse_detected',
-        data: expect.objectContaining({ userId: alice.id, familyId: s1.familyId }) as unknown,
+        data: expect.objectContaining({
+          userId: alice.id,
+          familyId: s1.familyId,
+          ip: META.ip,
+          userAgent: META.userAgent,
+        }) as unknown,
       }),
     );
     expect(JSON.stringify(h.logger.entries)).not.toContain(s1.refreshToken);
