@@ -64,10 +64,18 @@ export class RefreshSessionUseCase {
     }
 
     return this.d.uow.run(async () => {
-      const user = await this.d.users.findById(token.userId);
-      if (!user || user.isDeleted) throw new RefreshTokenInvalidError();
+      // X4 (T-032): khóa chia sẻ dòng user TRƯỚC khi tạo token mới — logout-all / đổi mật khẩu
+      // đồng thời (UPDATE users) phải chờ ta commit rồi mới `revokeAllForUser` ⇒ thấy token mới.
+      // Họ đi trước ⇒ ta chờ, đọc `tv` mới, và `markRotated` thua (token cũ đã bị thu hồi).
+      const tokenVersion = await this.d.users.lockTokenVersion(token.userId);
+      const user = tokenVersion === null ? null : await this.d.users.findById(token.userId);
+      if (tokenVersion === null || !user || user.isDeleted) throw new RefreshTokenInvalidError();
       // Thêm token mới TRƯỚC (FK replaced_by_id), rồi xoay có điều kiện; thua race ⇒ rollback cả hai.
-      const { session, tokenId } = await this.d.issuer.continueFamily(user, token, input.meta);
+      const { session, tokenId } = await this.d.issuer.continueFamily(
+        { id: user.id, tokenVersion },
+        token,
+        input.meta,
+      );
       if (!(await this.d.refreshTokens.markRotated(token.id, tokenId, now))) {
         throw new RefreshInProgressError();
       }

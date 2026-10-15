@@ -105,4 +105,11 @@ export class PrismaUserRepository implements IUserRepository {
     });
     return row && row.deletedAt === null ? row.tokenVersion : null;
   }
+  async lockTokenVersion(userId: string): Promise<number | null> {
+    const rows = await this.db().$queryRaw<{ token_version: number }[]>`
+      SELECT token_version FROM users
+      WHERE id = ${userId}::uuid AND deleted_at IS NULL
+      FOR SHARE`;
+    return rows[0]?.token_version ?? null;
+  }
 }

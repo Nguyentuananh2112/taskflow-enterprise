@@ -30,6 +30,10 @@ export class InMemoryUserRepository implements IUserRepository {
     return Promise.resolve();
   }
 
+  /** InMemory: transaction tuần tự hóa sẵn — không cần khóa. */
+  lockTokenVersion(userId: string): Promise<number | null> {
+    return this.getTokenVersion(userId);
+  }
   getTokenVersion(userId: string): Promise<number | null> {
     return Promise.resolve(this.#live(userId)?.tokenVersion ?? null);
   }

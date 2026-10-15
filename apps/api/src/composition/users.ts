@@ -97,4 +97,7 @@ export class MirroringUserRepository implements IUserRepository {
   getTokenVersion(userId: string) {
     return this.inner.getTokenVersion(userId);
   }
+  lockTokenVersion(userId: string) {
+    return this.inner.lockTokenVersion(userId);
+  }
 }
