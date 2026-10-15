@@ -97,4 +97,12 @@ describe('PasswordPolicy (ADR-049, ADR-065)', () => {
   it('normalize() trả dạng NFC — dùng chung với hasher', () => {
     expect(PasswordPolicy.normalize('é')).toBe('é');
   });
+
+  it('QA B.4: biên phần local email = 3 ký tự ⇒ có kiểm; 2 ký tự ⇒ bỏ qua', () => {
+    expect(policy.check('xxabcxxxxxxxxx', Email.create('abc@x.io'))).toEqual({
+      ok: false,
+      violations: ['CONTAINS_EMAIL'],
+    });
+    expect(policy.check('xxabxxxxxxxxxx', Email.create('ab@x.io'))).toEqual({ ok: true });
+  });
 });

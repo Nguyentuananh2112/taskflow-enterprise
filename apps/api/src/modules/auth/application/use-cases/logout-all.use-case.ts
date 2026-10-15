@@ -3,7 +3,7 @@ import { UnauthorizedError } from '../../../../core/errors';
 import type { IEventBus } from '../../../../core/events/event-bus';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
-import { bestEffort } from '../auth-shared';
+import { bestEffort, writeRevocationOrFail } from '../auth-shared';
 import type { IAuthRealtimeNotifier } from '../ports/collaborators.port';
 import type { IRefreshTokenRepository } from '../ports/refresh-token-repository.port';
 import type { ISessionRevocationStore } from '../ports/session-revocation-store.port';
@@ -29,14 +29,17 @@ export class LogoutAllUseCase {
       const user = await this.d.users.findById(input.userId);
       if (!user) throw new UnauthorizedError();
       const now = this.d.clock.now();
-      user.revokeAllSessions(now);
-      await this.d.users.save(user);
+      user.revokeAllSessions(now); // aggregate kiểm luật + phát event; KHÔNG lưu cả aggregate (ADR-104)
+      // tv MỚI lấy từ RETURNING trong cùng transaction — không tính từ bản đã đọc.
+      const tokenVersion = await this.d.users.bumpTokenVersion(user.id, now);
+      if (tokenVersion === null) throw new UnauthorizedError();
       await this.d.refreshTokens.revokeAllForUser(user.id, 'LOGOUT_ALL', now);
+      const { id } = user;
+      // ADR-105: ghi tv mới vào Valkey TRƯỚC commit; lỗi ⇒ 503 + rollback (fail-closed).
+      await writeRevocationOrFail(() => this.d.store.setTokenVersion(id, tokenVersion));
 
       const events = user.pullDomainEvents();
-      const { id, tokenVersion } = user;
       this.d.uow.afterCommit(async () => {
-        // Ghi đè vô điều kiện SAU commit (writer) — reader dùng SET NX nên không ghi đè lại giá trị cũ.
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { userId: id }, () =>
           this.d.store.setTokenVersion(id, tokenVersion),
         );

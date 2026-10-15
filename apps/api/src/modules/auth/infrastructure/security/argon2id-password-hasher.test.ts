@@ -98,6 +98,8 @@ describe('Argon2idPasswordHasher (ADR-065)', () => {
       ['timeCost khác', { timeCost: 2 }],
       ['memoryCost khác', { memoryCost: 19456 }],
       ['argon2i thay vì argon2id', { algorithm: 1 as const }],
+      ['parallelism khác (QA B.4)', { parallelism: 2 }],
+      ['outputLen khác (QA B.4)', { outputLen: 48 }],
     ])('%s ⇒ true', async (_label, override) => {
       const old = await argonHash('correct-horse-12', { ...ARGON2ID_PARAMS, ...override });
       expect(hasher.needsRehash(old)).toBe(true);

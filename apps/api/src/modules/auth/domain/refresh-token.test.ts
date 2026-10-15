@@ -94,4 +94,18 @@ describe('RefreshToken (security.md 1.3–1.4)', () => {
       expect(t.assess(at(DAY))).toBe('revoked');
     },
   );
+
+  it('QA B.4: client không gửi User-Agent (undefined) ⇒ userAgent = null, không ném; tokenHash giữ đúng', () => {
+    const t = RefreshToken.issue({
+      id: 't1',
+      userId: 'u1',
+      tokenHash: 'b'.repeat(64),
+      familyId: 'f1',
+      familyExpiresAt: at(DAY),
+      now: NOW,
+      meta: { userAgent: undefined as unknown as null, ip: null },
+    });
+    expect(t.userAgent).toBeNull();
+    expect(t.tokenHash).toBe('b'.repeat(64));
+  });
 });

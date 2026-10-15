@@ -61,4 +61,12 @@ describe('Email', () => {
       expect((err as Error).message).not.toContain('secret-person');
     }
   });
+
+  it('QA B.4: hai dấu @ mà phần sau @ đầu có dấu chấm ("a@b.c@d.e") ⇒ ValidationError', () => {
+    expect(() => Email.create('a@b.c@d.e')).toThrow(ValidationError);
+  });
+
+  it('QA B.4: equals là false với hai email khác nhau', () => {
+    expect(Email.create('a@x.io').equals(Email.create('b@x.io'))).toBe(false);
+  });
 });

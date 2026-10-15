@@ -3,7 +3,11 @@ import { createHash } from 'node:crypto';
 import { decodeJwt } from 'jose';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { RefreshInProgressError, RefreshTokenInvalidError } from '../../../../core/errors';
+import {
+  RefreshInProgressError,
+  RefreshTokenInvalidError,
+  ServiceUnavailableError,
+} from '../../../../core/errors';
 import { createAuthHarness, META, type AuthHarness } from '../../testing/auth-harness';
 import { RefreshSessionUseCase } from './refresh-session.use-case';
 
@@ -25,10 +29,10 @@ async function seeded() {
 describe('RefreshSessionUseCase (security.md 1.4)', () => {
   it('REF-01: xoay — T2 cùng family/hạn tuyệt đối; T1 ROTATED, revokedAt = now, replacedById = T2', async () => {
     const { s1 } = await seeded();
-    const [t1Before] = h.refreshTokens.rows();
+    const [t1Before] = await h.refreshTokens.rows();
     h.clock.advance(60_000);
     const { session } = await refresh.execute({ refreshToken: s1.refreshToken, meta: META });
-    const rows = h.refreshTokens.rows();
+    const rows = await h.refreshTokens.rows();
     const t1 = rows.find((r) => r.id === t1Before?.id);
     const t2 = rows.find((r) => r.id !== t1Before?.id);
     expect(t2).toMatchObject({
@@ -61,7 +65,7 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
     await expect(
       refresh.execute({ refreshToken: s1.refreshToken, meta: META }),
     ).rejects.toBeInstanceOf(RefreshTokenInvalidError);
-    const t2 = h.refreshTokens.rows().find((r) => r.replacedById === null);
+    const t2 = (await h.refreshTokens.rows()).find((r) => r.replacedById === null);
     expect(t2).toMatchObject({ revokedReason: 'REUSE_DETECTED' });
     expect(h.store.revokedSessions.get(s1.familyId)).toBe(900);
     expect(h.notifier.calls).toEqual([
@@ -84,7 +88,7 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
     await expect(
       refresh.execute({ refreshToken: s1.refreshToken, meta: META }),
     ).rejects.toBeInstanceOf(RefreshInProgressError);
-    expect(h.refreshTokens.rows()).toHaveLength(2);
+    expect(await h.refreshTokens.rows()).toHaveLength(2);
     await expect(
       refresh.execute({ refreshToken: s2.refreshToken, meta: META }),
     ).resolves.toBeDefined();
@@ -92,18 +96,18 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
 
   it('REF-06 (mức U): thua race ở markRotated ⇒ 409 và token mới bị rollback', async () => {
     const { s1 } = await seeded();
-    const [t1] = h.refreshTokens.rows();
+    const [t1] = await h.refreshTokens.rows();
     // Request khác vừa xoay T1 giữa lúc ta findByHash và markRotated:
     const original = h.refreshTokens.markRotated.bind(h.refreshTokens);
     h.refreshTokens.markRotated = async (id, successor, at) => {
-      await original(id, 'other-request', at);
+      await original(id, successor, at); // request kia thắng: T1 đã xoay
       return original(id, successor, at);
     };
     await expect(
       refresh.execute({ refreshToken: s1.refreshToken, meta: META }),
     ).rejects.toBeInstanceOf(RefreshInProgressError);
     expect(h.uow.rollbacks).toBe(1);
-    expect(h.refreshTokens.rows().map((r) => r.id)).toEqual([t1?.id]);
+    expect((await h.refreshTokens.rows()).map((r) => r.id)).toEqual([t1?.id]);
   });
 
   it('REF-07: quá expiresAt ⇒ 401, family KHÔNG bị thu hồi', async () => {
@@ -112,7 +116,7 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
     await expect(
       refresh.execute({ refreshToken: s1.refreshToken, meta: META }),
     ).rejects.toBeInstanceOf(RefreshTokenInvalidError);
-    expect(h.refreshTokens.rows()[0]?.revokedAt).toBeNull();
+    expect((await h.refreshTokens.rows())[0]?.revokedAt).toBeNull();
   });
 
   /** Xoay liên tục, mỗi lần cách nhau `gapDays` (< 7 để không hết hạn trượt). */
@@ -140,7 +144,7 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
   it('REF-09: xoay khi còn 3 ngày tới hạn tuyệt đối ⇒ T mới hết hạn đúng mốc tuyệt đối', async () => {
     const { s1 } = await seeded();
     await rotateEvery([6, 6, 6, 6, 3], s1); // ngày 27
-    const live = h.refreshTokens.rows().find((r) => r.revokedAt === null);
+    const live = (await h.refreshTokens.rows()).find((r) => r.revokedAt === null);
     expect(live?.expiresAt).toEqual(new Date(h.clock.now().getTime() + 3 * DAY));
     expect(live?.expiresAt).toEqual(live?.familyExpiresAt);
   });
@@ -174,8 +178,22 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
   it('REF-14: DB chỉ lưu sha256 hex của token, không lưu token thô', async () => {
     const { s1 } = await seeded();
     const { session } = await refresh.execute({ refreshToken: s1.refreshToken, meta: META });
-    const stored = JSON.stringify(h.refreshTokens.rows());
+    const stored = JSON.stringify(await h.refreshTokens.rows());
     expect(stored).not.toContain(session.refreshToken);
     expect(stored).toContain(createHash('sha256').update(session.refreshToken).digest('hex'));
+  });
+
+  it('ADR-105 (fail-closed): reuse nhưng Valkey lỗi khi ghi sid-revoked ⇒ 503 + rollback (family chưa thu hồi, có thể thử lại)', async () => {
+    const { s1 } = await seeded();
+    await refresh.execute({ refreshToken: s1.refreshToken, meta: META });
+    h.clock.advance(11_000);
+    h.store.failing = true;
+    await expect(
+      refresh.execute({ refreshToken: s1.refreshToken, meta: META }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect((await h.refreshTokens.rows()).some((r) => r.revokedReason === 'REUSE_DETECTED')).toBe(
+      false,
+    );
+    expect(h.notifier.calls).toEqual([]);
   });
 });

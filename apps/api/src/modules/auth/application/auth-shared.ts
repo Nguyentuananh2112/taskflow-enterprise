@@ -1,5 +1,5 @@
 import type { ILogger } from '../../../core/logging/logger';
-import { ValidationError } from '../../../core/errors';
+import { ServiceUnavailableError, ValidationError } from '../../../core/errors';
 import type { Email } from '../domain/email';
 import type { PasswordPolicy, PasswordViolation } from '../domain/password-policy';
 import type { User } from '../domain/user';
@@ -45,8 +45,21 @@ export function assertPasswordAllowed(
 }
 
 /**
- * Ghi cache sau commit: DB đã là nguồn sự thật, lỗi Valkey chỉ log cảnh báo (ALL-04) — không
- * làm hỏng thao tác người dùng đã thành công.
+ * ADR-105 (thu hồi phiên fail-closed — finding A3): ghi giá trị thu hồi (`sid-revoked`, `tv` MỚI) vào
+ * Valkey TRƯỚC commit. Lỗi ⇒ `503 SERVICE_UNAVAILABLE` và transaction rollback — không bao giờ để DB
+ * đã thu hồi mà cache vẫn cho token cũ qua. Gọi BÊN TRONG `uow.run`.
+ */
+export async function writeRevocationOrFail(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (err) {
+    throw new ServiceUnavailableError(undefined, err);
+  }
+}
+
+/**
+ * Ghi lại SAU commit (best-effort, ADR-105): phòng trường hợp request đọc xen giữa đã nạp giá trị cũ —
+ * lần ghi này đè lên. Lỗi chỉ log cảnh báo; lần ghi trước commit đã thành công.
  */
 export async function bestEffort(
   logger: ILogger,

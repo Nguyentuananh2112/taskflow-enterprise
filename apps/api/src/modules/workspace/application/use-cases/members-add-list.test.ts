@@ -9,6 +9,7 @@ import {
 import {
   createWorkspaceHarness,
   givenWorkspaceA,
+  uid,
   type WorkspaceHarness,
 } from '../../testing/harness';
 import { AddMemberUseCase } from './add-member.use-case';
@@ -33,20 +34,20 @@ describe('AddMemberUseCase', () => {
   it('MEM-01: OWNER thêm Nina với role PM ⇒ MemberView', async () => {
     const view = await add().execute(ctx.alice, { email: 'nina@example.com', role: 'PM' });
     expect(view).toEqual({
-      userId: 'user-nina',
+      userId: uid('nina'),
       email: 'nina@example.com',
       fullName: 'Nina',
       role: 'PM',
       joinedAt: h.clock.now(),
     });
-    expect(h.roleOf(ctx.A, 'Nina')).toBe('PM');
+    expect(await h.roleOf(ctx.A, 'Nina')).toBe('PM');
   });
 
   it('MEM-02: PM thêm với role MEMBER / VIEWER', async () => {
     await expect(
       add().execute(ctx.pam, { email: 'nina@example.com', role: 'MEMBER' }),
     ).resolves.toBeDefined();
-    h.user('Zed');
+    await h.user('Zed');
     await expect(
       add().execute(ctx.pam, { email: 'zed@example.com', role: 'VIEWER' }),
     ).resolves.toBeDefined();
@@ -81,13 +82,13 @@ describe('AddMemberUseCase', () => {
     expect(
       await caught(add().execute(ctx.alice, { email: 'mia@example.com', role: 'PM' })),
     ).toBeInstanceOf(ResourceConflictError);
-    expect(h.roleOf(ctx.A, 'Mia')).toBe('MEMBER');
+    expect(await h.roleOf(ctx.A, 'Mia')).toBe('MEMBER');
   });
 
   it('MEM-07: email được chuẩn hóa', async () => {
     await expect(
       add().execute(ctx.alice, { email: '  NINA@Example.com ', role: 'MEMBER' }),
-    ).resolves.toMatchObject({ userId: 'user-nina' });
+    ).resolves.toMatchObject({ userId: uid('nina') });
   });
 
   it('MEM-09: role không hợp lệ ⇒ 400', async () => {
@@ -110,7 +111,7 @@ describe('ListMembersQuery', () => {
 
   it('MLS-01/02 (mức U): q khớp tên/email không phân biệt hoa thường, chỉ trong ws này', async () => {
     expect((await list().execute(ctx.vic, { q: 'MIA' })).items.map((m) => m.userId)).toEqual([
-      'user-mia',
+      uid('mia'),
     ]);
     expect((await list().execute(ctx.alice, { q: 'bob' })).items).toEqual([]);
   });

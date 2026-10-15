@@ -9,7 +9,13 @@ import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { PasswordPolicy } from '../../domain/password-policy';
 import type { SessionMeta } from '../../domain/refresh-token';
-import { assertPasswordAllowed, bestEffort, toUserView, type UserView } from '../auth-shared';
+import {
+  assertPasswordAllowed,
+  bestEffort,
+  toUserView,
+  writeRevocationOrFail,
+  type UserView,
+} from '../auth-shared';
 import type { IAuthRealtimeNotifier } from '../ports/collaborators.port';
 import type { IPasswordHasher } from '../ports/password-hasher.port';
 import type { IRefreshTokenRepository } from '../ports/refresh-token-repository.port';
@@ -67,17 +73,26 @@ export class ChangePasswordUseCase {
     const newHash = await this.d.hasher.hash(input.newPassword); // NGOÀI transaction (PWD-07)
 
     return this.d.uow.run(async () => {
-      // Đọc lại trong transaction để không ghi đè thay đổi đồng thời.
       const user = await this.d.users.findById(input.userId);
       if (!user || user.isDeleted) throw new UnauthorizedError();
       const now = this.d.clock.now();
-      user.changePassword(newHash, now);
-      await this.d.users.save(user);
+      user.changePassword(newHash, now); // aggregate kiểm luật + phát event; KHÔNG lưu cả aggregate (ADR-104)
+      // Có điều kiện password_hash = hash VỪA verify + tv + 1 trong cùng câu lệnh. Thua race (mật khẩu
+      // vừa bị đổi ở request khác) ⇒ mật khẩu hiện tại không còn đúng ⇒ 400, không đổi gì.
+      const tokenVersion = await this.d.users.changePassword({
+        id: user.id,
+        oldHash: current.passwordHash,
+        newHash,
+        at: now,
+      });
+      if (tokenVersion === null) throw new InvalidCurrentPasswordError();
       await this.d.refreshTokens.revokeAllForUser(user.id, 'PASSWORD_CHANGED', now);
-      const session = await this.d.issuer.startNew(user, input.meta);
+      const session = await this.d.issuer.startNew({ id: user.id, tokenVersion }, input.meta);
+      const { id } = user;
+      // ADR-105: tv mới vào Valkey TRƯỚC commit; lỗi ⇒ 503 + rollback (mật khẩu cũ vẫn còn hiệu lực).
+      await writeRevocationOrFail(() => this.d.store.setTokenVersion(id, tokenVersion));
 
       const events = user.pullDomainEvents();
-      const { id, tokenVersion } = user;
       this.d.uow.afterCommit(async () => {
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { userId: id }, () =>
           this.d.store.setTokenVersion(id, tokenVersion),

@@ -30,8 +30,8 @@ describe('LoginUseCase', () => {
       password: PASSWORD,
       meta: META,
     });
-    expect(h.users.rows()[0]?.lastLoginAt).toEqual(new Date(LATER));
-    expect(h.refreshTokens.rows()).toEqual([
+    expect((await h.users.rows())[0]?.lastLoginAt).toEqual(new Date(LATER));
+    expect(await h.refreshTokens.rows()).toEqual([
       expect.objectContaining({ userId: alice.id, familyId: result.session.familyId }),
     ]);
     expect(decodeJwt(result.session.accessToken)).toMatchObject({ sub: alice.id, tv: 4 });
@@ -56,8 +56,8 @@ describe('LoginUseCase', () => {
       .execute({ email: 'alice@example.com', password: 'wrong-password-1', meta: META })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(InvalidCredentialsError);
-    expect(h.refreshTokens.rows()).toEqual([]);
-    expect(h.users.rows()[0]?.lastLoginAt).toBeNull();
+    expect(await h.refreshTokens.rows()).toEqual([]);
+    expect((await h.users.rows())[0]?.lastLoginAt).toBeNull();
     expect(h.uow.steps).toEqual([]);
   });
 
@@ -103,7 +103,40 @@ describe('LoginUseCase', () => {
     expect(h.hasher.calls.filter((c) => c.method === 'hash')).toEqual([
       { method: 'hash', inTransaction: false },
     ]);
-    expect(h.users.rows()[0]?.passwordHash).toBe(`h:${PASSWORD}`);
+    expect((await h.users.rows())[0]?.passwordHash).toBe(`h:${PASSWORD}`);
+  });
+
+  it('LOG-06 (QA B.4 P2): hash mới từ rehash THẬT SỰ được lưu', async () => {
+    await h.seedUser();
+    h.hasher.rehashNeeded = true;
+    h.hasher.hash = () => Promise.resolve('h2:rehashed');
+    await login.execute({ email: 'alice@example.com', password: PASSWORD, meta: META });
+    expect((await h.users.rows())[0]?.passwordHash).toBe('h2:rehashed');
+  });
+
+  it('ADR-104: mật khẩu bị đổi trong lúc login verify ⇒ rehash KHÔNG hồi sinh hash cũ; tv mới nhất được ký', async () => {
+    const alice = await h.seedUser();
+    h.hasher.rehashNeeded = true;
+    h.hasher.hash = async () => {
+      // Đúng lúc login đang băm lại ở ngoài transaction, request khác đổi mật khẩu (tv 0 → 1).
+      await h.users.changePassword({
+        id: alice.id,
+        oldHash: `h:${PASSWORD}`,
+        newHash: 'h:new-pass-123',
+        at: h.clock.now(),
+      });
+      return 'h2:rehash-of-old-password';
+    };
+    const { session } = await login.execute({
+      email: 'alice@example.com',
+      password: PASSWORD,
+      meta: META,
+    });
+    expect((await h.users.rows())[0]).toMatchObject({
+      passwordHash: 'h:new-pass-123',
+      tokenVersion: 1,
+    });
+    expect(decodeJwt(session.accessToken).tv).toBe(1); // token cũ tv=0 không được cấp lại
   });
 
   it('LOG-07: payload access token đúng claims, TTL 900, không role/workspace/email', async () => {

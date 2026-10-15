@@ -30,15 +30,69 @@ export class InMemoryUserRepository implements IUserRepository {
     return Promise.resolve();
   }
 
-  save(user: User): Promise<void> {
-    if (!this.#rows.has(user.id)) return Promise.reject(new Error(`User ${user.id} không tồn tại`));
-    this.#rows.set(user.id, user.toSnapshot());
-    return Promise.resolve();
+  getTokenVersion(userId: string): Promise<number | null> {
+    return Promise.resolve(this.#live(userId)?.tokenVersion ?? null);
   }
 
-  getTokenVersion(userId: string): Promise<number | null> {
-    const row = this.#rows.get(userId);
-    return Promise.resolve(row && row.deletedAt === null ? row.tokenVersion : null);
+  // Các lệnh intent (ADR-104): mỗi lệnh đọc-kiểm-ghi đồng bộ trên một dòng ⇒ nguyên tử như 1 câu UPDATE.
+
+  recordLogin(id: string, at: Date): Promise<number | null> {
+    const row = this.#live(id);
+    if (!row) return Promise.resolve(null);
+    this.#rows.set(id, { ...row, lastLoginAt: at, updatedAt: at });
+    return Promise.resolve(row.tokenVersion);
+  }
+
+  rehashPassword(input: {
+    id: string;
+    oldHash: string;
+    newHash: string;
+    at: Date;
+  }): Promise<boolean> {
+    const row = this.#live(input.id);
+    if (!row || row.passwordHash !== input.oldHash) return Promise.resolve(false);
+    this.#rows.set(input.id, { ...row, passwordHash: input.newHash, updatedAt: input.at });
+    return Promise.resolve(true);
+  }
+
+  changePassword(input: {
+    id: string;
+    oldHash: string;
+    newHash: string;
+    at: Date;
+  }): Promise<number | null> {
+    const row = this.#live(input.id);
+    if (!row || row.passwordHash !== input.oldHash) return Promise.resolve(null);
+    const tokenVersion = row.tokenVersion + 1;
+    this.#rows.set(input.id, {
+      ...row,
+      passwordHash: input.newHash,
+      passwordChangedAt: input.at,
+      tokenVersion,
+      updatedAt: input.at,
+    });
+    return Promise.resolve(tokenVersion);
+  }
+
+  bumpTokenVersion(id: string, at: Date): Promise<number | null> {
+    const row = this.#live(id);
+    if (!row) return Promise.resolve(null);
+    const tokenVersion = row.tokenVersion + 1;
+    this.#rows.set(id, { ...row, tokenVersion, updatedAt: at });
+    return Promise.resolve(tokenVersion);
+  }
+
+  updateProfile(input: { id: string; fullName: string; at: Date }): Promise<boolean> {
+    const row = this.#live(input.id);
+    if (!row) return Promise.resolve(false);
+    this.#rows.set(input.id, { ...row, fullName: input.fullName, updatedAt: input.at });
+    return Promise.resolve(true);
+  }
+
+  /** Dòng của user chưa xóa (mọi lệnh intent đều có điều kiện `deleted_at IS NULL`). */
+  #live(id: string): UserSnapshot | undefined {
+    const row = this.#rows.get(id);
+    return row && row.deletedAt === null ? row : undefined;
   }
 
   /** Cho test đọc trạng thái lưu trữ. */

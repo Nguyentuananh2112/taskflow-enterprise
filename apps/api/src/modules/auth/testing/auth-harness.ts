@@ -5,13 +5,18 @@ import {
   SpyEventBus,
   SpyLogger,
   createSpy,
+  type UowStep,
 } from '../../../../test/support';
+import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import { ACCESS_TOKEN_TTL_SECONDS } from '../application/auth-shared';
 import type { IAuthRealtimeNotifier } from '../application/ports/collaborators.port';
+import type { IRefreshTokenRepository } from '../application/ports/refresh-token-repository.port';
+import type { IUserRepository } from '../application/ports/user-repository.port';
 import { SessionIssuer } from '../application/session-issuer';
 import { Email } from '../domain/email';
 import { PasswordPolicy } from '../domain/password-policy';
-import { User } from '../domain/user';
+import type { RefreshTokenSnapshot } from '../domain/refresh-token';
+import { User, type UserSnapshot } from '../domain/user';
 import { InMemoryRefreshTokenRepository } from '../infrastructure/persistence/in-memory/in-memory-refresh-token.repository';
 import { InMemorySessionRevocationStore } from '../infrastructure/persistence/in-memory/in-memory-session-revocation.store';
 import { InMemoryUserRepository } from '../infrastructure/persistence/in-memory/in-memory-user.repository';
@@ -23,17 +28,36 @@ export const NOW = '2026-11-01T00:00:00.000Z';
 export const META = { userAgent: 'vitest', ip: '203.0.113.7' };
 export const PASSWORD = 'correct-horse-12';
 export const TEST_JWT_SECRET = 'test-only-jwt-secret-0123456789abcdef';
+/** Id hợp lệ (đúng dạng UUID) nhưng không tồn tại — repo Prisma từ chối chuỗi như "ghost". */
+export const GHOST_ID = '00000000-0000-4000-8000-0000000000ff';
+
+type Rows<T> = { rows(): T[] | Promise<T[]> };
+
+/** Phần lưu trữ — InMemory mặc định; integration truyền bản Prisma để chạy lại cùng bộ test (LSP, T-020). */
+export interface AuthBackend {
+  users: IUserRepository & Rows<UserSnapshot>;
+  refreshTokens: IRefreshTokenRepository & Rows<RefreshTokenSnapshot>;
+  uow: IUnitOfWork & {
+    readonly steps: UowStep[];
+    readonly commits: number;
+    readonly rollbacks: number;
+  };
+}
+
+export function inMemoryAuthBackend(): AuthBackend {
+  const users = new InMemoryUserRepository();
+  const refreshTokens = new InMemoryRefreshTokenRepository();
+  return { users, refreshTokens, uow: new FakeUnitOfWork(users, refreshTokens) };
+}
 
 /**
  * Lắp toàn bộ phụ thuộc của module auth cho test U (test-spec §0.2): InMemory repo đăng ký với
  * FakeUnitOfWork (rollback thật), JWT thật với FakeClock, refresh token thật.
  */
-export function createAuthHarness() {
+export function createAuthHarness(backend: AuthBackend = inMemoryAuthBackend()) {
   const clock = new FakeClock(NOW);
   const ids = new SequentialIdGenerator();
-  const users = new InMemoryUserRepository();
-  const refreshTokens = new InMemoryRefreshTokenRepository();
-  const uow = new FakeUnitOfWork(users, refreshTokens);
+  const { users, refreshTokens, uow } = backend;
   const store = new InMemorySessionRevocationStore();
   const refreshTokenFactory = new CryptoRefreshTokenFactory();
   const accessTokens = new JoseAccessTokenService(

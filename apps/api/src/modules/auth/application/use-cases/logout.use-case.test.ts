@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { ServiceUnavailableError } from '../../../../core/errors';
+
 import { createAuthHarness, type AuthHarness } from '../../testing/auth-harness';
 import { LogoutUseCase } from './logout.use-case';
 
@@ -17,7 +19,7 @@ describe('LogoutUseCase (security.md 1.5)', () => {
     const s1 = await h.seedSession(alice);
     const s2 = await h.seedSession(alice);
     await logout.execute({ refreshToken: s1.refreshToken });
-    const rows = h.refreshTokens.rows();
+    const rows = await h.refreshTokens.rows();
     expect(rows.find((r) => r.familyId === s1.familyId)?.revokedReason).toBe('LOGOUT');
     expect(rows.find((r) => r.familyId === s2.familyId)?.revokedAt).toBeNull();
     expect(h.store.revokedSessions.get(s1.familyId)).toBe(900);
@@ -39,11 +41,23 @@ describe('LogoutUseCase (security.md 1.5)', () => {
     await expect(logout.execute({ refreshToken: s1.refreshToken })).resolves.toBeUndefined();
   });
 
-  it('Valkey lỗi khi ghi sid-revoked ⇒ vẫn thành công (DB đã thu hồi), có log cảnh báo', async () => {
+  it('ADR-105 (fail-closed): Valkey lỗi khi ghi sid-revoked ⇒ 503 + rollback, family KHÔNG bị thu hồi, không ngắt socket', async () => {
     const s1 = await h.seedSession(await h.seedUser());
     h.store.failing = true;
-    await expect(logout.execute({ refreshToken: s1.refreshToken })).resolves.toBeUndefined();
-    expect(h.refreshTokens.rows()[0]?.revokedReason).toBe('LOGOUT');
-    expect(h.logger.messages('warn')).toContain('auth.session_cache_write_failed');
+    await expect(logout.execute({ refreshToken: s1.refreshToken })).rejects.toBeInstanceOf(
+      ServiceUnavailableError,
+    );
+    expect((await h.refreshTokens.rows())[0]?.revokedAt).toBeNull();
+    expect(h.uow.rollbacks).toBe(1);
+    expect(h.notifier.calls).toEqual([]);
+  });
+
+  it('ADR-105: ghi sid-revoked TRƯỚC commit và ghi lại SAU commit', async () => {
+    const s1 = await h.seedSession(await h.seedUser());
+    await logout.execute({ refreshToken: s1.refreshToken });
+    expect(h.store.ops).toEqual([
+      { op: 'revokeSession', sid: s1.familyId, ttlSeconds: 900 },
+      { op: 'revokeSession', sid: s1.familyId, ttlSeconds: 900 },
+    ]);
   });
 });

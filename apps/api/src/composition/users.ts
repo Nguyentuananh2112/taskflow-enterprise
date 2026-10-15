@@ -66,9 +66,29 @@ export class MirroringUserRepository implements IUserRepository {
     this.#reflect(user);
   }
 
-  async save(user: User): Promise<void> {
-    await this.inner.save(user);
-    this.#reflect(user);
+  // ADR-104 (T-020): lệnh intent thay cho save(user). Chỉ updateProfile đổi dữ liệu mà bản sao cần.
+  // TODO(D2 ẩn danh hóa user): lệnh soft-delete tương lai PHẢI gọi #reflect (bản sao loại user đã xóa).
+  recordLogin(id: string, at: Date) {
+    return this.inner.recordLogin(id, at);
+  }
+
+  rehashPassword(input: Parameters<IUserRepository['rehashPassword']>[0]) {
+    return this.inner.rehashPassword(input);
+  }
+
+  changePassword(input: Parameters<IUserRepository['changePassword']>[0]) {
+    return this.inner.changePassword(input);
+  }
+
+  bumpTokenVersion(id: string, at: Date) {
+    return this.inner.bumpTokenVersion(id, at);
+  }
+
+  async updateProfile(input: Parameters<IUserRepository['updateProfile']>[0]): Promise<boolean> {
+    const updated = await this.inner.updateProfile(input);
+    const user = updated ? await this.inner.findById(input.id) : null;
+    if (user) this.#reflect(user);
+    return updated;
   }
 
   getTokenVersion(userId: string) {

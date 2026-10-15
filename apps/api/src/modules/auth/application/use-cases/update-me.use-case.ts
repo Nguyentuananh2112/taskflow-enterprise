@@ -15,8 +15,12 @@ export class UpdateMeUseCase {
     return this.d.uow.run(async () => {
       const user = await this.d.users.findById(input.userId);
       if (!user || user.isDeleted) throw new UnauthorizedError();
-      user.rename(input.fullName, this.d.clock.now());
-      await this.d.users.save(user);
+      const now = this.d.clock.now();
+      user.rename(input.fullName, now); // aggregate chuẩn hóa + kiểm luật họ tên
+      // ADR-104: chỉ ghi full_name — không ghi đè token_version/mật khẩu bằng bản đã đọc.
+      if (!(await this.d.users.updateProfile({ id: user.id, fullName: user.fullName, at: now }))) {
+        throw new UnauthorizedError();
+      }
       return toUserView(user);
     });
   }

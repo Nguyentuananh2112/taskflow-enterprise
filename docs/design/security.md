@@ -86,7 +86,7 @@ sequenceDiagram
     A-->>C: 409 REFRESH_IN_PROGRESS (không cấp, không thu hồi)
   else revokedReason = ROTATED và cũ hơn 10s  ⇒ REUSE
     A->>DB: UPDATE refresh_tokens SET revoked_at=now, reason=REUSE_DETECTED WHERE family_id=? AND revoked_at IS NULL
-    A->>R: SET auth:sid-revoked:{familyId} 1 EX 900
+    A->>R: SET auth:sid-revoked:{familyId} 1 EX 900 (TRƯỚC commit — lỗi ⇒ 503 + rollback, ADR-105)
     A->>A: log cảnh báo security (userId, familyId, ip, ua — không log token)
     A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
   else hết hạn (expiresAt hoặc familyExpiresAt) / user deletedAt
@@ -110,13 +110,13 @@ sequenceDiagram
 
 Cookie + kiểm tra `Origin`. Không cần access token (có thể đã hết hạn). **Luôn `204`** (idempotent), luôn xóa cookie.
 1. Có cookie và tìm thấy token → thu hồi **cả family** (`reason = LOGOUT`, chỉ các dòng `revokedAt IS NULL`).
-2. `SET auth:sid-revoked:{familyId} 1 EX 900` → access token đang lưu hành của phiên này chết ngay (không đợi 15 phút).
+2. **Trong transaction, TRƯỚC commit** (ADR-105): `SET auth:sid-revoked:{familyId} 1 EX 900` → access token đang lưu hành của phiên này chết ngay (không đợi 15 phút). Ghi lỗi ⇒ `503 SERVICE_UNAVAILABLE` + rollback (family **không** bị thu hồi nửa vời; client thử lại). Sau commit ghi lại lần nữa (best-effort).
 3. Socket: `io.in('session:{familyId}').disconnectSockets(true)`.
 
 ### 1.6 Logout mọi thiết bị — `POST /api/v1/auth/logout-all` (Bearer)
 
-1. Transaction: `UPDATE users SET token_version = token_version + 1 … RETURNING token_version`; thu hồi mọi refresh token còn sống của user (`reason = LOGOUT_ALL`).
-2. Sau commit: `SET auth:tv:{userId} <newTv> EX 3600` (write-through, ghi đè vô điều kiện — xem 2.4).
+1. Transaction: `UPDATE users SET token_version = token_version + 1 … RETURNING token_version` (lệnh nguyên tử — ADR-104, không đọc-rồi-ghi cả aggregate); thu hồi mọi refresh token còn sống của user (`reason = LOGOUT_ALL`).
+2. **Vẫn trong transaction, TRƯỚC commit** (ADR-105): `SET auth:tv:{userId} <newTv> EX 60` (ghi đè vô điều kiện; `newTv` lấy từ `RETURNING`). Ghi lỗi ⇒ `503` + rollback. Sau commit ghi lại lần nữa (best-effort) — xem 2.4.
 3. `io.in('user:{userId}').disconnectSockets(true)`.
 4. `204` + xóa cookie. Mọi access token có `tv` cũ bị từ chối ngay ở request kế tiếp (`401 UNAUTHORIZED`).
 
@@ -125,8 +125,8 @@ Cookie + kiểm tra `Origin`. Không cần access token (có thể đã hết h�
 Body `{ currentPassword, newPassword }`. Rate limit 5/15 phút/user.
 1. `verify(currentPassword)` sai → `400 INVALID_CURRENT_PASSWORD` (cố ý không dùng 401 để interceptor FE không nhầm là hết hạn token).
 2. `newPassword` qua chính sách 6.4 và phải khác mật khẩu cũ.
-3. Hash mới ngoài transaction. Transaction: cập nhật `passwordHash`, `passwordChangedAt`, `tokenVersion + 1`; thu hồi **mọi** refresh token (`reason = PASSWORD_CHANGED`); tạo family mới cho thiết bị hiện tại.
-4. Sau commit: `SET auth:tv:{userId}`, ngắt mọi socket của user (`user:{userId}`) — tab hiện tại tự kết nối lại bằng token mới.
+3. Hash mới ngoài transaction. Transaction: **một câu lệnh có điều kiện** (ADR-104) `UPDATE users SET password_hash = $new, password_changed_at = now, token_version = token_version + 1 WHERE id = $id AND password_hash = $hashVừaVerify AND deleted_at IS NULL RETURNING token_version`. Không khớp dòng nào (mật khẩu vừa bị đổi ở request khác) ⇒ `400 INVALID_CURRENT_PASSWORD`, không đổi gì. Rồi thu hồi **mọi** refresh token (`reason = PASSWORD_CHANGED`); tạo family mới cho thiết bị hiện tại, ký access token bằng `tv` mới từ `RETURNING`.
+4. **Trước commit** (ADR-105): `SET auth:tv:{userId} <newTv> EX 60`; lỗi ⇒ `503` + rollback (mật khẩu cũ vẫn hiệu lực). Sau commit: ghi lại (best-effort), ngắt mọi socket của user (`user:{userId}`) — tab hiện tại tự kết nối lại bằng token mới.
 5. `200 {accessToken, expiresIn}` + Set-Cookie mới.
 
 **Phải thu hồi:** mọi refresh token, mọi access token (qua `tv`), mọi socket. Lý do: đổi mật khẩu thường là phản ứng khi nghi bị lộ.
@@ -199,11 +199,14 @@ Valkey (giấy phép BSD) thay Redis, client `node-redis` 6 (ADR-060). Tên key 
 
 | Key | Giá trị | TTL | Ghi bởi | Đọc bởi |
 |---|---|---|---|---|
-| `auth:tv:{userId}` | token_version (int) | 3600s | logout-all, đổi mật khẩu, xóa user: `SET … EX 3600` (vô điều kiện) **sau commit**. Đọc miss: load DB rồi `SET … EX 3600 NX` | middleware HTTP + socket |
-| `auth:sid-revoked:{familyId}` | `1` | 900s (= TTL access token) | logout, reuse detected | middleware HTTP + socket |
+| `auth:tv:{userId}` | token_version (int) | **60s** (ADR-105) | logout-all, đổi mật khẩu, xóa user: `SET … EX 60` (vô điều kiện) **TRƯỚC commit**, rồi ghi lại sau commit. Đọc miss (read-through): load DB rồi **chỉ** `SET … EX 60 NX` | middleware HTTP + socket |
+| `auth:sid-revoked:{familyId}` | `1` | 900s (= TTL access token) | logout, reuse detected — **TRƯỚC commit**, rồi ghi lại sau commit | middleware HTTP + socket |
 | `rl:{rule}:{key}` | bộ đếm | theo cửa sổ | rate-limit store | rate-limit |
 
-- Writer `SET` vô điều kiện còn reader `SET NX`: nếu reader đọc giá trị DB cũ trước khi writer commit, writer luôn ghi đè sau đó → không giữ giá trị cũ suốt TTL.
+- **Thu hồi fail-closed (ADR-105, finding A3 của QA):** giá trị thu hồi (`tv` mới, `sid-revoked`) được ghi vào Valkey **bên trong transaction, trước commit**. Ghi lỗi ⇒ `503 SERVICE_UNAVAILABLE` và rollback — không bao giờ có trạng thái "DB đã thu hồi nhưng cache vẫn cho token cũ qua". Sau commit ghi lại lần nữa (best-effort, chỉ log cảnh báo nếu lỗi).
+  - Ghi trước commit nhưng transaction lại rollback ⇒ cache tạm "thu hồi quá tay" (token hợp lệ bị 401 tối đa 60s / 900s): chấp nhận được vì là hướng **an toàn**.
+  - **Không dùng "DEL trước commit"**: request đọc xen giữa (cache miss) sẽ nạp lại `tv` CŨ từ DB chưa commit, và giá trị cũ đó sống tới hết TTL.
+- Writer `SET` vô điều kiện còn reader `SET NX`: read-through **không bao giờ** đè giá trị writer đã đặt; writer ghi lại sau commit đè mọi giá trị cũ còn sót. TTL `auth:tv` ngắn (60s) giới hạn thời gian một giá trị cũ có thể sống trong trường hợp xấu nhất.
 - Middleware gọi `MGET auth:tv:{sub} auth:sid-revoked:{sid}` — **1 round-trip** mỗi request.
 - **Valkey lỗi:** `tv` fallback đọc DB (ADR-025); `sid-revoked` fallback `SELECT 1 FROM refresh_tokens WHERE family_id = $sid AND revoked_reason IN ('LOGOUT','REUSE_DETECTED') LIMIT 1` (dùng index `family_id`). DB cũng lỗi → `503 SERVICE_UNAVAILABLE` (fail-closed). Log cảnh báo khi đang ở chế độ fallback.
 - Email trong key rate-limit được băm SHA-256 (không lưu email thô trong Valkey).
@@ -595,7 +598,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-21 | Sau logout-all: access token cũ (còn hạn) + mọi refresh token của user | 401 UNAUTHORIZED / 401 REFRESH_TOKEN_INVALID; socket của user bị ngắt |
 | SEC-22 | Sau logout 1 thiết bị: access token của phiên đó vs phiên khác | Phiên đó 401; phiên khác vẫn 200 |
 | SEC-23 | Sau đổi mật khẩu: phiên khác (access + refresh) / phiên hiện tại dùng token mới | 401 / 200 |
-| SEC-24 | Logout-all khi Valkey tắt | Access token cũ vẫn bị từ chối (fallback DB) |
+| SEC-24 | Logout-all khi Valkey tắt | `503`, không thu hồi gì (ADR-105 — fail-closed, thử lại khi Valkey sống); nếu Valkey chỉ lỗi khi ĐỌC: access token cũ vẫn bị từ chối (fallback DB) |
 | SEC-25 | JWT `alg: none`, ký bằng secret sai, sửa `sub`, thiếu `tv`, sai `iss`/`aud` | 401 UNAUTHORIZED |
 | SEC-26 | JWT hết hạn | 401 TOKEN_EXPIRED |
 | SEC-27 | Login email không tồn tại vs sai mật khẩu | cùng status, code, message; chênh lệch thời gian trung vị < 50ms (đo 20 lần) |

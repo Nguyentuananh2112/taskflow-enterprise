@@ -4,7 +4,10 @@ import { ForbiddenError, ResourceNotFoundError, ValidationError } from '../../..
 import { WORKSPACE_PURGE_GRACE_MS } from '../../domain/workspace';
 import {
   createWorkspaceHarness,
+  GHOST_ID,
   givenWorkspaceA,
+  pid,
+  uid,
   type WorkspaceHarness,
 } from '../../testing/harness';
 import { DeleteWorkspaceUseCase } from './delete-workspace.use-case';
@@ -36,7 +39,7 @@ async function deleteA() {
 
 describe('DeleteWorkspaceUseCase (ADR-047)', () => {
   it('WSD-01: xóa mềm, purgeAt = +30 ngày, giữ nguyên member/project; closeWorkspace SAU commit', async () => {
-    const before = { members: h.memberships.rows().length, projects: 0 };
+    const before = { members: (await h.memberships.rows()).length, projects: 0 };
     const view = await deleteA();
     expect(view).toEqual({
       id: ctx.A,
@@ -45,17 +48,19 @@ describe('DeleteWorkspaceUseCase (ADR-047)', () => {
       deletedAt: h.clock.now(),
       purgeAt: new Date(h.clock.now().getTime() + WORKSPACE_PURGE_GRACE_MS),
     });
-    expect(h.workspaces.rows().find((w) => w.id === ctx.A)?.deletedById).toBe(ctx.alice.userId);
-    expect(h.memberships.rows()).toHaveLength(before.members);
-    expect(h.projects.rows()).toHaveLength(2);
+    expect((await h.workspaces.rows()).find((w) => w.id === ctx.A)?.deletedById).toBe(
+      ctx.alice.userId,
+    );
+    expect(await h.memberships.rows()).toHaveLength(before.members);
+    expect(await h.projects.rows()).toHaveLength(2);
     expect(h.notifier.calls).toEqual([
       {
         method: 'closeWorkspace',
         args: [
           {
             workspaceId: ctx.A,
-            projectIds: ['p-web', 'p-old'],
-            memberUserIds: ['user-alice', 'user-pam', 'user-mia', 'user-vic'],
+            projectIds: [pid('WEB'), pid('OLD')],
+            memberUserIds: [uid('alice'), uid('pam'), uid('mia'), uid('vic')],
           },
           { actorId: ctx.alice.userId, originClientId: 'tab-1' },
         ],
@@ -69,7 +74,7 @@ describe('DeleteWorkspaceUseCase (ADR-047)', () => {
       new DeleteWorkspaceUseCase(h).execute(ctx.alice, { confirmSlug: 'ACME' }),
     );
     expect(err).toBeInstanceOf(ValidationError);
-    expect(h.workspaces.rows().find((w) => w.id === ctx.A)?.deletedAt).toBeNull();
+    expect((await h.workspaces.rows()).find((w) => w.id === ctx.A)?.deletedAt).toBeNull();
     expect(h.notifier.calls).toEqual([]);
   });
 
@@ -97,7 +102,7 @@ describe('RestoreWorkspaceUseCase (ADR-050, security.md 3.6)', () => {
     h.clock.advance(10 * DAY);
     const view = await restore(ctx.alice.userId);
     expect(view).toMatchObject({ id: ctx.A, slug: 'acme', myRole: 'OWNER' });
-    expect(h.workspaces.rows().find((w) => w.id === ctx.A)).toMatchObject({
+    expect((await h.workspaces.rows()).find((w) => w.id === ctx.A)).toMatchObject({
       deletedAt: null,
       purgeAt: null,
       deletedById: null,
@@ -114,13 +119,13 @@ describe('RestoreWorkspaceUseCase (ADR-050, security.md 3.6)', () => {
   it('WSR-02 (mức U): PM/MEMBER/VIEWER/người ngoài ⇒ cùng một lỗi 404 workspace (không 403)', async () => {
     await deleteA();
     const errors = await Promise.all(
-      ['user-pam', 'user-mia', 'user-vic', 'user-bob', 'user-ghost'].map((u) => caught(restore(u))),
+      [uid('pam'), uid('mia'), uid('vic'), uid('bob'), GHOST_ID].map((u) => caught(restore(u))),
     );
     for (const err of errors) {
       expect(err).toBeInstanceOf(ResourceNotFoundError);
       expect((err as ResourceNotFoundError).details).toEqual({ resource: 'workspace' });
     }
-    expect(h.workspaces.rows().find((w) => w.id === ctx.A)?.deletedAt).not.toBeNull();
+    expect((await h.workspaces.rows()).find((w) => w.id === ctx.A)?.deletedAt).not.toBeNull();
   });
 
   it('WSR-03 (mức U): ws chưa xóa ⇒ 404', async () => {
@@ -131,7 +136,7 @@ describe('RestoreWorkspaceUseCase (ADR-050, security.md 3.6)', () => {
     await deleteA();
     h.clock.advance(30 * DAY);
     expect(await caught(restore(ctx.alice.userId))).toBeInstanceOf(ResourceNotFoundError);
-    expect(h.workspaces.rows().find((w) => w.id === ctx.A)?.deletedAt).not.toBeNull();
+    expect((await h.workspaces.rows()).find((w) => w.id === ctx.A)?.deletedAt).not.toBeNull();
   });
 
   it('WSR-05 (mức U): purge vừa xóa cứng giữa lúc đọc và UPDATE ⇒ 404 (UPDATE có điều kiện)', async () => {
@@ -149,9 +154,9 @@ describe('PurgeDeletedWorkspacesJob (ADR-095)', () => {
     expect(await job.execute()).toEqual({ purged: 0, skipped: 0 });
     h.clock.advance(30 * DAY);
     expect(await job.execute()).toEqual({ purged: 1, skipped: 0 });
-    expect(h.workspaces.rows().map((w) => w.id)).toEqual([ctx.B]);
-    expect(h.memberships.rows().every((m) => m.workspaceId === ctx.B)).toBe(true);
-    expect(h.projects.rows()).toEqual([]);
+    expect((await h.workspaces.rows()).map((w) => w.id)).toEqual([ctx.B]);
+    expect((await h.memberships.rows()).every((m) => m.workspaceId === ctx.B)).toBe(true);
+    expect(await h.projects.rows()).toEqual([]);
     expect(await job.execute()).toEqual({ purged: 0, skipped: 0 });
     expect(h.logger.messages('info')).toContain('workspace.purged');
   });
@@ -166,13 +171,13 @@ describe('PurgeDeletedWorkspacesJob (ADR-095)', () => {
   it('xử lý theo lô (batchSize)', async () => {
     await deleteA();
     const ws = await h.workspaces.findById(ctx.B);
-    ws?.softDelete('user-bob', h.clock.now());
+    ws?.softDelete(uid('bob'), h.clock.now());
     if (ws) await h.workspaces.save(ws);
     h.clock.advance(31 * DAY);
     expect(await new PurgeDeletedWorkspacesJob(h).execute({ batchSize: 1 })).toEqual({
       purged: 1,
       skipped: 0,
     });
-    expect(h.workspaces.rows()).toHaveLength(1);
+    expect(await h.workspaces.rows()).toHaveLength(1);
   });
 });

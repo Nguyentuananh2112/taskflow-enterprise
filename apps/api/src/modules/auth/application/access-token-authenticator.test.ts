@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ServiceUnavailableError,
@@ -102,7 +102,7 @@ describe('AccessTokenAuthenticator (security.md 2.5)', () => {
     expect(h.logger.messages('warn')).toContain('auth.session_cache_unavailable');
     const user = await h.users.findById(alice.id);
     user?.revokeAllSessions(h.clock.now());
-    if (user) await h.users.save(user);
+    if (user) await h.users.bumpTokenVersion(user.id, h.clock.now());
     expect(await reject(header)).toBeInstanceOf(UnauthorizedError);
   });
 
@@ -139,5 +139,19 @@ describe('AccessTokenAuthenticator (security.md 2.5)', () => {
     h.store.primeTokenVersion = () => Promise.reject(new Error('valkey write failed'));
     await expect(auth.authenticate(header)).resolves.toBeDefined();
     expect(h.logger.messages('warn')).toContain('auth.session_cache_write_failed');
+  });
+
+  it.each(['xBearer tok', 'Bearer tok extra', 'Bearer'])(
+    'QA B.4: header %j ⇒ 401 và KHÔNG gọi accessTokens.verify',
+    async (header) => {
+      const verify = vi.spyOn(h.accessTokens, 'verify');
+      expect(await reject(header)).toBeInstanceOf(UnauthorizedError);
+      expect(verify).not.toHaveBeenCalled();
+    },
+  );
+
+  it('QA B.4: "bearer   <token>" (nhiều khoảng trắng, chữ thường) ⇒ qua', async () => {
+    const { session } = await signedIn();
+    await expect(auth.authenticate(`bearer   ${session.accessToken}`)).resolves.toBeDefined();
   });
 });

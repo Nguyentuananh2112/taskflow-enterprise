@@ -46,12 +46,22 @@ export class LoginUseCase {
       ? await this.d.hasher.hash(input.password)
       : null;
 
+    // ADR-104: chỉ ghi đúng những cột login được phép đổi, bằng lệnh nguyên tử — không ghi đè
+    // thay đổi đồng thời (đổi mật khẩu / đăng xuất mọi nơi) xảy ra trong lúc verify argon2.
     return this.d.uow.run(async () => {
       const now = this.d.clock.now();
-      if (rehashed !== null) user.replacePasswordHash(rehashed, now);
-      user.recordLogin(now);
-      await this.d.users.save(user);
-      const session = await this.d.issuer.startNew(user, input.meta);
+      if (rehashed !== null) {
+        // Có điều kiện password_hash = hash đã verify: mật khẩu vừa bị đổi ⇒ bỏ qua, không hồi sinh hash cũ.
+        await this.d.users.rehashPassword({
+          id: user.id,
+          oldHash: user.passwordHash,
+          newHash: rehashed,
+          at: now,
+        });
+      }
+      const tokenVersion = await this.d.users.recordLogin(user.id, now);
+      if (tokenVersion === null) throw new InvalidCredentialsError(); // user bị xóa trong lúc verify
+      const session = await this.d.issuer.startNew({ id: user.id, tokenVersion }, input.meta);
       return { session, user: toUserView(user) };
     });
   }

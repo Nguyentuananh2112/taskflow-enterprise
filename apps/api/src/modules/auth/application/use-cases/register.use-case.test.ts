@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { EmailAlreadyExistsError, InternalError, ValidationError } from '../../../../core/errors';
+import {
+  EmailAlreadyExistsError,
+  InternalError,
+  ResourceConflictError,
+  ValidationError,
+} from '../../../../core/errors';
 import {
   createAuthHarness,
   META,
@@ -37,7 +42,7 @@ describe('RegisterUseCase', () => {
   it('REG-01: một transaction tạo user + workspace + phiên (family mới, hạn 7d/30d)', async () => {
     const result = await register.execute(input());
     expect(h.uow.commits).toBe(1);
-    expect(h.users.rows()).toHaveLength(1);
+    expect(await h.users.rows()).toHaveLength(1);
     expect(h.provisioner.calls).toEqual([
       {
         input: { ownerId: result.user.id, ownerFullName: 'Alice Nguyen', attempt: 0 },
@@ -45,7 +50,7 @@ describe('RegisterUseCase', () => {
       },
     ]);
     expect(result.defaultWorkspaceId).toBe('ws-1');
-    const [token] = h.refreshTokens.rows();
+    const [token] = await h.refreshTokens.rows();
     expect(token).toMatchObject({
       userId: result.user.id,
       familyId: result.session.familyId,
@@ -74,11 +79,17 @@ describe('RegisterUseCase', () => {
 
   it('REG-03: email đã tồn tại (khác hoa thường) ⇒ 409, không tạo thêm gì, không publish', async () => {
     await register.execute(input());
-    const before = { users: h.users.rows().length, tokens: h.refreshTokens.rows().length };
+    const before = {
+      users: (await h.users.rows()).length,
+      tokens: (await h.refreshTokens.rows()).length,
+    };
     await expect(register.execute(input({ email: 'ALICE@example.com' }))).rejects.toBeInstanceOf(
       EmailAlreadyExistsError,
     );
-    expect({ users: h.users.rows().length, tokens: h.refreshTokens.rows().length }).toEqual(before);
+    expect({
+      users: (await h.users.rows()).length,
+      tokens: (await h.refreshTokens.rows()).length,
+    }).toEqual(before);
     expect(h.uow.rollbacks).toBe(1);
     expect(h.provisioner.calls).toHaveLength(1); // lần 2 dừng ở unique constraint, chưa tới workspace
     expect(h.events.types()).toEqual(['UserRegistered']);
@@ -124,7 +135,7 @@ describe('RegisterUseCase', () => {
     const evil = { ...input(), tokenVersion: 99, role: 'OWNER', id: 'attacker-id' };
     const result = await register.execute(evil);
     expect(result.user.id).not.toBe('attacker-id');
-    expect(h.users.rows()[0]?.tokenVersion).toBe(0);
+    expect((await h.users.rows())[0]?.tokenVersion).toBe(0);
   });
 
   it('REG-10: hash() được gọi TRƯỚC begin, không trong transaction', async () => {
@@ -137,8 +148,8 @@ describe('RegisterUseCase', () => {
     const result = await register.execute(input());
     expect(h.provisioner.calls.map((c) => c.input.attempt)).toEqual([0, 1, 2]);
     expect(h.uow.steps).toEqual(['begin', 'rollback', 'begin', 'rollback', 'begin', 'commit']);
-    expect(h.users.rows().map((u) => u.id)).toEqual([result.user.id]);
-    expect(h.refreshTokens.rows()).toHaveLength(1);
+    expect((await h.users.rows()).map((u) => u.id)).toEqual([result.user.id]);
+    expect(await h.refreshTokens.rows()).toHaveLength(1);
     expect(h.hasher.calls.filter((c) => c.method === 'hash')).toHaveLength(1); // không băm lại
   });
 
@@ -146,13 +157,23 @@ describe('RegisterUseCase', () => {
     h.provisioner.slugConflicts = MAX_REGISTER_ATTEMPTS;
     await expect(register.execute(input())).rejects.toBeInstanceOf(InternalError);
     expect(h.provisioner.calls).toHaveLength(MAX_REGISTER_ATTEMPTS);
-    expect(h.users.rows()).toEqual([]);
-    expect(h.refreshTokens.rows()).toEqual([]);
+    expect(await h.users.rows()).toEqual([]);
+    expect(await h.refreshTokens.rows()).toEqual([]);
     expect(h.events.published).toEqual([]);
   });
 
   it('REG-13: provisioner nhận họ tên, KHÔNG nhận email (slug không thể lộ email)', async () => {
     await register.execute(input());
     expect(JSON.stringify(h.provisioner.calls)).not.toContain('example.com');
+  });
+
+  it('QA B.4: ResourceConflictError KHÁC slug (vd field name) ⇒ ném lại ngay, không thử lại', async () => {
+    const calls: number[] = [];
+    h.provisioner.provisionDefault = (input) => {
+      calls.push(input.attempt);
+      return Promise.reject(new ResourceConflictError({ reason: 'taken', field: 'name' }));
+    };
+    await expect(register.execute(input())).rejects.toBeInstanceOf(ResourceConflictError);
+    expect(calls).toEqual([0]);
   });
 });

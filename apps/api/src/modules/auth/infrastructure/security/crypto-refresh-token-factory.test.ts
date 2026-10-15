@@ -38,4 +38,10 @@ describe('CryptoRefreshTokenFactory (security.md 2.2)', () => {
   ])('matches với %s ⇒ false, không ném lỗi', (_label, badHash) => {
     expect(factory.matches(factory.generate().token, badHash)).toBe(false);
   });
+
+  it('QA B.4: regex hash có neo ^…$ — tiền tố/hậu tố lạ quanh hash hợp lệ ⇒ false', () => {
+    const { token, hash } = factory.generate();
+    expect(factory.matches(token, `x${hash}`)).toBe(false);
+    expect(factory.matches(token, `${hash}x`)).toBe(false);
+  });
 });

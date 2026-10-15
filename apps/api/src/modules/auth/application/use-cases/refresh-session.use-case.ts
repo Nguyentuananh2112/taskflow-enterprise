@@ -3,7 +3,13 @@ import { RefreshInProgressError, RefreshTokenInvalidError } from '../../../../co
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { RefreshToken, SessionMeta } from '../../domain/refresh-token';
-import { ACCESS_TOKEN_TTL_SECONDS, bestEffort, toUserView, type UserView } from '../auth-shared';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  bestEffort,
+  toUserView,
+  writeRevocationOrFail,
+  type UserView,
+} from '../auth-shared';
 import type { IAuthRealtimeNotifier } from '../ports/collaborators.port';
 import type { IRefreshTokenFactory } from '../ports/refresh-token-factory.port';
 import type { IRefreshTokenRepository } from '../ports/refresh-token-repository.port';
@@ -73,6 +79,10 @@ export class RefreshSessionUseCase {
     const { familyId, userId } = token;
     await this.d.uow.run(async () => {
       await this.d.refreshTokens.revokeFamily(familyId, 'REUSE_DETECTED', now);
+      // ADR-105: chặn access token của family bị lộ TRƯỚC commit; lỗi ⇒ 503 + rollback.
+      await writeRevocationOrFail(() =>
+        this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
+      );
       this.d.uow.afterCommit(async () => {
         this.d.logger.warn({ userId, familyId }, 'refresh.reuse_detected');
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { familyId }, () =>

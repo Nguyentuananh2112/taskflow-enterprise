@@ -290,7 +290,7 @@
 | REM-04 | U | — | Vic tự rời (`userId` = Vic) | `200` (min role VIEWER đủ cho tự rời) | |
 | REM-05 | U, I | Alice là OWNER duy nhất | Alice tự rời | `422 LAST_OWNER`; membership còn nguyên | SEC-15 |
 | REM-06 | U | A có Alice, Olga là OWNER | Alice xóa Olga | `200` | |
-| REM-07 | I | A có đúng 2 OWNER | (a) Alice hạ Olga + Olga tự rời đồng thời; (b) Alice xóa Olga + Olga xóa Alice đồng thời (lặp 20 lần mỗi biến thể) | Mỗi lần còn ≥ 1 OWNER; đúng 1 thao tác thành công; không deadlock | SEC-46 |
+| REM-07 | I | A có đúng 2 OWNER | (a) Alice hạ Olga + **Alice** tự rời đồng thời (nếu cả hai thành công thì không còn OWNER — "Alice hạ Olga + Olga tự rời" không bao giờ về 0 OWNER nên không kiểm được luật, sửa ở T-020); (b) Alice xóa Olga + Olga xóa Alice đồng thời (lặp 20 lần mỗi biến thể) | Mỗi lần còn ≥ 1 OWNER; đúng 1 thao tác thành công; không deadlock | SEC-46 |
 | REM-08 | I | Mia có access token còn hạn | Pam xóa Mia; Mia gọi `GET ws/projects` ngay sau đó | 404 chuẩn (membership đọc DB mỗi request) | SEC-16 |
 | REM-09 | I | Mia ở phòng `project:P1` | Pam xóa Mia | Mia nhận `workspace:access-revoked`, rời phòng, không nhận `task:*` tiếp theo | SEC-37 |
 | REM-10 | U, I | — | Xóa `userId` không thuộc A | 404 chuẩn | |

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { UnauthorizedError, ValidationError } from '../../../../core/errors';
-import { createAuthHarness, type AuthHarness } from '../../testing/auth-harness';
+import { type AuthHarness, createAuthHarness, GHOST_ID } from '../../testing/auth-harness';
 import { GetMeQuery } from './get-me.query';
 import { UpdateMeUseCase } from './update-me.use-case';
 
@@ -33,7 +33,7 @@ describe('GetMeQuery (security.md 1.8)', () => {
 
   it('user không tồn tại / đã xóa ⇒ 401', async () => {
     const gone = await h.seedUser('gone@example.com', { deleted: true });
-    await expect(new GetMeQuery(h).execute({ userId: 'ghost' })).rejects.toBeInstanceOf(
+    await expect(new GetMeQuery(h).execute({ userId: GHOST_ID })).rejects.toBeInstanceOf(
       UnauthorizedError,
     );
     await expect(new GetMeQuery(h).execute({ userId: gone.id })).rejects.toBeInstanceOf(
@@ -51,8 +51,10 @@ describe('UpdateMeUseCase (ADR-083)', () => {
       fullName: '  Alice Tran ',
     });
     expect(view.fullName).toBe('Alice Tran');
-    expect(h.users.rows()[0]).toMatchObject({ fullName: 'Alice Tran', tokenVersion: 0 });
-    expect(h.refreshTokens.rows().find((r) => r.familyId === s1.familyId)?.revokedAt).toBeNull();
+    expect((await h.users.rows())[0]).toMatchObject({ fullName: 'Alice Tran', tokenVersion: 0 });
+    expect(
+      (await h.refreshTokens.rows()).find((r) => r.familyId === s1.familyId)?.revokedAt,
+    ).toBeNull();
     expect(h.uow.commits).toBe(2);
   });
 
@@ -63,7 +65,7 @@ describe('UpdateMeUseCase (ADR-083)', () => {
         new UpdateMeUseCase(h).execute({ userId: alice.id, fullName }),
       ).rejects.toBeInstanceOf(ValidationError);
     }
-    expect(h.users.rows()[0]?.fullName).toBe('Alice Nguyen');
+    expect((await h.users.rows())[0]?.fullName).toBe('Alice Nguyen');
   });
 
   it('ME-03: field lạ (email, tokenVersion, id) bị bỏ qua — chỉ fullName được đổi', async () => {
@@ -76,7 +78,7 @@ describe('UpdateMeUseCase (ADR-083)', () => {
       id: 'x',
     };
     await new UpdateMeUseCase(h).execute(evil);
-    expect(h.users.rows()[0]).toMatchObject({
+    expect((await h.users.rows())[0]).toMatchObject({
       id: alice.id,
       email: 'alice@example.com',
       tokenVersion: 0,
@@ -85,7 +87,7 @@ describe('UpdateMeUseCase (ADR-083)', () => {
 
   it('user không tồn tại ⇒ 401', async () => {
     await expect(
-      new UpdateMeUseCase(h).execute({ userId: 'ghost', fullName: 'X' }),
+      new UpdateMeUseCase(h).execute({ userId: GHOST_ID, fullName: 'X' }),
     ).rejects.toBeInstanceOf(UnauthorizedError);
   });
 });

@@ -1,0 +1,130 @@
+// Cổng nghiệm thu A4 của QA (ADR-104) trên Postgres thật: login chạy song song với đổi mật khẩu /
+// đăng xuất mọi nơi — không lost update, token_version không bao giờ lùi. Lặp 20 lần, mỗi lần dữ liệu mới.
+import { decodeJwt } from 'jose';
+import { afterAll, describe, expect, it } from 'vitest';
+
+import { AccessTokenAuthenticator } from '../../../src/modules/auth/application/access-token-authenticator';
+import { ChangePasswordUseCase } from '../../../src/modules/auth/application/use-cases/change-password.use-case';
+import { LoginUseCase } from '../../../src/modules/auth/application/use-cases/login.use-case';
+import { LogoutAllUseCase } from '../../../src/modules/auth/application/use-cases/logout-all.use-case';
+import { META, PASSWORD, createAuthHarness } from '../../../src/modules/auth/testing/auth-harness';
+import { prismaAuthBackend } from '../support/prisma-backends';
+import { disconnectTestPrisma, resetDatabase, testPrisma } from '../support/prisma-test-kit';
+
+const RUNS = 20;
+const RACE_TIMEOUT = 300_000;
+const NEW_PASSWORD = 'brand-new-passphrase-7';
+afterAll(disconnectTestPrisma);
+
+/** Harness Prisma + verify chậm ~25ms (mô phỏng cửa sổ argon2 — nơi lost update từng xảy ra). */
+async function fresh() {
+  await resetDatabase();
+  const h = createAuthHarness(prismaAuthBackend());
+  const verify = h.hasher.verify.bind(h.hasher);
+  h.hasher.verify = async (hashed, password) => {
+    await new Promise((r) => setTimeout(r, 25));
+    return verify(hashed, password);
+  };
+  const alice = await h.seedUser();
+  return { h, alice };
+}
+
+const userRow = (id: string) =>
+  testPrisma().user.findUniqueOrThrow({
+    where: { id },
+    select: { passwordHash: true, tokenVersion: true },
+  });
+
+describe('SEC-23b: login ‖ change-password (A4)', () => {
+  it(
+    `mật khẩu mới luôn được giữ, tv = 1, login không bao giờ hồi sinh hash cũ (×${RUNS})`,
+    async () => {
+      for (let i = 0; i < RUNS; i += 1) {
+        const { h, alice } = await fresh();
+        h.hasher.rehashNeeded = true; // nhánh nguy hiểm nhất: login cũng GHI password_hash
+        const [login, change] = await Promise.allSettled([
+          new LoginUseCase(h).execute({
+            email: 'alice@example.com',
+            password: PASSWORD,
+            meta: META,
+          }),
+          new ChangePasswordUseCase(h).execute({
+            userId: alice.id,
+            currentPassword: PASSWORD,
+            newPassword: NEW_PASSWORD,
+            meta: META,
+          }),
+        ]);
+        expect(change?.status).toBe('fulfilled');
+        expect(await userRow(alice.id)).toEqual({
+          passwordHash: `h:${NEW_PASSWORD}`,
+          tokenVersion: 1,
+        });
+        // Mật khẩu mới dùng được, mật khẩu cũ thì không.
+        await expect(
+          new LoginUseCase(h).execute({
+            email: 'alice@example.com',
+            password: NEW_PASSWORD,
+            meta: META,
+          }),
+        ).resolves.toBeDefined();
+        await expect(
+          new LoginUseCase(h).execute({
+            email: 'alice@example.com',
+            password: PASSWORD,
+            meta: META,
+          }),
+        ).rejects.toThrow();
+        // Login song song (nếu thành công) chỉ có thể ký tv khớp DB tại thời điểm của nó; token tv cũ bị từ chối.
+        if (login?.status === 'fulfilled') {
+          const tv = decodeJwt(login.value.session.accessToken).tv;
+          const ok = await new AccessTokenAuthenticator(h)
+            .authenticate(`Bearer ${login.value.session.accessToken}`)
+            .then(
+              () => true,
+              () => false,
+            );
+          expect(ok).toBe(tv === 1);
+        }
+      }
+    },
+    RACE_TIMEOUT,
+  );
+});
+
+describe('SEC-21c: login ‖ logout-all (A4)', () => {
+  it(
+    `tv kết thúc = 1 (không lùi); token của login chỉ hợp lệ nếu được ký SAU khi tăng tv (×${RUNS})`,
+    async () => {
+      for (let i = 0; i < RUNS; i += 1) {
+        const { h, alice } = await fresh();
+        const before = await h.seedSession(alice); // phiên có từ trước phải bị thu hồi
+        const [login, logoutAll] = await Promise.allSettled([
+          new LoginUseCase(h).execute({
+            email: 'alice@example.com',
+            password: PASSWORD,
+            meta: META,
+          }),
+          new LogoutAllUseCase(h).execute({ userId: alice.id }),
+        ]);
+        expect(logoutAll?.status).toBe('fulfilled');
+        expect((await userRow(alice.id)).tokenVersion).toBe(1);
+        const auth = new AccessTokenAuthenticator(h);
+        await expect(auth.authenticate(`Bearer ${before.accessToken}`)).rejects.toThrow();
+        const old = await testPrisma().refreshToken.findFirstOrThrow({
+          where: { familyId: before.familyId },
+        });
+        expect(old.revokedReason).toBe('LOGOUT_ALL');
+        if (login?.status === 'fulfilled') {
+          const tv = decodeJwt(login.value.session.accessToken).tv;
+          const ok = await auth.authenticate(`Bearer ${login.value.session.accessToken}`).then(
+            () => true,
+            () => false,
+          );
+          expect(ok).toBe(tv === 1);
+        }
+      }
+    },
+    RACE_TIMEOUT,
+  );
+});
