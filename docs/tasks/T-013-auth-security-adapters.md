@@ -19,6 +19,7 @@ Không phụ thuộc core của A (nếu cần `Clock`, định nghĩa tạm int
 
 ## Phạm vi sở hữu
 `apps/api/src/modules/auth/**` (chỉ các thư mục nói trên + test của chúng).
+`docs/design/security.md` — chỉ để sửa: (a) chuẩn hóa NFC trước cả hash lẫn verify, đặt trong `Argon2idPasswordHasher` (có test NFC vs NFD); (b) `needsRehash` dùng `parseOptions()` của `@node-rs/argon2` so với cấu hình.
 
 ## Không làm
 Use case Register/Login/Refresh, repository, routes (Phase 2).
