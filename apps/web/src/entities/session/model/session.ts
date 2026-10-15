@@ -169,15 +169,15 @@ export function createSessionController(deps: SessionDeps) {
      */
     realtimeAuth: {
       token: (): string | null => tokenStore.get(),
-      /** Refresh ngay (`auth:expired`, `connect_error TOKEN_EXPIRED`). Lỗi tạm ⇒ `false`, phiên giữ. */
+      /**
+       * Refresh ngay (`auth:expired`, `connect_error TOKEN_EXPIRED`, server ngắt). `false` = phiên KHÔNG
+       * còn (đã kết thúc — socket không thử lại); lỗi tạm (mạng/5xx/timeout) ⇒ NÉM, phiên giữ, socket
+       * tự thử lại theo backoff (renew-retry).
+       */
       async renew(): Promise<boolean> {
-        try {
-          const ok = await renew();
-          if (!ok) end('expired');
-          return ok;
-        } catch {
-          return false;
-        }
+        const ok = await renew();
+        if (!ok) end('expired');
+        return ok;
       },
       /** Có access token mới (refresh, đổi mật khẩu) ⇒ socket gửi `auth:renew`. */
       onTokenRenewed: (listener: () => void): (() => void) =>
