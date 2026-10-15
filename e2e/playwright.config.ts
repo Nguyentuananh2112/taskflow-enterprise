@@ -75,7 +75,15 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 180_000,
       // APP_MOCK_API cố ý KHÔNG đặt ⇒ web gọi API thật (mock-flag.ts).
-      env: { NODE_ENV: 'production', APP_ENV: 'test', API_URL },
+      env: {
+        NODE_ENV: 'production',
+        APP_ENV: 'test',
+        API_URL,
+        // T-035: E2E_SENTRY_DSN đặt ⇒ bật Sentry web (tunnel /monitoring). Dùng host `.invalid` (không bao giờ
+        // phân giải) để không có request nào ra Internet thật. Trống ⇒ Sentry tắt.
+        SENTRY_DSN: process.env.E2E_SENTRY_DSN ?? '',
+        TRUST_PROXY_HOPS: '0',
+      },
     },
   ],
 });
