@@ -45,7 +45,10 @@ export async function dragByMouse(
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 + 10, { steps: 5 });
-  const x = to.x + to.width / 2;
+  // Viewport hẹp (mobile 412px): cột đích có thể chỉ lộ một phần ⇒ thả vào phần NHÌN THẤY (như người
+  // dùng thật), không vào tâm cột nằm ngoài màn hình.
+  const vw = page.viewportSize()?.width ?? Number.POSITIVE_INFINITY;
+  const x = Math.max(to.x + 10, Math.min(to.x + to.width / 2, vw - 20));
   const y = to.y + Math.min(to.height / 2, 60);
   await page.mouse.move(x, y, { steps: 20 });
   await page.mouse.move(x + 4, y + 4, { steps: 4 }); // thêm sự kiện ở đích để dnd-kit chốt "over"
