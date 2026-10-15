@@ -3,12 +3,8 @@ import { test } from '../support/fixtures';
 // Kịch bản frontend.md §8 chưa chạy được — LUÔN hiện trong báo cáo là fixme (không xanh giả).
 // Bật từng cái khi phụ thuộc merge: task API (T-023/T-024) + Kanban (T-025, đã merge).
 
-const TASK_API = 'cần route task (T-023/T-024)';
+const TASK_API = 'kịch bản Kanban đang viết (T-024 đã merge)';
 const pending: [id: string, title: string, blockedBy: string][] = [
-  ['E2E-01', 'Đăng ký → board project mặc định → tạo task → cuối cột Cần làm', TASK_API],
-  ['E2E-02', 'Kéo Cần làm → Đang làm bằng chuột; reload giữ cột + thứ tự', TASK_API],
-  ['E2E-03', 'Kéo bằng bàn phím (Space, mũi tên, Space)', TASK_API],
-  ['E2E-04', 'Kéo Cần làm → Hoàn thành bị chặn, không có PATCH', TASK_API],
   ['E2E-05', 'Realtime 2 người < 1s; workspace khác không thấy gì', TASK_API],
   ['E2E-06', 'Xung đột 409: khối hòa giải / tự rebase', TASK_API],
   ['E2E-07', 'VIEWER: không tạo, không kéo, drawer chỉ đọc', TASK_API],

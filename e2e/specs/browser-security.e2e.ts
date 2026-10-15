@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test';
 
-import { expect, newUser, registerViaUi, test } from '../support/fixtures';
+import { apiCreateTask, apiRegister, boardPath } from '../support/api';
+import { column, dragByMouse, waitBoardReady } from '../support/board';
+import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fixtures';
 
 // SEC-48..50 (security.md): không vi phạm CSP, access token không nằm trong storage, cookie refresh HttpOnly.
 
@@ -68,4 +70,25 @@ test('SEC-50: access token không nằm trong storage; cookie refresh HttpOnly, 
   const refresh = (await context.cookies()).find((c) => /tf_rt$/.test(c.name));
   expect(refresh, 'phải có cookie refresh').toBeDefined();
   expect(refresh).toMatchObject({ httpOnly: true, sameSite: 'Strict' });
+});
+
+test('SEC-48b: board + một lần kéo thẻ (dnd-kit chèn style) không có vi phạm CSP', async ({
+  page,
+  request,
+}) => {
+  const user = newUser('csp-board');
+  const s = await apiRegister(request, user);
+  const task = await apiCreateTask(request, s, 'CSP kéo');
+  await loginViaUi(page, user);
+  await page.goto(boardPath(s));
+  await waitBoardReady(page);
+  expect(await cspViolations(page), 'board vừa tải').toEqual([]);
+  await dragByMouse(
+    page,
+    page.getByRole('button', { name: `Kéo ${task.key}` }),
+    column(page, 'IN_PROGRESS'),
+    async () => {
+      expect(await cspViolations(page), 'giữa lúc kéo').toEqual([]);
+    },
+  );
 });

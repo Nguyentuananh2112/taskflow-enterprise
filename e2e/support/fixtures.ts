@@ -60,7 +60,37 @@ export async function loginViaUi(page: Page, user: E2EUser): Promise<void> {
   await expect(page).toHaveURL(/\/w(\/|$)/);
 }
 
-export const test = base.extend<{ cleanRateLimits: undefined }>({
+declare global {
+  interface Window {
+    __e2eCsp?: string[];
+  }
+}
+
+export const test = base.extend<{ cleanRateLimits: undefined; noCspViolations: undefined }>({
+  /**
+   * Mọi kịch bản chạy trên build prod với CSP thật (TL, sau lỗi dnd-kit chèn <style>): ghi mọi
+   * `securitypolicyviolation` của context mặc định; còn vi phạm khi test kết thúc ⇒ test đỏ.
+   * Context tự tạo (browser.newContext) không được phủ — test đó tự kiểm nếu cần.
+   */
+  noCspViolations: [
+    async ({ context }, use) => {
+      await context.addInitScript(() => {
+        window.__e2eCsp = [];
+        document.addEventListener('securitypolicyviolation', (e) => {
+          window.__e2eCsp?.push(
+            `${e.violatedDirective} ${e.blockedURI} @ ${e.sourceFile}:${String(e.lineNumber)}`,
+          );
+        });
+      });
+      await use(undefined);
+      for (const p of context.pages()) {
+        if (p.isClosed()) continue;
+        const found = await p.evaluate(() => window.__e2eCsp ?? []).catch(() => []);
+        expect(found, `vi phạm CSP trên ${p.url()}`).toEqual([]);
+      }
+    },
+    { auto: true },
+  ],
   cleanRateLimits: [
     // Playwright bắt buộc tham số đầu là object destructuring (đọc tên fixture phụ thuộc từ mã nguồn).
     // eslint-disable-next-line no-empty-pattern
