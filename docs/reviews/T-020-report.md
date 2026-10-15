@@ -150,7 +150,10 @@ Không có thao tác nào vượt chặn `migrate reset`. Global setup chỉ DRO
 - **C (T-023):**
   - đổi bản sao cục bộ `IAssigneeDirectory` / `ITaskProjectStore` / `IUserRefReader` sang `import type` từ `modules/task` khi T-018 có trên main;
   - có thể đổi ROL-07 sang cleaner thật để chứng minh cả audit.
-- **F:** chạy lại SEC-21c / 23b / 24b trên branch này (file: `auth-races.int.ts`, `auth-valkey.int.ts`).
+- **Cổng bảo mật qua HTTP (quyết định Tech Lead):**
+  - **Bắt buộc cho T-020:** SEC-21c, SEC-23b, SEC-24c chạy qua HTTP (`test/security/auth.sec.ts`) trên Prisma + Valkey thật, lặp nhiều lần, xanh ổn định. F chạy, tỉ lệ qua ghi trong báo cáo của F.
+  - **SEC-24b được chấp nhận ở tầng I** cho DONE T-020. `auth-valkey.int.ts` kiểm đúng hành vi cần chứng minh trên hạ tầng thật: Valkey chết khi ghi ⇒ 503 + rollback, `tv` / mật khẩu trong DB không đổi. Bản qua HTTP chỉ thêm lớp vận chuyển.
+  - **Bản HTTP của SEC-24b** là follow-up của F (T-017c, cần container Valkey riêng do suite tự tạo/hủy). **Không chặn chuỗi merge.**
 - **A:** type `TransactionCapable` vs `PrismaClient` (xem trên). `createPrismaPersistence` đang cast có chú thích; bỏ cast khi core sửa type.
 - **Job purge chưa được wire** vào process nào (scheduler/worker). `PrismaWorkspacePurger` đã có + test tầng I, nhưng chưa có gì gọi định kỳ — ticket sau.
 - **D2 (ẩn danh hóa user) chưa có lệnh soft-delete.** Khi làm phải tăng `token_version` + thu hồi token trong cùng transaction, và gọi `#reflect` ở `MirroringUserRepository` (TODO đã ghi).
