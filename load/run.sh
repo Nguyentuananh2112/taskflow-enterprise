@@ -3,7 +3,7 @@
 #   bash load/run.sh                 # dựng → seed → board + realtime → phân tích → dọn
 #   KEEP=1 bash load/run.sh          # giữ container để soi tiếp (tự dọn bằng: bash load/run.sh down)
 # CHỈ chạy khi Tech Lead báo "máy rảnh" (số đo local chỉ để so sánh tương đối).
-# Biến: STAGES, STAGE_SECONDS, RT_VUS, RT_SECONDS, API_IMAGE (mặc định build từ repo hiện tại).
+# Biến: STAGES, STAGE_SECONDS, RT_VUS, RT_SECONDS, HOT_STAGES, RPROJ/RTASKS (cột rebalance), API_IMAGE (mặc định build từ repo hiện tại).
 set -euo pipefail
 export MSYS_NO_PATHCONV=1 # Git Bash trên Windows: không đổi đường dẫn /load, /docker-entrypoint-initdb.d
 
@@ -65,7 +65,8 @@ docker run --rm --network "$NET" \
   -e DATABASE_URL="postgresql://taskflow_migrator:migrator_load_only@$PG:5432/taskflow_load" "$MIGRATE_IMAGE" >/dev/null
 docker exec "$PG" psql -U postgres -d taskflow_load -qc 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
 docker exec -i -e PGPASSWORD=migrator_load_only "$PG" psql -h 127.0.0.1 -U taskflow_migrator -d taskflow_load \
-  -v ws="${WS:-5}" -v proj="${PROJ:-3}" -v tasks="${TASKS:-500}" -v users="${USERS:-20}" -v pw_hash="$PW_HASH" \
+  -v ws="${WS:-5}" -v proj="${PROJ:-3}" -v tasks="${TASKS:-500}" -v users="${USERS:-20}" \
+  -v rproj="${RPROJ:-2}" -v rtasks="${RTASKS:-500}" -v pw_hash="$PW_HASH" \
   -f - < "$ROOT/load/seed/seed.sql" | tee "$RESULTS/seed.txt"
 
 echo "[load] API (image production, NODE_ENV=test để không đòi rediss/https; TRUST_PROXY_HOPS=1 như sau LB)"
@@ -85,13 +86,16 @@ k6() {
   docker run --rm --network "$NET" -v "$(host_path "$ROOT/load"):/load" \
     -v "$(host_path "$RESULTS"):/out" -e OUT_DIR=/out -e BASE_URL="http://$API:4000" \
     -e WS="${WS:-5}" -e USERS="${USERS:-20}" -e STAGES="${STAGES:-}" -e STAGE_SECONDS="${STAGE_SECONDS:-}" \
-    -e RT_VUS="${RT_VUS:-}" -e RT_SECONDS="${RT_SECONDS:-}" "$K6_IMAGE" run --quiet "/load/scenarios/$1.js"
+    -e RT_VUS="${RT_VUS:-}" -e RT_SECONDS="${RT_SECONDS:-}" -e HOT_STAGES="${HOT_STAGES:-}" \
+    -e RPROJ="${RPROJ:-2}" "$K6_IMAGE" run --quiet "/load/scenarios/$1.js"
 }
 set +e
 echo "[load] k6 board (bậc RPS: ${STAGES:-mặc định})"; k6 board; BOARD_RC=$?
 docker stats --no-stream --format '{{.Name}} CPU {{.CPUPerc}} MEM {{.MemUsage}}' "$API" "$PG" "$VK" > "$RESULTS/stats-after-board.txt"
 echo "[load] k6 realtime"; k6 realtime; RT_RC=$?
+echo "[load] k6 cột nóng"; k6 hot-column; HOT_RC=$?
+echo "[load] k6 move kích hoạt rebalance"; k6 rebalance; REBAL_RC=$?
 set -e
 echo "[load] phân tích truy vấn"
 docker exec -i "$PG" psql -U postgres -d taskflow_load < "$ROOT/load/sql/analyze.sql" > "$RESULTS/analyze.txt" 2>&1
-echo "[load] kết quả: $RESULTS (board rc=$BOARD_RC, realtime rc=$RT_RC — rc≠0 khi vượt threshold NFR, đó là dữ liệu cần đọc)"
+echo "[load] kết quả: $RESULTS (board rc=$BOARD_RC, realtime rc=$RT_RC, hot rc=$HOT_RC, rebalance rc=$REBAL_RC — rc≠0 khi vượt threshold NFR, đó là dữ liệu cần đọc)"

@@ -89,9 +89,14 @@ export function loginAll() {
         tags: { kind: 'setup' },
       }),
     );
-    const projectIds = (pj?.data ?? []).map((p) => p.id);
-    if (projectIds.length === 0) fail(`workspace ${wsId} không có project`);
-    workspaces.push({ w: owner.w, id: wsId, projectIds });
+    const projects = pj?.data ?? [];
+    // P* = project board thường; R* = project rank dài cho kịch bản rebalance (seed.sql).
+    const projectIds = projects.filter((p) => p.keyPrefix.startsWith('P')).map((p) => p.id);
+    const rebalanceProjectIds = projects
+      .filter((p) => p.keyPrefix.startsWith('R'))
+      .map((p) => p.id);
+    if (projectIds.length === 0) fail(`workspace ${wsId} không có project P*`);
+    workspaces.push({ w: owner.w, id: wsId, projectIds, rebalanceProjectIds });
   }
   for (const user of users) user.ws = workspaces.find((x) => x.w === user.w);
   return users;

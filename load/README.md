@@ -12,13 +12,15 @@ KEEP=1 bash load/run.sh ; bash load/run.sh down     # giữ container để soi,
 
 Kết quả: `load/results/<thời điểm>/` (gitignore): `board-summary.{md,json}`, `realtime-summary.{md,json}`, `analyze.txt` (pg_stat_statements + EXPLAIN ANALYZE), `stats-after-board.txt`, `environment.md`, `seed.txt`.
 
-| File                    | Vai trò                                                                                                                                  |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `seed/seed.sql`         | 5 workspace × 3 project × 500 task, 20 user/workspace — ghi thẳng SQL (từ chối chạy ngoài DB `taskflow_t027*`/`taskflow_load*`, ADR-106) |
-| `scenarios/board.js`    | `ramping-arrival-rate` theo bậc `STAGES`: đọc cột 60% · move 20% · sửa 10% · tạo 10%; tag `kind`/`name`/`stage`                          |
-| `scenarios/realtime.js` | Socket.IO (Engine.IO v4 tự cài trên `k6/websockets`, websocket-only): move qua HTTP ⇒ đo tới khi client khác nhận `task:moved`           |
-| `lib/common.js`         | login toàn bộ user trong `setup()`, `X-Forwarded-For` riêng mỗi user (API chạy `TRUST_PROXY_HOPS=1` như sau LB)                          |
-| `lib/summary.js`        | điểm gãy + bảng P50/P95/P99 theo endpoint → stdout/JSON/Markdown                                                                         |
-| `sql/analyze.sql`       | top truy vấn (pg_stat_statements), EXPLAIN ANALYZE truy vấn board, kích thước bảng                                                       |
+| File                      | Vai trò                                                                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seed/seed.sql`           | 5 workspace × 3 project × 500 task, 20 user/workspace — ghi thẳng SQL (từ chối chạy ngoài DB `taskflow_t027*`/`taskflow_load*`, ADR-106)                                |
+| `scenarios/board.js`      | `ramping-arrival-rate` theo bậc `STAGES`: đọc cột 60% · move 20% · sửa 10% · tạo 10%; tag `kind`/`name`/`stage`                                                         |
+| `scenarios/hot-column.js` | cột nóng: mọi user workspace 1 cùng move trong 1 cột của 1 project (khóa cột T-033 ⇒ xếp hàng), bậc `HOT_STAGES` move/s; P95/P99 + tỉ lệ 409                            |
+| `scenarios/rebalance.js`  | move chen giữa 2 task rank 64 ký tự liền kề ⇒ rank 65 > ngưỡng ⇒ rebalance cả cột 500 task (T-033); mỗi cột 1 mẫu, số mẫu = WS × RPROJ × 4; so với move thường ngay sau |
+| `scenarios/realtime.js`   | Socket.IO (Engine.IO v4 tự cài trên `k6/websockets`, websocket-only): move qua HTTP ⇒ đo tới khi client khác nhận `task:moved`                                          |
+| `lib/common.js`           | login toàn bộ user trong `setup()`, `X-Forwarded-For` riêng mỗi user (API chạy `TRUST_PROXY_HOPS=1` như sau LB)                                                         |
+| `lib/summary.js`          | điểm gãy + bảng P50/P95/P99 theo endpoint → stdout/JSON/Markdown                                                                                                        |
+| `sql/analyze.sql`         | top truy vấn (pg_stat_statements), EXPLAIN ANALYZE truy vấn board, kích thước bảng                                                                                      |
 
 Vì sao `X-Forwarded-For` riêng mỗi user: rate limit theo IP (1000 req/phút cho request có token, 20 handshake socket/phút) là đúng thiết kế; một máy k6 đóng vai hàng trăm người dùng thì phải mô phỏng IP của họ, nếu không ta chỉ đo được rate limiter. Giới hạn **theo user** (300/phút) vẫn áp dụng — 429 được đếm riêng (`rate_limited`).
