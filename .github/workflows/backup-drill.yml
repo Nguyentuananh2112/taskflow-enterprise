@@ -31,11 +31,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Drill (compose)
         run: >-
-          docker compose -f docker/backup/drill.compose.yml up --build
+          docker compose -f docker/backup/drill.compose.yml up --build --quiet-pull
           --abort-on-container-exit --exit-code-from drill
+
+      - name: Drill log (failure)
+        if: failure()
+        run: docker compose -f docker/backup/drill.compose.yml logs drill
 
       - name: Tear down
         if: always()

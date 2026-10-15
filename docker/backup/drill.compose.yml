@@ -5,7 +5,7 @@
 name: taskflow-backup-drill
 
 x-pg: &pg
-  image: postgres:18.6-bookworm
+  image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
   environment:
     POSTGRES_DB: taskflow
     POSTGRES_USER: postgres
@@ -29,7 +29,7 @@ services:
     <<: *pg
 
   s3:
-    image: quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z
+    image: quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z@sha256:cd04ea408e185cb50076ea1c3988d444119b19aaae15aab45387ccf14b2a2f86
     command: ['server', '/data']
     environment:
       MINIO_ROOT_USER: drill-access
