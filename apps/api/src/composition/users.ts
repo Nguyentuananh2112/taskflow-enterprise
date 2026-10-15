@@ -45,12 +45,15 @@ export class MirroringUserRepository implements IUserRepository {
   constructor(
     private readonly inner: IUserRepository,
     private readonly mirror: UserMirror,
+    /** Bản sao khác cần cập nhật (vd user của InMemoryTaskDatabase — tên trong UserRef của task). */
+    private readonly onWrite: (user: User) => void = () => undefined,
   ) {}
 
   #reflect(user: User): void {
     const summary = summaryOf(user);
     if (summary) this.mirror.users.set(user.id, summary);
     else this.mirror.users.delete(user.id);
+    this.onWrite(user);
   }
 
   findById(id: string) {

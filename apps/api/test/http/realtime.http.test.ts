@@ -14,7 +14,14 @@ import { envelopeOf } from '../support/http';
 import { createTestApp, WEB, type TestApp, type TestUser } from '../support/http-app';
 import { SequentialIdGenerator } from '../support/time-and-ids';
 import { SpyLogger } from '../support/spies';
-import { connectError, connected, disconnected, emitWithAck, nextEvent } from '../support/realtime';
+import {
+  connectError,
+  connected,
+  disconnected,
+  emitWithAck,
+  nextEvent,
+  noEvent,
+} from '../support/realtime';
 
 let t: TestApp;
 let url: string;
@@ -131,5 +138,64 @@ describe('gateway trên composition root thật', () => {
       actorId: alice.id,
       data: { workspaceId: alice.workspaceId },
     });
+  });
+
+  it('T-024: A move task ⇒ B (thành viên, ở phòng project) nhận task:moved đủ payload §4.3 kèm originClientId; người ws khác không nhận', async () => {
+    const alice = await t.register('Alice');
+    const bob = await t.register('Bob');
+    const carol = await t.register('Carol'); // workspace khác
+    await request(t.app)
+      .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
+      .set(alice.auth)
+      .send({ email: bob.email, role: 'MEMBER' });
+    const projectId = await firstProjectId(alice);
+    const tasks = `/api/v1/workspaces/${alice.workspaceId}/projects/${projectId}/tasks`;
+    const created = await request(t.app).post(tasks).set(alice.auth).send({ title: 'Kéo thả' });
+    const task = envelopeOf<{ id: string; rank: string }>(created).data as {
+      id: string;
+      rank: string;
+    };
+
+    const bobSocket = connect(bob.token);
+    const carolSocket = connect(carol.token);
+    await Promise.all([connected(bobSocket), connected(carolSocket)]);
+    expect(
+      await emitWithAck(bobSocket, 'project:join', { workspaceId: alice.workspaceId, projectId }),
+    ).toEqual({ ok: true });
+    expect(
+      await emitWithAck(carolSocket, 'project:join', { workspaceId: alice.workspaceId, projectId }),
+    ).toMatchObject({ ok: false });
+
+    const received = nextEvent<{
+      type: string;
+      actorId: string;
+      originClientId: string | null;
+      data: {
+        task: { id: string; status: string; version: number };
+        from: { status: string; rank: string };
+        to: { status: string; rank: string };
+      };
+    }>(bobSocket, 'task:moved');
+    const leaked = noEvent(carolSocket, 'task:moved', 300);
+    const tab = '3b241101-e2bb-4255-8caf-4136c566a962';
+    const moved = await request(t.app)
+      .patch(`${tasks}/${task.id}/move`)
+      .set(alice.auth)
+      .set('X-Client-Id', tab)
+      .send({ expectedVersion: 1, status: 'IN_PROGRESS' });
+    expect(moved.status).toBe(200);
+
+    const event = await received;
+    expect(event).toMatchObject({
+      type: 'task:moved',
+      actorId: alice.id,
+      originClientId: tab,
+      data: {
+        task: { id: task.id, status: 'IN_PROGRESS', version: 2 },
+        from: { status: 'TODO', rank: task.rank },
+        to: { status: 'IN_PROGRESS' },
+      },
+    });
+    expect(await leaked).toBe(true);
   });
 });

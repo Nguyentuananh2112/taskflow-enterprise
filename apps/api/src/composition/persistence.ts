@@ -13,7 +13,7 @@ import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence
 import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
 import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
 import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
-import type { TaskRepositories } from '../modules/task/task.module';
+import { createInMemoryTaskRepositories, type TaskRepositories } from '../modules/task/task.module';
 import {
   createInMemoryWorkspaceRepositories,
   type WorkspaceRepositories,
@@ -29,6 +29,7 @@ import {
   PrismaTaskProjectStore,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
+import { TaskMirroredMemberships, TaskMirroredProjects, TaskMirroredWorkspaces } from './task-mirrors';
 import { MirroringUserRepository } from './users';
 
 export type StorageKind = 'memory' | 'prisma';
@@ -39,11 +40,8 @@ export interface Persistence {
   modules: Readonly<Record<string, StorageKind>>;
   auth: AuthRepositories;
   workspace: WorkspaceRepositories;
-  /**
-   * Module Task (T-023: bản Prisma). Tùy chọn tạm thời: bản bộ nhớ (cầu nối dữ liệu với
-   * Workspace/Auth) do A gắn ở T-024 — khi đó đổi thành bắt buộc.
-   */
-  task?: TaskRepositories;
+  /** Module Task: Prisma (T-023) hoặc bộ nhớ có bản sao dữ liệu Workspace/Auth (T-024). */
+  task: TaskRepositories;
   uow: IUnitOfWork;
 }
 
@@ -51,16 +49,33 @@ export interface Persistence {
 export function createMemoryPersistence(logger: ILogger): Persistence {
   const auth = createInMemoryAuthRepositories();
   const ws = createInMemoryWorkspaceRepositories();
-  const users = new MirroringUserRepository(auth.users, ws.directory);
+  const task = createInMemoryTaskRepositories();
+
+  // Bản sao của Workspace/Auth trong InMemoryTaskDatabase (Prisma đọc bảng chung nên không cần).
+  const users = new MirroringUserRepository(auth.users, ws.directory, (user) => {
+    task.db.state.users.set(user.id, {
+      id: user.id,
+      fullName: user.fullName,
+      deletedAt: user.toSnapshot().deletedAt,
+    });
+  });
+  const workspace: WorkspaceRepositories = {
+    workspaces: new TaskMirroredWorkspaces(ws.workspaces, task.db),
+    memberships: new TaskMirroredMemberships(ws.memberships, task.db),
+    projects: new TaskMirroredProjects(ws.projects, task.db),
+    queries: ws.queries,
+  };
+
   const uow = new InMemoryUnitOfWork(
-    [auth.users, auth.refreshTokens, ws.workspaces, ws.memberships, ws.projects],
+    [auth.users, auth.refreshTokens, ws.workspaces, ws.memberships, ws.projects, task.db],
     logger,
   );
   return {
     kind: 'memory',
-    modules: { auth: 'memory', workspace: 'memory' },
+    modules: { auth: 'memory', workspace: 'memory', task: 'memory' },
     auth: { users, refreshTokens: auth.refreshTokens, sessions: auth.sessions },
-    workspace: ws,
+    workspace,
+    task,
     uow,
   };
 }

@@ -1,3 +1,4 @@
+import { ROLE_PERMISSIONS } from '@taskflow/contracts';
 import type { Store } from 'express-rate-limit';
 import type { Express } from 'express';
 import type { Logger } from 'pino';
@@ -18,6 +19,9 @@ import { createAuthModule, type AuthModule } from '../modules/auth/auth.module';
 import type { IAccessTokenService } from '../modules/auth/application/ports/access-token-service.port';
 import type { IPasswordHasher } from '../modules/auth/application/ports/password-hasher.port';
 import type { PasswordPolicy } from '../modules/auth/domain/password-policy';
+import type { IRolePermissions } from '../modules/task/application/task-actor';
+import { TASKS_PATH } from '../modules/task/presentation/task.routes';
+import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
@@ -49,13 +53,14 @@ export interface Container {
   app: Express;
   auth: AuthModule;
   workspace: WorkspaceModule;
+  task: TaskModule;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
 }
 
-/** TODO(T-018): module Task hiện thực bỏ gán khi hạ VIEWER / xóa thành viên (ADR-044). */
-const noTaskModuleYet = {
-  unassignAllForUser: () => Promise.resolve({ unassignedTaskCount: 0 }),
+/** Ma trận quyền dùng chung (contracts) — nguồn của `IRolePermissions` cho module Task. */
+const rolePermissions: IRolePermissions = {
+  allows: (role, permission) => ROLE_PERMISSIONS[role].includes(permission),
 };
 
 /**
@@ -74,11 +79,31 @@ export function createContainer(d: ContainerDeps): Container {
   };
   const limit = (rules: readonly RateLimitRule[]) => createRateLimits(rules, rateLimitDeps);
 
+  // Task cần membership của Workspace, Workspace cần cleaner của Task ⇒ tham chiếu trễ một chiều.
+  const workspaceRef: { current?: WorkspaceModule } = {};
+  const task = createTaskModule({
+    repos: persistence.task,
+    permissions: rolePermissions,
+    notifier: realtime,
+    membership: {
+      resolveActor: (workspaceId, userId) => {
+        if (!workspaceRef.current) throw new Error('workspace module chưa được tạo');
+        return workspaceRef.current.access.resolveActor(workspaceId, userId);
+      },
+    },
+    events,
+    uow: persistence.uow,
+    clock,
+    ids,
+    logger,
+    responder,
+    limit,
+  });
   const workspace = createWorkspaceModule({
     repos: persistence.workspace,
     users: new AuthUserDirectory(persistence.auth.users),
     notifier: realtime,
-    cleaner: noTaskModuleYet,
+    cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
     clock,
@@ -87,6 +112,7 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
   });
+  workspaceRef.current = workspace;
   const auth = createAuthModule({
     repos: persistence.auth,
     hasher: d.hasher,
@@ -118,7 +144,8 @@ export function createContainer(d: ContainerDeps): Container {
     routers: [
       { path: '/auth', router: auth.router },
       { path: '/workspaces', router: workspace.routes(auth.authenticate) },
+      { path: TASKS_PATH, router: task.routes(auth.authenticate) },
     ],
   });
-  return { app, auth, workspace, realtime };
+  return { app, auth, workspace, task, realtime };
 }

@@ -8,6 +8,7 @@ type Notifications = Pick<
   | 'revokeWorkspaceAccess'
   | 'notifyRoleChanged'
   | 'closeWorkspace'
+  | 'emitToProject'
 >;
 
 /**
@@ -42,6 +43,14 @@ export class LateBoundRealtime implements Notifications {
     meta: RealtimeEventMeta,
   ): Promise<void> {
     return this.#target?.notifyRoleChanged(input, meta) ?? Promise.resolve();
+  }
+
+  /** Event `task:*` (port `ITaskRealtimeNotifier` của Task) — payload do use case dựng sẵn. */
+  emitToProject(
+    input: { projectId: string; type: string; data: unknown },
+    meta: RealtimeEventMeta,
+  ): Promise<void> {
+    return this.#target?.emitToProject(input, meta) ?? Promise.resolve();
   }
 
   closeWorkspace(
