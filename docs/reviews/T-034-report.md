@@ -1,7 +1,7 @@
 # T-034 — Báo cáo: màn hình quản trị workspace, thành viên, project
 
-**Người làm:** Engineer E (`taskflow-enterprise-54`) · **Branch:** `feat/T-034` (rebase lên main `87ed150`) · **Ngày:** 2026-10-15
-Giữa chừng tạm dừng 2 lần cho việc gấp: `fix/web-test-timeouts` (đã merge) và `fix/dnd-csp-nonce` (HIGH, `f2b735c` — chờ merge; nhánh này CHƯA chứa fix đó).
+**Người làm:** Engineer E (`taskflow-enterprise-54`) · **Branch:** `feat/T-034` (rebase lên main `f40e0aa` — đã chứa `fix/dnd-csp-nonce`) · **Ngày:** 2026-10-15
+Giữa chừng tạm dừng 2 lần cho việc gấp: `fix/web-test-timeouts` và `fix/dnd-csp-nonce` (cả hai đã merge). Mục 6: xử lý review bảo mật của B.
 
 ## 1. Đã làm
 | Màn / việc | Nội dung |
@@ -47,14 +47,31 @@ Giữa chừng tạm dừng 2 lần cho việc gấp: `fix/web-test-timeouts` (�
 ## 4. Rủi ro / ngoài phạm vi
 - `packages/contracts` `HealthzResponse` đã bỏ `gitSha` ở `7b84bcd` (A) — khớp web/API.
 - Contracts chưa có `version` cho workspace/project (ADR-110 hiện chỉ ở server): khi C thêm `expectedVersion` vào body sửa workspace/project, form cần gửi version + xử lý 409.
-- Lỗi dnd-kit CSP (`f2b735c`) ảnh hưởng board, không ảnh hưởng các màn này; khi merge cần rebase nhánh này (đụng `app-providers.tsx`).
+- Lỗi dnd-kit CSP (`f2b735c`) đã merge (`f40e0aa`); rebase không xung đột.
+- Bug mới (F tìm, có từ trước, ngoài T-034): kéo bằng bàn phím vào cột TRỐNG ⇒ thả về cột cũ — sửa ở branch riêng từ main sau T-034.
 
-## 5. Definition of Done (worktree `D:/TaskFlow_wt/T-025`, rebase lên main `87ed150`)
+## 5. Definition of Done (worktree `D:/TaskFlow_wt/T-025`, rebase lên main `f40e0aa`, sau mục 6)
 ```
 $ pnpm typecheck              → exit 0
-$ pnpm lint                   → exit 0 (prettier; eslint --max-warnings=0; depcruise web 348 modules 0 vi phạm, api 0)
-$ pnpm test --maxWorkers=2    → Test Files 153 passed (153) · Tests 1570 passed (1570) · exit 0, 0 "Unhandled"
-$ pnpm --filter @taskflow/web build → exit 0 (route mới: /w/new, /w/[wsId]/settings, /settings/members, /p/[projectId]/settings)
-$ pnpm --filter @taskflow/web test:real-api (API thật) → Test Files 2 passed (2) · exit 0
+$ pnpm lint                   → exit 0 (prettier; eslint --max-warnings=0; depcruise web 349 modules 0 vi phạm, api 0)
+$ pnpm test --maxWorkers=2    → Test Files 156 passed (156) · Tests 1594 passed (1594) · exit 0, 0 "Unhandled"
+$ pnpm --filter @taskflow/web build → exit 0
+$ REAL_API_PASSWORD=… pnpm --filter @taskflow/web test:real-api (API thật) → Test Files 3 passed (3) · exit 0
+$ (không đặt REAL_API_PASSWORD)  → Tests 3 skipped (3)
 ```
-Hook pre-commit (gitleaks + prettier + eslint) chạy đầy đủ mọi commit; gitleaks `main..HEAD`: xem tin nhắn DONE.
+Hook pre-commit (gitleaks + prettier + eslint) chạy đầy đủ mọi commit, không `--no-verify`.
+
+## 6. Review bảo mật của B (@ `4017bc1`) — đã xử lý
+| # | Mức | Đã làm |
+|---|---|---|
+| F5 | Medium | `real-api/admin-refusals.real.tsx` — với API THẬT, trên workspace tạo riêng cho mỗi lượt: PM cấp OWNER (email có thật và email lạ) / cấp PM ⇒ **403 FORBIDDEN_ACCESS** (403 trước 404); đã là thành viên ⇒ **409**, UI hiện cùng câu "Không thể thêm người này"; `confirmSlug` khác hoa thường / có khoảng trắng đầu hoặc cuối ⇒ **400 VALIDATION_ERROR**; khôi phục bằng PM (vẫn là thành viên) và bằng cựu thành viên ⇒ **404, `error` giống hệt id lạ**, OWNER khôi phục được (chứng minh 404 là do quyền); bị xóa khỏi workspace khi đang mở board với **Socket.io thật** ⇒ `workspace:access-revoked` ⇒ về `/w` + toast, `project:join` lại ⇒ **RESOURCE_NOT_FOUND**. Cuối lượt workspace bị xóa mềm. |
+| F2 | Low | `form-errors.ts`: VALIDATION_ERROR không còn hiển thị `issue.message` — câu FE theo `issue.code` (`common_password`, `contains_email`, `same_as_current`, `mismatch`, `invalid_format`, `too_small`, `too_big`, `unrecognized_keys`), code lạ ⇒ "Giá trị không hợp lệ."; lỗi gốc khử trùng lặp. Mock `ruleViolation` dùng đúng mã issue của server (trước là `custom`). Có test chứng minh chuỗi server không lọt vào UI. |
+| F1 | Low | Khôi phục: chỉ 404 ⇒ "Không thể khôi phục workspace này"; lỗi khác (429, mạng) ⇒ `serverErrorMessage` (mới, export từ `form-errors.ts`). Test: hết hạn mức 10/giờ ⇒ "Bạn thao tác quá nhanh…". |
+| F3 | Low | Dialog xóa: 404 (đã bị xóa ở tab khác) ⇒ dọn cache, về `/w`, "Workspace không còn tồn tại"; 400/409 ⇒ refetch workspace (nhãn hiện slug mới), xóa ô nhập, báo "Slug vừa thay đổi hoặc không khớp"; câu hậu quả: "biến mất ngay với mọi thành viên … chỉ Chủ sở hữu khôi phục được". 2 test. |
+| F4 | Low | Tự rời ⇒ toast kèm "N task được bỏ giao". Test. |
+| F6 | Info | `FakeRealtimeHub.canJoin`: có sổ thành viên mà client không có `userId` ⇒ từ chối. Test board: bị xóa ⇒ rút khỏi phòng project, join lại ⇒ RESOURCE_NOT_FOUND. |
+| F7 | Info | Mật khẩu bộ real-api chỉ đọc từ `REAL_API_PASSWORD` (không còn giá trị mặc định trong repo); không đặt ⇒ skip. `loginOrRegister` chỉ đăng ký khi login 401 — 429 ném thẳng (trước đây bị che thành lỗi đăng ký). Lưu ý: commit cũ `4017bc1` (chưa merge) có giá trị mặc định cho tài khoản dev local — không phải secret, DB local. |
+| F8 | Info | OWNER tự đổi vai trò của chính mình ⇒ dialog xác nhận ("mất quyền Chủ sở hữu ngay và không tự lấy lại được"). Test mock + API thật cập nhật. |
+| F9 | Info | `member:role-changed` ⇒ invalidate cả `workspaceKeys.list`. |
+
+Ghi chú lượt chạy API thật: hai lần gặp **429** (đăng ký theo IP, rồi đăng nhập theo IP) — đúng thiết kế; bộ F5 dùng 2 tài khoản sẵn có thay vì đăng ký thêm, và chờ hết cửa sổ đăng nhập, không lách.

@@ -43,7 +43,10 @@ export async function api<T>(
   return parse(json);
 }
 
-/** Đăng nhập; chưa có tài khoản ⇒ đăng ký rồi đăng nhập. */
+/**
+ * Đăng nhập; chưa có tài khoản (401) ⇒ đăng ký rồi đăng nhập. Lỗi khác (vd 429 rate-limit) ném
+ * thẳng ra — không che bằng một lần đăng ký vô ích.
+ */
 export async function loginOrRegister(email: string, fullName: string) {
   const password = PASSWORD ?? '';
   const login = () =>
@@ -52,10 +55,11 @@ export async function loginOrRegister(email: string, fullName: string) {
       { method: 'POST', body: { email, password } },
       (j) => apiSuccess(LoginResponse).parse(j).data,
     );
-  try {
-    return await login();
-  } catch {
-    await api('/auth/register', { method: 'POST', body: { email, password, fullName } }, (j) => j);
-    return login();
+  const first = await apiRaw('/auth/login', { method: 'POST', body: { email, password } });
+  if (first.status === 200) return apiSuccess(LoginResponse).parse(first.json).data;
+  if (first.status !== 401) {
+    throw new Error(`POST /auth/login ⇒ ${first.status} ${JSON.stringify(first.json)}`);
   }
+  await api('/auth/register', { method: 'POST', body: { email, password, fullName } }, (j) => j);
+  return login();
 }
