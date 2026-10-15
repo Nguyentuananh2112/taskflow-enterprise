@@ -1,10 +1,11 @@
 import type { IClock, IIdGenerator } from '../../../../core/domain';
 import { ForbiddenError, ResourceNotFoundError, ValidationError } from '../../../../core/errors';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { assertWorkspaceLive } from '../workspace-guard';
 import { Membership } from '../../domain/membership';
 import { isWorkspaceRole, type WorkspaceRole } from '../../domain/roles';
 import type { IUserDirectory } from '../ports/collaborators.port';
-import type { IMembershipRepository } from '../ports/repositories.port';
+import type { IMembershipRepository, IWorkspaceRepository } from '../ports/repositories.port';
 import { lockOwnersAndReloadActor } from './owner-guard';
 import {
   normalizeEmail,
@@ -34,6 +35,7 @@ export class AddMemberUseCase {
   constructor(
     private readonly d: {
       memberships: IMembershipRepository;
+      workspaces: IWorkspaceRepository;
       users: IUserDirectory;
       uow: IUnitOfWork;
       ids: IIdGenerator;
@@ -59,6 +61,7 @@ export class AddMemberUseCase {
         'member:add',
       );
       if (!canGrant(fresh.role, role)) throw new ForbiddenError('member:add');
+      await assertWorkspaceLive(this.d.workspaces, actor.workspaceId); // X7
       const membership = Membership.create({
         id: this.d.ids.next(),
         workspaceId: actor.workspaceId,

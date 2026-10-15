@@ -92,6 +92,7 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
       SELECT m.id, m.workspace_id, m.user_id, m.role, m.joined_at, m.updated_at, u.email, u.full_name
         FROM workspace_members m JOIN users u ON u.id = m.user_id
        WHERE m.workspace_id = ${workspaceId}::uuid
+         AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id = m.workspace_id AND w.deleted_at IS NULL)
          AND (${pattern}::text IS NULL OR u.email ILIKE ${pattern} ESCAPE '\\' OR u.full_name ILIKE ${pattern} ESCAPE '\\')
          AND (${page.after ?? null}::uuid IS NULL OR (m.joined_at, m.id) > (
               SELECT a.joined_at, a.id FROM workspace_members a
@@ -129,6 +130,7 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
     const rows = await this.db().project.findMany({
       where: {
         workspaceId,
+        workspace: { deletedAt: null }, // X7
         ...archivedFilter,
         ...(cursor
           ? {

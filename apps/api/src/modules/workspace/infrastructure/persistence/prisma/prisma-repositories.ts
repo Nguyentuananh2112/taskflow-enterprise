@@ -168,7 +168,7 @@ export class PrismaProjectRepository implements IProjectRepository {
   /** Có phạm vi tenant (ADR-020): `WHERE id AND workspace_id` — không `findUnique({ id })` trần. */
   async findInWorkspace(workspaceId: string, projectId: string): Promise<Project | null> {
     const row = await this.db().project.findFirst({
-      where: { id: projectId, workspaceId },
+      where: { id: projectId, workspaceId, workspace: { deletedAt: null } }, // X7
       select: PROJECT,
     });
     return row ? Project.reconstitute(row) : null;
