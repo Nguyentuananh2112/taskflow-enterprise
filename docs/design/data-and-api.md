@@ -2,7 +2,7 @@
 
 > Ticket: T-003 · Tác giả: Engineer C (`taskflow-enterprise-ba`) · Trạng thái: **Chính thức (ADR-040)** · cập nhật T-003b (ADR-041 → ADR-047)
 > Nguồn ưu tiên: `docs/blueprint/DECISIONS.md` (v1.1) > tài liệu này > blueprint v1.0.
-> Ký hiệu: `TODO(T-001)` = chờ T-001 xác nhận cú pháp/phiên bản · `T-002` = đã chốt với Engineer B · `ĐỀ XUẤT` = quyết định tôi tự đưa ra, Tech Lead có thể bác.
+> Ký hiệu: `T-002` = đã chốt với Engineer B · `ĐỀ XUẤT` = quyết định tôi tự đưa ra, chưa có ADR. Các điểm cú pháp Prisma/Zod đã được T-001 kiểm chứng (`docs/research/stack-versions.md` §8) — cập nhật T-003c.
 
 ## Mục lục
 1. Data model v1.1 (Prisma)
@@ -26,9 +26,9 @@
 | D4 | Audit sống sót khi xóa task | Có — nhờ D1 (task chỉ xóa mềm). FK `task_id` vẫn `Cascade` để khi **purge workspace** (sau 30 ngày ân hạn, D12) thì audit đi theo. | Xóa workspace = khách hàng yêu cầu xóa dữ liệu → audit cũng phải mất, nhưng chỉ sau ân hạn. |
 | D5 | `workspaceId`/`projectId` trên audit | Có, là cột thường (không FK), bất biến. | Truy vấn activity feed theo project/workspace không cần join; kiểm tra tenant khi đọc. |
 | D6 | `workspaceId` trên task | Có, denormalize. Ràng buộc nhất quán bằng **FK kép** `(project_id, workspace_id) → projects(id, workspace_id)`. | Kiểm tra tenant 1 bước (ADR-020 lớp 2) và DB đảm bảo task không thể "lệch" workspace với project. |
-| D7 | Mã task `TF-101` | `Project.keyPrefix` (bất biến sau khi tạo — ĐỀ XUẤT), `Project.nextTaskNumber`, `Task.number`. `key` **không lưu** — suy ra `${keyPrefix}-${number}`. | Đổi prefix sẽ làm gãy mọi link cũ → cấm ở v1.1. |
+| D7 | Mã task `TF-101` | `Project.keyPrefix` (bất biến sau khi tạo — ADR-040), `Project.nextTaskNumber`, `Task.number`. `key` **không lưu** — suy ra `${keyPrefix}-${number}`. | Đổi prefix sẽ làm gãy mọi link cũ → cấm ở v1.1. |
 | D8 | Project archive | `archivedAt DateTime?` thay `isArchived Boolean`. DTO vẫn trả `isArchived`. | Biết thời điểm archive mà không cần cột thứ hai. |
-| D9 | Khóa chính | UUID v7 (`@default(uuid(7))`, `@db.Uuid`). TODO(T-001): xác nhận Prisma 7 hỗ trợ `uuid(7)`. | Chèn theo thứ tự thời gian → B-tree ít phân mảnh; vẫn không đoán được tuần tự như int. |
+| D9 | Khóa chính | UUID v7 (`@default(uuid(7))`, `@db.Uuid`) — Prisma 7.10 hỗ trợ (stack-versions §8.2). UUID do **Prisma Client** sinh, DB không có DEFAULT ⇒ mọi `INSERT` bằng `$queryRaw` phải tự truyền id. | Chèn theo thứ tự thời gian → B-tree ít phân mảnh; vẫn không đoán được tuần tự như int. |
 | D10 | `dueDate` | Kiểu **ngày** (`@db.Date`), API dùng chuỗi `YYYY-MM-DD`. | Hạn chót là khái niệm ngày, tránh lệch múi giờ khi FE/BE khác TZ. |
 | D11 | Email | Lưu đã chuẩn hóa (trim + lowercase) ở tầng ứng dụng; unique thường. | Không phụ thuộc extension `citext`. |
 | D12 | Workspace xóa mềm (ADR-047) | `workspaces.deleted_at`, `purge_at` (= deleted_at + 30 ngày), `deleted_by_id`. Trong ân hạn: mọi truy cập ⇒ 404, dữ liệu/membership giữ nguyên, OWNER khôi phục được. Hết hạn ⇒ job purge xóa cứng (cascade). Chi tiết mục 1.7. | Một cú bấm không được làm mất toàn bộ dữ liệu + audit. |
@@ -46,30 +46,33 @@ RETURNING next_task_number - 1 AS number, key_prefix;
 
 - `UPDATE` lấy row-lock trên dòng project → các request tạo task đồng thời trong cùng project xếp hàng, mỗi request nhận một số khác nhau. Lock chỉ giữ tới hết transaction (ngắn).
 - 0 dòng trả về → project không tồn tại/khác tenant (404) **hoặc** đã archive (`PROJECT_ARCHIVED`) — use case đọc lại để phân biệt. Đây cũng là lần kiểm tra archived *nguyên tử* với thao tác tạo.
-- Tương đương Prisma: `tx.project.update({ where: { id, workspaceId, archivedAt: null }, data: { nextTaskNumber: { increment: 1 } }, select: { nextTaskNumber: true, keyPrefix: true } })` → `number = nextTaskNumber - 1`. (`update` với where không-unique cần Prisma ≥ 5 `extendedWhereUnique` — TODO(T-001) xác nhận; nếu không, dùng `$queryRaw` ở trên.)
+- **Chốt: dùng `tx.$queryRaw` với câu SQL trên.** Không dùng `tx.project.update({ where: { id, workspaceId, archivedAt: null }, … })`: cú pháp hợp lệ (`extendedWhereUnique` GA từ Prisma 5), nhưng khi không khớp nó **ném `P2025`** thay vì trả 0 dòng, nên luồng thường phải đi qua exception (stack-versions §8.5).
 - Nếu transaction rollback, số đó bị "đốt" → mã có thể nhảy cóc (TF-7 → TF-9). Chấp nhận, giống Jira.
 - `@@unique([projectId, number])` là lưới an toàn cuối cùng.
 
 ### 1.3. Rank (ADR-011)
 
-- `rank` là chuỗi do `fractional-indexing` sinh, cột dùng **collation `"C"`** (so byte, đúng thứ tự thư viện). Prisma không khai báo được collation cột → thêm tay vào migration SQL: `ALTER TABLE tasks ALTER COLUMN rank TYPE text COLLATE "C";` — TODO(T-001) kiểm tra Prisma 7 có hỗ trợ native chưa.
+- `rank` là chuỗi do `fractional-indexing` sinh, cột dùng **collation `"C"`** (so byte, đúng thứ tự thư viện). Prisma 7.10 không khai báo được collation cột (stack-versions §8.3) → tạo migration bằng `pnpm exec prisma migrate dev --create-only` rồi thêm tay `ALTER TABLE "tasks" ALTER COLUMN "rank" TYPE text COLLATE "C";` (ADR-062). Prisma không quản lý collation nên không thấy drift; có test integration khẳng định collation (test-spec-task UC-CR21, UC-MV23).
 - Sắp xếp luôn `ORDER BY rank, id` (id phá hòa nếu có trùng).
-- **Unique partial** `(project_id, status, rank) WHERE deleted_at IS NULL` — viết SQL tay trong migration (TODO(T-001): Prisma 7 có `@@unique(..., where:)` chưa). Khi 2 người thả vào cùng một khe cùng lúc, thư viện sinh cùng key → một bên vi phạm unique → server **tự thử lại tối đa 3 lần** với hàng xóm đọc mới; vẫn lỗi → `409 RESOURCE_CONFLICT`.
+- **Unique partial** `(project_id, status, rank) WHERE deleted_at IS NULL` — khai báo **native** bằng preview `partialIndexes` của Prisma 7.10 (ADR-062): `@@unique([projectId, status, rank], map: "tasks_rank_live_key", where: raw("deleted_at IS NULL"))`. CI kiểm `prisma migrate diff` rỗng. Khi 2 người thả vào cùng một khe cùng lúc, thư viện sinh cùng key → một bên vi phạm unique → server **tự thử lại tối đa 3 lần** với hàng xóm đọc mới; vẫn lỗi → `409 RESOURCE_CONFLICT`.
 - Task mới: rank = `generateKeyBetween(lastRankInColumn, null)` (cuối cột TODO).
 - Rebalance (rank quá dài) ngoài phạm vi v1.1; log cảnh báo khi `length(rank) > 100`.
 
 ### 1.4. Schema Prisma v1.1
 
 ```prisma
-// TODO(T-001): khối generator/datasource theo Prisma 7 (provider "prisma-client",
-// output, url chuyển sang prisma.config.ts, driver adapter @prisma/adapter-pg).
+// Prisma 7.10.0 (ADR-060/062, stack-versions §8.1). URL nằm ở apps/api/prisma.config.ts:
+//   datasource: { url: process.env.DATABASE_URL ?? "" }   (ADR-061; không dùng env())
+// Client tạo ở composition root với driver adapter @prisma/adapter-pg (ADR-016).
+// Luôn chạy CLI bằng `pnpm exec prisma`, cấm `npx prisma` (ADR-061).
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql" // không có url ở đây
 }
 
 enum WorkspaceRole {
@@ -114,7 +117,7 @@ enum RefreshTokenRevokeReason { // chốt với T-002
 model User {
   id                String    @id @default(uuid(7)) @db.Uuid
   email             String    @unique @db.VarChar(254) // trim+lowercase+NFC ở app; CHECK (email = lower(email)) bằng SQL tay
-  passwordHash      String    @map("password_hash")    // bcrypt $2b$ cost 12
+  passwordHash      String    @map("password_hash")    // argon2id PHC string (ADR-065)
   fullName          String    @map("full_name") @db.VarChar(100)
   tokenVersion      Int       @default(0) @map("token_version")          // ADR-025
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
@@ -171,7 +174,7 @@ model Workspace {
   members   WorkspaceMember[]
   projects  Project[]
 
-  @@index([purgeAt]) // nên là partial WHERE purge_at IS NOT NULL (SQL tay)
+  @@index([purgeAt], map: "workspaces_purge_at_idx", where: raw("purge_at IS NOT NULL")) // partialIndexes (ADR-062)
   @@index([deletedById])
   @@map("workspaces")
 }
@@ -237,7 +240,7 @@ model Task {
   auditLogs TaskAuditLog[]
 
   @@unique([projectId, number])
-  @@index([projectId, status, rank]) // + bản partial unique WHERE deleted_at IS NULL bằng SQL tay
+  @@unique([projectId, status, rank], map: "tasks_rank_live_key", where: raw("deleted_at IS NULL")) // ADR-062; phục vụ cả đọc board (query luôn có deleted_at IS NULL)
   @@index([assigneeId])
   @@index([createdById])
   @@map("tasks")
@@ -278,7 +281,7 @@ Ghi chú: audit log là **append-only** — repository chỉ có `append()`, kh�
 | ASSIGNEE_CHANGED | `{ assigneeId }` | `{ assigneeId }` |
 | DELETED | `{ title, status }` | `null` |
 
-`description` trong UPDATED: chỉ lưu `{ description: { changed: true, length } }` thay nội dung đầy đủ — ĐỀ XUẤT, tránh audit phình to (10 KB × mỗi lần sửa).
+`description` trong UPDATED: chỉ lưu `{ description: { changed: true, length } }` thay nội dung đầy đủ — ADR-040, tránh audit phình to (10 KB × mỗi lần sửa).
 
 ### 1.6. Index và lý do
 
@@ -300,7 +303,7 @@ Ghi chú: audit log là **append-only** — repository chỉ có `append()`, kh�
 | | `UNIQUE(id, workspace_id)` | Đích FK kép (D6). |
 | | `(workspace_id, archived_at)` | Danh sách project lọc archived. (Có thể bỏ vì unique trên đã dẫn đầu bằng workspace_id — giữ nếu workspace nhiều project.) |
 | tasks | `UNIQUE(project_id, number)` | Mã TF-101 duy nhất; phủ FK kép (project_id dẫn đầu). |
-| | `(project_id, status, rank)` + partial unique `WHERE deleted_at IS NULL` | Đọc bảng Kanban theo cột đã sắp; tìm hàng xóm khi move; chống trùng rank. |
+| | `UNIQUE(project_id, status, rank) WHERE deleted_at IS NULL` (`tasks_rank_live_key`) | Đọc bảng Kanban theo cột đã sắp; tìm hàng xóm khi move; chống trùng rank. Không cần thêm index không-partial vì mọi query đọc đều lọc `deleted_at IS NULL`. |
 | | `(assignee_id)` | FK (SetNull); "task của tôi". |
 | | `(created_by_id)` | FK (SetNull); policy xóa task của mình. |
 | task_audit_logs | `(task_id, created_at DESC, id DESC)` | FK; phân trang cursor lịch sử task. |
@@ -337,7 +340,7 @@ Sau commit: phát `workspace:access-revoked { workspaceId }` vào phòng `user:{
 - Không phát socket event; thành viên thấy lại workspace qua `GET /workspaces`.
 - OWNER xem danh sách có thể khôi phục qua `GET /workspaces?deleted=true` (kèm `purgeAt`). v1 không cache membership (T-002).
 
-**Purge job** — TODO(T-001): chọn cơ chế lịch (cron trong process + khóa Redis, hoặc hàng đợi); phải an toàn khi chạy nhiều instance (ADR-000).
+**Purge job** — ĐỀ XUẤT (T-003c, T-001 không chốt cơ chế lịch): `setInterval` mỗi giờ trong process API, chỉ instance nào lấy được `pg_try_advisory_lock(<hằng số PURGE_LOCK_ID>)` mới chạy, nhả khóa khi xong. Không thêm thư viện hàng đợi, không phụ thuộc Valkey (ADR-063); an toàn khi nhiều instance (ADR-000). Nếu sau này có hàng đợi job thì chuyển sang đó.
 
 - Chạy mỗi giờ, lấy `WHERE purge_at <= now()` theo lô. Với mỗi workspace: khóa dòng, kiểm lại `purge_at` (có thể vừa được khôi phục), rồi xóa cứng.
 - Tránh một transaction khổng lồ: xóa `task_audit_logs` rồi `tasks` theo lô (vd 5 000 dòng) theo project, sau cùng `DELETE FROM workspaces` (cascade phần còn lại). Idempotent — chạy lại sau lỗi giữa chừng là an toàn.
@@ -444,9 +447,10 @@ AuditLogDto   = { id, taskId, action, actor: UserRefDto, oldValue, newValue, cre
 | POST | `/auth/logout` | Cookie refresh + kiểm Origin | — | **`204`** không body; xóa cookie (idempotent) | `403 ORIGIN_NOT_ALLOWED` |
 | POST | `/auth/logout-all` | Bearer | — | **`204`** không body; xóa cookie | — |
 | GET | `/auth/me` | Bearer | — | `{ user: UserDto, memberships: MembershipDto[] }` | — |
+| PATCH | `/auth/me` | Bearer | body `{ fullName }` (ADR-083; đổi email/mật khẩu **không** qua đây) | `UserDto` | — |
 | POST | `/auth/change-password` | Bearer | body `{ currentPassword, newPassword }` | `AuthTokenDto` + cookie mới (phiên mới cho thiết bị hiện tại; mọi phiên khác bị thu hồi) | `400 INVALID_CURRENT_PASSWORD` (cố ý không 401) |
 
-Luật trường (T-002): `password` ≥ 12 ký tự (ADR-049) và ≤ 72 **byte** UTF-8 (giới hạn bcrypt), không luật thành phần, chặn danh sách mật khẩu phổ biến, không trùng email; `fullName` trim, 1–100 ký tự; `email` trim + lowercase + NFC. FE chỉ tự gọi refresh khi `code = TOKEN_EXPIRED`, không phải mọi 401.
+Luật trường (T-002): `password` 12–256 ký tự (ADR-049, ADR-065: argon2id `@node-rs/argon2` m=47104 t=1 p=1, không còn giới hạn 72 byte; trần 256 chống DoS), không luật thành phần, chặn danh sách mật khẩu phổ biến, không trùng email; `fullName` trim, 1–100 ký tự; `email` trim + lowercase + NFC. FE chỉ tự gọi refresh khi `code = TOKEN_EXPIRED`, không phải mọi 401.
 
 ### 2.5. Workspaces & members
 
@@ -458,7 +462,7 @@ Luật trường (T-002): `password` ≥ 12 ký tự (ADR-049) và ≤ 72 **byte
 | PATCH | `/workspaces/:wsId` | `workspace:update` | body `{ name?, slug? }` (≥1 trường) | `WorkspaceDto` | `409 RESOURCE_CONFLICT` (slug) |
 | DELETE | `/workspaces/:wsId` | `workspace:delete` | body `{ confirmSlug }` | `DeletedWorkspaceDto` (xóa mềm, mục 1.7) | `400 VALIDATION_ERROR` nếu `confirmSlug` sai |
 | POST | `/workspaces/:wsId/restore` | `workspace:restore` (OWNER; route chỉ thấy workspace đã xóa) | — | `WorkspaceDto` | `404` (không phải OWNER / chưa xóa / quá hạn) |
-| GET | `/workspaces/:wsId/members` | `member:read` | query `{ cursor?, limit? (1–100, mặc định 50) }` | `MemberDto[]` + `meta.page` | — |
+| GET | `/workspaces/:wsId/members` | `member:read` | query `{ q?, cursor?, limit? (1–100, mặc định 50) }`. `q` (ADR-083): trim, 1–100 ký tự, tìm chuỗi con **không phân biệt hoa thường** trong `fullName` hoặc `email` (`ILIKE` với `%`, `_`, `\` đã escape). Sắp theo `joinedAt`, `id` | `MemberDto[]` + `meta.page` | — |
 | POST | `/workspaces/:wsId/members` | `member:add` | body `{ email, role }` (thêm user đã có tài khoản; lời mời qua email là Phase sau) | `201 MemberDto` | `404 RESOURCE_NOT_FOUND` (không có user), `409 RESOURCE_CONFLICT` (đã là thành viên), `403` (PM cấp role PM/OWNER) |
 | PATCH | `/workspaces/:wsId/members/:userId` | `member:update-role` (OWNER) | body `{ role }` | `{ member: MemberDto, unassignedTaskCount }` (> 0 khi hạ xuống VIEWER, ADR-044) | `422 BUSINESS_RULE_VIOLATION` (`LAST_OWNER`) |
 | DELETE | `/workspaces/:wsId/members/:userId` | `member:leave` (min VIEWER); người khác cần thêm `member:remove` (Policy — xem 2.2) | — | `{ userId, unassignedTaskCount }` | `403` (PM xóa OWNER/PM), `422 BUSINESS_RULE_VIOLATION` (`LAST_OWNER`) |
@@ -484,7 +488,7 @@ Luật trường workspace (R19, chốt với T-002/T-006):
 | POST | `/workspaces/:wsId/projects/:projectId/archive` | `project:archive` | — | `ProjectDto` (idempotent) | — |
 | POST | `/workspaces/:wsId/projects/:projectId/unarchive` | `project:archive` | — | `ProjectDto` (idempotent) | — |
 
-Không có endpoint xóa project ở v1.1 (chỉ archive) — ĐỀ XUẤT.
+Không có endpoint xóa project ở v1 (chỉ archive) — ADR-040.
 
 ### 2.7. Tasks
 
@@ -536,7 +540,7 @@ Prefix: `/workspaces/:wsId/projects/:projectId/tasks`
 
 | code | HTTP | Khi nào | `details` |
 |---|---|---|---|
-| `VALIDATION_ERROR` | 400 | Zod fail (body/query/params, kể cả id không phải uuid), cursor hỏng | `{ fieldErrors, formErrors }` từ `z.flattenError()` (ADR-017) |
+| `VALIDATION_ERROR` | 400 | Zod fail (body/query/params, kể cả id không phải uuid), cursor hỏng | `{ issues: [{ path: (string\|number)[], code, message }] }` — `code` là mã issue của Zod (`too_small`, `invalid_format`, `unrecognized_keys`, …) để FE xử lý theo máy; `message` tiếng Việt từ locale `vi` của Zod (ADR-081). Server không trả `input` của issue (tránh phản chiếu dữ liệu nhạy cảm như mật khẩu) |
 | `UNAUTHORIZED` | 401 | Thiếu/sai chữ ký access token, `tv` không khớp | null |
 | `TOKEN_EXPIRED` | 401 | Access token hết hạn → FE gọi `/auth/refresh` rồi thử lại 1 lần | null |
 | `INVALID_CREDENTIALS` | 401 | Sai email/mật khẩu, hoặc user đã xóa (thông điệp chung) | null |
@@ -556,7 +560,7 @@ Prefix: `/workspaces/:wsId/projects/:projectId/tasks`
 | `BUSINESS_RULE_VIOLATION` | 422 | Luật khác | `{ rule: "LAST_OWNER" \| "ASSIGNEE_NOT_MEMBER" \| "INVALID_ANCHOR" \| … }` |
 | `RATE_LIMITED` | 429 | Rate-limit (header `Retry-After`) | `{ retryAfterSec }` |
 | `INTERNAL_ERROR` | 500 | Lỗi không lường trước (không lộ stack) | null |
-| `SERVICE_UNAVAILABLE` | 503 | Redis và DB đều lỗi khi kiểm `token_version` | null |
+| `SERVICE_UNAVAILABLE` | 503 | Valkey (ADR-063) và DB đều lỗi khi kiểm `token_version` | null |
 
 Map class lỗi (blueprint §7, polymorphism): `ValidationError`→400, `UnauthorizedError`→401 (+ subclass `TokenExpiredError`, …), `ForbiddenError`→403, `ResourceNotFoundError`→404, `ConflictError`→409 (`VERSION_CONFLICT`/`RESOURCE_CONFLICT`), `BusinessRuleViolationError`→422 (+ subclass `InvalidStatusTransitionError`, `ProjectArchivedError`). Mỗi class tự mang `statusCode` + `errorCode`.
 
@@ -630,12 +634,12 @@ packages/contracts/src/
     error-codes.ts     ErrorCode (z.enum + const), BusinessRule (z.enum)
   auth/
     auth.schemas.ts    RegisterBody, LoginBody, ChangePasswordBody, AuthTokenDto, UserDto, UserRefDto,
-                       MembershipDto, RegisterResponse, LoginResponse, MeResponse, Password, Email, FullName
+                       MembershipDto, RegisterResponse, LoginResponse, MeResponse, UpdateMeBody, Password, Email, FullName
   workspace/
     workspace.schemas.ts WorkspaceRole, WorkspaceDto, CreateWorkspaceBody, UpdateWorkspaceBody,
                          DeleteWorkspaceBody, WorkspaceParams,
                          ListWorkspacesQuery, DeletedWorkspaceDto, ChangeMemberRoleResponse
-    member.schemas.ts    MemberDto, AddMemberBody, ChangeMemberRoleBody, MemberParams, ListMembersQuery,
+    member.schemas.ts    MemberDto, AddMemberBody, ChangeMemberRoleBody, MemberParams, ListMembersQuery (có q),
                          RemoveMemberResponse
   project/
     project.schemas.ts ProjectDto, CreateProjectBody, UpdateProjectBody, ListProjectsQuery, ProjectParams,
@@ -645,7 +649,9 @@ packages/contracts/src/
                        CreateTaskBody, UpdateTaskBody, MoveTaskBody, AssignTaskBody,
                        DeleteTaskQuery, DeleteTaskResponse, ListTasksQuery, TaskParams,
                        VersionConflictDetails
-    task.constants.ts  TASK_STATUS_ORDER, TASK_STATUS_LABELS? (xem 5.3)
+    task.constants.ts  TASK_STATUS_ORDER, TASK_STATUS_TRANSITIONS (ADR-080)
+  rbac/
+    permissions.ts     Permission (z.enum), ROLE_PERMISSIONS, ROLE_RANK (ADR-080)
   audit/
     audit.schemas.ts   TaskAuditAction, AuditLogDto, ListAuditLogsQuery
   realtime/
@@ -662,12 +668,13 @@ packages/contracts/src/
 - Hậu tố: `…Body` (request body), `…Query` (query string, dùng `z.coerce` cho số), `…Params` (path params), `…Dto` (dữ liệu trả về), `…Response` (khi `data` không phải 1 Dto), `…Event` (payload socket), `…Details` (`error.details` có cấu trúc).
 - Enum: `z.enum([...])` tên số ít PascalCase (`TaskStatus`), giá trị UPPER_SNAKE khớp Prisma enum. Prisma enum **không** import vào contracts — một test ở `apps/api` khẳng định hai bên khớp.
 - Field primitive dùng lại (`TaskTitle = z.string().trim().min(3).max(150)`) để FE form và BE validate cùng một luật.
-- `Password = z.string().min(12).refine(s => new TextEncoder().encode(s).length <= 72)` (ADR-049). Kiểm danh sách mật khẩu phổ biến và "không trùng email" nằm ở **application** của API (danh sách lớn, cần ngữ cảnh), không nằm trong contracts.
-- Zod 4: `z.uuid()`, `z.email()`, `z.iso.datetime()`, `z.iso.date()` — TODO(T-001) xác nhận chữ ký với bản Zod 4 được chốt.
+- `Password = z.string().min(12).max(256)` (ADR-049, ADR-065). Kiểm danh sách mật khẩu phổ biến và "không trùng email" nằm ở **application** của API (danh sách lớn, cần ngữ cảnh), không nằm trong contracts.
+- Zod 4.6 (đã kiểm, stack-versions §8.6): `import * as z from "zod"`; `z.uuid()` cho mọi id (nhận v4 và v7, không khóa version); `z.email()`; `z.iso.date()` cho `dueDate`; `z.iso.datetime()` (chỉ nhận `Z`, server luôn trả `toISOString()`); thông điệp tùy chỉnh dùng `{ error: "…" }` (không còn `message`). API gọi `z.config(z.locales.vi())` một lần ở composition root (ADR-081).
 - DTO dùng `z.object` (strip mặc định); Body dùng `z.strictObject` để từ chối field lạ (vd client gửi `version`, `createdById`).
 
 ### 5.3. KHÔNG để trong contracts
-- State machine / `ALLOWED_TRANSITIONS`, policy RBAC, tính rank, cấp số task, luật archived/assignee-member — đó là **domain/application**. FE chỉ cần dữ liệu để hiển thị gợi ý; nếu FE muốn chặn sớm thả sai cột, contracts xuất `TASK_STATUS_TRANSITIONS` **dạng dữ liệu thuần** và `apps/api` **bắt buộc** có test parity trong CI khẳng định nó bằng bảng trong `TaskEntity`. Domain là nguồn sự thật và **không import** contracts (ADR-043).
+- **Logic** state machine, policy RBAC (ownership, LAST_OWNER…), tính rank, cấp số task, luật archived/assignee là **domain/application**.
+- Ngoại lệ dạng **dữ liệu thuần** (ADR-043, ADR-080): contracts xuất `TASK_STATUS_TRANSITIONS` (`Record<TaskStatus, readonly TaskStatus[]>`) và `ROLE_PERMISSIONS` (`Record<WorkspaceRole, readonly Permission[]>`, cùng `Permission` enum) để FE ẩn/khóa UI. `apps/api` **bắt buộc** có test parity trong CI so với bảng trong `TaskEntity` và bảng quyền của RBAC. Domain là nguồn sự thật và **không import** contracts.
 - Không import Prisma, Express, Socket.io runtime (chỉ type-only cho generic event map nếu cần), không đọc env, không I/O.
 - Không chứa map `ErrorCode → HTTP status` (thuộc API) và không chứa nhãn UI tiếng Việt (thuộc web).
 - `packages/contracts` chỉ phụ thuộc `zod`.
@@ -692,9 +699,9 @@ Task mới luôn ở TODO. Sai ⇒ `422 INVALID_STATUS_TRANSITION` với `detail
 | ID | Luật | Áp dụng | Vi phạm ⇒ | Nguồn |
 |---|---|---|---|---|
 | R1 | `title` sau trim dài 3–150 ký tự, không chứa ký tự điều khiển (trừ không có xuống dòng) | create, update | `400 VALIDATION_ERROR` (Zod) + entity kiểm lại | blueprint §7 |
-| R2 | `description` ≤ 10 000 ký tự (plain text/markdown, FE render an toàn); chuỗi rỗng sau trim ⇒ `null` | create, update | `400` | ĐỀ XUẤT |
+| R2 | `description` ≤ 10 000 ký tự (plain text/markdown, FE render an toàn); chuỗi rỗng sau trim ⇒ `null` | create, update | `400` | ADR-040 |
 | R3 | `priority` ∈ LOW/MEDIUM/HIGH/URGENT, mặc định **MEDIUM** | create | `400` | v1.0 schema |
-| R4 | `dueDate` dạng `YYYY-MM-DD`, năm 2000–2100. **Cho phép ngày quá khứ** (server không biết múi giờ người dùng; nhập lùi dữ liệu); FE cảnh báo "quá hạn" | create, update | `400` | ĐỀ XUẤT |
+| R4 | `dueDate` dạng `YYYY-MM-DD`, năm 2000–2100. **Cho phép ngày quá khứ** (server không biết múi giờ người dùng; nhập lùi dữ liệu); FE cảnh báo "quá hạn" | create, update | `400` | ADR-040 |
 | R5 | Project archived ⇒ cấm tạo/sửa/move/gán/**xóa** task (archive = chỉ đọc). Chỉ được đọc và unarchive | mọi lệnh ghi task | `422 PROJECT_ARCHIVED` | ADR-023, ADR-045 |
 | R6 | Assignee phải là thành viên **hiện tại** của workspace với role **≥ MEMBER** (VIEWER không được giao việc) và chưa bị ẩn danh hóa. Kiểm bằng `FOR SHARE` trên dòng membership (mục 1.9) | create, assign | `422 BUSINESS_RULE_VIOLATION` `ASSIGNEE_NOT_MEMBER` (nghĩa: không phải thành viên đủ điều kiện) | ADR-023, ADR-044 |
 | R7 | Ai được đổi assignee: OWNER/PM mọi task (`task:assign:any`). MEMBER (`task:assign:own`) chỉ: đổi assignee task mình tạo; tự nhận task chưa có người; tự bỏ nhận task đang gán cho mình. Khi **tạo** task, MEMBER chỉ được để trống hoặc gán chính mình; gán người khác cần `task:assign:any`. VIEWER không | create, assign | `403` | ADR-041 |
@@ -704,9 +711,9 @@ Task mới luôn ở TODO. Sai ⇒ `422 INVALID_STATUS_TRANSITION` với `detail
 | R11 | Move: anchor cùng project, cùng cột đích, chưa xóa, khác chính nó | move | `422 BUSINESS_RULE_VIOLATION` `INVALID_ANCHOR` | ADR-011 |
 | R12 | Task mới vào cuối cột TODO; mã `KEY-n` cấp bằng `UPDATE … RETURNING` trong transaction, không tái sử dụng | create | — | ADR-011, FR-03 |
 | R13 | Mọi thay đổi ghi 1 dòng audit trong cùng transaction; actor là user đã xác thực | mọi lệnh ghi | rollback cả thao tác | ADR-012, ADR-014 |
-| R14 | Thành viên bị xóa/tự rời **hoặc bị hạ xuống VIEWER** ⇒ mọi task họ đang được gán trong workspace bị bỏ gán (audit + event), mục 1.9 | remove member, change role | — | ADR-044 |
+| R14 | Thành viên bị xóa/tự rời **hoặc bị hạ xuống VIEWER** ⇒ mọi task họ đang được gán trong workspace bị bỏ gán (audit + event), mục 1.9 — **kể cả trong project archived** (ngoại lệ có chủ đích của R5) | remove member, change role | — | ADR-044, ADR-092 |
 | R18 | Workspace đã xóa mềm ⇒ mọi thao tác task/project/member trả `404`; chỉ OWNER khôi phục được trong 30 ngày | mọi | `404` | ADR-047 |
-| R15 | Lệnh không đổi gì (vd assign cùng người, PATCH cùng giá trị, move về đúng chỗ) ⇒ trả `200` task hiện tại, **không** tăng version, không audit, không event | update, move, assign | — | ĐỀ XUẤT |
+| R15 | Lệnh không đổi gì (vd assign cùng người, PATCH cùng giá trị, move về đúng chỗ) ⇒ trả `200` task hiện tại, **không** tăng version, không audit, không event. `expectedVersion` được kiểm **trước** no-op: no-op với version cũ vẫn `409` | update, move, assign | — | ADR-040, ADR-091 |
 | R16 | Task đã xóa mềm: mọi GET/ghi ⇒ `404`; riêng audit-logs vẫn đọc được | mọi | `404` | D1 |
 | R17 | `keyPrefix`: `^[A-Z][A-Z0-9]{1,9}$`, unique trong workspace, bất biến | create project | `400` / `409` | FR-03, D7 |
 | R19 | Workspace `name` trim 1–100; `slug` `^[a-z0-9]+(-[a-z0-9]+)*$` dài 3–50, unique, có slug dành riêng; tự sinh khi không gửi (mục 2.5) | create/update workspace, register | `400` / `409 RESOURCE_CONFLICT` | T-006, ĐỀ XUẤT |

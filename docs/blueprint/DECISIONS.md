@@ -79,5 +79,9 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-092 ✅ Bỏ gán do hệ thống (hạ VIEWER / xóa thành viên) được chạy cả trong project archived — ngoại lệ có chủ đích của ADR-045.
 - ADR-093 ✅ Giao tiếp giữa module theo DIP: module Workspace định nghĩa port `ITaskAssignmentCleaner` ở tầng application của nó; module Task hiện thực; wire ở composition root. **Module không import thẳng nội bộ module khác** — dependency-cruiser chặn; chỉ được import qua `modules/<x>/index.ts` (public API) nếu thật cần.
 
+- ADR-094 ✅ Luật slug/name workspace theo R19 trong `data-and-api.md` (slug `^[a-z0-9]+(-[a-z0-9]+)*$` 3–50, danh sách slug dành riêng ⇒ 409, tự sinh slug từ tên tiếng Việt, chỉ thêm hậu tố khi trùng, thử tối đa 5 lần).
+- ADR-095 ✅ Job purge workspace: `setInterval` mỗi giờ trong process API, chỉ chạy khi giành được khóa advisory. **Dùng `pg_try_advisory_xact_lock` bên trong transaction** (khóa mức session không an toàn với connection pool của Prisma). Không thêm hàng đợi, không phụ thuộc Valkey. Xử lý theo lô, idempotent.
+- ADR-096 ✅ Lỗi validation **không trả lại input** của người dùng (tránh phản xạ dữ liệu nhạy cảm như mật khẩu vào log/response).
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (bcrypt cost 12). Đo bằng k6 ở Phase 5.

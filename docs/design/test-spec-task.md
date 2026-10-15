@@ -1,7 +1,7 @@
 # Đặc tả test — Task domain (TDD cho Phase 2)
 
-> Ticket: T-007 · Tác giả: Engineer C (`taskflow-enterprise-ba`) · Trạng thái: **Chờ Tech Lead duyệt**
-> Căn cứ: `docs/blueprint/DECISIONS.md` (đến ADR-051), `docs/design/data-and-api.md` (luật R1–R18, mục 1.2/1.3/1.9, 2.7), `docs/design/security.md` (thứ tự kiểm tra, SEC-*).
+> Ticket: T-007 · Tác giả: Engineer C (`taskflow-enterprise-ba`) · Trạng thái: **Chính thức (ADR-090)** · cập nhật T-003c (ADR-062, 080–083, 091–093)
+> Căn cứ: `docs/blueprint/DECISIONS.md` (đến ADR-093), `docs/design/data-and-api.md` (luật R1–R18, mục 1.2/1.3/1.9, 2.7), `docs/design/security.md` (thứ tự kiểm tra, SEC-*).
 > Mỗi case ghi một **tầng** test. Case nào có cả ở nhiều tầng thì ghi tầng thấp nhất có thể bắt được lỗi.
 
 ## 0. Quy ước
@@ -60,7 +60,7 @@ Domain **không** biết project archived, membership, quyền: những thứ đ
 
 `404` (task/project ngoài phạm vi, task đã xóa) → `403` (Policy) → `422` (PROJECT_ARCHIVED, luật nghiệp vụ) → `409` (version) → domain → no-op → ghi + audit trong transaction → publish sau commit.
 
-**Quyết định cho T-007** (ĐỀ XUẤT, bổ sung R15): kiểm `expectedVersion` **trước** phát hiện no-op. Lệnh no-op mà version cũ vẫn trả `409`. Lý do: FE luôn nhận được bản mới nhất khi đang giữ dữ liệu cũ, và luồng xử lý chỉ có một đường.
+**ADR-091** (bổ sung R15): kiểm `expectedVersion` **trước** phát hiện no-op. Lệnh no-op mà version cũ vẫn trả `409`. Lý do: FE luôn nhận được bản mới nhất khi đang giữ dữ liệu cũ, và luồng xử lý chỉ có một đường.
 
 ---
 
@@ -114,7 +114,7 @@ Case bổ sung:
 |---|---|---|---|
 | TE-M17 | Mọi case ❌ ở trên | sau khi ném lỗi | Entity **không đổi** (status, rank, version, `updatedAt`), không có event |
 | TE-M18 | task TODO rank `"a0"` | `moveTo(TODO, "a0")` | Trả `false` (no-op), version giữ nguyên, không event |
-| TE-M19 | — | Bảng `ALLOWED_TRANSITIONS` của domain | Bằng đúng `TASK_STATUS_TRANSITIONS` trong `packages/contracts` (**test parity bắt buộc**, ADR-043; đặt ở `apps/api`, tầng U) |
+| TE-M19 | — | Bảng `ALLOWED_TRANSITIONS` của domain | Bằng đúng `TASK_STATUS_TRANSITIONS` trong `packages/contracts` (**test parity bắt buộc**, ADR-043/080; đặt ở `apps/api`, tầng U) |
 | TE-M20 | task đổi status thành công | kiểm `updatedAt` | `= now` truyền vào |
 
 ### 1.3. assignTo
@@ -211,6 +211,13 @@ Policy nhận `actor = { userId, role }` và task/ngữ cảnh, trả `allow | d
 | TP-U01 | Olivia, Pam, Mia (task người khác tạo) | allow cả update, move, create |
 | TP-U02 | Vic | deny cả ba |
 
+### 2.5. Parity quyền (ADR-080)
+
+| ID | Given | Then |
+|---|---|---|
+| TP-P01 | Bảng quyền theo role của RBAC trong `apps/api` | Bằng đúng `ROLE_PERMISSIONS` của `packages/contracts` (cùng tập `Permission` cho từng role, không thừa không thiếu) |
+| TP-P02 | `ROLE_RANK` | OWNER 4 > PM 3 > MEMBER 2 > VIEWER 1, khớp security.md §3.2 |
+
 ---
 
 ## 3. Use case
@@ -241,7 +248,8 @@ Cấu trúc chung mỗi use case: `execute({ workspaceId, projectId, taskId?, ac
 | UC-CR18 | I | P1 và Q1 cùng prefix `TF` | tạo task ở mỗi project | Cả hai đều `TF-1`; unique `(project_id, number)` không xung đột |
 | UC-CR19 | I | Audit insert bị ép lỗi (repo bọc ném sau khi insert task) | Mia tạo | DB không có task mới, `next_task_number` không đổi |
 | UC-CR20 | I | — | Mia tạo | `tasks.workspace_id = W1`; thử chèn tay task với `(project_id = P1, workspace_id = W2)` ⇒ lỗi FK kép (D6) |
-| UC-CR21 | I | — | — | Cột `rank` có collation `"C"`: `SELECT collation_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='rank'` = `C` |
+| UC-CR21 | I | — | — | Cột `rank` có collation `"C"`: `SELECT collation_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='rank'` = `C` (collation viết SQL tay, ADR-062) |
+| UC-CR22 | I | — | — | Index `tasks_rank_live_key` tồn tại, unique, có điều kiện `deleted_at IS NULL` (`pg_indexes.indexdef`) — sinh từ preview `partialIndexes` (ADR-062) |
 
 **Concurrency — cấp số TF-n (mục 1.2):**
 
@@ -311,11 +319,11 @@ Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[
 | UC-AS12 | A | Pam assign cho Max ở P2 archived **và** Max là VIEWER | — | 422 `PROJECT_ARCHIVED` (archived kiểm trước luật assignee) |
 | UC-AS13 | I | — | Pam assign Max | Query kiểm membership dùng `FOR SHARE` trên dòng `workspace_members (W1, Max)` (kiểm bằng log SQL hoặc spy `$queryRaw`) |
 
-**Bỏ gán khi mất quyền nhận việc (data-and-api §1.9, R14)** — thuộc use case của module Workspace nhưng do Task domain cung cấp `UnassignTasksOfUser` (ĐỀ XUẤT) nên spec ở đây:
+**Bỏ gán khi mất quyền nhận việc (data-and-api §1.9, R14)** — theo ADR-093: module Workspace định nghĩa port `ITaskAssignmentCleaner` (`unassignAllForUser({ workspaceId, userId, actorId }): Promise<{ unassignedTaskCount }>`) ở application của nó; module Task hiện thực (`TaskAssignmentCleaner`); wire ở composition root. Use case Workspace test với fake của port (spec ở `test-spec-auth-workspace.md`); dưới đây là spec của **hiện thực phía Task**, gọi trong transaction của bên gọi:
 
 | ID | Tầng | Given | When | Then |
 |---|---|---|---|---|
-| UC-UN01 | A | Max được gán TF-1 (P1), TF-4 (P3), ARC-1 (P2 archived), TF-9 (đã xóa mềm) | Olivia hạ Max xuống VIEWER | TF-1, TF-4, **ARC-1** bỏ gán (archived không chặn việc bỏ gán hệ thống — ĐỀ XUẤT, xem câu hỏi Q2 trong báo cáo); TF-9 giữ nguyên; mỗi task v+1, mỗi task 1 audit `ASSIGNEE_CHANGED` actor = Olivia; trả `unassignedTaskCount = 3` |
+| UC-UN01 | A | Max được gán TF-1 (P1), TF-4 (P3), ARC-1 (P2 archived), TF-9 (đã xóa mềm) | Olivia hạ Max xuống VIEWER | TF-1, TF-4, **ARC-1** bỏ gán (archived không chặn việc bỏ gán hệ thống — ADR-092); TF-9 giữ nguyên; mỗi task v+1, mỗi task 1 audit `ASSIGNEE_CHANGED` actor = Olivia; trả `unassignedTaskCount = 3` |
 | UC-UN02 | A | như trên | Pam xóa Max khỏi W1 | Như UC-UN01 |
 | UC-UN03 | A | như trên | Max tự rời W1 | Như UC-UN01, actor = Max |
 | UC-UN04 | A | Max được gán task ở W2 | Olivia hạ Max ở W1 | Task ở W2 không đổi |
@@ -339,7 +347,8 @@ Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[
 | UC-UP09 | A | — | update `{ v1, dueDate: null, description: null }` | Xóa cả hai, `changedFields` có cả hai |
 | UC-UP10 | A | task đã xóa mềm | update | 404 |
 | UC-UP11 | I | — | update thành công | `updated_at` đổi; câu UPDATE có điều kiện `version = expected` (ADR-010) |
-| UC-UP12 | I-HTTP | — | `PATCH` body có field lạ `{ v1, title, createdById: Otto }` | 400 `VALIDATION_ERROR` (`z.strictObject`) |
+| UC-UP12 | I-HTTP | — | `PATCH` body có field lạ `{ v1, title, createdById: Otto }` | 400 `VALIDATION_ERROR`, `details.issues` có `{ code: "unrecognized_keys", path: [] }` (`z.strictObject`, ADR-081) |
+| UC-UP13 | I-HTTP | — | `PATCH` `{ v1, title: "ab" }` | 400, `details.issues[0] = { path: ["title"], code: "too_small", message: <tiếng Việt> }` (locale `vi`, ADR-081) |
 
 ### 3.5. DeleteTaskUseCase (ADR-022/045)
 
@@ -428,10 +437,13 @@ Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[
 | R15 no-op | TE-M18, TE-A04, TE-U03, TE-U07, UC-MV15, UC-AS07, UC-UP06 |
 | R16 xóa mềm | TE-D01..03, UC-DL10..13, UC-MV21, UC-UP10 |
 | State machine | TE-M01..17, UC-MV13 |
-| ADR-011 rank | UC-CR02, UC-MV01..07, UC-MV23, UC-CR21, UC-DL12, CC-CR05, CC-MV03 |
+| ADR-011 rank | UC-CR02, UC-MV01..07, UC-MV23, UC-CR21, UC-CR22, UC-DL12, CC-CR05, CC-MV03 |
 | ADR-013 domain events | TE-C02, TE-M01, TE-M13, TE-A01, TE-U01, TE-D01, RT-01..09 |
 | ADR-020 phạm vi tenant | UC-CR10, UC-CR20, UC-MV20, UC-LS06, UC-LS07, UC-LS13, UC-AU05 |
-| ADR-043 parity | TE-M19 |
+| ADR-043/080 parity | TE-M19, TP-P01, TP-P02 |
+| ADR-062 Prisma index/collation | UC-CR21, UC-CR22, UC-MV23 |
+| ADR-081 lỗi validation | UC-UP12, UC-UP13 |
+| ADR-092/093 bỏ gán | UC-UN01..07, CC-UN01 |
 | Thứ tự 404→403→422→409 | UC-CR08, UC-MV16, UC-MV18, UC-MV19, UC-AS09, UC-AS12, UC-DL07 |
 
 ## 5. Gợi ý bố trí file (chốt ở Phase 1)
@@ -440,6 +452,8 @@ Bối cảnh chung: P1 có cột TODO `[A "a0", B "a1", C "a2"]`, IN_PROGRESS `[
 apps/api/src/modules/task/
   domain/__tests__/task.entity.spec.ts            TE-*
   domain/__tests__/task-status-parity.spec.ts     TE-M19
+  application/__tests__/rbac-parity.spec.ts        TP-P01, TP-P02 (có thể nằm ở module rbac)
+  application/__tests__/task-assignment-cleaner.spec.ts  UC-UN (A) — hiện thực ITaskAssignmentCleaner
   application/__tests__/task.policy.spec.ts       TP-*
   application/__tests__/create-task.spec.ts       UC-CR (A)
   application/__tests__/move-task.spec.ts         UC-MV (A)

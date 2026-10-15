@@ -56,3 +56,38 @@ Q1 quyền sửa/gán của MEMBER · Q2 khôi phục/purge task xóa mềm · Q
 - Cơ chế lịch cho purge job còn chờ T-001. Job phải an toàn khi chạy nhiều instance.
 - Nếu middleware membership có cache thì phải xóa cache khi workspace bị xóa hoặc khôi phục.
 - Cần Engineer B cập nhật `security.md`: permission `workspace:restore` và middleware `includeDeleted`, gửi `workspace:access-revoked` tới mọi thành viên khi xóa workspace, và thêm test cho route restore (không phải OWNER ⇒ 404).
+
+---
+
+## T-003c — Đồng bộ theo ADR-060 → ADR-093
+
+### Đã làm
+**`docs/design/data-and-api.md`** — đã xóa hết `TODO(T-001)`, kết quả kiểm chứng lấy từ `docs/research/stack-versions.md` §8:
+- **Prisma 7.10:**
+  - Khối generator có `previewFeatures = ["partialIndexes"]`. Datasource không còn url; url nằm ở `prisma.config.ts` (ADR-061).
+  - `uuid(7)` dùng được, nhưng DB không có DEFAULT, nên mọi insert bằng `$queryRaw` phải tự truyền id.
+  - Cấp số TF-n chốt dùng `$queryRaw … RETURNING`, vì `update` ném `P2025` khi không khớp.
+  - Collation "C" vẫn viết SQL tay (ADR-062).
+- **Partial index chuyển sang khai báo native** (ADR-062):
+  - `tasks_rank_live_key`: unique `(project_id, status, rank) WHERE deleted_at IS NULL`. Đã bỏ index không-partial vì mọi query đọc đều lọc `deleted_at IS NULL`.
+  - `workspaces_purge_at_idx WHERE purge_at IS NOT NULL`.
+- **Mật khẩu:** argon2id, 12–256 ký tự (ADR-065), bỏ giới hạn 72 byte. Đã sửa `Password` của contracts và comment `password_hash`.
+- **`VALIDATION_ERROR`:** `details` chuyển sang dạng `{ issues: [{ path, code, message }] }`, message theo locale `vi` (ADR-081). Không trả `input` của issue, để tránh phản chiếu dữ liệu nhạy cảm như mật khẩu.
+- **Contracts:** thêm `ROLE_PERMISSIONS`, `Permission`, `ROLE_RANK` và `TASK_STATUS_TRANSITIONS` dạng dữ liệu thuần, có test parity (ADR-080). Thêm `UpdateMeBody` và `q` trong `ListMembersQuery`. Ghi rõ chữ ký Zod 4.6.
+- **API:** thêm `PATCH /auth/me { fullName }`, thêm `q` cho `GET members` (ILIKE có escape, ADR-083). `SERVICE_UNAVAILABLE` nói tới Valkey (ADR-063).
+- **Luật:** R15 ghi ADR-091 (kiểm version trước no-op); R14 ghi ADR-092 (bỏ gán cả trong project archived). Các đề xuất đã duyệt ở ADR-040 được gắn nhãn ADR-040.
+
+**`docs/design/test-spec-task.md`:**
+- Trạng thái chuyển sang ADR-090.
+- Mục 0.4 dẫn ADR-091. UC-UN01 dẫn ADR-092.
+- Phần bỏ gán viết lại theo ADR-093: Workspace định nghĩa port `ITaskAssignmentCleaner`, Task hiện thực.
+- Thêm test: TP-P01/P02 (parity quyền), UC-CR22 (partial index), UC-UP13 (lỗi validation tiếng Việt kèm `code`/`path`). UC-UP12 kiểm thêm `unrecognized_keys`.
+- Cập nhật ma trận truy vết và bố trí file.
+
+### Quyết định tự đưa ra (T-003c)
+1. **Purge job workspace:** chạy `setInterval` mỗi giờ trong process API, chỉ instance lấy được `pg_try_advisory_lock` mới chạy. Không thêm hàng đợi, không phụ thuộc Valkey. T-001 không chốt cơ chế lịch nên tôi đề xuất cách này.
+2. **Lỗi validation không trả `input`.**
+3. **Danh sách members sắp theo `joinedAt, id`.** Tìm `q` không dùng index trigram ở v1, vì số thành viên mỗi workspace nhỏ.
+
+### Còn mở
+- R19 (slug dành riêng, tự sinh slug) vẫn là ĐỀ XUẤT, chưa có ADR.
