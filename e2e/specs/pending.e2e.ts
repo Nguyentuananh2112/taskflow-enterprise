@@ -5,11 +5,6 @@ import { test } from '../support/fixtures';
 
 const TASK_API = 'kịch bản Kanban đang viết (T-024 đã merge)';
 const pending: [id: string, title: string, blockedBy: string][] = [
-  [
-    'E2E-REBAL',
-    'Kéo nhiều lần vào giữa 2 thẻ ⇒ thứ tự đúng sau rebalance (T-033)',
-    'fix dnd-kit/CSP của E',
-  ],
   ['E2E-12b', 'axe trên board, drawer, trang thành viên (sáng/tối)', TASK_API],
   [
     'E2E-16',
