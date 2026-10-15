@@ -1,0 +1,651 @@
+# Thiết kế bảo mật — Auth, phân quyền, đa tenant (T-002)
+
+**Tác giả:** Engineer B (`taskflow-enterprise-87`) · **Phase:** 0 · **Trạng thái:** ✅ chính thức (ADR-040) · bổ sung T-002b: ADR-041 → ADR-047
+**Căn cứ:** `DECISIONS.md` v1.1 (ADR-014, ADR-020 → ADR-030), PRD v1.0 mục 1.2 & 6. Thống nhất cột DB + mã lỗi với Engineer C (T-003).
+
+> Quy ước: "phải/không được" = bắt buộc khi code ở Phase 2–3. Phiên bản thư viện cụ thể do T-001 (`docs/research/stack-versions.md`) chốt; tài liệu này chỉ mô tả hành vi.
+
+---
+
+## 0. Mô hình mối đe dọa (tóm tắt)
+
+| Tài sản | Mối đe dọa chính | Lớp phòng thủ |
+|---|---|---|
+| Dữ liệu workspace khác | IDOR (đoán/đổi id trong URL, socket) | Route lồng + membership middleware + query có phạm vi tenant + 404 (mục 4) |
+| Phiên người dùng | Trộm refresh token (XSS không đọc được vì HttpOnly; malware/log/proxy) | Rotation + phát hiện reuse + thu hồi family (mục 1.4) |
+| Access token | XSS đọc bộ nhớ JS | TTL 15 phút, `tv`/`sid` thu hồi được, CSP ở web (mục 6.2) |
+| Mật khẩu | Brute force, credential stuffing, rò DB | bcrypt cost 12, rate limit đa khóa, chặn mật khẩu phổ biến (mục 6) |
+| Endpoint dùng cookie | CSRF | SameSite=Strict + kiểm tra `Origin` + bắt buộc `application/json` |
+| Quyền | Leo thang (MEMBER xóa task người khác, VIEWER ghi, PM tự lên OWNER) | Middleware role tối thiểu + Policy object (mục 3) |
+
+---
+
+## 1. Luồng xác thực
+
+### 1.1 Register — `POST /api/v1/auth/register` (Public)
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as API
+  participant DB as PostgreSQL
+  C->>A: {email, password, fullName}
+  A->>A: Zod validate, chuẩn hóa email (trim, NFC, lowercase), kiểm tra chính sách mật khẩu (6.4)
+  A->>A: bcrypt.hash(password, 12)  ← NGOÀI transaction (≈250ms, không giữ tx mở)
+  A->>DB: BEGIN
+  A->>DB: INSERT users
+  A->>DB: INSERT workspaces (slug = slugify(fullName) + "-" + 6 ký tự base36 ngẫu nhiên)
+  A->>DB: INSERT workspace_members (role OWNER)
+  A->>DB: INSERT projects (dự án mặc định, keyPrefix "TF")
+  A->>DB: INSERT refresh_tokens (familyId mới)
+  A->>DB: COMMIT
+  A-->>C: 201 {accessToken, expiresIn, user, defaultWorkspaceId} + Set-Cookie refresh
+```
+
+- **Trùng email:** bắt lỗi unique (Prisma `P2002`, target `email`) → rollback → `409 EMAIL_ALREADY_EXISTS`. Không kiểm tra "SELECT trước rồi INSERT" (race).
+- **Trùng slug:** `P2002` target `slug` → sinh suffix mới, **thử lại cả transaction tối đa 3 lần**, sau đó `500 INTERNAL_ERROR` (xác suất ~0 với 36⁶ ≈ 2,2 tỉ tổ hợp). Slug không bao giờ lấy nguyên email (lộ email qua URL).
+- Register tự đăng nhập (tạo family mới như login).
+- Anti-enumeration cho register: xem 6.5 (giới hạn đã biết, câu hỏi mở cho Tech Lead).
+
+### 1.2 Login — `POST /api/v1/auth/login` (Public)
+
+1. Rate limit (6.3) **trước** mọi thao tác DB/bcrypt.
+2. Zod validate; chuẩn hóa email.
+3. `findUnique({ email })`. Nếu **không có** hoặc `deletedAt != null` → vẫn chạy `bcrypt.compare(password, DUMMY_HASH)` (DUMMY_HASH tạo lúc khởi động với cost 12) để thời gian phản hồi tương đương, rồi `401 INVALID_CREDENTIALS`.
+4. `bcrypt.compare` sai → `401 INVALID_CREDENTIALS` (cùng message: "Email hoặc mật khẩu không đúng").
+5. Đúng → nếu hash có cost < cấu hình hiện tại thì rehash và cập nhật (nâng cost về sau không cần reset mật khẩu).
+6. Tạo refresh token (family mới, `familyExpiresAt = now + 30 ngày`), cập nhật `lastLoginAt`, ký access token với `tv = user.tokenVersion`, `sid = familyId`.
+7. `200 {accessToken, expiresIn, user}` + `Set-Cookie`.
+
+Không có khóa tài khoản cứng (attacker có thể khóa nạn nhân = DoS); dùng rate limit theo email + IP.
+
+### 1.3 Đặc tả lưu trữ phiên (refresh token family)
+
+- **Family** = một phiên đăng nhập trên một thiết bị. `familyId` tạo ở login/register, giữ nguyên khi xoay.
+- Mỗi token chỉ dùng **1 lần**. Hạn trượt 7 ngày (`expiresAt = min(now + 7d, familyExpiresAt)`), hạn tuyệt đối 30 ngày (`familyExpiresAt`) — sau 30 ngày phải đăng nhập lại dù hoạt động liên tục.
+
+### 1.4 Refresh rotation + phát hiện reuse — `POST /api/v1/auth/refresh`
+
+Yêu cầu: cookie refresh + `Origin` thuộc whitelist (nếu không → `403 ORIGIN_NOT_ALLOWED`). Không body.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as API
+  participant DB as PostgreSQL
+  participant R as Redis
+  C->>A: POST /auth/refresh (Cookie rt)
+  A->>A: hash = sha256(rt)
+  A->>DB: SELECT refresh_tokens JOIN users WHERE token_hash = hash
+  alt không tìm thấy
+    A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
+  else đã thu hồi với reason ≠ ROTATED (LOGOUT, LOGOUT_ALL, REUSE…)
+    A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
+  else revokedReason = ROTATED và revokedAt > now − 10s
+    A-->>C: 409 REFRESH_IN_PROGRESS (không cấp, không thu hồi)
+  else revokedReason = ROTATED và cũ hơn 10s  ⇒ REUSE
+    A->>DB: UPDATE refresh_tokens SET revoked_at=now, reason=REUSE_DETECTED WHERE family_id=? AND revoked_at IS NULL
+    A->>R: SET auth:sid-revoked:{familyId} 1 EX 900
+    A->>A: log cảnh báo security (userId, familyId, ip, ua — không log token)
+    A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
+  else hết hạn (expiresAt hoặc familyExpiresAt) / user deletedAt
+    A-->>C: 401 REFRESH_TOKEN_INVALID + xóa cookie
+  else hợp lệ
+    A->>DB: BEGIN
+    A->>DB: INSERT token mới (cùng familyId, familyExpiresAt)
+    A->>DB: UPDATE refresh_tokens SET revoked_at=now, reason=ROTATED, replaced_by_id=new WHERE id=old AND revoked_at IS NULL
+    Note over A,DB: count = 0 ⇒ thua race với request khác ⇒ ROLLBACK, xử lý như nhánh REFRESH_IN_PROGRESS
+    A->>DB: COMMIT
+    A-->>C: 200 {accessToken, expiresIn} + Set-Cookie token mới
+  end
+```
+
+- **Cập nhật có điều kiện** (`updateMany … where revokedAt: null` rồi kiểm `count`) là chốt chặn race: hai request mang cùng token chỉ một cái thắng.
+- **Cửa sổ ân hạn 10s** chống báo động giả khi 2 tab refresh đồng thời. Trong cửa sổ đó kẻ trộm cũng **không nhận được token** — chỉ không kích hoạt thu hồi. Phía FE bắt buộc single-flight refresh xuyên tab (Web Locks API `navigator.locks.request('tf-refresh', …)`), nhận `409 REFRESH_IN_PROGRESS` thì đợi ~300ms và thử lại **1 lần** (cookie mới đã nằm trong jar).
+- `REFRESH_TOKEN_INVALID` dùng chung cho mọi thất bại (không tiết lộ đã phát hiện reuse).
+- Access token mới luôn đọc `tokenVersion` hiện tại từ DB (đã JOIN users).
+
+### 1.5 Logout 1 thiết bị — `POST /api/v1/auth/logout`
+
+Cookie + kiểm tra `Origin`. Không cần access token (có thể đã hết hạn). **Luôn `204`** (idempotent), luôn xóa cookie.
+1. Có cookie và tìm thấy token → thu hồi **cả family** (`reason = LOGOUT`, chỉ các dòng `revokedAt IS NULL`).
+2. `SET auth:sid-revoked:{familyId} 1 EX 900` → access token đang lưu hành của phiên này chết ngay (không đợi 15 phút).
+3. Socket: `io.in('session:{familyId}').disconnectSockets(true)`.
+
+### 1.6 Logout mọi thiết bị — `POST /api/v1/auth/logout-all` (Bearer)
+
+1. Transaction: `UPDATE users SET token_version = token_version + 1 … RETURNING token_version`; thu hồi mọi refresh token còn sống của user (`reason = LOGOUT_ALL`).
+2. Sau commit: `SET auth:tv:{userId} <newTv> EX 3600` (write-through, ghi đè vô điều kiện — xem 2.4).
+3. `io.in('user:{userId}').disconnectSockets(true)`.
+4. `204` + xóa cookie. Mọi access token có `tv` cũ bị từ chối ngay ở request kế tiếp (`401 UNAUTHORIZED`).
+
+### 1.7 Đổi mật khẩu — `POST /api/v1/auth/change-password` (Bearer)
+
+Body `{ currentPassword, newPassword }`. Rate limit 5/15 phút/user.
+1. `bcrypt.compare(currentPassword)` sai → `400 INVALID_CURRENT_PASSWORD` (cố ý không dùng 401 để interceptor FE không nhầm là hết hạn token).
+2. `newPassword` qua chính sách 6.4 và phải khác mật khẩu cũ.
+3. Hash mới ngoài transaction. Transaction: cập nhật `passwordHash`, `passwordChangedAt`, `tokenVersion + 1`; thu hồi **mọi** refresh token (`reason = PASSWORD_CHANGED`); tạo family mới cho thiết bị hiện tại.
+4. Sau commit: `SET auth:tv:{userId}`, ngắt mọi socket của user (`user:{userId}`) — tab hiện tại tự kết nối lại bằng token mới.
+5. `200 {accessToken, expiresIn}` + Set-Cookie mới.
+
+**Phải thu hồi:** mọi refresh token, mọi access token (qua `tv`), mọi socket. Lý do: đổi mật khẩu thường là phản ứng khi nghi bị lộ.
+
+### 1.8 `GET /api/v1/auth/me` (Bearer)
+Trả `{ user: {id, email, fullName}, memberships: [{workspaceId, workspaceName, slug, role}] }`. Lọc theo `req.user.id`, không nhận tham số id.
+
+### 1.9 Ngoài phạm vi v1 (ghi nhận)
+Quên mật khẩu / xác minh email (cần hạ tầng email), MFA, danh sách & thu hồi từng phiên trên UI (schema đã đủ dữ liệu để làm sau: `userAgent`, `ip`, `familyId`).
+
+---
+
+## 2. Đặc tả token
+
+### 2.1 Access token (JWT)
+
+| Mục | Giá trị |
+|---|---|
+| Thuật toán | **HS256** (một service vừa ký vừa xác minh, không cần khóa công khai). Khi verify **phải** truyền whitelist `algorithms: ['HS256']` (chống `alg: none` / nhầm thuật toán). |
+| Khóa | `JWT_ACCESS_SECRET` ≥ 32 byte ngẫu nhiên (base64), kiểm tra độ dài bằng Zod lúc khởi động; dev và prod khác nhau. Header có `kid`; env cho phép `JWT_ACCESS_SECRET_PREVIOUS` để xoay khóa không làm rớt phiên (verify thử theo `kid`). |
+| TTL | 15 phút (`expiresIn: 900` trong response). `clockTolerance` 5s. |
+| Lưu trữ FE | Chỉ trong bộ nhớ (ADR-026). Gửi bằng `Authorization: Bearer`. Không bao giờ ở localStorage/cookie/URL. |
+
+Claims:
+
+| Claim | Ý nghĩa |
+|---|---|
+| `sub` | userId (uuid) |
+| `tv` | `users.token_version` lúc ký (ADR-025) |
+| `sid` | `familyId` của phiên — cho logout 1 thiết bị & room socket `session:{sid}` |
+| `jti` | uuid ngẫu nhiên (truy vết log) |
+| `iat`, `exp` | chuẩn |
+| `iss` | `taskflow-api` |
+| `aud` | `taskflow-web` |
+
+**Không** có `role`, `workspaceId`, `email` trong JWT: role theo workspace và đổi được bất kỳ lúc nào → luôn đọc từ DB mỗi request (xem 3.3).
+
+> `JWT_REFRESH_SECRET` trong `.env` v1.0 **không còn cần**: refresh token là chuỗi ngẫu nhiên mờ (opaque), không phải JWT. Đề xuất bỏ khỏi `.env.example` ở Phase 1.
+
+### 2.2 Refresh token
+
+| Mục | Giá trị |
+|---|---|
+| Sinh | `crypto.randomBytes(32)` → base64url (43 ký tự), 256 bit entropy |
+| Lưu DB | `tokenHash = sha256(token)` dạng hex (64 ký tự), `@unique`. SHA-256 (không bcrypt) vì token đã có entropy cao và cần tra cứu theo hash (ADR-024). So khớp bằng tra cứu index nên không có vấn đề timing. |
+| Hạn | Trượt 7 ngày, tuyệt đối 30 ngày (1.3) |
+| Dọn dẹp | Job hằng ngày xóa dòng có `expiresAt < now − 7 ngày` (giữ 7 ngày để điều tra) |
+
+### 2.3 Cookie
+
+| Thuộc tính | Production | Development (localhost, HTTP) |
+|---|---|---|
+| Tên | `__Secure-tf_rt` | `tf_rt` |
+| `HttpOnly` | ✅ | ✅ |
+| `Secure` | ✅ | ❌ |
+| `SameSite` | `Strict` | `Strict` (`localhost:3000` và `localhost:4000` cùng site — cổng không tính) |
+| `Path` | `/api/v1/auth` | `/api/v1/auth` |
+| `Domain` | **không đặt** (host-only trên `api.example.com`) | không đặt |
+| `Max-Age` | = thời gian còn lại tới `expiresAt` | như prod |
+
+- Không dùng tiền tố `__Host-` vì nó bắt buộc `Path=/`.
+- Dev tắt `Secure` vì: Chrome nhận `Secure` trên localhost nhưng **từ chối tiền tố `__Secure-`/`__Host-`**, Safari từ chối cookie `Secure` trên localhost hoàn toàn. Cấu hình bằng `COOKIE_SECURE` + `COOKIE_NAME` suy ra từ `NODE_ENV`; **app không khởi động** nếu `NODE_ENV=production` mà `COOKIE_SECURE=false`.
+- Xóa cookie: `Set-Cookie` cùng tên/Path với `Max-Age=0`.
+- FE gọi các endpoint `/auth/*` với `credentials: 'include'`.
+
+### 2.4 Redis
+
+| Key | Giá trị | TTL | Ghi bởi | Đọc bởi |
+|---|---|---|---|---|
+| `auth:tv:{userId}` | token_version (int) | 3600s | logout-all, đổi mật khẩu, xóa user: `SET … EX 3600` (vô điều kiện) **sau commit**. Đọc miss: load DB rồi `SET … EX 3600 NX` | middleware HTTP + socket |
+| `auth:sid-revoked:{familyId}` | `1` | 900s (= TTL access token) | logout, reuse detected | middleware HTTP + socket |
+| `rl:{rule}:{key}` | bộ đếm | theo cửa sổ | rate-limit store | rate-limit |
+
+- Writer `SET` vô điều kiện còn reader `SET NX`: nếu reader đọc giá trị DB cũ trước khi writer commit, writer luôn ghi đè sau đó → không giữ giá trị cũ suốt TTL.
+- Middleware gọi `MGET auth:tv:{sub} auth:sid-revoked:{sid}` — **1 round-trip** mỗi request.
+- **Redis lỗi:** `tv` fallback đọc DB (ADR-025); `sid-revoked` fallback `SELECT 1 FROM refresh_tokens WHERE family_id = $sid AND revoked_reason IN ('LOGOUT','REUSE_DETECTED') LIMIT 1` (dùng index `family_id`). DB cũng lỗi → `503 SERVICE_UNAVAILABLE` (fail-closed). Log cảnh báo khi đang ở chế độ fallback.
+- Email trong key rate-limit được băm SHA-256 (không lưu email thô trong Redis).
+
+### 2.5 Middleware `authenticate`
+
+1. Lấy `Authorization: Bearer <jwt>`; thiếu → `401 UNAUTHORIZED`.
+2. Verify chữ ký/alg/iss/aud/exp. Hết hạn → `401 TOKEN_EXPIRED` (FE **chỉ** tự refresh với code này); lỗi khác → `401 UNAUTHORIZED`.
+3. `MGET` Redis (2.4): `tv` khác claim hoặc `sid` bị thu hồi → `401 UNAUTHORIZED`.
+4. Gắn `req.user = { id, sid, tv }` (kiểu khai báo bằng module augmentation, ADR-014, cấm `as any`).
+
+---
+
+## 3. Mô hình phân quyền
+
+### 3.1 Role và hạng
+
+`OWNER (4) > PM (3) > MEMBER (2) > VIEWER (1)`. Role là thuộc tính của **membership** (user × workspace), không phải của user.
+
+### 3.2 Danh mục permission (từ ma trận RBAC 1.2)
+
+| Permission | OWNER | PM | MEMBER | VIEWER | Ràng buộc Policy |
+|---|:-:|:-:|:-:|:-:|---|
+| `workspace:read` | ✅ | ✅ | ✅ | ✅ | |
+| `workspace:update` | ✅ | | | | |
+| `workspace:delete` | ✅ | | | | Xóa mềm 30 ngày (ADR-047, 3.6) |
+| `workspace:restore` | ✅ | | | | *Chờ duyệt.* Chỉ trên ws đã xóa mềm, chưa quá hạn; middleware riêng `includeDeleted` (3.6) |
+| `member:read` | ✅ | ✅ | ✅ | ✅ | |
+| `member:add` | ✅ | ✅ | | | PM chỉ thêm với role `MEMBER`/`VIEWER`; OWNER thêm role bất kỳ. Người được thêm phải là user tồn tại, chưa là member. |
+| `member:update-role` | ✅ | | | | Không được hạ OWNER cuối cùng (`422 BUSINESS_RULE_VIOLATION`, `details.rule = "LAST_OWNER"`, chống race theo 3.5). Hạ xuống VIEWER ⇒ bỏ gán task (3.5) |
+| `member:remove` | ✅ | ✅ | | | PM chỉ xóa `MEMBER`/`VIEWER`; OWNER xóa bất kỳ trừ OWNER cuối cùng |
+| `member:leave` (tự rời) | ✅ | ✅ | ✅ | ✅ | Trừ OWNER cuối cùng |
+| `project:read` | ✅ | ✅ | ✅ | ✅ | |
+| `project:create` | ✅ | ✅ | | | |
+| `project:update` | ✅ | ✅ | | | |
+| `project:archive` (gồm unarchive) | ✅ | ✅ | | | |
+| `task:read` | ✅ | ✅ | ✅ | ✅ | |
+| `task:create` | ✅ | ✅ | ✅ | | Project không archived (ADR-023) |
+| `task:update` | ✅ | ✅ | ✅ | | Task bất kỳ trong project; project không archived |
+| `task:move` | ✅ | ✅ | ✅ | | Task bất kỳ; project không archived |
+| `task:assign:any` | ✅ | ✅ | | | Assignee phải là member workspace với role **≥ MEMBER** (ADR-023, ADR-044) |
+| `task:assign:own` | | | ✅ | | Chỉ khi (a) task do mình tạo, hoặc (b) tự nhận task chưa có assignee / tự bỏ nhận task đang gán cho mình. Khi **tạo** task: MEMBER chỉ được để trống `assigneeId` hoặc gán cho chính mình; gán cho người khác cần `task:assign:any` (chốt với C, R7 T-003) |
+| `task:delete:any` | ✅ | ✅ | | | |
+| `task:delete:own` | | | ✅ | | `task.createdById === actor.userId`; `createdById = null` ⇒ chỉ `:any` |
+| *(mọi `task:delete:*`)* | | | | | Project archived ⇒ cấm xóa (`422 PROJECT_ARCHIVED`, ADR-045). Task đã xóa mềm ⇒ `404` (ADR-042) |
+| `audit:read` | ✅ | ✅ | ✅ | ✅ | |
+| `comment:create` | ✅ | ✅ | ✅ | | Dự phòng, chưa có model |
+
+Không có xóa cứng project ở v1. Giả định cần Tech Lead xác nhận: MEMBER được **sửa nội dung** task của người khác (ma trận không nói rõ), và quy tắc `task:assign:own`.
+
+Hằng số `ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>>` sống ở tầng **domain** (thuần TS, không import hạ tầng). Kiểu `Permission` là union literal để sai chính tả là lỗi biên dịch.
+
+### 3.3 Hai lớp kiểm tra (ADR-021)
+
+**Lớp 1 — middleware (chặn sớm, rẻ):**
+```
+router.use('/workspaces/:wsId', authenticate, loadMembership)
+  loadMembership: SELECT m.role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+                  WHERE m.workspace_id = :wsId AND m.user_id = req.user.id AND w.deleted_at IS NULL
+                  không có dòng ⇒ 404 RESOURCE_NOT_FOUND   (ws không tồn tại, đã xóa mềm, hoặc không phải member — cùng một body)
+                  có ⇒ req.membership = { workspaceId, role }
+requirePermission('task:delete')  // thỏa nếu role có :any HOẶC :own ⇒ MEMBER qua, VIEWER bị 403
+```
+- Membership **đọc DB mỗi request** (lookup trên unique `[workspaceId, userId]`, rẻ), không cache ở v1, để đổi role/xóa member có hiệu lực ngay. Nếu sau này cache thì phải invalidation tường minh khi đổi role/xóa member.
+- Router con phải tạo với `Router({ mergeParams: true })`, nếu không `:wsId` sẽ mất.
+
+**Lớp 2 — Policy ở application (quyết định cuối):**
+```ts
+// application/policies/task.policy.ts  (phác thảo, không phải code cuối)
+canDelete(actor: Actor, task: TaskSnapshot): boolean {
+  if (actor.has('task:delete:any')) return true;
+  return actor.has('task:delete:own') && task.createdById === actor.userId;
+}
+```
+- `Actor = { userId, workspaceId, role }` do controller dựng từ `req.user` + `req.membership` và truyền vào UseCase. UseCase **không** đọc `req`.
+- Policy từ chối → `ForbiddenError` (`403 FORBIDDEN_ACCESS`).
+- Mỗi aggregate một Policy: `WorkspacePolicy`, `MemberPolicy`, `ProjectPolicy`, `TaskPolicy`. Unit test bảng (role × tình huống) cho từng Policy.
+
+### 3.4 Endpoint → permission
+
+Tiền tố `/api/v1`. `ws` = `/workspaces/:wsId`, `p` = `/projects/:projectId`, `t` = `/tasks/:taskId`.
+
+| Endpoint | Middleware (min) | Policy thêm |
+|---|---|---|
+| `POST /auth/register`, `/auth/login` | Public + rate limit | |
+| `POST /auth/refresh`, `/auth/logout` | Cookie + Origin + rate limit | |
+| `POST /auth/logout-all`, `/auth/change-password`, `GET /auth/me` | `authenticate` | |
+| `GET /workspaces` (của tôi) | `authenticate` | lọc theo userId, `deleted_at IS NULL`; `?deleted=true` ⇒ chỉ ws đã xóa mà tôi là OWNER |
+| `POST /workspaces` | `authenticate` | người tạo thành OWNER (cùng transaction); rate limit 10/giờ/user |
+| `GET ws` | `workspace:read` | |
+| `PATCH ws` | `workspace:update` | |
+| `DELETE ws` | `workspace:delete` | xóa mềm (3.6) |
+| `POST ws/restore` *(chờ duyệt)* | `requireMembership(includeDeleted, OWNER)` — không qua `loadMembership` | điều kiện `deleted_at IS NOT NULL AND purge_at > now()` (3.6) |
+| `GET ws/members` | `member:read` | |
+| `POST ws/members` | `member:add` | role được cấp ≤ quyền người mời |
+| `PATCH ws/members/:userId` | `member:update-role` | LAST_OWNER |
+| `DELETE ws/members/:userId` | `member:leave` (VIEWER) | Policy: chính mình ⇒ leave; người khác ⇒ cần `member:remove` + luật PM/OWNER + LAST_OWNER |
+| `GET ws/projects`, `GET ws/p` | `project:read` | |
+| `POST ws/projects` | `project:create` | |
+| `PATCH ws/p` | `project:update` | |
+| `POST ws/p/archive`, `ws/p/unarchive` | `project:archive` | |
+| `GET ws/p/tasks`, `GET ws/p/t` | `task:read` | |
+| `POST ws/p/tasks` | `task:create` | không archived; nếu có `assigneeId` ⇒ `canAssign` + assignee là member |
+| `PATCH ws/p/t` | `task:update` | không archived, `expectedVersion` |
+| `PATCH ws/p/t/move` | `task:move` | không archived, `expectedVersion` |
+| `PATCH ws/p/t/assignee` — body `{ expectedVersion, assigneeId: uuid \| null }` | `task:assign:own` (MEMBER) | `canAssign` (any/own), assignee là member, không archived |
+| `DELETE ws/p/t` | `task:delete:own` (MEMBER) | `canDelete` |
+| `GET ws/p/t/audit-logs` | `audit:read` | |
+
+Đường dẫn chính xác (VD `/move` hay `/status`) theo contract của Engineer C trong `docs/design/data-and-api.md`; bảng permission phải giữ khớp.
+
+---
+
+### 3.5 Luật thành viên chống race (ADR-044, ADR-046)
+
+**LAST_OWNER (ADR-046).** Hạ role, xóa member, tự rời và (sau này) ẩn danh hóa user đều đi qua **một** hàm application `ensureOwnerRemainsAfter(change)` chạy trong transaction:
+```sql
+-- 1. Khóa mọi dòng OWNER của ws, thứ tự cố định (theo id) để không deadlock giữa 2 transaction
+SELECT id, user_id FROM workspace_members
+ WHERE workspace_id = $ws AND role = 'OWNER'
+ ORDER BY id
+ FOR UPDATE;
+-- 2. Tính số OWNER còn lại SAU thay đổi; < 1 ⇒ ROLLBACK, 422 BUSINESS_RULE_VIOLATION (LAST_OWNER)
+-- 3. Áp thay đổi (UPDATE role / DELETE membership) trong cùng transaction
+```
+- Kịch bản race: ws có đúng 2 OWNER là Alice và Olga, mỗi người hạ người kia cùng lúc. Transaction thứ hai bị chặn ở bước 1 đến khi transaction thứ nhất commit. Ở mức READ COMMITTED, PostgreSQL đánh giá lại `WHERE role = 'OWNER'` trên phiên bản dòng mới nên chỉ còn đếm được 1 OWNER ⇒ bị từ chối. Kết quả: đúng 1 thành công, 1 nhận `422`, ws luôn còn ≥ 1 OWNER.
+- Chỉ các thao tác **giảm** số OWNER mới cần khóa. Thêm OWNER thì không cần.
+- Không được thay bằng "đếm rồi kiểm tra" không khóa, và không đặt kiểm tra này trong middleware.
+
+**Assignee ≥ MEMBER (ADR-044).**
+- Gán (khi tạo task hoặc `PATCH …/assignee`): trong transaction, đọc membership của assignee bằng `SELECT role … FOR SHARE`, yêu cầu role ∈ {OWNER, PM, MEMBER}. Không thỏa ⇒ `422 BUSINESS_RULE_VIOLATION` (`ASSIGNEE_NOT_MEMBER`), cùng message dù user không tồn tại, không phải member hay là VIEWER (không lộ thông tin).
+- Hạ role xuống VIEWER, hoặc xóa / tự rời: trong **cùng transaction** với việc đổi role/xóa membership (dòng membership đã bị `FOR UPDATE`), bỏ gán mọi task chưa xóa mềm của user trong ws đó. Mỗi task được `version + 1` và ghi audit `TaskAssigneeChanged` với actor là người thực hiện. Sau commit, phát `task:*` theo contract T-003.
+- `FOR SHARE` (lúc gán) và `FOR UPDATE` (lúc hạ role/xóa) tranh chấp cùng một dòng ⇒ không thể có task được gán cho người vừa bị hạ xuống VIEWER do race.
+
+### 3.6 Workspace xóa mềm (ADR-047)
+
+- `DELETE ws` chỉ đặt `workspaces.deleted_at = now()`. Job purge xóa cứng sau 30 ngày.
+- Từ thời điểm `deleted_at` khác null, **với mọi người kể cả OWNER**, workspace được coi là không tồn tại:
+  - `loadMembership` (3.3) ⇒ `404`. Vì mọi route lồng đều đi qua đây, project/task/member/audit của ws đó đều `404`.
+  - `GET /workspaces` và `GET /auth/me` lọc `deleted_at IS NULL`.
+  - Socket `project:join` ⇒ ack `RESOURCE_NOT_FOUND` (5.2). Socket đang ở phòng bị đẩy ra (5.4).
+  - `member:add` vào ws đã xóa ⇒ `404`. Không thể "kéo" user vào ws đang chờ purge.
+- Mọi kiểm tra tenant ở tầng UseCase/Query (4.1) cũng phải có điều kiện `workspace.deletedAt = null` (phòng thủ 2 lớp, không chỉ dựa vào middleware).
+- Không có cache membership ở v1 (3.3). Nếu sau này thêm cache thì phải xóa cache của mọi member khi workspace bị xóa **hoặc** được khôi phục.
+
+**Khôi phục — `POST /workspaces/:wsId/restore`** (C đề xuất trong `data-and-api.md` 1.7; **chờ Tech Lead duyệt**, chưa có ADR). Nếu được duyệt thì phải tuân thủ:
+- Route nằm **ngoài** `loadMembership`, dùng middleware riêng `requireMembership(wsId, { includeDeleted: true, minRole: OWNER })`. Đây là chỗ duy nhất được dùng `includeDeleted: true`; có lint/test chặn dùng ở route khác.
+- Mọi thất bại (không phải member, là PM/MEMBER/VIEWER, ws chưa xóa, đã quá `purgeAt`, ws không tồn tại) ⇒ **cùng một** `404 RESOURCE_NOT_FOUND`. Không trả 403 cho member không phải OWNER: với họ ws đang "không tồn tại".
+- UseCase chạy trong transaction: `UPDATE workspaces SET deleted_at = NULL WHERE id = $ws AND deleted_at IS NOT NULL AND purge_at > now()` rồi kiểm `count`. `count = 0` ⇒ 404. Job purge cũng chỉ xóa với điều kiện `purge_at <= now()`. Hai điều kiện loại trừ nhau nên restore và purge không thể cùng thành công.
+- Role OWNER được đọc **trong** transaction. Trong thời gian ws bị xóa mọi route đổi role đều trả 404, nên OWNER lúc khôi phục chính là OWNER lúc xóa.
+- Rate limit 10 lần/giờ/user. Ghi log sự kiện bảo mật (`workspace.restored`, actor, ip, requestId).
+- Sau commit không cần thao tác socket: member tự `project:join` lại như bình thường.
+- `GET /workspaces?deleted=true` chỉ trả ws đã xóa mềm, chưa quá `purgeAt`, mà người gọi là **OWNER**. PM/MEMBER/VIEWER của ws đó không thấy.
+
+## 4. Chống IDOR (ADR-020)
+
+### 4.1 Resolve tenant cho route lồng nhau
+1. `loadMembership(:wsId)` — xác lập tenant **chỉ** từ URL + user đã xác thực. Không bao giờ tin `workspaceId`/`projectId` trong body.
+2. UseCase/Query nhận `{ workspaceId, projectId, taskId }` và repository **query có phạm vi**:
+   ```ts
+   // ĐÚNG
+   prisma.task.findFirst({ where: { id: taskId, projectId, project: { workspaceId } } })
+   // SAI — cấm
+   prisma.task.findUnique({ where: { id: taskId } })
+   ```
+   Ghi (update/delete) cũng có phạm vi: `updateMany({ where: { id, projectId, version } })`.
+3. Kiểu dữ liệu ép điều này: interface repository cho tài nguyên tenant nhận `scope: { workspaceId, projectId }` bắt buộc. Code review + test IDOR (mục 7) là lưới cuối.
+4. Tham chiếu chéo trong body cũng phải kiểm tra tenant: `assigneeId` phải là member **của wsId này**; khi thêm member, user được thêm chỉ tra theo email/id, không trả thông tin user ngoài phạm vi.
+5. Query danh sách (tasks, audit log) luôn lọc theo `projectId` đã xác minh thuộc `workspaceId`. Cursor phân trang không được vượt tenant: giải mã cursor xong vẫn áp `where` phạm vi.
+
+### 4.2 404 hay 403
+
+| Tình huống | Trả |
+|---|---|
+| Thiếu / sai / hết hạn access token | `401` |
+| Không phải member của `wsId` (hoặc ws không tồn tại) | `404 RESOURCE_NOT_FOUND` |
+| Member, nhưng `projectId` ∉ ws hoặc `taskId` ∉ project (hoặc không tồn tại) | `404 RESOURCE_NOT_FOUND` |
+| Member, thấy được tài nguyên, nhưng role không đủ | `403 FORBIDDEN_ACCESS` |
+| Member, role đủ, Policy từ chối (MEMBER xóa task người khác) | `403 FORBIDDEN_ACCESS` |
+| Project archived khi ghi (gồm cả xóa task, ADR-045) | `422 PROJECT_ARCHIVED` |
+| Workspace đã xóa mềm / task đã xóa mềm | `404 RESOURCE_NOT_FOUND` |
+| Sai version | `409 VERSION_CONFLICT`, `details: { currentVersion, current: TaskDto }` — an toàn vì 409 chỉ tới sau khi đã qua 404/403 (người gọi đọc được task) |
+| Param id sai định dạng uuid | `400 VALIDATION_ERROR` (không lộ sự tồn tại) |
+
+Nguyên tắc: **chỉ trả 403 khi người gọi đã được phép biết tài nguyên tồn tại** (mọi member đều đọc được mọi thứ trong ws nên 403 không lộ gì thêm). Thứ tự kiểm tra cố định: 401 → 404 → 403 → 422 → 409. Body 404 phải **giống hệt** nhau giữa "không tồn tại" và "không có quyền" (cùng message, không `details`).
+
+### 4.3 Ví dụ
+- Alice là OWNER ws A. Bob là MEMBER ws B. Bob gọi `GET /workspaces/A/projects/P1/tasks` → `404` (Bob không phải member A).
+- Bob gọi `GET /workspaces/B/projects/P1/tasks` với P1 thuộc A → `loadMembership(B)` qua, query `project where id=P1 and workspaceId=B` không thấy → `404`.
+- Bob gọi `DELETE /workspaces/B/projects/P2/tasks/T9` với T9 thuộc P3 (cùng ws B) → `404` (task ∉ project trong URL).
+- Bob (MEMBER) xóa task do Carol tạo trong ws B → `403`.
+- Bob gửi `PATCH …/assignee {assigneeId: <Alice>}` trong ws B (Alice không phải member B) → `422 BUSINESS_RULE_VIOLATION`, message chung "Assignee không hợp lệ" — không xác nhận Alice tồn tại.
+
+---
+
+## 5. Socket.io (ADR-027)
+
+Socket là kênh **chỉ đọc** (server → client). Mọi thao tác ghi đi qua REST. Vì vậy quyền chỉ cần kiểm ở bước join.
+
+### 5.1 Handshake
+- Client: `io(WS_URL, { auth: (cb) => cb({ token: getAccessToken(), clientId }), withCredentials: false })`. Token **không** đặt trong query string (bị ghi vào log proxy). `clientId` = uuid theo tab (giống header REST `X-Client-Id`), Zod validate uuid, lưu `socket.data.clientId`.
+- Server: `cors` cùng whitelist với HTTP; `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' }` → client nhận ở `connect_error`, refresh rồi kết nối lại.
+- Thành công: `socket.data.user = { id, sid, exp }`; tự join `user:{userId}` và `session:{sid}` (dùng cho logout / logout-all).
+- Rate limit kết nối: 20 handshake/phút/IP.
+
+### 5.2 `project:join`
+```
+client → server: 'project:join', { workspaceId, projectId }, ack
+server: Zod validate → SELECT membership(workspaceId, user) JOIN workspace(deleted_at IS NULL) + project(id=projectId, workspaceId)
+        không thỏa ⇒ ack({ ok: false, code: 'RESOURCE_NOT_FOUND' })   // cùng ngữ nghĩa 404
+        thỏa      ⇒ socket.join('project:{projectId}'); socket.data.joined.set(projectId, workspaceId); ack({ ok: true })
+'project:leave', { projectId }, ack
+```
+- Project archived vẫn join được (đọc được).
+- Tối đa 20 phòng project/socket; 30 lần `project:join`/phút/socket.
+- Mọi event server→client dùng vỏ chung `{ eventId, type, occurredAt, actorId, originClientId, data }` (contract T-003). `data` chỉ chứa DTO task — không có email/hash/token.
+- **`X-Client-Id` / `clientId` KHÔNG phải thông tin xác thực**: client tự sinh, giả mạo được, chỉ dùng để FE bỏ qua event do chính tab mình gây ra (`originClientId`). Server không được dùng nó cho bất kỳ quyết định phân quyền, rate limit hay định danh nào; giá trị không phải uuid ⇒ bỏ qua (coi như null), không ghi vào audit log.
+
+### 5.3 Token hết hạn khi socket đang mở
+- Server đặt timer theo `exp` của token. Trước hạn, client refresh qua HTTP rồi gửi `'auth:renew', { token }, ack`. Server verify đầy đủ (2.5), **`sub` phải trùng** user hiện tại (khác → ngắt). Thành công → đặt lại timer, cập nhật `sid` room nếu đổi, và **kiểm tra lại membership mọi phòng đang join** (lưới an toàn ~15 phút/lần nếu lỡ mất sự kiện thu hồi).
+- Timer chạy hết mà chưa renew → `emit('auth:expired')` rồi `disconnect(true)`. Client refresh và kết nối lại, join lại các phòng.
+
+### 5.4 Thu hồi quyền khi socket đang mở
+Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`io.in(room).socketsLeave/disconnectSockets`) để hoạt động xuyên node khi bật `@socket.io/redis-adapter`.
+
+| Sự kiện | Hành động socket |
+|---|---|
+| Member bị xóa / tự rời ws | Lấy danh sách projectId của ws → `io.in('user:{uid}').socketsLeave(projectIds.map(id => 'project:'+id))`; `io.to('user:{uid}').emit('workspace:access-revoked', { workspaceId })` |
+| Workspace bị xóa (mềm, ADR-047) | Sau commit đặt `deleted_at`: emit `workspace:access-revoked` vào các phòng project của ws rồi `io.in(projectRooms).socketsLeave(...)`. Lần join sau ⇒ `RESOURCE_NOT_FOUND`. Purge không cần làm gì thêm |
+| Hạ role xuống VIEWER | Không rời phòng (VIEWER vẫn đọc được). Gửi `member:role-changed` + các event `task:*` của những task bị bỏ gán (3.5) |
+| Đổi role | Không cần rời phòng (mọi role đều đọc được); `io.to('user:{uid}').emit('member:role-changed', { workspaceId, role })` để FE cập nhật UI. UI chỉ là hiển thị — server vẫn kiểm role mỗi request |
+| Logout 1 thiết bị | `io.in('session:{sid}').disconnectSockets(true)` |
+| Logout-all / đổi mật khẩu / xóa user | `io.in('user:{uid}').disconnectSockets(true)` |
+
+---
+
+## 6. Hardening (ADR-028, ADR-029)
+
+### 6.1 Thứ tự middleware Express
+`requestId (pino-http)` → `helmet` → `cors` → kiểm tra Content-Type → `express.json({ limit })` → rate limit toàn cục → routes (rate limit riêng, auth, rbac) → 404 → error handler.
+
+`app.set('trust proxy', <số hop chính xác>)` (cấu hình bằng `TRUST_PROXY_HOPS`) — **bắt buộc** đúng, nếu không IP dùng cho rate limit sẽ là IP proxy (khóa mọi người) hoặc bị giả mạo qua `X-Forwarded-For`.
+
+### 6.2 Helmet / header
+API chỉ trả JSON:
+- `contentSecurityPolicy`: `default-src 'none'; frame-ancestors 'none'`.
+- `strictTransportSecurity`: `max-age=31536000; includeSubDomains` — **chỉ prod**.
+- `crossOriginResourcePolicy: same-site`, `referrerPolicy: no-referrer`, `xPoweredBy` tắt, `noSniff` (mặc định helmet).
+- Response chứa token (`/auth/*`) thêm `Cache-Control: no-store`.
+
+Header của web (Next.js) và CSP nonce: xem **6.8** (yêu cầu cho ticket Phase 4).
+
+### 6.3 CORS & CSRF
+- `origin`: so khớp **chính xác** với danh sách `CORS_ORIGINS` (env, phân cách dấu phẩy). Không regex wildcard, không phản chiếu Origin. `credentials: true`.
+- `methods`: GET, POST, PATCH, DELETE. `allowedHeaders`: `Content-Type, Authorization, X-Request-Id, X-Client-Id`. `exposedHeaders`: `X-Request-Id, Retry-After, RateLimit-Policy, RateLimit`. `maxAge`: 600.
+- CSRF cho endpoint cookie (`/auth/refresh`, `/auth/logout`): SameSite=Strict + **kiểm tra header `Origin` ∈ whitelist** (thiếu Origin cũng từ chối) → `403 ORIGIN_NOT_ALLOWED`. Mọi POST/PATCH bắt buộc `Content-Type: application/json` (`415 UNSUPPORTED_MEDIA_TYPE`), buộc trình duyệt preflight.
+
+### 6.4 Rate limit (Redis store, ADR-028)
+Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit`. Key tính theo IP thật (sau `trust proxy`).
+
+| Endpoint | Giới hạn | Khóa |
+|---|---|---|
+| `POST /auth/login` | 5 lần **thất bại** / 15 phút | IP + email(hash) |
+|  | 20 / 15 phút | IP |
+|  | 50 thất bại / giờ | email(hash) — chống stuffing phân tán |
+| `POST /auth/register` | 5 / giờ | IP |
+| `POST /auth/refresh` | 60 / 5 phút | IP |
+| `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user |
+| `POST /auth/change-password` | 5 / 15 phút | user |
+| API đã xác thực (mặc định) | 300 / phút | user |
+| API chưa xác thực khác | 100 / phút | IP |
+| Socket handshake | 20 / phút | IP |
+| Socket `project:join` | 30 / phút | socket |
+
+Redis lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register** — tránh brute force tự do khi Redis chết (bcrypt cost 12 cũng tự làm chậm).
+
+### 6.5 Mật khẩu & chống user enumeration
+- Chính sách: **tối thiểu 15 ký tự** (NIST SP 800-63B-4 yêu cầu ≥15 cho mật khẩu dùng làm yếu tố duy nhất — hệ thống này chưa có MFA), **tối đa 72 byte UTF-8** (giới hạn đầu vào bcrypt; từ chối thay vì để bcrypt cắt cụt im lặng), không bắt luật thành phần, không bắt đổi định kỳ, chặn danh sách mật khẩu phổ biến (file tĩnh ~10k mục, offline), không được chứa phần local của email. Tiếng Việt có dấu tốn 2–3 byte/ký tự nên 72 byte ≈ 24–36 ký tự có dấu — chấp nhận ở v1, ghi trong câu hỏi mở.
+- bcrypt cost 12 (ADR-030), rehash khi đăng nhập nếu cost thấp hơn cấu hình.
+- **ADR-048 (🟡):** nếu T-001 xác nhận argon2id dùng tốt trên Node 24 + Docker thì chuyển sang argon2id và bỏ giới hạn 72 byte; không thì giữ như trên. Không làm pre-hash. Độ dài tối thiểu và chống dò email ở register chờ người dùng chốt (ADR-049).
+- Login: cùng message + cùng thời gian (DUMMY_HASH) cho "không có email" và "sai mật khẩu"; rate limit không phân biệt hai trường hợp.
+- Register: v1 trả `409 EMAIL_ALREADY_EXISTS` — **lộ được** email đã đăng ký. Chống triệt để cần xác minh email (luôn trả 202 + gửi mail) mà v1 chưa có hạ tầng email. Giảm thiểu: rate limit 5/giờ/IP. Câu hỏi mở cho Tech Lead.
+- `member:add` theo email: user không tồn tại và user tồn tại phải trả **cùng** phản hồi nếu không được phép biết (đề xuất: chỉ thêm user đã có tài khoản, lỗi chung `422 BUSINESS_RULE_VIOLATION` "Không thể thêm người dùng này").
+
+### 6.6 So sánh an toàn thời gian
+- Mật khẩu: `bcrypt.compare` (tự an toàn thời gian).
+- Refresh token: tra theo hash có index — không so chuỗi trong JS.
+- Bất kỳ so sánh bí mật nào khác (VD token nội bộ/webhook sau này): `crypto.timingSafeEqual` trên Buffer cùng độ dài (băm SHA-256 hai vế trước để cân độ dài).
+
+### 6.7 Body, input, lỗi, log
+- `express.json({ limit: '100kb' })`; không bật `urlencoded`. Vượt → `413 PAYLOAD_TOO_LARGE`. Socket: `maxHttpBufferSize: 100_000`.
+- Zod `.strict()` cho body (từ chối field lạ — chặn mass assignment như gửi `role`, `createdById`, `version`).
+- Error handler prod: không trả stack/message nội bộ; lỗi không xác định → `500 INTERNAL_ERROR` + `requestId`.
+- pino `redact`: `req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.currentPassword`, `*.newPassword`, `*.token`, `*.accessToken`, `*.refreshToken`. Log sự kiện bảo mật (login thất bại, reuse, logout-all, đổi role, xóa member) ở mức `warn`/`info` có `userId`, `ip`, `requestId`.
+- Env được validate bằng Zod lúc khởi động; thiếu/yếu → không chạy.
+
+---
+
+### 6.8 Web: CSP nonce và chống XSS (yêu cầu cho ticket Phase 4)
+
+**Vì sao:** access token chỉ sống trong bộ nhớ JS (ADR-026), nên XSS trên web đồng nghĩa mất phiên. Kẻ tấn công có thể gọi API dưới danh nghĩa nạn nhân, kể cả gọi `/auth/refresh` vì cookie tự đi kèm. CSP là lớp chặn chính; TTL 15 phút chỉ giới hạn thiệt hại.
+
+**W-CSP-1 — Nonce mỗi request.** Mọi response HTML của `apps/web` có header `Content-Security-Policy` với nonce mới mỗi request: ≥ 128 bit từ CSPRNG, base64. Nonce được đưa vào script/style do Next.js chèn. Cơ chế cụ thể (file middleware/proxy, cách đọc nonce trong layout) làm theo hướng dẫn CSP chính thức của Next.js 16; ticket Phase 4 phải dẫn link docs và T-001 xác nhận API. Hệ quả cần chấp nhận: trang mang nonce phải render động (không static). Điều này phù hợp ADR-026 (dashboard render phía client, shell nhẹ).
+
+**W-CSP-2 — Policy production** (enforce ngay, không chỉ Report-Only):
+```
+default-src 'self';
+script-src 'self' 'nonce-{N}' 'strict-dynamic';
+style-src 'self' 'nonce-{N}';
+img-src 'self' data: blob:;
+font-src 'self';
+connect-src 'self' https://{API_HOST} wss://{API_HOST};
+object-src 'none';
+base-uri 'none';
+form-action 'self';
+frame-ancestors 'none';
+upgrade-insecure-requests
+```
+- **Cấm** `'unsafe-inline'` và `'unsafe-eval'` trong `script-src` ở production.
+- `style-src 'unsafe-inline'` chỉ được thêm nếu một thư viện UI bắt buộc, và phải có Tech Lead duyệt bằng văn bản. Style gán qua `element.style` (React `style={}`) không bị CSP chặn nên thường không cần.
+- `{API_HOST}` lấy từ env, không dùng wildcard `https:` hay `*`.
+
+**W-CSP-3 — Development.** Chỉ khi `NODE_ENV=development` mới được nới cho HMR: thêm `'unsafe-eval'` vào `script-src`, thêm `ws://localhost:*` và `http://localhost:4000` vào `connect-src`. Build production có test khẳng định header không chứa `unsafe-eval`.
+
+**W-CSP-4 — Header khác cho web:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, HSTS 1 năm + `includeSubDomains` (chỉ prod).
+
+**W-CSP-5 — Giám sát:** thu báo cáo vi phạm (`report-to`/`report-uri`) về một endpoint riêng có rate limit. Endpoint này làm ở Phase 5, cần ticket và cập nhật contract. Trước khi có endpoint đó vẫn enforce CSP, chỉ chưa thu báo cáo.
+
+**W-XSS-1 — Quy tắc code (máy ép qua ESLint, ADR-004):**
+- Cấm `dangerouslySetInnerHTML` (`react/no-danger`). Nếu sau này cần render rich text/markdown cho description thì chỉ qua **một** component sanitize đã duyệt (vd DOMPurify, T-001 xác nhận phiên bản), có test XSS.
+- Cấm `eval`, `new Function`, `setTimeout(string)` (`no-eval`, `no-implied-eval`, `no-new-func`).
+- Không gán `href`/`src` từ dữ liệu người dùng khi chưa kiểm tra scheme: chỉ cho `http:`/`https:`/`mailto:`, chặn `javascript:`.
+- Không nạp script bên thứ ba (analytics, chat widget, CDN) khi chưa có review bảo mật; script phải tự host.
+
+**W-TOKEN-1 — Access token:** chỉ nằm trong biến module/closure của tầng `api/`. Không đưa vào state toàn cục để debug, không gắn vào `window`, không ghi vào localStorage/sessionStorage/IndexedDB/URL/log/breadcrumb của công cụ theo dõi lỗi.
+
+**Test E2E bắt buộc (Playwright, Phase 4/5):** SEC-48 → SEC-50 ở mục 7.
+
+## 7. Danh sách test bảo mật bắt buộc (Phase 3)
+
+Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob). Integration test chạy Postgres + Redis thật (ADR-003).
+
+| ID | Kịch bản | Kỳ vọng |
+|---|---|---|
+| SEC-01 | Bob đọc `GET /workspaces/A/projects` | 404 RESOURCE_NOT_FOUND, body giống hệt ws không tồn tại |
+| SEC-02 | Bob dùng URL ws B nhưng `projectId` thuộc A (GET/POST/PATCH/DELETE task) | 404, không có thay đổi trong DB |
+| SEC-03 | Mia dùng `taskId` thuộc project khác (cùng ws) dưới URL project hiện tại | 404 |
+| SEC-04 | Mia gửi body có `workspaceId`/`projectId`/`createdById`/`role`/`version` lạ | 400 VALIDATION_ERROR (Zod strict), không ghi được |
+| SEC-05 | Vic tạo / sửa / move / assign / xóa task | 403 FORBIDDEN_ACCESS cho cả 5 |
+| SEC-06 | Mia xóa task do Pam tạo | 403; task còn nguyên |
+| SEC-07 | Mia xóa task do chính Mia tạo | 204 |
+| SEC-08 | Pam xóa task của Mia; Alice xóa task bất kỳ | 204 |
+| SEC-09 | Task có `createdById = null`: Mia xóa / Pam xóa | 403 / 204 |
+| SEC-10 | Mia tạo/sửa/move/xóa (task của mình) trong project archived; Pam xóa task bất kỳ trong project archived | 422 PROJECT_ARCHIVED cho tất cả (ADR-045); Vic làm cùng việc ⇒ 403 (thứ tự kiểm tra) |
+| SEC-11 | Mia gán task cho Bob (không phải member ws A) | 422, message không xác nhận Bob tồn tại |
+| SEC-12 | Mia đổi assignee task do Pam tạo sang Vic | 403 (`task:assign:own` không thỏa) |
+| SEC-12b | Mia tạo task với `assigneeId` = Vic (member khác) / = chính Mia | 403 / 201 |
+| SEC-12c | Pam tạo task với `assigneeId` = Bob (ngoài ws) | 422, không tạo task |
+| SEC-13 | Pam thêm member với role OWNER/PM; Pam đổi role ai đó | 403 |
+| SEC-14 | Pam xóa Alice (OWNER); Mia xóa Vic | 403 |
+| SEC-15 | Alice (OWNER duy nhất) tự hạ role / tự rời ws | 422 BUSINESS_RULE_VIOLATION, `details.rule = LAST_OWNER` |
+| SEC-16 | Mia bị xóa khỏi ws A rồi dùng access token còn hạn gọi API ws A | 404 ngay request kế tiếp |
+| SEC-17 | Refresh hợp lệ | 200, token cũ có `revokedReason = ROTATED`, `replacedById` = token mới, cùng `familyId` |
+| SEC-18 | Dùng lại refresh token cũ sau > 10s | 401 REFRESH_TOKEN_INVALID; mọi token trong family bị thu hồi `REUSE_DETECTED`; token mới nhất của family cũng không dùng được; access token của `sid` đó bị từ chối |
+| SEC-19 | Hai request refresh song song cùng token | đúng 1 cái 200, cái còn lại 409 REFRESH_IN_PROGRESS, family **không** bị thu hồi |
+| SEC-20 | Refresh token quá `expiresAt` / quá `familyExpiresAt` | 401 REFRESH_TOKEN_INVALID |
+| SEC-21 | Sau logout-all: access token cũ (còn hạn) + mọi refresh token của user | 401 UNAUTHORIZED / 401 REFRESH_TOKEN_INVALID; socket của user bị ngắt |
+| SEC-22 | Sau logout 1 thiết bị: access token của phiên đó vs phiên khác | Phiên đó 401; phiên khác vẫn 200 |
+| SEC-23 | Sau đổi mật khẩu: phiên khác (access + refresh) / phiên hiện tại dùng token mới | 401 / 200 |
+| SEC-24 | Logout-all khi Redis tắt | Access token cũ vẫn bị từ chối (fallback DB) |
+| SEC-25 | JWT `alg: none`, ký bằng secret sai, sửa `sub`, thiếu `tv`, sai `iss`/`aud` | 401 UNAUTHORIZED |
+| SEC-26 | JWT hết hạn | 401 TOKEN_EXPIRED |
+| SEC-27 | Login email không tồn tại vs sai mật khẩu | cùng status, code, message; chênh lệch thời gian trung vị < 50ms (đo 20 lần) |
+| SEC-28 | 6 lần login sai cùng IP + email trong 15 phút | lần 6: 429 RATE_LIMITED + `Retry-After` |
+| SEC-29 | `POST /auth/refresh` với `Origin` lạ hoặc thiếu Origin | 403 ORIGIN_NOT_ALLOWED, token không bị xoay |
+| SEC-30 | Request CORS từ origin ngoài whitelist | không có `Access-Control-Allow-Origin` |
+| SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |
+| SEC-32 | Mật khẩu 14 ký tự; 73 byte; nằm trong danh sách phổ biến | 400 VALIDATION_ERROR |
+| SEC-33 | Log của login/refresh/register/change-password | không chứa password, access token, refresh token, header Cookie/Authorization |
+| SEC-34 | Cookie refresh ở prod | có `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, tên `__Secure-tf_rt`, không `Domain` |
+| SEC-35 | Socket handshake không token / token sai / `tv` cũ | `connect_error` với `data.code` tương ứng |
+| SEC-36 | Bob `project:join` project của ws A (đúng và sai `workspaceId`) | ack `{ ok:false, code:'RESOURCE_NOT_FOUND' }`, không nhận event của phòng |
+| SEC-37 | Mia đang ở phòng project, bị xóa khỏi ws | rời phòng, nhận `workspace:access-revoked`, không nhận `task:*` tiếp theo |
+| SEC-38 | Socket không `auth:renew` quá `exp` | nhận `auth:expired` rồi bị ngắt |
+| SEC-39 | `auth:renew` với token của user khác | socket bị ngắt |
+| SEC-40 | Đăng ký đồng thời 2 user cùng `fullName` (va chạm slug) | cả hai 201, slug khác nhau; trùng email ⇒ 409, không để lại user/workspace mồ côi |
+| SEC-41 | Gửi `X-Client-Id` của tab người khác / giá trị không phải uuid | Không ảnh hưởng quyền; event vẫn phát bình thường; giá trị lỗi bị bỏ qua |
+| SEC-42 | `VERSION_CONFLICT` khi Vic (VIEWER) PATCH task | 403 (không phải 409) — `details.current` không bao giờ trả cho người không có quyền ghi |
+| SEC-43 | Pam gán task cho Vic (VIEWER), cả khi tạo task lẫn `PATCH …/assignee` | 422 `ASSIGNEE_NOT_MEMBER`, cùng message với trường hợp user ngoài ws |
+| SEC-44 | Mia đang được gán 3 task (1 đã xóa mềm). Alice hạ Mia xuống VIEWER | Trong cùng transaction: 2 task chưa xóa bị bỏ gán, `version + 1`, có audit `TaskAssigneeChanged` (actor = Alice), event `task:*` sau commit. Task đã xóa mềm không đổi |
+| SEC-45 | Race: Pam gán task cho Mia **đồng thời** với Alice hạ Mia xuống VIEWER (lặp 20 lần, 2 kết nối DB riêng) | Không lần nào kết thúc với task được gán cho VIEWER |
+| SEC-46 | Race LAST_OWNER: ws có đúng 2 OWNER, mỗi người hạ người kia đồng thời (lặp 20 lần). Biến thể: hạ + tự rời, xóa + tự rời | Mỗi lần đúng 1 thành công, 1 nhận 422 `LAST_OWNER`; số OWNER luôn ≥ 1; không deadlock |
+| SEC-47 | Alice xóa ws A. Sau đó Alice (OWNER) và Mia gọi `GET ws`, `GET ws/projects`, `GET ws/p/t/audit-logs`, `POST ws/members`; gọi `GET /workspaces`, `GET /auth/me`; socket `project:join` vào project của A | Mọi request vào ws ⇒ 404 (body giống ws không tồn tại); A không có trong danh sách; join ⇒ `RESOURCE_NOT_FOUND`; socket đang ở phòng nhận `workspace:access-revoked` và bị đẩy ra |
+| SEC-48 | (E2E) Tải trang web 2 lần liên tiếp | Header CSP có nonce khác nhau giữa 2 lần; bản production không có `unsafe-inline`/`unsafe-eval` trong `script-src` |
+| SEC-49 | (E2E) Tạo task với title/description `<img src=x onerror=alert(1)>` và `<script>alert(1)</script>` rồi mở board | Hiển thị dạng text, không có dialog, không có lỗi JS |
+| SEC-50 | (E2E) Đi hết luồng chính (đăng nhập, board, kéo thả, logout) | Không có vi phạm CSP trong console; không có access token trong localStorage/sessionStorage/URL |
+
+Các test dưới đây chỉ áp dụng nếu endpoint khôi phục được duyệt:
+
+| ID | Kịch bản | Kỳ vọng |
+|---|---|---|
+| SEC-51 | ws A đã xóa mềm. Pam (PM), Mia, Bob (người ngoài) gọi `POST /workspaces/A/restore` | 404, body giống hệt ws không tồn tại; A vẫn bị xóa |
+| SEC-52 | Alice restore ws chưa xóa; restore ws đã quá `purgeAt` | 404 cả hai |
+| SEC-53 | Alice restore A đúng lúc job purge chạy trên A (`purgeAt` vừa tới) | Chỉ một bên thành công; không có trạng thái nửa vời (ws còn mà dữ liệu con đã mất) |
+| SEC-54 | `GET /workspaces?deleted=true` của Pam và Bob | Không chứa A (Pam không phải OWNER, Bob không phải member) |
+| SEC-55 | Gọi route khác (vd `GET /workspaces/A/projects`) trên ws A đã xóa, kể cả Alice | 404 (chứng minh `includeDeleted` chỉ có ở route restore) |
+
+---
+
+## 8. Thay đổi schema cho auth (đã gửi Engineer C để hợp nhất vào T-003)
+
+**`users`**
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `email` | String `@unique` | App chuẩn hóa trim + NFC + lowercase. Không dùng citext. Tùy chọn `CHECK (email = lower(email))` qua raw SQL migration |
+| `password_hash` | String | bcrypt `$2b$`, cost 12 |
+| `token_version` | Int `@default(0)` | ADR-025 |
+| `password_changed_at` | DateTime? | |
+| `last_login_at` | DateTime? | |
+| `deleted_at` | DateTime? | (đề xuất của C) — set ⇒ login/refresh bị từ chối; cùng transaction phải `token_version+1` và thu hồi refresh token (`USER_DELETED`) |
+
+**`refresh_tokens`** (thay bảng v1.0; bỏ `is_revoked`)
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `id` | uuid | |
+| `user_id` | FK users, `onDelete: Cascade` | |
+| `token_hash` | String `@unique` (có thể `@db.Char(64)`) | SHA-256 hex |
+| `family_id` | uuid | không phải FK |
+| `replaced_by_id` | uuid? `@unique`, FK self `onDelete: SetNull` | |
+| `expires_at` | DateTime | hạn trượt |
+| `family_expires_at` | DateTime | hạn tuyệt đối của phiên |
+| `revoked_at` | DateTime? | |
+| `revoked_reason` | enum `RefreshTokenRevokeReason?` | `ROTATED, LOGOUT, LOGOUT_ALL, REUSE_DETECTED, PASSWORD_CHANGED, USER_DELETED` |
+| `user_agent` | String? | cắt 255 ký tự |
+| `ip` | String? (`@db.Inet` được) | |
+| `created_at` | DateTime | |
+
+Index: `[user_id, revoked_at]` (thu hồi hàng loạt), `[family_id]` (thu hồi family + fallback `sid`), `[expires_at]` (job dọn).
+
+**Mã lỗi liên quan auth** (đã thống nhất với C): `UNAUTHORIZED 401`, `TOKEN_EXPIRED 401`, `INVALID_CREDENTIALS 401`, `REFRESH_TOKEN_INVALID 401`, `REFRESH_IN_PROGRESS 409`, `ORIGIN_NOT_ALLOWED 403`, `FORBIDDEN_ACCESS 403`, `RESOURCE_NOT_FOUND 404`, `EMAIL_ALREADY_EXISTS 409`, `INVALID_CURRENT_PASSWORD 400`, `VALIDATION_ERROR 400`, `PAYLOAD_TOO_LARGE 413`, `UNSUPPORTED_MEDIA_TYPE 415`, `RATE_LIMITED 429`, `SERVICE_UNAVAILABLE 503`. Danh mục đầy đủ do T-003 sở hữu.
+
+**Env mới / đổi** (cho Phase 1): `JWT_ACCESS_SECRET` (≥32 byte), `JWT_ACCESS_SECRET_PREVIOUS` (tùy chọn), `CORS_ORIGINS`, `COOKIE_SECURE`, `TRUST_PROXY_HOPS`; bỏ `JWT_REFRESH_SECRET`.
+
+---
+
+## Nguồn
+- NIST SP 800-63B-4 (8/2025): tối thiểu 15 ký tự cho mật khẩu một yếu tố — trích qua [sakimura.org](https://www.sakimura.org/en/2025/10/7710/), [netwrix.com](https://netwrix.com/en/resources/blog/nist-password-guidelines/). Cần đối chiếu bản gốc NIST khi Phase 2.
+- Cookie `Secure` trên `http://localhost` (Chrome 89+, Firefox 75+ chấp nhận; Chrome từ chối tiền tố `__Secure-`/`__Host-`; Safari từ chối): [httpwg/http-extensions#2605](https://github.com/httpwg/http-extensions/issues/2605), [flaviocopes — Safari](https://flaviocopes.com/cookie-not-being-set-in-safari).
+- bcrypt giới hạn đầu vào 72 byte; API Socket.io 4 `socketsLeave`/`disconnectSockets` hoạt động xuyên node với adapter; helmet, express-rate-limit + Redis store — tên package/phiên bản do T-001 xác nhận trước khi code.
