@@ -16,7 +16,7 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 |---|---|---|---|
 | B1 | Runbook go-live §6.3 + review trước merge T-034, fix bàn phím | đang giao | B |
 | B2 | Sao lưu + khôi phục: script `pg_dump` mã hóa phía client (age/gpg — chọn 1, lý do), đẩy ra storage ngoài nhà cung cấp (giao diện S3 tương thích, cấu hình qua env), **diễn tập khôi phục tự động** trên Postgres tạm (dump → restore → đối chiếu số dòng/kiểm tra toàn vẹn) chạy được trong CI hằng tuần; runbook | ADR-074, devops.md §4 | B (2026-10-15) |
-| B3 | Threat model cuối (STRIDE) cho v1 sau mọi fix — cập nhật security.md, liệt kê rủi ro chấp nhận có chủ đích kèm ADR | | |
+| B3 | Threat model cuối (STRIDE) cho v1 sau mọi fix — cập nhật security.md, liệt kê rủi ro chấp nhận có chủ đích kèm ADR | | B (2026-10-15) |
 
 ## D — QA/DevOps (`taskflow-enterprise-a5`)
 | # | Việc | Ghi chú | Đang làm |
