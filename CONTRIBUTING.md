@@ -71,7 +71,7 @@ pnpm verify                      # lint (gồm .env.example ↔ env.ts) · typec
 
 Nhiều người/phiên làm song song trên cùng máy:
 
-- Vitest dùng mặc định của repo (4 worker) hoặc `VITEST_MAX_WORKERS=2` khi máy bận.
+- Vitest dùng mặc định của repo (4 worker) hoặc `VITEST_MAX_WORKERS=2` khi máy bận — chỉ cho unit; `test:integration` luôn tuần tự.
 - Không chạy song song việc nặng (Stryker, k6, build Docker, `next build`) — xếp hàng.
 - Xóa worktree không còn dùng: `git worktree remove ../TaskFlow_wt/<X>`.
 - Tiến trình bạn tự khởi động (server smoke test, …) — tự tắt khi xong.

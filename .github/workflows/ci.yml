@@ -188,7 +188,7 @@ jobs:
       - name: Integration tests (Postgres thật, DB taskflow_it)
         env:
           DATABASE_URL_TEST: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_it
-          VALKEY_URL_TEST: redis://127.0.0.1:6379
+          VALKEY_URL_TEST: redis://127.0.0.1:6379/1 # db riêng: globalSetup FLUSHDB, từ chối db 0
         run: pnpm --filter @taskflow/api test:integration
 
   # ---------------------------------------------------------------- security
