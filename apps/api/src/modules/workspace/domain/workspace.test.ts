@@ -17,6 +17,7 @@ describe('Workspace', () => {
       deletedAt: null,
       purgeAt: null,
       deletedById: null,
+      version: 1,
       createdAt: NOW,
       updatedAt: NOW,
     });

@@ -1,16 +1,22 @@
 import { ForbiddenError } from '../../../../core/errors';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { assertWorkspaceLive } from '../workspace-guard';
 import type {
   ITaskAssignmentCleaner,
   IWorkspaceRealtimeNotifier,
 } from '../ports/collaborators.port';
-import type { IMembershipRepository, IProjectRepository } from '../ports/repositories.port';
+import type {
+  IMembershipRepository,
+  IProjectRepository,
+  IWorkspaceRepository,
+} from '../ports/repositories.port';
 import { requirePermission, type Actor } from '../workspace-shared';
 import { assertNotLastOwner, lockOwnersAndLoadTarget } from './owner-guard';
 
 export interface RemoveMemberDeps {
   memberships: IMembershipRepository;
+  workspaces: IWorkspaceRepository;
   projects: IProjectRepository;
   cleaner: ITaskAssignmentCleaner;
   notifier: IWorkspaceRealtimeNotifier;
@@ -34,12 +40,15 @@ export class RemoveMemberUseCase {
     requirePermission(actor, isSelf ? 'member:leave' : 'member:remove');
 
     return this.d.uow.run(async () => {
-      const { owners, target } = await lockOwnersAndLoadTarget(
-        this.d.memberships,
-        actor.workspaceId,
-        input.userId,
-      );
-      if (!isSelf && actor.role === 'PM' && (target.role === 'OWNER' || target.role === 'PM')) {
+      const loaded = await lockOwnersAndLoadTarget(this.d.memberships, actor, input.userId);
+      const { owners, target } = loaded;
+      requirePermission(loaded.actor, isSelf ? 'member:leave' : 'member:remove'); // X6: role mới nhất
+      await assertWorkspaceLive(this.d.workspaces, actor.workspaceId); // X7
+      if (
+        !isSelf &&
+        loaded.actor.role === 'PM' &&
+        (target.role === 'OWNER' || target.role === 'PM')
+      ) {
         throw new ForbiddenError('member:remove');
       }
       assertNotLastOwner(owners, target);

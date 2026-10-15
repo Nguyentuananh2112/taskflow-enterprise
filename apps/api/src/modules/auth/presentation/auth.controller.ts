@@ -8,6 +8,7 @@ import type { Request, Response } from 'express';
 
 import { RefreshTokenInvalidError } from '../../../core/errors';
 import type { HttpResponder } from '../../../core/http/envelope';
+import type { ILogger } from '../../../core/logging/logger';
 import { requireUser, sessionMetaOf } from '../../../core/http/request-user';
 import type { IssuedSession } from '../application/session-issuer';
 import type { ChangePasswordUseCase } from '../application/use-cases/change-password.use-case';
@@ -31,6 +32,7 @@ export interface AuthControllerDeps {
   changePassword: Pick<ChangePasswordUseCase, 'execute'>;
   cookie: RefreshCookie;
   responder: HttpResponder;
+  logger: ILogger;
 }
 
 /** Controller mỏng (ADR-015): parse đã xong ở `validate`, chỉ gọi use case + dựng response/cookie. */
@@ -98,13 +100,22 @@ export class AuthController {
    * nạn nhân còn đó nên lần sau vẫn là "trùng" ⇒ không thể hoán đổi phiên.
    */
   #rejectFlood(req: Request): void {
-    if (this.d.cookie.readAll(req).length > MAX_REFRESH_COOKIES)
+    const count = this.d.cookie.readAll(req).length;
+    if (count > MAX_REFRESH_COOKIES) {
+      this.#ambiguous(req, count);
       throw new RefreshTokenInvalidError();
+    }
+  }
+
+  /** Dấu hiệu cookie tossing (X9): nhiều cookie refresh trùng tên chỉ có thể do bên thứ ba cài. */
+  #ambiguous(req: Request, count: number): void {
+    this.d.logger.warn({ count, ip: req.ip ?? null }, 'auth.refresh_cookie_ambiguous');
   }
 
   async #revokeIfAmbiguous(req: Request): Promise<void> {
     const values = this.d.cookie.readAll(req);
     if (values.length < 2) return;
+    this.#ambiguous(req, values.length);
     for (const refreshToken of values) await this.d.logout.execute({ refreshToken });
     throw new RefreshTokenInvalidError();
   }

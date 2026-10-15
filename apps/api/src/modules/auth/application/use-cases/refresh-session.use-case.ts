@@ -4,7 +4,7 @@ import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { RefreshToken, SessionMeta } from '../../domain/refresh-token';
 import {
-  ACCESS_TOKEN_TTL_SECONDS,
+  SESSION_REVOCATION_TTL_SECONDS,
   bestEffort,
   toUserView,
   writeRevocationOrFail,
@@ -64,10 +64,18 @@ export class RefreshSessionUseCase {
     }
 
     return this.d.uow.run(async () => {
-      const user = await this.d.users.findById(token.userId);
-      if (!user || user.isDeleted) throw new RefreshTokenInvalidError();
+      // X4 (T-032): khóa chia sẻ dòng user TRƯỚC khi tạo token mới — logout-all / đổi mật khẩu
+      // đồng thời (UPDATE users) phải chờ ta commit rồi mới `revokeAllForUser` ⇒ thấy token mới.
+      // Họ đi trước ⇒ ta chờ, đọc `tv` mới, và `markRotated` thua (token cũ đã bị thu hồi).
+      const tokenVersion = await this.d.users.lockTokenVersion(token.userId);
+      const user = tokenVersion === null ? null : await this.d.users.findById(token.userId);
+      if (tokenVersion === null || !user || user.isDeleted) throw new RefreshTokenInvalidError();
       // Thêm token mới TRƯỚC (FK replaced_by_id), rồi xoay có điều kiện; thua race ⇒ rollback cả hai.
-      const { session, tokenId } = await this.d.issuer.continueFamily(user, token, input.meta);
+      const { session, tokenId } = await this.d.issuer.continueFamily(
+        { id: user.id, tokenVersion },
+        token,
+        input.meta,
+      );
       if (!(await this.d.refreshTokens.markRotated(token.id, tokenId, now))) {
         throw new RefreshInProgressError();
       }
@@ -81,7 +89,7 @@ export class RefreshSessionUseCase {
       await this.d.refreshTokens.revokeFamily(familyId, 'REUSE_DETECTED', now);
       // ADR-105: chặn access token của family bị lộ TRƯỚC commit; lỗi ⇒ 503 + rollback.
       await writeRevocationOrFail(() =>
-        this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
+        this.d.store.revokeSession(familyId, SESSION_REVOCATION_TTL_SECONDS),
       );
       this.d.uow.afterCommit(async () => {
         this.d.logger.warn(
@@ -89,7 +97,7 @@ export class RefreshSessionUseCase {
           'refresh.reuse_detected',
         );
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { familyId }, () =>
-          this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
+          this.d.store.revokeSession(familyId, SESSION_REVOCATION_TTL_SECONDS),
         );
         await this.d.notifier.disconnectSession(familyId);
       });

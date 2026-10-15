@@ -104,6 +104,7 @@ model Workspace {
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3) // ADR-047
   purgeAt     DateTime? @map("purge_at") @db.Timestamptz(3)   // = deleted_at + 30 ngày
   deletedById String?   @map("deleted_by_id") @db.Uuid
+  version     Int       @default(1) // ADR-110: optimistic lock — mọi ghi là UPDATE … WHERE version
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -141,6 +142,7 @@ model Project {
   description    String?   @db.VarChar(2000)
   nextTaskNumber Int       @default(1) @map("next_task_number")
   archivedAt     DateTime? @map("archived_at") @db.Timestamptz(3)
+  version        Int       @default(1) // ADR-110; `allocateTaskNumber` KHÔNG tăng (bộ đếm, không phải sửa của người dùng)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 

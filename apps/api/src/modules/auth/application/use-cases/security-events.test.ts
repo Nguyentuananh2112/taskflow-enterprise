@@ -79,6 +79,10 @@ describe('auth.logout_all / auth.password_changed', () => {
       }),
     ).rejects.toBeInstanceOf(InvalidCurrentPasswordError);
     expect(event('auth.password_changed')).toEqual([]);
+    // X9 (T-032): sai mật khẩu hiện tại ⇒ warn (dò mật khẩu bằng access token trộm được).
+    expect(event('auth.password_change_failed')).toEqual([
+      expect.objectContaining({ level: 'warn', data: { userId: alice.id, ip: META.ip } }),
+    ]);
 
     const newPassword = 'brand-new-passphrase-9';
     await change.execute({ userId: alice.id, currentPassword: PASSWORD, newPassword, meta: META });

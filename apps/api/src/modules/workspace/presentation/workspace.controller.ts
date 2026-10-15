@@ -11,7 +11,7 @@ import type { Request, Response } from 'express';
 
 import { compact } from '../../../core/http/compact';
 import type { HttpResponder } from '../../../core/http/envelope';
-import { afterFromCursor, pageMeta } from '../../../core/http/pagination';
+import { pageMeta } from '../../../core/http/pagination';
 import { clientIdOf, requireUser } from '../../../core/http/request-user';
 import type { AddMemberUseCase } from '../application/use-cases/add-member.use-case';
 import type { ChangeMemberRoleUseCase } from '../application/use-cases/change-member-role.use-case';
@@ -26,6 +26,7 @@ import type {
   ListMyWorkspacesQuery,
 } from '../application/use-cases/workspace.queries';
 import { actorOf } from './membership';
+import { uuidAfterFromCursor } from './keyset-cursor';
 
 export interface WorkspaceControllerDeps {
   listMine: Pick<ListMyWorkspacesQuery, 'execute'>;
@@ -94,7 +95,7 @@ export class WorkspaceController {
     const query = req.query as unknown as ListMembersQuery;
     const page = await this.d.listMembers.execute(actorOf(req), {
       ...(query.q === undefined ? {} : { q: query.q }),
-      after: afterFromCursor(MEMBERS_CURSOR, query.cursor),
+      after: uuidAfterFromCursor(MEMBERS_CURSOR, query.cursor),
       limit: query.limit,
     });
     this.d.responder.ok(res, page.items, pageMeta(MEMBERS_CURSOR, page.nextAfter, query.limit));

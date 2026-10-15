@@ -37,6 +37,7 @@ describe('Project', () => {
       description: null,
       nextTaskNumber: 1,
       archivedAt: null,
+      version: 1,
       createdAt: NOW,
       updatedAt: NOW,
     });

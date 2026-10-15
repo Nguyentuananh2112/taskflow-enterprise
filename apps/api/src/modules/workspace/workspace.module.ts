@@ -103,13 +103,22 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     listMine: new ListMyWorkspacesQuery({ queries, clock }),
     create: new CreateWorkspaceUseCase({ creator, uow, random }),
     get: new GetWorkspaceQuery({ workspaces }),
-    update: new UpdateWorkspaceUseCase({ workspaces, uow, clock }),
-    remove: new DeleteWorkspaceUseCase({ workspaces, memberships, projects, notifier, uow, clock }),
+    update: new UpdateWorkspaceUseCase({ workspaces, uow, clock, logger }),
+    remove: new DeleteWorkspaceUseCase({
+      workspaces,
+      memberships,
+      projects,
+      notifier,
+      uow,
+      clock,
+      logger,
+    }),
     restore: new RestoreWorkspaceUseCase({ workspaces, memberships, uow, clock, logger }),
     listMembers: new ListMembersQuery({ queries }),
-    addMember: new AddMemberUseCase({ memberships, users, uow, ids, clock }),
+    addMember: new AddMemberUseCase({ memberships, workspaces, users, uow, ids, clock, logger }),
     changeRole: new ChangeMemberRoleUseCase({
       memberships,
+      workspaces,
       users,
       cleaner,
       notifier,
@@ -119,6 +128,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     }),
     removeMember: new RemoveMemberUseCase({
       memberships,
+      workspaces,
       projects,
       cleaner,
       notifier,
@@ -130,10 +140,10 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
   const getProject = new GetProjectQuery({ projects });
   const projectController = new ProjectController({
     list: new ListProjectsQuery({ queries }),
-    create: new CreateProjectUseCase({ projects, uow, ids, clock }),
+    create: new CreateProjectUseCase({ projects, workspaces, uow, ids, clock }),
     get: getProject,
-    update: new UpdateProjectUseCase({ projects, uow, clock }),
-    setArchived: new SetProjectArchivedUseCase({ projects, uow, clock }),
+    update: new UpdateProjectUseCase({ projects, workspaces, uow, clock }),
+    setArchived: new SetProjectArchivedUseCase({ projects, workspaces, uow, clock }),
     responder: d.responder,
   });
 

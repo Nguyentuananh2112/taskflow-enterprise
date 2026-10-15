@@ -3,7 +3,11 @@
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { FakeClock, FakeRandom } from '../../support';
-import { BusinessRuleViolationError, ResourceNotFoundError } from '../../../src/core/errors';
+import {
+  BusinessRuleViolationError,
+  ForbiddenError,
+  ResourceNotFoundError,
+} from '../../../src/core/errors';
 import { ChangeMemberRoleUseCase } from '../../../src/modules/workspace/application/use-cases/change-member-role.use-case';
 import { PurgeDeletedWorkspacesJob } from '../../../src/modules/workspace/application/use-cases/purge-deleted-workspaces.job';
 import { RemoveMemberUseCase } from '../../../src/modules/workspace/application/use-cases/remove-member.use-case';
@@ -40,10 +44,18 @@ const isLastOwner = (r: PromiseSettledResult<unknown>) =>
   r.status === 'rejected' &&
   r.reason instanceof BusinessRuleViolationError &&
   r.reason.details?.['rule'] === 'LAST_OWNER';
+/**
+ * Kẻ thua bị từ chối AN TOÀN: LAST_OWNER, hoặc — từ X6 (T-032) — 403 / 404 vì actor đã bị bên thắng
+ * hạ role / xóa khỏi workspace (use case đọc lại role sau khóa owners, không tin role cũ của request).
+ */
+const isSafeRejection = (r: PromiseSettledResult<unknown>) =>
+  isLastOwner(r) ||
+  (r.status === 'rejected' &&
+    (r.reason instanceof ForbiddenError || r.reason instanceof ResourceNotFoundError));
 
 describe('LAST_OWNER chống race (ADR-046) — lockOwners FOR UPDATE ORDER BY id', () => {
   it(
-    `ROL-05: hai OWNER hạ nhau đồng thời ⇒ đúng 1 thành công, 1 LAST_OWNER, không deadlock (×${RUNS})`,
+    `ROL-05: hai OWNER hạ nhau đồng thời ⇒ đúng 1 thành công, 1 bị từ chối an toàn, không deadlock (×${RUNS})`,
     async () => {
       for (let i = 0; i < RUNS; i += 1) {
         const { h, ctx } = await fresh({ Olga: 'OWNER' });
@@ -53,7 +65,7 @@ describe('LAST_OWNER chống race (ADR-046) — lockOwners FOR UPDATE ORDER BY i
           change.execute(ctx.olga, { userId: uid('alice'), role: 'PM' }),
         );
         expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-        expect(results.filter(isLastOwner)).toHaveLength(1);
+        expect(results.filter(isSafeRejection)).toHaveLength(1);
         expect(await owners(ctx.A)).toBe(1);
       }
     },
@@ -72,7 +84,7 @@ describe('LAST_OWNER chống race (ADR-046) — lockOwners FOR UPDATE ORDER BY i
           new RemoveMemberUseCase(h).execute(ctx.alice, { userId: uid('alice') }),
         );
         expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-        expect(results.filter(isLastOwner)).toHaveLength(1);
+        expect(results.filter(isSafeRejection)).toHaveLength(1);
         expect(await owners(ctx.A)).toBe(1);
       }
     },
@@ -90,7 +102,7 @@ describe('LAST_OWNER chống race (ADR-046) — lockOwners FOR UPDATE ORDER BY i
           remove.execute(ctx.olga, { userId: uid('alice') }),
         );
         expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-        expect(results.filter(isLastOwner)).toHaveLength(1);
+        expect(results.filter(isSafeRejection)).toHaveLength(1);
         expect(await owners(ctx.A)).toBe(1);
       }
     },

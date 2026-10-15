@@ -75,4 +75,29 @@ export class PrismaRefreshTokenRepository implements IRefreshTokenRepository {
     });
     return row !== null;
   }
+  async listRevokedSessionsSince(
+    userId: string,
+    since: Date,
+  ): Promise<{ familyId: string; revokedAt: Date }[]> {
+    const rows = await this.db().refreshToken.findMany({
+      where: {
+        userId,
+        revokedReason: { in: ['LOGOUT', 'REUSE_DETECTED'] },
+        revokedAt: { gte: since },
+      },
+      select: { familyId: true, revokedAt: true },
+    });
+    return latestPerFamily(rows);
+  }
+}
+
+/** Một dòng mỗi family — `revokedAt` mới nhất. */
+function latestPerFamily(rows: { familyId: string; revokedAt: Date | null }[]) {
+  const latest = new Map<string, Date>();
+  for (const { familyId, revokedAt } of rows) {
+    if (revokedAt && (latest.get(familyId)?.getTime() ?? -Infinity) < revokedAt.getTime()) {
+      latest.set(familyId, revokedAt);
+    }
+  }
+  return [...latest].map(([familyId, revokedAt]) => ({ familyId, revokedAt }));
 }

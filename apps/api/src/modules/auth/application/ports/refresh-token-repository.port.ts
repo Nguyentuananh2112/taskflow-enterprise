@@ -17,4 +17,12 @@ export interface IRefreshTokenRepository {
    * (LOGOUT_ALL / PASSWORD_CHANGED đã được `token_version` bao phủ.)
    */
   isSessionRevoked(familyId: string): Promise<boolean>;
+  /**
+   * Phiên của `userId` bị LOGOUT / REUSE_DETECTED từ `since` (một dòng mỗi family, `revokedAt` mới
+   * nhất). `authenticate` dùng khi nạp lại cache sau khi Valkey mất dữ liệu (X3, T-032).
+   */
+  listRevokedSessionsSince(
+    userId: string,
+    since: Date,
+  ): Promise<{ familyId: string; revokedAt: Date }[]>;
 }

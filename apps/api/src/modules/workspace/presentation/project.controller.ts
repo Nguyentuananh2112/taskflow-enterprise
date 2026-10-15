@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 
 import { compact } from '../../../core/http/compact';
 import type { HttpResponder } from '../../../core/http/envelope';
-import { afterFromCursor, pageMeta } from '../../../core/http/pagination';
+import { pageMeta } from '../../../core/http/pagination';
 import type { CreateProjectUseCase } from '../application/use-cases/create-project.use-case';
 import type {
   GetProjectQuery,
@@ -12,6 +12,7 @@ import type {
 import type { SetProjectArchivedUseCase } from '../application/use-cases/set-project-archived.use-case';
 import type { UpdateProjectUseCase } from '../application/use-cases/update-project.use-case';
 import { actorOf } from './membership';
+import { uuidAfterFromCursor } from './keyset-cursor';
 
 export interface ProjectControllerDeps {
   list: Pick<ListProjects, 'execute'>;
@@ -33,7 +34,7 @@ export class ProjectController {
     const query = req.query as unknown as ListProjectsQuery;
     const page = await this.d.list.execute(actorOf(req), {
       archived: query.archived,
-      after: afterFromCursor(PROJECTS_CURSOR, query.cursor),
+      after: uuidAfterFromCursor(PROJECTS_CURSOR, query.cursor),
       limit: query.limit,
     });
     this.d.responder.ok(res, page.items, pageMeta(PROJECTS_CURSOR, page.nextAfter, query.limit));

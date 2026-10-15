@@ -118,6 +118,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     users,
     refreshTokens,
     logger,
+    clock,
   });
   const authenticate = createAuthenticate(authenticator);
 
@@ -181,6 +182,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     }),
     cookie: new RefreshCookie(d.cookieSecure, clock),
     responder: d.responder,
+    logger,
   });
   const router = authRoutes({
     controller,

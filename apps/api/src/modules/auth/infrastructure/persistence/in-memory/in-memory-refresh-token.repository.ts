@@ -54,6 +54,21 @@ export class InMemoryRefreshTokenRepository implements IRefreshTokenRepository {
     );
   }
 
+  listRevokedSessionsSince(
+    userId: string,
+    since: Date,
+  ): Promise<{ familyId: string; revokedAt: Date }[]> {
+    const latest = new Map<string, Date>();
+    for (const r of this.#rows.values()) {
+      const revoked = r.revokedReason === 'LOGOUT' || r.revokedReason === 'REUSE_DETECTED';
+      if (r.userId !== userId || !revoked || !r.revokedAt) continue;
+      if (r.revokedAt.getTime() < since.getTime()) continue;
+      const seen = latest.get(r.familyId);
+      if (!seen || seen.getTime() < r.revokedAt.getTime()) latest.set(r.familyId, r.revokedAt);
+    }
+    return Promise.resolve([...latest].map(([familyId, revokedAt]) => ({ familyId, revokedAt })));
+  }
+
   rows(): Row[] {
     return [...this.#rows.values()].map((r) => ({ ...r }));
   }

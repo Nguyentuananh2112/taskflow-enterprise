@@ -88,7 +88,7 @@
 | LOG-06 | U | Hash của Alice có tham số argon2 khác cấu hình (`needsRehash = true`) | Login đúng | Hash mới được lưu; login thành công. `needsRehash = false` ⇒ hash không đổi | |
 | LOG-07 | U | — | Login thành công | Payload access token: có `sub, tv, sid, jti, iat, exp, iss="taskflow-api", aud="taskflow-web"`; `exp - iat = 900`; **không** có `role`, `workspaceId`, `email` | |
 | LOG-08 | I | — | 20 lần login "không có email" và 20 lần "sai mật khẩu" | Chênh lệch trung vị thời gian < 50ms | SEC-27 |
-| LOG-09 | I | — | 6 lần login sai cùng IP + email trong 15 phút | Lần 6 `429` + `Retry-After`; login **đúng** không làm tăng bộ đếm thất bại | SEC-28 |
+| LOG-09 | I | — | 11 lần login sai (401) cùng IP + email trong 15 phút (ADR-108) | Lần 11 `429` + `Retry-After`; login **đúng**, body sai (`400`) và request đã bị `429` **không** làm tăng bộ đếm; cùng email từ IP khác vẫn đăng nhập được | SEC-28 |
 | LOG-10 | I | `NODE_ENV=production` (config test) / `development` | Login | Prod: `__Host-tf_rt; HttpOnly; Secure; SameSite=Strict; Path=/`, không `Domain` (ADR-109). Dev: `tf_rt`, không `Secure`, `Path=/api/v1/auth` | SEC-34 |
 | LOG-11 | I | Valkey tắt | Login; register; gọi `GET /readyz`; gọi `GET /auth/me` bằng access token hợp lệ | Login/register `503 SERVICE_UNAVAILABLE` và không gọi hasher (fail-closed, security.md 6.4); `/readyz` vẫn xanh (ADR-074); `/auth/me` `200` (fallback DB) | |
 | LOG-12 | I | — | Login với `Content-Type: text/plain` | `415 UNSUPPORTED_MEDIA_TYPE` | SEC-31 |
@@ -272,7 +272,7 @@
 | ROL-02 | U, I | — | Pam đổi role bất kỳ ai | `403` | SEC-13 |
 | ROL-03 | U, I | Alice là OWNER duy nhất | Alice tự hạ xuống PM | `422 BUSINESS_RULE_VIOLATION`, `details.rule = "LAST_OWNER"`; role không đổi | SEC-15 |
 | ROL-04 | U | A có Alice và Olga là OWNER | Alice hạ Olga xuống PM | `200` | |
-| ROL-05 | I | A có đúng 2 OWNER Alice, Olga | Alice hạ Olga **đồng thời** với Olga hạ Alice (lặp 20 lần) | Mỗi lần đúng 1 `200`, 1 `422 LAST_OWNER`; cuối cùng còn đúng 1 OWNER; không deadlock (không có lỗi `40P01`) | SEC-46 |
+| ROL-05 | I | A có đúng 2 OWNER Alice, Olga | Alice hạ Olga **đồng thời** với Olga hạ Alice (lặp 20 lần) | Mỗi lần đúng 1 `200`, 1 bị từ chối an toàn — `422 LAST_OWNER`, hoặc (từ X6, T-032: role của actor đọc lại sau khóa owners) `403` / `404` vì bên thắng đã hạ / xóa chính actor đó; cuối cùng còn đúng 1 OWNER; không deadlock (không có lỗi `40P01`) | SEC-46 |
 | ROL-06 | U, I | Mia được gán 3 task: T1, T2 (chưa xóa), T3 (đã xóa mềm) | Alice hạ Mia xuống VIEWER | `200 { unassignedTaskCount: 2 }`; U: `ITaskAssignmentCleaner.unassignAllForUser({ workspaceId: A, userId: Mia, actorId: Alice })` được gọi đúng 1 lần **trong** transaction; I: T1, T2 có `assigneeId = null`, `version + 1`, mỗi task 1 audit `ASSIGNEE_CHANGED` actor = Alice; T3 không đổi; sau commit event `task:updated` cho T1, T2 và `member:role-changed` | SEC-44 |
 | ROL-06b | U, I | Mia được gán T4 thuộc project **archived** | Alice hạ Mia xuống VIEWER (hoặc xóa Mia) | T4 cũng bị bỏ gán, có audit — ngoại lệ có chủ đích của ADR-045 (ADR-092) | SEC-44 |
 | ROL-07 | I | — | Pam gán T1 cho Mia **đồng thời** với Alice hạ Mia xuống VIEWER (lặp 20 lần) | Không lần nào kết thúc với task gán cho Mia khi Mia là VIEWER | SEC-45 |

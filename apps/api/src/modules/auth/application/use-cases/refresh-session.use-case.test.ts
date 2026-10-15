@@ -67,7 +67,7 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
     ).rejects.toBeInstanceOf(RefreshTokenInvalidError);
     const t2 = (await h.refreshTokens.rows()).find((r) => r.replacedById === null);
     expect(t2).toMatchObject({ revokedReason: 'REUSE_DETECTED' });
-    expect(h.store.revokedSessions.get(s1.familyId)).toBe(900);
+    expect(h.store.revokedSessions.get(s1.familyId)).toBe(905);
     expect(h.notifier.calls).toEqual([
       { method: 'disconnectSession', args: [s1.familyId], duringTransaction: false },
     ]);

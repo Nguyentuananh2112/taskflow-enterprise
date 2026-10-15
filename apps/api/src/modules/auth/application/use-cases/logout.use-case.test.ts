@@ -14,7 +14,7 @@ beforeEach(() => {
 });
 
 describe('LogoutUseCase (security.md 1.5)', () => {
-  it('OUT-01: thu hồi cả family (LOGOUT), sid-revoked TTL 900, ngắt socket của phiên SAU commit', async () => {
+  it('OUT-01: thu hồi cả family (LOGOUT), sid-revoked TTL 905 (900 + clockTolerance), ngắt socket của phiên SAU commit', async () => {
     const alice = await h.seedUser();
     const s1 = await h.seedSession(alice);
     const s2 = await h.seedSession(alice);
@@ -22,7 +22,7 @@ describe('LogoutUseCase (security.md 1.5)', () => {
     const rows = await h.refreshTokens.rows();
     expect(rows.find((r) => r.familyId === s1.familyId)?.revokedReason).toBe('LOGOUT');
     expect(rows.find((r) => r.familyId === s2.familyId)?.revokedAt).toBeNull();
-    expect(h.store.revokedSessions.get(s1.familyId)).toBe(900);
+    expect(h.store.revokedSessions.get(s1.familyId)).toBe(905);
     expect(h.notifier.calls).toEqual([
       { method: 'disconnectSession', args: [s1.familyId], duringTransaction: false },
     ]);
@@ -56,8 +56,8 @@ describe('LogoutUseCase (security.md 1.5)', () => {
     const s1 = await h.seedSession(await h.seedUser());
     await logout.execute({ refreshToken: s1.refreshToken });
     expect(h.store.ops).toEqual([
-      { op: 'revokeSession', sid: s1.familyId, ttlSeconds: 900 },
-      { op: 'revokeSession', sid: s1.familyId, ttlSeconds: 900 },
+      { op: 'revokeSession', sid: s1.familyId, ttlSeconds: 905 },
+      { op: 'revokeSession', sid: s1.familyId, ttlSeconds: 905 },
     ]);
   });
 });

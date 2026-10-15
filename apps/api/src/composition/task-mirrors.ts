@@ -41,9 +41,11 @@ export class TaskMirroredProjects implements IProjectRepository {
     this.#reflect(project);
   }
 
-  async save(project: Project): Promise<void> {
-    await this.inner.save(project);
-    this.#reflect(project);
+  /** ADR-110 (T-032): ghi có điều kiện `version` — chỉ phản chiếu khi thực sự ghi. */
+  async save(project: Project): Promise<boolean> {
+    const saved = await this.inner.save(project);
+    if (saved) this.#reflect(project);
+    return saved;
   }
 }
 
@@ -115,9 +117,11 @@ export class TaskMirroredWorkspaces implements IWorkspaceRepository {
     this.#reflect(workspace);
   }
 
-  async save(workspace: Workspace): Promise<void> {
-    await this.inner.save(workspace);
-    this.#reflect(workspace);
+  /** ADR-110 (T-032): ghi có điều kiện `version` — chỉ phản chiếu khi thực sự ghi. */
+  async save(workspace: Workspace): Promise<boolean> {
+    const saved = await this.inner.save(workspace);
+    if (saved) this.#reflect(workspace);
+    return saved;
   }
 
   async restoreIfWithinGrace(id: string, now: Date): Promise<boolean> {

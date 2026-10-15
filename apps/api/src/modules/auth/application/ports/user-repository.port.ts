@@ -16,6 +16,12 @@ export interface IUserRepository {
   add(user: User): Promise<void>;
   /** Fallback cho `authenticate` khi cache lỗi/miss. `null` nếu user không tồn tại hoặc đã xóa. */
   getTokenVersion(userId: string): Promise<number | null>;
+  /**
+   * Trong transaction refresh: `SELECT token_version … WHERE id AND deleted_at IS NULL FOR SHARE`
+   * (X4, T-032). Khóa chia sẻ ⇒ `bumpTokenVersion` / `changePassword` đồng thời phải chờ refresh
+   * commit, nên `revokeAllForUser` sau đó thấy được token mới. `null` nếu không có / đã xóa.
+   */
+  lockTokenVersion(userId: string): Promise<number | null>;
 
   /** Chỉ `last_login_at` (user chưa xóa). Trả `token_version` HIỆN TẠI để ký access token; `null` nếu không có. */
   recordLogin(id: string, at: Date): Promise<number | null>;

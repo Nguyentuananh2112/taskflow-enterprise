@@ -55,6 +55,11 @@ export class ChangePasswordUseCase {
     const current = await this.d.users.findById(input.userId);
     if (!current || current.isDeleted) throw new UnauthorizedError();
     if (!(await this.d.hasher.verify(current.passwordHash, input.currentPassword))) {
+      // ASVS V16.3.1 (X9): dò mật khẩu hiện tại bằng access token trộm được là dấu hiệu tấn công.
+      this.d.logger.warn(
+        { userId: input.userId, ip: input.meta.ip },
+        'auth.password_change_failed',
+      );
       throw new InvalidCurrentPasswordError();
     }
     assertPasswordAllowed(this.d.policy, input.newPassword, current.email, 'newPassword');

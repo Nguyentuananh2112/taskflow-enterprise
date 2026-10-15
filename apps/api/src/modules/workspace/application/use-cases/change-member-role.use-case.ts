@@ -2,18 +2,20 @@ import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError } from '../../../../core/errors';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import { assertWorkspaceLive } from '../workspace-guard';
 import type {
   ITaskAssignmentCleaner,
   IUserDirectory,
   IWorkspaceRealtimeNotifier,
 } from '../ports/collaborators.port';
-import type { IMembershipRepository } from '../ports/repositories.port';
+import type { IMembershipRepository, IWorkspaceRepository } from '../ports/repositories.port';
 import { requirePermission, toMemberView, type Actor, type MemberView } from '../workspace-shared';
 import { parseRole } from './add-member.use-case';
 import { assertNotLastOwner, lockOwnersAndLoadTarget } from './owner-guard';
 
 export interface ChangeMemberRoleDeps {
   memberships: IMembershipRepository;
+  workspaces: IWorkspaceRepository;
   users: IUserDirectory;
   cleaner: ITaskAssignmentCleaner;
   notifier: IWorkspaceRealtimeNotifier;
@@ -37,11 +39,10 @@ export class ChangeMemberRoleUseCase {
     const role = parseRole(input.role);
 
     return this.d.uow.run(async () => {
-      const { owners, target } = await lockOwnersAndLoadTarget(
-        this.d.memberships,
-        actor.workspaceId,
-        input.userId,
-      );
+      const loaded = await lockOwnersAndLoadTarget(this.d.memberships, actor, input.userId);
+      const { owners, target } = loaded;
+      requirePermission(loaded.actor, 'member:update-role'); // X6: role mới nhất
+      await assertWorkspaceLive(this.d.workspaces, actor.workspaceId); // X7
       if (role !== 'OWNER') assertNotLastOwner(owners, target);
       const user = await this.d.users.findById(target.userId);
       if (!user) throw new ResourceNotFoundError('user');

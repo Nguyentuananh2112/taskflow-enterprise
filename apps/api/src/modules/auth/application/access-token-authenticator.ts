@@ -1,10 +1,11 @@
+import type { IClock } from '../../../core/domain';
 import {
   ServiceUnavailableError,
   TokenExpiredError,
   UnauthorizedError,
 } from '../../../core/errors';
 import type { ILogger } from '../../../core/logging/logger';
-import { bestEffort } from './auth-shared';
+import { bestEffort, SESSION_REVOCATION_TTL_SECONDS } from './auth-shared';
 import type { IAccessTokenService } from './ports/access-token-service.port';
 import type { IRefreshTokenRepository } from './ports/refresh-token-repository.port';
 import type {
@@ -28,6 +29,7 @@ export interface AccessTokenAuthenticatorDeps {
   users: IUserRepository;
   refreshTokens: IRefreshTokenRepository;
   logger: ILogger;
+  clock: IClock;
 }
 
 const BEARER = /^Bearer\s+(\S+)\s*$/i;
@@ -66,14 +68,36 @@ export class AccessTokenAuthenticator {
     }
     if (cached.tokenVersion !== null) return cached;
 
-    // Cache miss ⇒ đọc DB rồi SET NX (không ghi đè giá trị writer vừa đặt — ALL-05).
-    const tokenVersion = await this.#db(() => this.d.users.getTokenVersion(userId));
+    // Cache miss ⇒ Valkey có thể vừa mất dữ liệu (restart, không persistence): KHÔNG tin việc thiếu
+    // khóa `sid-revoked` — kiểm cả `tv` lẫn phiên trong DB (X3, T-032).
+    const fromDb = await this.#fromDatabase(userId, sid);
+    const { tokenVersion } = fromDb;
     if (tokenVersion !== null) {
       await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { userId }, () =>
-        this.d.store.primeTokenVersion(userId, tokenVersion),
+        this.#refill(userId, tokenVersion),
       );
     }
-    return { tokenVersion, sessionRevoked: cached.sessionRevoked };
+    return { tokenVersion, sessionRevoked: cached.sessionRevoked || fromDb.sessionRevoked };
+  }
+
+  /**
+   * Nạp lại cache cho user: khôi phục `sid-revoked` của mọi phiên bị thu hồi trong cửa sổ TTL access
+   * token TRƯỚC, rồi mới `SET NX` `tv`. Lý do: một lần trúng cache `tv` không còn hỏi DB về `sid` —
+   * nếu nạp `tv` mà thiếu `sid-revoked`, phiên đã đăng xuất khác của cùng user sẽ được cho qua.
+   * Khôi phục lỗi ⇒ ném trước khi nạp `tv` ⇒ lần sau vẫn miss và hỏi DB (fail-closed).
+   */
+  async #refill(userId: string, tokenVersion: number): Promise<void> {
+    const now = this.d.clock.now().getTime();
+    const windowMs = SESSION_REVOCATION_TTL_SECONDS * 1000;
+    const revoked = await this.d.refreshTokens.listRevokedSessionsSince(
+      userId,
+      new Date(now - windowMs),
+    );
+    for (const { familyId, revokedAt } of revoked) {
+      const ttlSeconds = Math.ceil((revokedAt.getTime() + windowMs - now) / 1000);
+      if (ttlSeconds > 0) await this.d.store.revokeSession(familyId, ttlSeconds);
+    }
+    await this.d.store.primeTokenVersion(userId, tokenVersion);
   }
 
   #fromDatabase(userId: string, sid: string): Promise<SessionCacheState> {
