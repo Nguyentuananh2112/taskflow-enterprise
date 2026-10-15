@@ -25,6 +25,34 @@
    - harness nhận backend tiêm vào.
    Mục đích: chạy lại nguyên bộ test use case với Prisma (yêu cầu 5 của ticket).
 
+7. **Wire Prisma vào composition root** (quyết định Tech Lead, T-020 merge trước A):
+   - **`createPrismaPersistence({ prisma, valkey, logger })`**:
+     - repository Prisma auth + workspace dùng chung `PrismaUnitOfWork` (timeout transaction 10s);
+     - session store Valkey;
+     - không dùng `MirroringUserRepository`, vì repository Prisma đọc thẳng bảng `users`.
+   - **`Persistence.modules`** khai lưu trữ thực của từng module. `assertPersistenceAllowed(appEnv, modules)` hoạt động như sau:
+     - **staging/production** có bất kỳ module nào chạy bộ nhớ (kể cả chế độ lai) ⇒ throw, từ chối khởi động;
+     - **local/test** ⇒ trả danh sách module bộ nhớ, `main.ts` log cảnh báo `persistence.in_memory_data_lost_on_restart`.
+   - **Biến môi trường** `PERSISTENCE` và `PERSISTENCE_TASK` (`prisma|memory`, mặc định `prisma`). Trong `env.ts`, nếu `APP_ENV ∈ {staging, production}` và một biến là `memory` ⇒ lỗi cấu hình nêu đúng tên biến. Như vậy có hai lớp chặn: env và module đã wire.
+   - **`main.ts`** dùng `PERSISTENCE=prisma` (mặc định; `DATABASE_URL` vốn bắt buộc) ⇒ `PrismaClient` qua adapter-pg trên pool sẵn có. Graceful shutdown đóng `prisma.$disconnect()` trước `db-pool`. Valkey vẫn đóng như cũ.
+   - **Test khởi động** `test/integration/startup/prisma-startup.int.ts` spawn `src/main.ts` thật:
+     1. Prisma + Valkey trên `taskflow_t020`: `/readyz` 200; register 201 → login 200 → me 200 → logout-all 204 → me 401. `token_version` = 1 trong Postgres, 1 workspace, không có cảnh báo bộ nhớ.
+     2. `APP_ENV=staging` + `PERSISTENCE_TASK=memory` ⇒ exit ≠ 0, output nêu `PERSISTENCE_TASK`.
+
+### File composition đã đổi (A cần rebase)
+
+| File | Thay đổi |
+|---|---|
+| `apps/api/src/main.ts` | chọn persistence, gọi `assertPersistenceAllowed` + cảnh báo, đóng Prisma khi shutdown |
+| `apps/api/src/composition/persistence.ts` (+ `persistence.test.ts` mới) | `StorageKind`, `Persistence.modules`, `createPrismaPersistence`, `assertPersistenceAllowed` |
+| `apps/api/src/composition/users.ts` | `MirroringUserRepository` theo port ADR-104 (mục 5) |
+| `apps/api/src/config/env.ts` (+ `env.test.ts`) | `PERSISTENCE`, `PERSISTENCE_TASK`, luật staging/production |
+| `apps/api/.env.example` | `PERSISTENCE=prisma`, `PERSISTENCE_TASK=memory` (local, cho tới khi Task có Prisma) |
+
+**Việc của A (T-024) khi rebase:**
+- thêm `task` vào `Persistence.modules` (`'memory'` hoặc `'prisma'` theo `env.PERSISTENCE_TASK`). Nếu thiếu, guard production không thấy module Task;
+- đưa repository Task vào `createPrismaPersistence` khi có.
+
 ## Đã làm (theo ticket)
 
 | # | Nội dung | File chính |
@@ -84,13 +112,20 @@ Worktree, Windows, Node 24.18.0, pnpm 11.28.2.
 - **DB test:** `taskflow_t020` trên postgres-test 5434 (ADR-106).
 - **Valkey:** 6380 DB index **12**, khóa ngẫu nhiên `t020-*`, **không `flushDb`**.
 
+Chạy **tuần tự, kiểm exit code từng lệnh**, sau khi rebase lên main `adea03a` và wire composition:
+
 ```
-$ pnpm typecheck  → config, contracts, apps/api, apps/web: Done
-$ pnpm lint       → prettier ✔ · eslint ✔ · depcruise api: ✔ no dependency violations found (274 modules, 1033 dependencies cruised)
-$ pnpm test       → Test Files 94 passed (94) · Tests 1045 passed (1045)
+$ pnpm typecheck  → exit 0
+$ pnpm lint       → exit 0 (prettier ✔ · eslint ✔ · depcruise ✔)
+$ pnpm test       → exit 0 · Test Files 109 passed (109) · Tests 1143 passed (1143)
 $ DATABASE_URL_TEST=…/taskflow_t020 VALKEY_URL_TEST=redis://127.0.0.1:6380/12 pnpm --filter @taskflow/api test:integration
-                  → Test Files 22 passed (22) · Tests 211 passed (211) · Duration 137.93s
+                  → exit 0 · Test Files 23 passed (23) · Tests 213 passed (213)
 ```
+
+**Ghi chú trung thực:**
+- **Lần chạy `pnpm test` đầu tiên exit 1.** Mọi test có chạy đều qua (82/82 file). Exit 1 đến từ 27 lỗi `vitest-pool: Timeout waiting for worker to respond` khi khởi động worker cho test `apps/web`: máy quá tải, import chiếm 79% thời gian, chạy liền sau typecheck và lint. Branch này không đổi `apps/web`.
+- **Chạy lại riêng `pnpm test` ⇒ exit 0** (số liệu trên).
+- **Đề xuất D:** cân nhắc `poolOptions` / `teardownTimeout` hoặc giới hạn worker cho web trên Windows.
 
 Không có thao tác nào vượt chặn `migrate reset`. Global setup chỉ DROP/CREATE schema `public` của **DB riêng** `taskflow_t020`.
 
@@ -116,5 +151,6 @@ Không có thao tác nào vượt chặn `migrate reset`. Global setup chỉ DRO
   - đổi bản sao cục bộ `IAssigneeDirectory` / `ITaskProjectStore` / `IUserRefReader` sang `import type` từ `modules/task` khi T-018 có trên main;
   - có thể đổi ROL-07 sang cleaner thật để chứng minh cả audit.
 - **F:** chạy lại SEC-21c / 23b / 24b trên branch này (file: `auth-races.int.ts`, `auth-valkey.int.ts`).
-- **A:** type `TransactionCapable` vs `PrismaClient` (xem trên).
+- **A:** type `TransactionCapable` vs `PrismaClient` (xem trên). `createPrismaPersistence` đang cast có chú thích; bỏ cast khi core sửa type.
+- **Job purge chưa được wire** vào process nào (scheduler/worker). `PrismaWorkspacePurger` đã có + test tầng I, nhưng chưa có gì gọi định kỳ — ticket sau.
 - **D2 (ẩn danh hóa user) chưa có lệnh soft-delete.** Khi làm phải tăng `token_version` + thu hồi token trong cùng transaction, và gọi `#reflect` ở `MirroringUserRepository` (TODO đã ghi).

@@ -50,6 +50,10 @@ const EnvSchema = z
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
     READINESS_DRAIN_MS: z.coerce.number().int().min(0).max(60_000).default(5_000),
     METRICS_TOKEN: z.string().min(32).optional(),
+    // T-020: lưu trữ auth/workspace (Prisma + Valkey). `memory` = bộ nhớ, MẤT dữ liệu khi khởi động lại.
+    PERSISTENCE: z.enum(['prisma', 'memory']).default('prisma'),
+    // Module Task: repository Prisma do C làm ở T-023; trước đó chỉ `memory` mới khởi động được (local/test).
+    PERSISTENCE_TASK: z.enum(['prisma', 'memory']).default('prisma'),
   })
   .superRefine((env, ctx) => {
     const fail = (path: keyof typeof env, message: string) =>
@@ -57,6 +61,12 @@ const EnvSchema = z
 
     if (env.JWT_ACCESS_SECRET_PREVIOUS === env.JWT_ACCESS_SECRET) {
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
+    }
+    // Quyết định Tech Lead (T-020): staging/production KHÔNG bao giờ dùng lưu trữ bộ nhớ, kể cả "lai".
+    if (env.APP_ENV === 'staging' || env.APP_ENV === 'production') {
+      if (env.PERSISTENCE === 'memory') fail('PERSISTENCE', 'staging/production bắt buộc prisma');
+      if (env.PERSISTENCE_TASK === 'memory')
+        fail('PERSISTENCE_TASK', 'staging/production bắt buộc prisma');
     }
     if (env.NODE_ENV !== 'production') return;
 

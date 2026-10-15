@@ -113,8 +113,30 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     ['APP_ENV local với NODE_ENV production', { APP_ENV: 'local' }, 'APP_ENV'],
     ['thiếu SENTRY_DSN', { SENTRY_DSN: undefined }, 'SENTRY_DSN'],
     ['thiếu METRICS_TOKEN', { METRICS_TOKEN: undefined }, 'METRICS_TOKEN'],
+    ['T-020: lưu trữ bộ nhớ ở staging/production', { PERSISTENCE: 'memory' }, 'PERSISTENCE'],
+    [
+      'T-020: module Task chạy bộ nhớ ở staging/production',
+      { PERSISTENCE_TASK: 'memory' },
+      'PERSISTENCE_TASK',
+    ],
   ])('%s', (_label, overrides, variable) => {
     expect(variablesOf(productionEnvVars(overrides))).toEqual([variable]);
+  });
+
+  it('T-020: mặc định PERSISTENCE / PERSISTENCE_TASK = prisma; memory được phép ở local/test', () => {
+    expect(loadEnv(testEnvVars())).toMatchObject({
+      PERSISTENCE: 'prisma',
+      PERSISTENCE_TASK: 'prisma',
+    });
+    expect(variablesOf(testEnvVars({ PERSISTENCE: 'memory', PERSISTENCE_TASK: 'memory' }))).toEqual(
+      [],
+    );
+  });
+
+  it('T-020: APP_ENV=staging với NODE_ENV khác production vẫn cấm lưu trữ bộ nhớ', () => {
+    expect(variablesOf(testEnvVars({ APP_ENV: 'staging', PERSISTENCE: 'memory' }))).toEqual([
+      'PERSISTENCE',
+    ]);
   });
 
   it('ràng buộc production không áp cho development', () => {

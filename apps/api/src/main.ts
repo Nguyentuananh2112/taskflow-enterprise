@@ -2,7 +2,11 @@ import { applyVietnameseZodLocale } from '@taskflow/contracts';
 
 import { appConfigFromEnv } from './app';
 import { createContainer } from './composition/container';
-import { createMemoryPersistence } from './composition/persistence';
+import {
+  assertPersistenceAllowed,
+  createMemoryPersistence,
+  createPrismaPersistence,
+} from './composition/persistence';
 import { EnvValidationError, loadEnv, type Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
@@ -12,8 +16,9 @@ import { CryptoRandom, SystemClock, UuidV7Generator } from './core/infrastructur
 import { connectInBackground, createValkeyClient } from './core/infrastructure/valkey';
 import { createGracefulShutdown, type GracefulShutdown } from './core/lifecycle/graceful-shutdown';
 import { createLogger } from './core/logging/pino-logger';
-import { createPgPool } from './core/persistence/database';
+import { createPgPool, createPrismaClient } from './core/persistence/database';
 import { RealtimeGateway } from './core/realtime/gateway';
+import { PrismaClient } from './generated/prisma/client';
 import { socketAuthenticatorFrom } from './core/realtime/ports';
 import { createValkeyAdapter } from './core/realtime/redis-adapter';
 import { PasswordPolicy } from './modules/auth/domain/password-policy';
@@ -44,13 +49,16 @@ async function main(): Promise<void> {
   const valkey = createValkeyClient(env.REDIS_URL, logger);
   connectInBackground(valkey, logger);
 
-  // TODO(T-020 merge): createPrismaPersistence(createPrismaClient(PrismaClient, pool), valkey) và đóng
-  //   `prisma.$disconnect()` TRƯỚC `pool.end()` trong `resources` bên dưới.
-  const persistence = createMemoryPersistence(logger);
-  if (env.NODE_ENV === 'production') {
-    throw new Error('Lưu trữ bộ nhớ không được dùng ở production (chờ repository Prisma — T-020).');
+  // T-020: Prisma + Valkey mặc định (DATABASE_URL luôn bắt buộc). `PERSISTENCE=memory` chỉ local/test.
+  const prisma = env.PERSISTENCE === 'prisma' ? createPrismaClient(PrismaClient, pool) : undefined;
+  const persistence = prisma
+    ? createPrismaPersistence({ prisma, valkey, logger })
+    : createMemoryPersistence(logger);
+  // Staging/production: bất kỳ module nào chạy bộ nhớ ⇒ ném (từ chối khởi động) — quyết định T-020.
+  const inMemoryModules = assertPersistenceAllowed(env.APP_ENV, persistence.modules);
+  if (inMemoryModules.length > 0) {
+    logger.warn({ modules: inMemoryModules }, 'persistence.in_memory_data_lost_on_restart');
   }
-  logger.warn({ persistence: persistence.kind }, 'persistence.in_memory_data_lost_on_restart');
 
   const clock = new SystemClock();
   const ids = new UuidV7Generator();
@@ -102,6 +110,8 @@ async function main(): Promise<void> {
     realtime: [{ name: 'socket.io', close: () => gateway.close() }],
     resources: [
       ...(adapter ? [{ name: 'socket.io-adapter', close: () => adapter.close() }] : []),
+      // Prisma ngắt TRƯỚC pool (adapter không tự đóng pool ngoài — core/persistence/database.ts).
+      ...(prisma ? [{ name: 'prisma', close: () => prisma.$disconnect() }] : []),
       { name: 'db-pool', close: () => pool.end() },
       { name: 'valkey', close: () => (valkey.isOpen ? valkey.close() : undefined) },
     ],
