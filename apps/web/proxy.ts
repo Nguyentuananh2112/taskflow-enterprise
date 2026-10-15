@@ -9,12 +9,13 @@ import { buildSecurityHeaders, createNonce } from '@/app/security/csp';
 // và đặt CSP + header W-CSP-4 lên RESPONSE.
 export function proxy(request: NextRequest) {
   const nonce = createNonce();
-  const { apiUrl, wsUrl } = readPublicRuntimeConfig();
+  const { apiUrl, wsUrl, appEnv } = readPublicRuntimeConfig();
   const headers = buildSecurityHeaders({
     nonce,
     apiUrl,
     wsUrl,
     isDev: process.env.NODE_ENV === 'development',
+    appEnv,
   });
 
   const requestHeaders = new Headers(request.headers);

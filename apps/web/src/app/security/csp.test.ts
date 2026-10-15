@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCsp, buildSecurityHeaders, createNonce } from './csp';
+import { buildCsp, buildSecurityHeaders, createNonce, enforcesHttps } from './csp';
 
 const PROD = {
   nonce: 'bm9uY2U=',
   apiUrl: 'https://api.example.com/api/v1',
   wsUrl: 'https://api.example.com',
   isDev: false,
+  appEnv: 'production',
 } as const;
 
 const directive = (csp: string, name: string) =>
@@ -69,6 +70,7 @@ describe('buildCsp — development (W-CSP-3)', () => {
     apiUrl: 'http://localhost:4000/api/v1',
     wsUrl: 'http://localhost:4000',
     isDev: true,
+    appEnv: 'local',
   });
 
   it('nới đúng phần cho HMR', () => {
@@ -98,8 +100,27 @@ describe('buildSecurityHeaders (W-CSP-4)', () => {
   });
 
   it('development không có HSTS', () => {
-    expect(buildSecurityHeaders({ ...PROD, isDev: true })).not.toHaveProperty(
+    expect(buildSecurityHeaders({ ...PROD, isDev: true, appEnv: 'local' })).not.toHaveProperty(
       'Strict-Transport-Security',
     );
+  });
+});
+
+describe('ép HTTPS theo APP_ENV, không theo NODE_ENV (ADR-101)', () => {
+  it.each([
+    ['local', false],
+    ['test', false],
+    ['staging', true],
+    ['production', true],
+  ] as const)('APP_ENV=%s ⇒ HSTS + upgrade-insecure-requests: %s', (appEnv, expected) => {
+    // isDev=false: build production (next start) — vd E2E Docker chạy http với APP_ENV=test.
+    const input = { ...PROD, appEnv, isDev: false };
+    expect(enforcesHttps(appEnv)).toBe(expected);
+    expect('Strict-Transport-Security' in buildSecurityHeaders(input)).toBe(expected);
+    expect(buildCsp(input).includes('upgrade-insecure-requests')).toBe(expected);
+  });
+
+  it('build production với APP_ENV=test vẫn KHÔNG nới unsafe-eval (chỉ NODE_ENV=development mới nới)', () => {
+    expect(buildCsp({ ...PROD, appEnv: 'test' })).not.toMatch(/unsafe-eval|unsafe-inline/);
   });
 });

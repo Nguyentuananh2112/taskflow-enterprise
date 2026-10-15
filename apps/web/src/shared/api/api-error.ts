@@ -7,8 +7,13 @@ import type { ErrorCode } from '@taskflow/contracts/common';
 export const CLIENT_ERROR_CODES = {
   /** fetch ném lỗi: mất mạng, DNS, CORS bị chặn. `status = 0`. */
   network: 'NETWORK_ERROR',
-  /** Response không đúng envelope / data không khớp schema contracts. */
+  /** Body không phải envelope hợp lệ / data không khớp schema contracts. */
   badResponse: 'BAD_RESPONSE',
+  /**
+   * ADR-102: envelope lỗi hợp lệ nhưng `error.code` chưa có trong ErrorCode (API deploy trước web).
+   * Giữ `status` + `message`; FE xử lý như lỗi chung theo HTTP status. Mã gốc ở `serverCode`.
+   */
+  unknown: 'UNKNOWN_ERROR',
 } as const;
 
 export type ApiErrorCode = ErrorCode | (typeof CLIENT_ERROR_CODES)[keyof typeof CLIENT_ERROR_CODES];
@@ -19,6 +24,8 @@ type ApiErrorInit = Readonly<{
   message: string;
   details?: unknown;
   requestId?: string | undefined;
+  /** Mã gốc server gửi khi `code = UNKNOWN_ERROR` (để log/tra cứu, không để rẽ nhánh). */
+  serverCode?: string | undefined;
   cause?: unknown;
 }>;
 
@@ -28,6 +35,7 @@ export class ApiError extends Error {
   readonly code: ApiErrorCode;
   readonly details: unknown;
   readonly requestId: string | undefined;
+  readonly serverCode: string | undefined;
 
   constructor(init: ApiErrorInit) {
     super(init.message, { cause: init.cause });
@@ -35,6 +43,7 @@ export class ApiError extends Error {
     this.code = init.code;
     this.details = init.details;
     this.requestId = init.requestId;
+    this.serverCode = init.serverCode;
   }
 }
 

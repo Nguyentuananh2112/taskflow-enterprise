@@ -1,9 +1,11 @@
 import {
   ApiError as ApiErrorEnvelope,
+  ApiErrorBody,
+  ErrorCode,
   apiSuccess,
   type PageMeta,
 } from '@taskflow/contracts/common';
-import type * as z from 'zod';
+import * as z from 'zod';
 
 import { ApiError, CLIENT_ERROR_CODES } from './api-error';
 import { createSingleFlight } from './single-flight';
@@ -26,6 +28,14 @@ export type HttpDeps = Readonly<{
   fetch?: typeof fetch;
   auth?: AuthHooks;
 }>;
+
+/**
+ * Envelope lỗi của contracts nhưng `code` là string bất kỳ (ADR-102): vỏ vẫn parse chặt, chỉ nới
+ * enum mã lỗi để web cũ không hỏng khi API mới thêm mã.
+ */
+const ErrorEnvelopeAnyCode = ApiErrorEnvelope.extend({
+  error: ApiErrorBody.extend({ code: z.string().min(1) }),
+});
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type Query = Readonly<Record<string, string | number | boolean | null | undefined>>;
@@ -105,11 +115,19 @@ export function createHttpClient(deps: HttpDeps) {
     const isFailure =
       typeof body === 'object' && body !== null && 'success' in body && body.success === false;
     if (isFailure) {
-      const failure = ApiErrorEnvelope.safeParse(body);
+      const failure = ErrorEnvelopeAnyCode.safeParse(body);
       if (!failure.success) throw bad(failure.error);
       const { code, message, details } = failure.data.error;
       const requestId = failure.data.meta.requestId;
-      throw new ApiError({ status: response.status, code, message, details, requestId });
+      const known = ErrorCode.safeParse(code);
+      throw new ApiError({
+        status: response.status,
+        code: known.success ? known.data : CLIENT_ERROR_CODES.unknown,
+        message,
+        details,
+        requestId,
+        ...(known.success ? {} : { serverCode: code }),
+      });
     }
     const success = apiSuccess(schema).safeParse(body);
     if (!success.success) throw bad(success.error);
