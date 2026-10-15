@@ -466,8 +466,8 @@ Luật trường (T-002): `password` 12–256 ký tự, **đếm theo code point
 | GET | `/workspaces` | Đã đăng nhập | query `{ deleted?: "true" }` | Mặc định: `WorkspaceDto[]` chưa xóa của tôi (không phân trang — giới hạn 100 workspace/user). `deleted=true`: `DeletedWorkspaceDto[]` đã xóa mềm mà tôi là OWNER | — |
 | POST | `/workspaces` | Đã đăng nhập | body `{ name, slug? }` | `201 WorkspaceDto` (người tạo là OWNER) | `409 RESOURCE_CONFLICT` (`details.field="slug"`) |
 | GET | `/workspaces/:wsId` | `workspace:read` | — | `WorkspaceDto` | — |
-| PATCH | `/workspaces/:wsId` | `workspace:update` | body `{ name?, slug? }` (≥1 trường) | `WorkspaceDto` | `409 RESOURCE_CONFLICT` (slug) |
-| DELETE | `/workspaces/:wsId` | `workspace:delete` | body `{ confirmSlug }` | `DeletedWorkspaceDto` (xóa mềm, mục 1.7) | `400 VALIDATION_ERROR` nếu `confirmSlug` sai |
+| PATCH | `/workspaces/:wsId` | `workspace:update` | body `{ name?, slug? }` (≥1 trường) | `WorkspaceDto` | `409 RESOURCE_CONFLICT` (slug); `409 VERSION_CONFLICT` (ghi đồng thời, ADR-110) |
+| DELETE | `/workspaces/:wsId` | `workspace:delete` | body `{ confirmSlug }` | `DeletedWorkspaceDto` (xóa mềm, mục 1.7) | `400 VALIDATION_ERROR` nếu `confirmSlug` sai; `409 VERSION_CONFLICT` (ghi đồng thời, ADR-110) |
 | POST | `/workspaces/:wsId/restore` | `workspace:restore` (OWNER; route chỉ thấy workspace đã xóa) | — | `WorkspaceDto` | `404` (không phải OWNER / chưa xóa / quá hạn) |
 | GET | `/workspaces/:wsId/members` | `member:read` | query `{ q?, cursor?, limit? (1–100, mặc định 50) }`. `q` (ADR-083): trim, tối đa 100 ký tự (dài hơn ⇒ 400), rỗng sau trim ⇒ không lọc; luôn giới hạn trong workspace trên URL; tìm chuỗi con (khớp theo nghĩa đen) **không phân biệt hoa thường** trong `fullName` hoặc `email` (`ILIKE` với `%`, `_`, `\` đã escape). Sắp theo `joinedAt`, `id` | `MemberDto[]` + `meta.page` | — |
 | POST | `/workspaces/:wsId/members` | `member:add` | body `{ email, role }` (thêm user đã có tài khoản; lời mời qua email là Phase sau) | `201 MemberDto` | `404 RESOURCE_NOT_FOUND` (không có user), `409 RESOURCE_CONFLICT` (đã là thành viên), `403` (PM cấp role PM/OWNER) |
@@ -491,9 +491,9 @@ Luật trường workspace (R19, chốt với T-002/T-006):
 | GET | `/workspaces/:wsId/projects` | `project:read` | query `{ archived?: "false"\|"true"\|"all" (mặc định false), cursor?, limit? (1–100, 50) }` | `ProjectDto[]` + `meta.page` | — |
 | POST | `/workspaces/:wsId/projects` | `project:create` | body `{ name, keyPrefix, description? }` | `201 ProjectDto` | `409 RESOURCE_CONFLICT` (`details.field="keyPrefix"`) |
 | GET | `/workspaces/:wsId/projects/:projectId` | `project:read` | — | `ProjectDto` | — |
-| PATCH | `/workspaces/:wsId/projects/:projectId` | `project:update` | body `{ name?, description? }` (keyPrefix bất biến) | `ProjectDto` | `422 PROJECT_ARCHIVED` |
-| POST | `/workspaces/:wsId/projects/:projectId/archive` | `project:archive` | — | `ProjectDto` (idempotent) | — |
-| POST | `/workspaces/:wsId/projects/:projectId/unarchive` | `project:archive` | — | `ProjectDto` (idempotent) | — |
+| PATCH | `/workspaces/:wsId/projects/:projectId` | `project:update` | body `{ name?, description? }` (keyPrefix bất biến) | `ProjectDto` | `422 PROJECT_ARCHIVED`; `409 VERSION_CONFLICT` (ADR-110) |
+| POST | `/workspaces/:wsId/projects/:projectId/archive` | `project:archive` | — | `ProjectDto` (idempotent) | `409 VERSION_CONFLICT` (ADR-110) |
+| POST | `/workspaces/:wsId/projects/:projectId/unarchive` | `project:archive` | — | `ProjectDto` (idempotent) | `409 VERSION_CONFLICT` (ADR-110) |
 
 Không có endpoint xóa project ở v1 (chỉ archive) — ADR-040.
 
@@ -556,7 +556,7 @@ Prefix: `/workspaces/:wsId/projects/:projectId/tasks`
 | `ORIGIN_NOT_ALLOWED` | 403 | Origin không hợp lệ trên endpoint dùng cookie (`/auth/refresh`, `/auth/logout`) | null |
 | `FORBIDDEN_ACCESS` | 403 | Là thành viên nhưng thiếu quyền / policy chặn | `{ required?: permission }` |
 | `RESOURCE_NOT_FOUND` | 404 | Không tồn tại **hoặc** khác tenant (ADR-020); route API không xác định (`resource: "route"`, T-021) | `{ resource: "task"\|"project"\|"workspace"\|"user"\|"route" }` |
-| `VERSION_CONFLICT` | 409 | `expectedVersion` lệch (ADR-010) | `{ currentVersion, current: TaskDto }` |
+| `VERSION_CONFLICT` | 409 | Task: `expectedVersion` lệch (ADR-010). Workspace/project: ghi đồng thời — `UPDATE … WHERE version = ?` của server không khớp (ADR-110; client không gửi version, thử lại là đủ) | Task: `{ currentVersion, current: TaskDto }`. Workspace/project: `{ currentVersion, current: null }` — client **không** được coi `current` là DTO |
 | `RESOURCE_CONFLICT` | 409 | Trùng unique (slug, keyPrefix, đã là thành viên), trùng rank sau retry | `{ field?, reason }` |
 | `EMAIL_ALREADY_EXISTS` | 409 | Register trùng email (ADR-049: giữ ở v1, bù bằng rate-limit) | null |
 | `REFRESH_IN_PROGRESS` | 409 | Refresh token vừa xoay < 10s (2 tab refresh cùng lúc) — không cấp, không thu hồi family | null |
