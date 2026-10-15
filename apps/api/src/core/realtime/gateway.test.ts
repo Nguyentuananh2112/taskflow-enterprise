@@ -89,6 +89,58 @@ describe('handshake xác thực (SEC-35)', () => {
     expect([...(server?.rooms ?? [])]).toEqual(expect.arrayContaining(['user:u1', 'session:s1']));
     expect(server?.data.clientId).toBeNull();
   });
+
+  it('review B M1: phiên bị thu hồi TRONG LÚC handshake (disconnectUser hụt) ⇒ xác thực lại sau khi vào phòng thất bại ⇒ ngắt, project:join không được kiểm/vào phòng', async () => {
+    rt = await startRealtime();
+    rt.accessChecker.allow('u1', WS, P1);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    rt.authenticator.before = async (token, call) => {
+      // logout-all commit khi handshake còn trong authenticate(): socket chưa ở phòng user ⇒ hụt.
+      if (call === 1) await rt.gateway.disconnectUser('u1');
+      if (call === 2) {
+        rt.authenticator.errors.set(token, new UnauthorizedError());
+        await held; // giữ lần xác thực lại ⇒ project:join phải chờ nó
+      }
+    };
+    const socket = rt.client({ token: 'user:u1:s1' });
+    await connected(socket);
+    const gone = disconnected(socket);
+    socket.emit('project:join', { workspaceId: WS, projectId: P1 }, () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(rt.accessChecker.checks).toBe(0);
+    release();
+    expect(await gone).toBe('io server disconnect');
+    expect(rt.accessChecker.checks).toBe(0);
+    expect(await rt.gateway.io.fetchSockets()).toHaveLength(0);
+  });
+
+  it('review B M1: xác thực lại lỗi lạ ⇒ fail-closed (ngắt, log)', async () => {
+    rt = await startRealtime();
+    rt.authenticator.before = (token, call) => {
+      if (call === 2) rt.authenticator.errors.set(token, new Error('kaboom'));
+    };
+    const socket = rt.client({ token: 'user:u1:s1' });
+    const gone = disconnected(socket);
+    await connected(socket);
+    expect(await gone).toBe('io server disconnect');
+    expect(rt.logger.messages('error')).toContain('realtime.handshake_recheck_failed');
+  });
+
+  it('review B M2: tối đa 20 socket/user/instance ⇒ socket thứ 21 bị từ chối RATE_LIMITED; user khác không ảnh hưởng; đóng socket trả suất', async () => {
+    rt = await startRealtime();
+    const mine = Array.from({ length: 20 }, () => rt.client({ token: 'user:u1:s1' }));
+    await Promise.all(mine.map(connected));
+    expect(await connectError(rt.client({ token: 'user:u1:s2' }))).toEqual({
+      message: 'RATE_LIMITED',
+      code: 'RATE_LIMITED',
+    });
+    expect(rt.logger.messages('warn')).toContain('realtime.socket_cap_reached');
+    await connected(rt.client({ token: 'user:u2:s9' }));
+    mine[0]?.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await connected(rt.client({ token: 'user:u1:s3' }));
+  });
 });
 
 describe('project:join / project:leave', () => {
@@ -264,6 +316,46 @@ describe('project:join / project:leave', () => {
     });
   });
 
+  it('review B M2: 60 lần join/phút/user gộp mọi socket của user trên instance', async () => {
+    rt = await startRealtime();
+    const sockets = Array.from({ length: 3 }, () => rt.client({ token: 'user:u1:s1' }));
+    const other = rt.client({ token: 'user:u2:s2' });
+    await Promise.all([...sockets, other].map(connected));
+    const acks = [];
+    for (const socket of sockets) {
+      for (let i = 0; i < 21; i++)
+        acks.push(await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 }));
+    }
+    expect(acks.filter((a) => !a.ok && a.code === 'RATE_LIMITED')).toHaveLength(3);
+    expect(acks.slice(60)).toEqual(Array(3).fill({ ok: false, code: 'RATE_LIMITED' }));
+    expect(await emitWithAck(other, 'project:join', { workspaceId: WS, projectId: P1 })).toEqual({
+      ok: false,
+      code: 'RESOURCE_NOT_FOUND',
+    });
+  });
+
+  it('review B L1: join song song không vượt 20 phòng/socket (giữ suất trước khi await)', async () => {
+    rt = await startRealtime();
+    const ids = Array.from(
+      { length: 25 },
+      (_, i) => `0199e5a2-7c1e-7cc3-9a3b-${String(i).padStart(12, '0')}`,
+    );
+    ids.forEach((id) => rt.accessChecker.allow('u1', WS, id));
+    // Mỗi lần kiểm nhường event loop ⇒ các join chồng lên nhau giữa lúc đếm và lúc vào phòng.
+    rt.accessChecker.interleave = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
+    const socket = rt.client();
+    await connected(socket);
+    const acks = await Promise.all(
+      ids.map((id) => emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: id })),
+    );
+    expect(acks.filter((a) => a.ok)).toHaveLength(20);
+    expect(acks.filter((a) => !a.ok)).toEqual(
+      Array(5).fill({ ok: false, code: 'BUSINESS_RULE_VIOLATION' }),
+    );
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])].filter((r) => r.startsWith('project:'))).toHaveLength(20);
+  });
+
   it('event không có ack bị bỏ qua (không crash)', async () => {
     rt = await startRealtime();
     const socket = rt.client();
@@ -427,15 +519,42 @@ describe('auth:renew & hết hạn (security §5.3)', () => {
     expect(await noEvent(socket, 'auth:expired', 350)).toBe(true); // timer cũ (200ms) đã bị thay
   });
 
-  it('renew: lỗi checker khi kiểm lại ⇒ giữ phòng (log warn)', async () => {
+  it('review B L3: renew mà kiểm lại phòng lỗi ⇒ fail-closed: ack SERVICE_UNAVAILABLE rồi ngắt (client nối + join lại)', async () => {
     rt = await startRealtime();
     rt.accessChecker.allow('u1', WS, P1);
     const socket = rt.client();
     await connected(socket);
     await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 });
     rt.accessChecker.failWith = new Error('db');
-    expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s1' })).toEqual({ ok: true });
-    expect(rt.logger.messages('warn')).toContain('realtime.recheck_failed_keep_room');
+    const gone = disconnected(socket);
+    expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s1' })).toEqual({
+      ok: false,
+      code: 'SERVICE_UNAVAILABLE',
+    });
+    expect(await gone).toBe('io server disconnect');
+    expect(rt.logger.messages('warn')).toContain('realtime.recheck_failed_disconnect');
+  });
+
+  it('review B L2: renew đổi sid mà phiên mới bị thu hồi trước khi vào phòng session mới ⇒ UNAUTHORIZED + ngắt', async () => {
+    rt = await startRealtime();
+    const socket = rt.client({ token: 'user:u1:s1' });
+    await connected(socket);
+    const renewCalls: number[] = [];
+    rt.authenticator.before = async (token, call) => {
+      if (token !== 'user:u1:s2') return;
+      renewCalls.push(call);
+      // logout(s2) commit trong lúc renew xác thực: socket chưa ở phòng session:s2 ⇒
+      // disconnectSession(s2) hụt; lần xác thực lại (sau khi đổi phòng) thấy phiên đã thu hồi.
+      if (renewCalls.length === 1) await rt.gateway.disconnectSession('s2');
+      if (renewCalls.length === 2) rt.authenticator.errors.set(token, new UnauthorizedError());
+    };
+    const gone = disconnected(socket);
+    expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s2' })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED',
+    });
+    expect(await gone).toBe('io server disconnect');
+    expect(renewCalls).toHaveLength(2);
   });
 
   it('T-028: auth:renew tối đa 5 lần/phút/socket ⇒ RATE_LIMITED (không gọi authenticator, không ngắt); qua cửa sổ thì được lại', async () => {

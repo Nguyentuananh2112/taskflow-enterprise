@@ -20,7 +20,11 @@ import type {
   RealtimeEventMeta,
   WorkspaceRole,
 } from './ports';
-import { AUTH_RENEW_LIMIT } from '../http/rate-limit/rules';
+import {
+  AUTH_RENEW_LIMIT,
+  MAX_SOCKETS_PER_USER,
+  PROJECT_JOIN_LIMIT_PER_USER,
+} from '../http/rate-limit/rules';
 import { SlidingWindow } from '../http/rate-limit/sliding-window';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
@@ -64,6 +68,7 @@ export class RealtimeGateway {
   >;
 
   readonly #renewsByUser = new SlidingWindow(AUTH_RENEW_LIMIT.user);
+  readonly #joinsByUser = new SlidingWindow(PROJECT_JOIN_LIMIT_PER_USER);
 
   constructor(
     httpServer: HttpServer,
@@ -97,6 +102,12 @@ export class RealtimeGateway {
     try {
       if (typeof auth.token !== 'string' || !auth.token) throw new Error('missing token');
       const principal = await this.o.authenticator.authenticate(auth.token);
+      // Review B M2: chặn một user mở hàng loạt socket (mỗi socket có hạn mức join/renew riêng) làm
+      // cạn pool DB dùng chung. Đếm LOCAL theo phòng user — handshake song song có thể lọt vài socket.
+      if (this.#localSocketCount(rooms.user(principal.userId)) >= MAX_SOCKETS_PER_USER) {
+        this.o.logger.warn({ userId: principal.userId }, 'realtime.socket_cap_reached');
+        return next(Object.assign(new Error('RATE_LIMITED'), { data: { code: 'RATE_LIMITED' } }));
+      }
       socket.data = { ...principal, clientId: ClientId.parse(auth.clientId), joined: new Map() };
       next();
     } catch (err) {
@@ -112,8 +123,38 @@ export class RealtimeGateway {
   }
 
   #onConnection(socket: AppSocket): void {
-    void socket.join([rooms.user(socket.data.userId), rooms.session(socket.data.sid)]);
-    registerSocketHandlers(socket, { ...this.o, renewsByUser: this.#renewsByUser });
+    // Đăng ký handler ĐỒNG BỘ (event client gửi ngay sau connect không bị rơi); `project:join` chờ
+    // `verified` nên không vào được phòng nào trước khi phiên được xác thực lại.
+    registerSocketHandlers(socket, {
+      ...this.o,
+      renewsByUser: this.#renewsByUser,
+      joinsByUser: this.#joinsByUser,
+      verified: this.#joinPersonalRooms(socket),
+    });
+  }
+
+  /**
+   * Review B M1: logout / logout-all / đổi mật khẩu / refresh-reuse commit TRONG LÚC handshake đang ở
+   * `authenticate()` thì `disconnectSession`/`disconnectUser` không thấy socket (chưa ở phòng user/
+   * session) ⇒ socket sống tới `exp`. Vào phòng TRƯỚC rồi xác thực LẠI: thu hồi commit sau lần này
+   * sẽ thấy socket trong phòng; thu hồi commit trước đó làm lần này thất bại ⇒ ngắt. Lỗi ⇒ fail-closed.
+   */
+  async #joinPersonalRooms(socket: AppSocket): Promise<boolean> {
+    const { token } = socket.handshake.auth as { token: string };
+    try {
+      await socket.join([rooms.user(socket.data.userId), rooms.session(socket.data.sid)]);
+      const principal = await this.o.authenticator.authenticate(token);
+      if (principal.userId === socket.data.userId) return true;
+    } catch (err) {
+      if (!(err instanceof AppError))
+        this.o.logger.error({ err }, 'realtime.handshake_recheck_failed');
+    }
+    socket.disconnect(true);
+    return false;
+  }
+
+  #localSocketCount(room: string): number {
+    return this.io.of('/').adapter.rooms.get(room)?.size ?? 0;
   }
 
   // ---------- IAuthRealtimeNotifier (security §5.4) ----------

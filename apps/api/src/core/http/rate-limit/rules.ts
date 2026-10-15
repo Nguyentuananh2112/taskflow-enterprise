@@ -136,6 +136,11 @@ export const RATE_LIMIT_RULES = {
 /** `project:join`: 30 lần/phút/socket — đếm trong bộ nhớ của socket (trạng thái gắn với kết nối). */
 export const PROJECT_JOIN_LIMIT = { windowMs: MINUTE, limit: 30 } as const;
 /**
+ * `project:join` gộp mọi socket của user trên instance (review B G1-realtime M2): mỗi join tốn ~2×3
+ * truy vấn kể cả khi bị từ chối ⇒ hạn mức theo socket nhân với số socket không chặn được một user.
+ */
+export const PROJECT_JOIN_LIMIT_PER_USER = { windowMs: MINUTE, limit: 60 } as const;
+/**
  * `auth:renew`: mỗi lần verify token + kiểm lại membership mọi phòng (tới ~20 truy vấn DB) ⇒ giới
  * hạn theo socket và theo user (gộp mọi socket của user trên instance) — T-028 Medium. Client bình
  * thường renew ~1 lần / 15 phút / socket.
@@ -146,3 +151,8 @@ export const AUTH_RENEW_LIMIT = {
 } as const;
 /** Tối đa số phòng project một socket được ở cùng lúc (security.md §5.2). */
 export const MAX_PROJECT_ROOMS_PER_SOCKET = 20;
+/**
+ * Tối đa số socket đồng thời của một user trên MỘT instance (review B G1-realtime M2) — vài tab ×
+ * vài thiết bị là đủ; vượt ⇒ handshake `RATE_LIMITED`. Đếm theo phòng `user:{id}` local.
+ */
+export const MAX_SOCKETS_PER_USER = 20;
