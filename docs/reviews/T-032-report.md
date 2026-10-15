@@ -46,15 +46,15 @@
 
 ## Definition of Done
 
-Rebase lên main `8d41ff3` (đã có T-023, T-024, T-031, bản sửa test web của E). Chạy tuần tự, `--maxWorkers=2`, kiểm exit code — **lần chạy cuối, tất cả xanh**:
+Rebase lên main `637e489` (đã có T-023, T-024, T-031, T-033, bản sửa test web của E). Chạy tuần tự, `--maxWorkers=2`, kiểm exit code — **lần chạy cuối, tất cả xanh**:
 
 ```text
 $ pnpm typecheck  → exit 0
 $ pnpm lint       → exit 0
 $ pnpm test -- --maxWorkers=2
-                  → exit 0 · Test Files 146 passed · Tests 1519 passed
+                  → exit 0 · Test Files 148 passed · Tests 1534 passed
 $ DATABASE_URL_TEST=…/taskflow_t020 VALKEY_URL_TEST=redis://127.0.0.1:6380/12   pnpm --filter @taskflow/api test:integration -- --maxWorkers=2
-                  → exit 0 · Test Files 38 passed · Tests 355 passed
+                  → exit 0 · Test Files 40 passed · Tests 363 passed
 ```
 
 **X9 + mixin T-031:** `test/http/security-event-context.http.test.ts` (composition thật) — `auth.login_failed` và `member.added` mang `reqId` = `X-Request-Id` của response và `ip` thật sau trust proxy; không có email. `createTestApp` thêm tùy chọn `logDestination` (mặc định vẫn im lặng).
