@@ -1,7 +1,9 @@
 import { createAuthHandlers } from './auth-handlers';
 import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
-import { contentTypeGuard } from './request-guards';
+import { createMemberHandlers } from './member-handlers';
+import { createProjectHandlers } from './project-handlers';
+import { contentTypeGuard, createRateLimiter } from './request-guards';
 import { createTaskHandlers } from './task-handlers';
 import { createWorkspaceHandlers } from './workspace-handlers';
 
@@ -31,13 +33,16 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     },
   });
   const allowedOrigins = new Set(options.allowedOrigins ?? [new URL(baseUrl).origin]);
+  const limit = createRateLimiter(options.now ?? Date.now);
   return {
     db,
     board,
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins),
-      ...createWorkspaceHandlers(baseUrl, db, board),
+      ...createWorkspaceHandlers(baseUrl, db, board, limit),
+      ...createMemberHandlers(baseUrl, db, board, limit),
+      ...createProjectHandlers(baseUrl, db, board),
       ...createTaskHandlers(baseUrl, db, board),
     ],
   };

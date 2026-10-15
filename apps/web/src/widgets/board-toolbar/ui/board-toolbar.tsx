@@ -28,6 +28,10 @@ export function BoardToolbar({ scope, project, canCreate, onReload }: Props) {
         </Link>
         <span aria-hidden="true"> › </span>
         <span>{project.name}</span>
+        <span aria-hidden="true"> · </span>
+        <Link href={`/w/${scope.wsId}/p/${project.id}/settings`} className="hover:underline">
+          Cài đặt dự án
+        </Link>
       </nav>
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         <h1 className="text-xl font-semibold">

@@ -12,6 +12,8 @@ export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'childre
   Readonly<{
     label: string;
     options: readonly SelectOption[];
+    /** Nhãn chỉ cho trình đọc màn hình (vd ô trong bảng đã có tiêu đề cột). Vẫn là <label> thật. */
+    hideLabel?: boolean;
     /** Dòng đầu không chọn được, vd "Chọn vai trò…". */
     placeholder?: string;
     hint?: string | undefined;
@@ -27,12 +29,16 @@ export function Select({
   error,
   id,
   className,
+  hideLabel = false,
   ...rest
 }: SelectProps) {
   const ids = useFieldIds({ id, hint, error });
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={ids.id} className="text-sm font-medium text-text">
+      <label
+        htmlFor={ids.id}
+        className={cn('text-sm font-medium text-text', hideLabel && 'sr-only')}
+      >
         {label}
       </label>
       <select

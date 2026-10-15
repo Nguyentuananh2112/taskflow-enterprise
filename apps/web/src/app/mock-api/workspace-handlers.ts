@@ -1,115 +1,149 @@
-import { ListProjectsQuery, ProjectDto } from '@taskflow/contracts/project';
-import { ProjectUpdatedEvent } from '@taskflow/contracts/realtime';
-import { ListMembersQuery, MemberDto, WorkspaceDto } from '@taskflow/contracts/workspace';
+import { Uuid } from '@taskflow/contracts/common';
+import {
+  CreateWorkspaceBody,
+  DeleteWorkspaceBody,
+  DeletedWorkspaceDto,
+  ListWorkspacesQuery,
+  UpdateWorkspaceBody,
+  WorkspaceDto,
+} from '@taskflow/contracts/workspace';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
 import type { MockBoard } from './mock-board';
 import type { MockDb } from './mock-db';
-import { forbiddenUnless, originClientId, requireMember } from './mock-guard';
-import { fail, ok, paginate, parseQuery } from './respond';
+import { authenticate, forbiddenUnless, originClientId, requireMember } from './mock-guard';
+import type { WorkspaceRow } from './mock-workspaces';
+import type { RateLimiter } from './request-guards';
+import { fail, ok, parseBody, parseQuery } from './respond';
+import { accessRevoked } from './workspace-events';
 
-// Workspace / thành viên / project (data-and-api §2.5–2.6) — phần board cần: đọc + lưu trữ project.
+// Workspace (data-and-api §2.5, ADR-047/050/094). Thứ tự lỗi như API: 401 → 400 uuid → 404 → 403 → 400 body.
 
-const EPOCH = '2026-01-01T00:00:00.000Z';
+const toDto = (w: WorkspaceRow, myRole: WorkspaceDto['myRole']): WorkspaceDto => ({
+  id: w.id,
+  name: w.name,
+  slug: w.slug,
+  myRole,
+  createdAt: w.createdAt,
+  updatedAt: w.updatedAt,
+});
+
+/** Workspace đã xóa mềm luôn có deletedAt/purgeAt. */
+const toDeletedDto = (w: WorkspaceRow): DeletedWorkspaceDto => ({
+  id: w.id,
+  name: w.name,
+  slug: w.slug,
+  deletedAt: w.deletedAt as string,
+  purgeAt: w.purgeAt as string,
+});
+
+const slugConflict = () => fail(409, 'RESOURCE_CONFLICT', { field: 'slug', reason: 'taken' });
 
 export function createWorkspaceHandlers(
   baseUrl: string,
   db: MockDb,
   board: MockBoard,
+  limit: RateLimiter,
 ): HttpHandler[] {
   const url = (path: string) => `${baseUrl}${path}`;
-
-  const archive = (archived: boolean) =>
-    http.post(
-      url(`/workspaces/:wsId/projects/:projectId/${archived ? 'archive' : 'unarchive'}`),
-      ({ request, params }) => {
-        const ctx = requireMember(request, db, params);
-        if (ctx.response) return ctx.response;
-        const project = board.getProject(String(params.wsId), String(params.projectId));
-        if (!project) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'project' });
-        const denied = forbiddenUnless(ctx.ok, 'project:archive');
-        if (denied) return denied;
-        if (project.isArchived === archived) return ok(ProjectDto, project); // idempotent
-        const at = board.iso();
-        const next = {
-          ...project,
-          isArchived: archived,
-          archivedAt: archived ? at : null,
-          updatedAt: at,
-        };
-        board.saveProject(next);
-        board.publish({
-          room: next.id,
-          name: 'project:updated',
-          payload: ProjectUpdatedEvent.parse({
-            eventId: crypto.randomUUID(),
-            type: 'project:updated',
-            occurredAt: at,
-            actorId: ctx.ok.user.id,
-            originClientId: originClientId(request),
-            data: { project: next },
-          }),
-        });
-        return ok(ProjectDto, next);
-      },
-    );
+  const ws = db.workspaces;
 
   return [
+    http.get(url('/workspaces'), ({ request }) => {
+      const auth = authenticate(request, db);
+      if (auth.response) return auth.response;
+      const query = parseQuery(request, ListWorkspacesQuery);
+      if (query.response) return query.response;
+      if (query.data.deleted === 'true') {
+        const deleted = ws.deletedOwnedBy(auth.ok.id).map(toDeletedDto);
+        return ok(z.array(DeletedWorkspaceDto), deleted);
+      }
+      return ok(
+        z.array(WorkspaceDto),
+        ws.activeOf(auth.ok.id).map(({ workspace, member }) => toDto(workspace, member.role)),
+      );
+    }),
+
+    http.post(url('/workspaces'), async ({ request }) => {
+      const auth = authenticate(request, db);
+      if (auth.response) return auth.response;
+      const limited = limit(`create-ws:${auth.ok.id}`, 10);
+      if (limited) return limited;
+      const body = await parseBody(request, CreateWorkspaceBody);
+      if (body.response) return body.response;
+      if (body.data.slug !== undefined && ws.slugTaken(body.data.slug)) return slugConflict();
+      const id = db.createWorkspace(body.data.name, body.data.slug, auth.ok.id);
+      return ok(WorkspaceDto, toDto(ws.active(id) as WorkspaceRow, 'OWNER'), { status: 201 });
+    }),
+
     http.get(url('/workspaces/:wsId'), ({ request, params }) => {
       const ctx = requireMember(request, db, params);
       if (ctx.response) return ctx.response;
-      const m = ctx.ok.membership;
-      return ok(WorkspaceDto, {
-        id: m.workspaceId,
-        name: m.workspaceName,
-        slug: m.slug,
-        myRole: m.role,
-        createdAt: EPOCH,
-        updatedAt: EPOCH,
+      return ok(
+        WorkspaceDto,
+        toDto(ws.active(String(params.wsId)) as WorkspaceRow, ctx.ok.membership.role),
+      );
+    }),
+
+    http.patch(url('/workspaces/:wsId'), async ({ request, params }) => {
+      const ctx = requireMember(request, db, params);
+      if (ctx.response) return ctx.response;
+      const denied = forbiddenUnless(ctx.ok, 'workspace:update');
+      if (denied) return denied;
+      const body = await parseBody(request, UpdateWorkspaceBody);
+      if (body.response) return body.response;
+      const id = String(params.wsId);
+      // R19: KHÔNG tự lowercase — chữ hoa đã bị schema chặn (400); trùng/dành riêng ⇒ 409 field slug.
+      if (body.data.slug !== undefined && ws.slugTaken(body.data.slug, id)) return slugConflict();
+      const row = ws.update(id, {
+        ...(body.data.name !== undefined ? { name: body.data.name } : {}),
+        ...(body.data.slug !== undefined ? { slug: body.data.slug } : {}),
       });
+      return ok(WorkspaceDto, toDto(row, ctx.ok.membership.role));
     }),
 
-    http.get(url('/workspaces/:wsId/members'), ({ request, params }) => {
+    http.delete(url('/workspaces/:wsId'), async ({ request, params }) => {
       const ctx = requireMember(request, db, params);
       if (ctx.response) return ctx.response;
-      const query = parseQuery(request, ListMembersQuery);
-      if (query.response) return query.response;
-      const q = query.data.q?.toLowerCase();
-      const members = db
-        .membersOf(String(params.wsId))
-        .filter(({ user }) => !q || `${user.fullName} ${user.email}`.toLowerCase().includes(q))
-        .map(({ user, membership }) => ({
-          userId: user.id,
-          email: user.email,
-          fullName: user.fullName,
-          role: membership.role,
-          joinedAt: user.createdAt,
-        }));
-      const page = paginate(members, query.data.cursor, query.data.limit);
-      return ok(z.array(MemberDto), page.data, { page: page.page });
+      const denied = forbiddenUnless(ctx.ok, 'workspace:delete');
+      if (denied) return denied;
+      const body = await parseBody(request, DeleteWorkspaceBody);
+      if (body.response) return body.response;
+      const id = String(params.wsId);
+      const row = ws.active(id) as WorkspaceRow;
+      if (body.data.confirmSlug !== row.slug) {
+        return fail(400, 'VALIDATION_ERROR', {
+          issues: [
+            { path: ['confirmSlug'], code: 'mismatch', message: 'Slug xác nhận không khớp.' },
+          ],
+        });
+      }
+      const memberIds = ws.membersOf(id).map((m) => m.userId);
+      const deleted = ws.softDelete(id);
+      accessRevoked(
+        board,
+        { actorId: ctx.ok.user.id, originClientId: originClientId(request) },
+        id,
+        memberIds,
+      );
+      return ok(DeletedWorkspaceDto, toDeletedDto(deleted));
     }),
 
-    http.get(url('/workspaces/:wsId/projects'), ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
-      if (ctx.response) return ctx.response;
-      const query = parseQuery(request, ListProjectsQuery);
-      if (query.response) return query.response;
-      const projects = board.listProjects(String(params.wsId), query.data.archived);
-      const page = paginate(projects, query.data.cursor, query.data.limit);
-      return ok(z.array(ProjectDto), page.data, { page: page.page });
+    // ADR-050/103: không qua requireMember (workspace đã xóa ⇒ luôn 404 ở đó); một kiểu 404 cho mọi thất bại.
+    http.post(url('/workspaces/:wsId/restore'), ({ request, params }) => {
+      const auth = authenticate(request, db);
+      if (auth.response) return auth.response;
+      if (!Uuid.safeParse(params.wsId).success) {
+        return fail(400, 'VALIDATION_ERROR', {
+          issues: [{ path: ['wsId'], code: 'invalid_format', message: 'Không phải UUID hợp lệ' }],
+        });
+      }
+      const limited = limit(`restore-ws:${auth.ok.id}`, 10);
+      if (limited) return limited;
+      const restored = ws.restore(String(params.wsId), auth.ok.id);
+      if (!restored) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'workspace' });
+      return ok(WorkspaceDto, toDto(restored, 'OWNER'));
     }),
-
-    http.get(url('/workspaces/:wsId/projects/:projectId'), ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
-      if (ctx.response) return ctx.response;
-      const project = board.getProject(String(params.wsId), String(params.projectId));
-      return project
-        ? ok(ProjectDto, project)
-        : fail(404, 'RESOURCE_NOT_FOUND', { resource: 'project' });
-    }),
-
-    archive(true),
-    archive(false),
   ];
 }

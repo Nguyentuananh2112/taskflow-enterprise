@@ -3,27 +3,27 @@
 import Link from 'next/link';
 
 import { useMe } from '@/entities/session';
+import { ROLE_LABEL } from '@/entities/workspace';
+import { DeletedWorkspaces } from '@/features/workspace-restore';
 import { Badge } from '@/shared/ui/badge';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
-const ROLE_LABEL = {
-  OWNER: 'Chủ sở hữu',
-  PM: 'Quản lý dự án',
-  MEMBER: 'Thành viên',
-  VIEWER: 'Người xem',
-} as const;
-
 /**
- * `/w` — dashboard sau đăng nhập (T-019: bản rút gọn, liệt kê workspace từ `/auth/me`); mỗi workspace
- * dẫn tới danh sách project (T-025).
+ * `/w` — workspace của tôi (từ `/auth/me`) dẫn tới danh sách project (T-025); nút Tạo workspace và khu
+ * "Đã xóa — khôi phục được" cho OWNER (T-034, ADR-050).
  */
 export function WorkspacePickerPage() {
   const me = useMe();
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold">Workspace của bạn</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold">Workspace của bạn</h1>
+        <Button asChild variant="secondary" className="ml-auto">
+          <Link href="/w/new">Tạo workspace</Link>
+        </Button>
+      </div>
       {me.isPending && (
         <div role="status" aria-busy="true" aria-label="Đang tải workspace" className="grid gap-3">
           <Skeleton className="h-16" />
@@ -37,10 +37,7 @@ export function WorkspacePickerPage() {
         />
       )}
       {me.data?.memberships.length === 0 && (
-        <EmptyState
-          title="Bạn chưa thuộc workspace nào"
-          description="Tạo workspace để bắt đầu (sắp có)."
-        />
+        <EmptyState title="Bạn chưa thuộc workspace nào" description="Tạo workspace để bắt đầu." />
       )}
       {me.data && me.data.memberships.length > 0 && (
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -57,6 +54,7 @@ export function WorkspacePickerPage() {
           ))}
         </ul>
       )}
+      <DeletedWorkspaces />
     </main>
   );
 }

@@ -2,13 +2,12 @@
 
 import type { TaskDto } from '@taskflow/contracts/task';
 
-import { useAssignableMembers } from '@/entities/member';
 import { canAssignAnyone, canAssignTask, type Can, type TaskScope } from '@/entities/task';
 import { Avatar } from '@/shared/ui/avatar';
 import { Button } from '@/shared/ui/button';
-import { Select } from '@/shared/ui/select';
 
 import { useAssignTask } from '../model/use-assign-task';
+import { AssigneePicker } from './assignee-picker';
 
 type Props = Readonly<{
   scope: TaskScope;
@@ -26,25 +25,16 @@ type Props = Readonly<{
 export function AssignPanel({ scope, task, can, viewerId, archived }: Props) {
   const assign = useAssignTask(scope, task.id);
   const picker = canAssignAnyone(can, viewerId, task);
-  const members = useAssignableMembers(scope.wsId, '', picker && !archived);
   const send = (assigneeId: string | null) => assign.mutate({ base: task, assigneeId });
 
   if (picker) {
-    const options = [
-      { value: '', label: 'Chưa giao' },
-      ...(task.assignee && !members.data?.some((m) => m.userId === task.assignee?.id)
-        ? [{ value: task.assignee.id, label: task.assignee.fullName }]
-        : []),
-      ...(members.data ?? []).map((m) => ({ value: m.userId, label: m.fullName })),
-    ];
     return (
-      <Select
-        label="Người phụ trách"
-        options={options}
-        value={task.assignee?.id ?? ''}
+      <AssigneePicker
+        wsId={scope.wsId}
+        task={task}
         disabled={archived || assign.isPending}
         hint={archived ? 'Dự án đã lưu trữ — chỉ đọc' : undefined}
-        onChange={(event) => send(event.target.value || null)}
+        onSelect={send}
       />
     );
   }

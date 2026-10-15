@@ -15,7 +15,7 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
     const setError = vi.fn<SetFieldError>();
     const details = {
       issues: [
-        { path: ['password'], code: 'custom', message: 'Mật khẩu quá phổ biến' },
+        { path: ['password'], code: 'common_password', message: '<i>server</i>' },
         { path: ['nickname'], code: 'unrecognized_keys', message: 'Trường lạ' },
       ],
     };
@@ -23,9 +23,31 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
       fields: FIELDS,
     });
     expect(setError.mock.calls).toEqual([
-      ['password', { type: 'custom', message: 'Mật khẩu quá phổ biến' }],
-      [ROOT_ERROR, { type: 'server', message: 'Trường lạ' }],
+      [
+        'password',
+        { type: 'common_password', message: 'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.' },
+      ],
+      [ROOT_ERROR, { type: 'server', message: 'Dữ liệu gửi lên có trường không hợp lệ.' }],
     ]);
+  });
+
+  it('VALIDATION_ERROR: câu theo issue.code, KHÔNG nguyên văn issue.message; code lạ ⇒ câu chung (F2)', () => {
+    const setError = vi.fn<SetFieldError>();
+    const details = {
+      issues: [
+        { path: ['email'], code: 'weird_rule', message: 'raw server text' },
+        { path: [], code: 'weird_rule', message: 'raw root 1' },
+        { path: ['x'], code: 'other_rule', message: 'raw root 2' },
+      ],
+    };
+    applyServerErrors(setError, apiError({ code: 'VALIDATION_ERROR', details }), {
+      fields: FIELDS,
+    });
+    expect(setError.mock.calls).toEqual([
+      ['email', { type: 'weird_rule', message: 'Giá trị không hợp lệ.' }],
+      [ROOT_ERROR, { type: 'server', message: 'Giá trị không hợp lệ.' }],
+    ]);
+    expect(JSON.stringify(setError.mock.calls)).not.toMatch(/raw/);
   });
 
   it('mã gắn cố định vào field (EMAIL_ALREADY_EXISTS → email)', () => {
@@ -48,9 +70,10 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
       apiError({ status: 401, code: 'INVALID_CREDENTIALS', message: 'Sai email hoặc mật khẩu.' }),
       { fields: FIELDS },
     );
+    // Câu do FE quyết theo code — không lấy nguyên văn message của server (T-034, B review).
     expect(setError).toHaveBeenCalledExactlyOnceWith(ROOT_ERROR, {
       type: 'INVALID_CREDENTIALS',
-      message: 'Sai email hoặc mật khẩu.',
+      message: 'Email hoặc mật khẩu không đúng.',
     });
   });
 
@@ -81,5 +104,58 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
     const setError = vi.fn<SetFieldError>();
     applyServerErrors(setError, apiError({ status: 0, code: 'NETWORK_ERROR' }), { fields: FIELDS });
     expect(setError.mock.calls[0]?.[1].message).toMatch(/kết nối/);
+  });
+});
+
+describe('applyServerErrors — RESOURCE_CONFLICT theo details.field (T-034)', () => {
+  it('field thuộc form ⇒ lỗi tại field với câu tùy chỉnh', () => {
+    const setError = vi.fn();
+    const error = new ApiError({
+      status: 409,
+      code: 'RESOURCE_CONFLICT',
+      message: 'x',
+      details: { field: 'slug', reason: 'taken' },
+    });
+    applyServerErrors(setError, error, {
+      fields: ['slug'],
+      conflictMessages: { slug: 'Trùng slug' },
+    });
+    expect(setError).toHaveBeenCalledWith('slug', {
+      type: 'RESOURCE_CONFLICT',
+      message: 'Trùng slug',
+    });
+  });
+
+  it('field không thuộc form ⇒ lỗi gốc', () => {
+    const setError = vi.fn();
+    const error = new ApiError({
+      status: 409,
+      code: 'RESOURCE_CONFLICT',
+      message: 'Đã tồn tại',
+      details: { field: 'keyPrefix', reason: 'taken' },
+    });
+    applyServerErrors(setError, error, { fields: ['name'] });
+    expect(setError.mock.calls[0]?.[0]).toBe('root.server');
+  });
+});
+
+describe('applyServerErrors — không hiển thị nguyên văn message của server (B review T-034)', () => {
+  it('mã đã biết ⇒ câu FE theo code; mã lạ 4xx ⇒ câu chung', () => {
+    const setError = vi.fn<SetFieldError>();
+    applyServerErrors(
+      setError,
+      new ApiError({ status: 403, code: 'FORBIDDEN_ACCESS', message: '<b>server nói</b>' }),
+      { fields: [] },
+    );
+    expect(setError.mock.calls[0]?.[1]).toMatchObject({
+      message: 'Bạn không có quyền thực hiện thao tác này.',
+    });
+    setError.mockClear();
+    applyServerErrors(
+      setError,
+      new ApiError({ status: 413, code: 'PAYLOAD_TOO_LARGE', message: 'raw server text' }),
+      { fields: [] },
+    );
+    expect(setError.mock.calls[0]?.[1]?.message).not.toContain('raw server text');
   });
 });

@@ -45,7 +45,11 @@ export async function parseBody<S extends z.ZodType>(
   request: Request,
   schema: S,
 ): Promise<{ data: z.output<S>; response?: never } | { response: Response; data?: never }> {
-  const raw: unknown = await request.json().catch(() => undefined);
+  // Như express.json({ type: 'application/json' }): chỉ parse body khi Content-Type là JSON (kể cả DELETE).
+  const isJson = (request.headers.get('content-type') ?? '')
+    .toLowerCase()
+    .startsWith('application/json');
+  const raw: unknown = isJson ? await request.json().catch(() => undefined) : undefined;
   const parsed = schema.safeParse(raw);
   if (parsed.success) return { data: parsed.data };
   return {
@@ -54,8 +58,8 @@ export async function parseBody<S extends z.ZodType>(
 }
 
 /** Lỗi validation do luật ở application (vd mật khẩu phổ biến) — cùng dạng `details.issues`. */
-export function ruleViolation(path: string, message: string) {
-  return fail(400, 'VALIDATION_ERROR', { issues: [{ path: [path], code: 'custom', message }] });
+export function ruleViolation(path: string, code: string, message: string) {
+  return fail(400, 'VALIDATION_ERROR', { issues: [{ path: [path], code, message }] });
 }
 
 /** Cursor opaque (base64url của offset) — đủ cho mock; server thật mã hóa khóa sắp xếp. */
