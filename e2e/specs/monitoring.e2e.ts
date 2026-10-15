@@ -34,7 +34,7 @@ test(`T-035 (${SENTRY_ON ? 'có' : 'không'} SENTRY_DSN): lỗi client ⇒ ${SEN
   await page.goto('/account');
   await page.waitForLoadState('networkidle');
 
-  await expect(page.locator('meta[name="tf-sentry"]')).toHaveCount(SENTRY_ON ? 1 : 0);
+  await expect(page.locator('meta[name="tf-sentry-dsn"]')).toHaveCount(SENTRY_ON ? 1 : 0);
   const sdkLoaded = await page.evaluate(() => '__SENTRY__' in globalThis);
   expect(sdkLoaded, 'SDK chỉ nạp khi có DSN').toBe(SENTRY_ON);
 
