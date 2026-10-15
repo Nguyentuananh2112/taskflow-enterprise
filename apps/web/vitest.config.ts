@@ -36,5 +36,7 @@ export default defineProject({
     testTimeout: 15_000,
     hookTimeout: 15_000,
     include: ['src/**/*.test.{ts,tsx}', 'app/**/*.test.{ts,tsx}', 'test/**/*.test.{ts,tsx}'],
+    // Test code server (SDK server thật, môi trường node) — chạy ở vitest.server.config.ts.
+    exclude: ['**/node_modules/**', '**/*.server.test.ts'],
   },
 });

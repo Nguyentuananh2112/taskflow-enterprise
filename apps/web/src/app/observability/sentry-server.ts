@@ -8,7 +8,10 @@ import { DATA_COLLECTION, sanitizeWebEvent, sanitizeWebTransaction } from './sen
  * Sentry phía server của Next (route handler, server component) — T-035 mục 2. Cùng allow-list với
  * client; không DSN ⇒ không khởi tạo. Không trace (tracesSampleRate 0) — API đã có trace riêng.
  */
-export function initServerSentry(): boolean {
+export function initServerSentry(
+  /** Chỉ test: bắt envelope thay vì gửi mạng. */
+  transport?: NonNullable<Parameters<typeof Sentry.init>[0]>['transport'],
+): boolean {
   const config = readSentryConfig();
   if (!config.dsn) return false;
   Sentry.init({
@@ -22,6 +25,7 @@ export function initServerSentry(): boolean {
     beforeBreadcrumb: () => null,
     beforeSend: sanitizeWebEvent,
     beforeSendTransaction: sanitizeWebTransaction,
+    ...(transport ? { transport } : {}),
   });
   return true;
 }

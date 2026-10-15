@@ -50,3 +50,9 @@ See the DONE message (exit codes after rebasing onto main).
 | TL | `HealthzResponse` still required `gitSha` | Contract is `strictObject({status:'ok'})`. Web `/api/healthz` updated. API app test parses `/healthz` against the contract (parity). |
 
 **Known gap (E's note, not blocking merge):** the `@sentry/nextjs` → client-build alias applies to the WHOLE web Vitest project. The server side of web Sentry (`sentry-server.ts`, `instrumentation.ts` with `register`/`onRequestError`) has **no test running the server SDK**: it shares the allow-list `beforeSend` (tested) and is verified only by the prod build plus a smoke run. Adding such a test needs a separate Vitest project (node environment, no alias). A warning comment sits next to the alias.
+
+**Gap closed (TL):** new Vitest project `apps/web/vitest.server.config.ts` (`web-server`, node environment, **no** client alias; picks up `*.server.test.ts`, which the main web project excludes), listed in the root `vitest.config.ts` `projects`. `sentry-server.server.test.ts` runs the **real server SDK** (the `Http` integration is present, `BrowserTracing` is not):
+- `tracePropagationTargets` = `[]`;
+- `onRequestError` with an error containing an email and a token, a `Cookie` / `Authorization` / `X-Forwarded-For` header and the path `?task=&email=` ⇒ the envelope contains none of them, and does have `release` + `environment`.
+
+Mutation: identity `beforeSend` ⇒ a test fails; removing `tracePropagationTargets` ⇒ a test fails.
