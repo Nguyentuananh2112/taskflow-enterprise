@@ -12,6 +12,8 @@ import { startTempValkey, type TempValkey } from './harness/valkey-container';
 
 const T020 = 'T-020 Prisma + Valkey (ADR-104/105)';
 const T032 = 'T-032 sid-revoked fallback DB khi cache miss';
+/** kill + start container + chờ API nối lại (backoff ≤ 5s): máy dev tải nặng vượt 20s mặc định. */
+const RESTART_TIMEOUT_MS = 120_000;
 const env: Record<string, string> = {};
 let valkey: TempValkey | undefined;
 
@@ -78,6 +80,7 @@ describe('Valkey sự cố', () => {
       expect((await login(user.password)).status, 'mật khẩu cũ vẫn đúng').toBe(200);
       expect((await login(newPassword)).status, 'mật khẩu mới không được ghi').toBe(401);
     },
+    RESTART_TIMEOUT_MS,
   );
 
   // Cổng T-032 (đọc chéo T-028 X3): `sid-revoked` chỉ sống trong Valkey (không persistence). Cache miss
@@ -116,6 +119,7 @@ describe('Valkey sự cố', () => {
       expect((await me(user.accessToken)).status, 'phiên đã logout sau Valkey restart').toBe(401);
       expect((await me(otherToken)).status, 'đối chứng: phiên khác vẫn sống').toBe(200);
     },
+    RESTART_TIMEOUT_MS,
   );
 
   pendingRoute(
@@ -150,5 +154,6 @@ describe('Valkey sự cố', () => {
       expect((await me(s2Token)).status, 'S2 gọi trước, nạp lại cache tv').toBe(200);
       expect((await me(user.accessToken)).status, 'S1 đã logout vẫn bị từ chối').toBe(401);
     },
+    RESTART_TIMEOUT_MS,
   );
 });
