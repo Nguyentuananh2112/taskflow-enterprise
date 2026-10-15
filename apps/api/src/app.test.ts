@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
 
-import { applyVietnameseZodLocale } from '@taskflow/contracts';
+import { applyVietnameseZodLocale, HealthzResponse } from '@taskflow/contracts';
 import { Router } from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -450,6 +450,7 @@ describe('/healthz & /readyz (devops.md §6.2)', () => {
     const res = await request(build({ probes: [probe('db', true, false)] })).get('/healthz');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'ok' });
+    expect(HealthzResponse.parse(res.body)).toEqual({ status: 'ok' }); // parity với contract
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
