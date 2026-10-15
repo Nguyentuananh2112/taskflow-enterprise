@@ -51,7 +51,7 @@ async function ownerAndMember(
   return { a, b, sa, bId: sb.userId, userB };
 }
 
-test('E2E-05: realtime 2 người (< 2s) + workspace khác không nhận gì', async ({
+test('@main E2E-05: realtime 2 người (< 2s) + workspace khác không nhận gì', async ({
   page,
   browser,
   request,

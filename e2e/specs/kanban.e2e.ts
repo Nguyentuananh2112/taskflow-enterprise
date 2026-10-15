@@ -5,7 +5,7 @@ import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fix
 
 // frontend.md §8 E2E-01..04 trên API thật (Prisma) + web production.
 
-test('E2E-01: đăng ký → workspace → project mặc định → tạo task ⇒ ở cuối cột Cần làm', async ({
+test('@main E2E-01: đăng ký → workspace → project mặc định → tạo task ⇒ ở cuối cột Cần làm', async ({
   page,
 }) => {
   await registerViaUi(page, newUser('e2e01'));
@@ -36,7 +36,7 @@ test('E2E-01: đăng ký → workspace → project mặc định → tạo task 
   await expect.poll(() => titlesIn(page, 'TODO')).toEqual(['Task thứ nhất', 'Task thứ hai']);
 });
 
-test('E2E-02: kéo Cần làm → Đang làm bằng chuột; reload ⇒ vẫn đúng cột (refresh sau reload)', async ({
+test('@main E2E-02: kéo Cần làm → Đang làm bằng chuột; reload ⇒ vẫn đúng cột (refresh sau reload)', async ({
   page,
   request,
 }) => {
@@ -129,7 +129,7 @@ test.fixme('[PENDING fix bàn phím cột trống — E] E2E-03: kéo bằng BÀ
   await expect(card(column(page, 'IN_PROGRESS'), 'Bàn phím')).toBeVisible();
 });
 
-test('Menu thao tác: "Chuyển tới Đang làm" (đường thay thế không kéo) ⇒ PATCH /move, thẻ đổi cột', async ({
+test('@main Menu thao tác: "Chuyển tới Đang làm" (đường thay thế không kéo) ⇒ PATCH /move, thẻ đổi cột', async ({
   page,
   request,
 }) => {

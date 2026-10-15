@@ -38,8 +38,18 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // F2: Firefox + viewport mobile. CI chạy đủ; local chỉ luồng chính (@main) để nhẹ máy.
     ...(CI || process.env.E2E_FIREFOX === '1'
-      ? [{ name: 'firefox', use: { ...devices['Desktop Firefox'] } }]
+      ? [
+          {
+            name: 'firefox',
+            use: { ...devices['Desktop Firefox'] },
+            ...(CI ? {} : { grep: /@main/ }),
+          },
+        ]
+      : []),
+    ...(CI || process.env.E2E_MOBILE === '1'
+      ? [{ name: 'mobile', use: { ...devices['Pixel 7'] }, grep: /@main/ }]
       : []),
   ],
   webServer: [

@@ -2,7 +2,7 @@ import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fix
 
 // Luồng phiên trên API thật (Prisma + Valkey) + web build production. Không cần route task.
 
-test('đăng ký qua UI ⇒ /w; reload vẫn giữ phiên (refresh cookie thật)', async ({ page }) => {
+test('@main đăng ký qua UI ⇒ /w; reload vẫn giữ phiên (refresh cookie thật)', async ({ page }) => {
   const user = newUser('signup');
   await registerViaUi(page, user);
   await page.reload();
@@ -10,7 +10,7 @@ test('đăng ký qua UI ⇒ /w; reload vẫn giữ phiên (refresh cookie thật
   await expect(page).not.toHaveURL(/\/login/);
 });
 
-test('E2E-10: đăng xuất mọi thiết bị ở A ⇒ A2 (cùng user, context khác) về /login ở thao tác kế tiếp', async ({
+test('@main E2E-10: đăng xuất mọi thiết bị ở A ⇒ A2 (cùng user, context khác) về /login ở thao tác kế tiếp', async ({
   browser,
 }) => {
   const user = newUser('logout-all');
