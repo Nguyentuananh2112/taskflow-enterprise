@@ -17,23 +17,41 @@ const steps = [
 const dbUrl = process.env.VERIFY_DB_URL;
 if (dbUrl) {
   steps.push(
-    ['prisma validate', 'pnpm --filter @taskflow/api exec prisma validate', { DATABASE_URL: dbUrl }],
-    ['db:deploy (migrate + grant)', 'pnpm --filter @taskflow/api run db:deploy', { DATABASE_URL: dbUrl }],
+    [
+      'prisma validate',
+      'pnpm --filter @taskflow/api exec prisma validate',
+      { DATABASE_URL: dbUrl },
+    ],
+    [
+      'db:deploy (migrate + grant)',
+      'pnpm --filter @taskflow/api run db:deploy',
+      { DATABASE_URL: dbUrl },
+    ],
     ['db:check-drift', 'pnpm --filter @taskflow/api run db:check-drift', { DATABASE_URL: dbUrl }],
   );
 }
 
+// node_modules lệch lockfile ⇒ các bước pnpm dừng với "Run pnpm install" (verifyDepsBeforeRun: error trong
+// pnpm-workspace.yaml) — verify chỉ KIỂM, không bao giờ tự cài.
 const env = { ...process.env, CHECKPOINT_DISABLE: '1', PRISMA_HIDE_UPDATE_MESSAGE: '1' };
 const results = [];
 for (const [name, command, extraEnv] of steps) {
   console.log(`\n▶ ${name}: ${command}`);
   const started = Date.now();
   // shell: true — Windows cần để gọi pnpm.cmd; lệnh là hằng số trong file này (không có input ngoài).
-  const { status } = spawnSync(command, { shell: true, stdio: 'inherit', env: { ...env, ...extraEnv } });
+  const { status } = spawnSync(command, {
+    shell: true,
+    stdio: 'inherit',
+    env: { ...env, ...extraEnv },
+  });
   results.push({ name, status: status ?? 1, seconds: Math.round((Date.now() - started) / 1000) });
 }
 
 console.log('\n| Bước | Exit | Thời gian |\n|---|---|---|');
-for (const r of results) console.log(`| ${r.name} | ${r.status === 0 ? '0 ✅' : `${r.status} ❌`} | ${r.seconds}s |`);
-if (!dbUrl) console.log('\n(bỏ qua migrate/drift — đặt VERIFY_DB_URL tới DB riêng của bạn trên postgres-test để chạy)');
+for (const r of results)
+  console.log(`| ${r.name} | ${r.status === 0 ? '0 ✅' : `${r.status} ❌`} | ${r.seconds}s |`);
+if (!dbUrl)
+  console.log(
+    '\n(bỏ qua migrate/drift — đặt VERIFY_DB_URL tới DB riêng của bạn trên postgres-test để chạy)',
+  );
 process.exit(results.some((r) => r.status !== 0) ? 1 : 0);
