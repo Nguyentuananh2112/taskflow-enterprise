@@ -68,18 +68,23 @@ Copy-Item apps/web/.env.example apps/web/.env.local
 ```
 Giá trị mẫu chạy được ngay với compose. **Không bao giờ commit** `.env`/`.env.local` (đã có trong `.gitignore`, gitleaks chặn thêm một lớp).
 
-## 5. Migrate & seed (khi T-010 đã thêm Prisma)
-Luôn `pnpm exec prisma …`, **không** `npx` (ADR-061 — `npx` kéo Prisma 8 RC).
-Migrate phải chạy bằng user `taskflow_migrator`. Vì `prisma.config.ts` chỉ đọc `DATABASE_URL`, đặt tạm biến này cho lệnh migrate:
+## 5. Migrate, seed, integration test
+Luôn `pnpm exec prisma …` hoặc script `db:*`, **không** `npx` (ADR-061 — `npx` kéo Prisma 8 RC).
+Migrate/seed phải chạy bằng user `taskflow_migrator` (app dùng `taskflow_app`, không có quyền DDL). `prisma.config.ts` đọc `DATABASE_URL` và chỉ nạp `apps/api/.env` cho biến **chưa có** trong môi trường ⇒ đặt tạm biến trong shell:
 ```powershell
-cd apps/api
 $env:DATABASE_URL = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5435/taskflow'   # mật khẩu theo .env gốc nếu đã đổi
-pnpm exec prisma migrate dev          # phát triển schema (tạo migration mới)
-pnpm exec prisma migrate deploy       # chỉ áp migration có sẵn
+pnpm --filter @taskflow/api db:deploy        # áp migration có sẵn (lần đầu / sau khi pull)
+pnpm --filter @taskflow/api db:seed          # dữ liệu demo
+pnpm --filter @taskflow/api db:migrate       # chỉ khi sửa schema: tạo migration mới
+pnpm --filter @taskflow/api db:check-drift   # schema.prisma ↔ DB phải khớp (CI cũng chạy)
 Remove-Item Env:DATABASE_URL
-cd ../..
 ```
-Lệnh seed (`pnpm db:seed`) do T-010 bổ sung — xem README khi có.
+Integration test chạy trên **postgres-test** (cổng 5434). **Harness xóa sạch schema `public` của DB này** — không bao giờ trỏ vào DB dev:
+```powershell
+$env:DATABASE_URL_TEST = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434/taskflow_template'
+pnpm --filter @taskflow/api test:integration
+Remove-Item Env:DATABASE_URL_TEST
+```
 
 ## 6. Chạy ứng dụng
 ```powershell

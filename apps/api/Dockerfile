@@ -27,13 +27,15 @@ RUN pnpm fetch --frozen-lockfile --store-dir "$TF_PNPM_STORE"
 FROM deps AS build
 COPY . .
 RUN pnpm install --offline --frozen-lockfile --store-dir "$TF_PNPM_STORE"
-# Script build của api tự gọi `prisma generate` khi T-010 thêm Prisma (ADR-061: chỉ `pnpm exec prisma`).
+# Client Prisma (src/generated, gitignore) phải sinh trước khi tsdown bundle. ADR-061: chỉ `pnpm exec prisma`;
+# DATABASE_URL vắng ⇒ prisma.config.ts dùng "" — đủ cho generate.
+RUN pnpm --filter @taskflow/api exec prisma generate --no-hints
 RUN pnpm --filter @taskflow/api build
 # Chỉ dependencies runtime của api (gồm @node-rs/argon2 đúng nền tảng linux-x64-gnu/arm64-gnu).
 RUN pnpm --filter @taskflow/api deploy --prod --store-dir "$TF_PNPM_STORE" /out
 
 # ---------- migrate: job chạy TRƯỚC rollout (devops.md §4.1), không chạy trong app start ----------
-# Dùng được sau khi T-010 thêm prisma 7.10.0 + prisma.config.ts. DATABASE_URL = user taskflow_migrator.
+# DATABASE_URL = user taskflow_migrator (DDL), kết nối thẳng — không qua pooler.
 FROM build AS migrate
 WORKDIR /repo/apps/api
 USER node

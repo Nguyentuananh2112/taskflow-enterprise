@@ -12,3 +12,7 @@ runs:
     - name: Install
       shell: bash
       run: pnpm install --frozen-lockfile
+    # Client Prisma sinh vào apps/api/src/generated (gitignore) — typecheck/test/build đều cần (ADR-061: pnpm exec).
+    - name: Prisma generate
+      shell: bash
+      run: pnpm --filter @taskflow/api exec prisma generate --no-hints

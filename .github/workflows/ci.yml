@@ -153,28 +153,20 @@ jobs:
           TASKFLOW_MIGRATOR_PASSWORD: migrator_ci_only
           TASKFLOW_APP_PASSWORD: app_ci_only
         run: bash docker/postgres/init/01-roles.sh
-      # Các bước Prisma tự bật khi T-010 thêm schema. Luôn `pnpm exec prisma` (ADR-061).
-      - name: prisma validate + migrate deploy + migrate diff rỗng (ADR-062)
-        if: hashFiles('apps/api/prisma/schema.prisma') != ''
+      # Luôn `pnpm exec prisma` (ADR-061). Migrate bằng user có DDL; prisma.config.ts chỉ đọc DATABASE_URL.
+      - name: prisma validate + migrate deploy + drift rỗng (ADR-062)
         working-directory: apps/api
         env:
-          # Migrate chạy bằng user có DDL; prisma.config.ts chỉ đọc DATABASE_URL.
           DATABASE_URL: ${{ env.MIGRATOR_DATABASE_URL }}
         run: |
           pnpm exec prisma validate
           pnpm exec prisma migrate deploy
-          pnpm exec prisma migrate diff \
-            --from-config-datasource \
-            --to-schema prisma/schema.prisma \
-            --exit-code
-      # Quy ước: gói nào có integration test thì khai báo script root "test:integration".
-      - name: Integration tests
-        run: |
-          if node -e "process.exit(require('./package.json').scripts?.['test:integration'] ? 0 : 1)"; then
-            pnpm test:integration
-          else
-            echo "::notice::Chưa có script test:integration — bỏ qua (T-009/T-010 thêm)."
-          fi
+          pnpm run db:check-drift
+      # Harness của T-010 xóa + dựng lại schema public của DATABASE_URL_TEST ⇒ cần user sở hữu schema (migrator).
+      - name: Integration tests (Postgres thật)
+        env:
+          DATABASE_URL_TEST: ${{ env.MIGRATOR_DATABASE_URL }}
+        run: pnpm --filter @taskflow/api test:integration
 
   # ---------------------------------------------------------------- build
   build:
