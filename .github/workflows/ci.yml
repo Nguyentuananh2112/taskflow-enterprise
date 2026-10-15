@@ -221,7 +221,7 @@ jobs:
         run: bash docker/smoke-api.sh taskflow-api:ci
       - name: Smoke web (healthz, non-root)
         run: |
-          docker run -d --name web -p 3000:3000 -e API_URL=http://127.0.0.1:4000/api/v1 taskflow-web:ci
+          docker run -d --name web -p 3000:3000 -e APP_ENV=test -e API_URL=http://127.0.0.1:4000/api/v1 taskflow-web:ci
           for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:3000/api/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:3000/api/healthz
           test "$(docker exec web id -u)" != "0"

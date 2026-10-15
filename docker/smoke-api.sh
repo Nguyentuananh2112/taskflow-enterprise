@@ -11,7 +11,9 @@ IMAGE="${1:?Cách dùng: smoke-api.sh <image>}"
 PG_IMAGE="${PG_IMAGE:-postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c}"
 VALKEY_IMAGE="${VALKEY_IMAGE:-valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd}"
 HOST_PORT="${SMOKE_PORT:-14000}"
-STOP_BUDGET_S=15 # < SHUTDOWN_TIMEOUT_MS (20s) + drain; docker stop -t 30 như compose stop_grace_period
+# Thời gian shutdown đo bằng timestamp log của app (shutdown.start → shutdown.complete), không bằng đồng hồ
+# `docker stop` (Docker Desktop đang tải nặng có thể trễ hàng chục giây). Phải < SHUTDOWN_TIMEOUT_MS (20s).
+SHUTDOWN_BUDGET_MS=15000
 SUFFIX="$$"
 NET="tf-smoke-${SUFFIX}"
 API="tf-smoke-api-${SUFFIX}"
@@ -86,6 +88,10 @@ logs="$(docker logs "$API" 2>&1)"
 [ "$exit_code" = "0" ] || fail "SIGTERM ⇒ exit $exit_code (mong đợi 0)"
 echo "$logs" | grep -q 'shutdown.start' || fail "thiếu log shutdown.start"
 echo "$logs" | grep -q 'shutdown.complete' || fail "thiếu log shutdown.complete"
-[ "$elapsed" -le "$STOP_BUDGET_S" ] || fail "dừng mất ${elapsed}s > ${STOP_BUDGET_S}s"
-echo "ok  docker stop ⇒ exit 0 sau ${elapsed}s, có shutdown.start/complete"
+log_ms() { # mili-giây epoch của dòng log đầu tiên có msg = $1 (GNU date: Linux và Git Bash)
+  date -d "$(echo "$logs" | grep "\"msg\":\"$1\"" | head -n 1 | sed -E 's/.*"time":"([^"]+)".*/\1/')" +%s%3N
+}
+shutdown_ms=$(($(log_ms shutdown.complete) - $(log_ms shutdown.start)))
+[ "$shutdown_ms" -le "$SHUTDOWN_BUDGET_MS" ] || fail "shutdown mất ${shutdown_ms}ms > ${SHUTDOWN_BUDGET_MS}ms"
+echo "ok  SIGTERM ⇒ exit 0, shutdown.start→complete ${shutdown_ms}ms (docker stop tổng ${elapsed}s)"
 echo "SMOKE PASS ($IMAGE)"
