@@ -103,5 +103,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-108 ✅ Limiter đăng nhập theo email (chống khóa tài khoản từ xa — M4 của T-028): chỉ đếm `401 INVALID_CREDENTIALS`, chạy sau validate, ngưỡng email 100/giờ + bucket chặt theo cặp (IP, emailHash) 10/15 phút. Rủi ro còn lại (kẻ tấn công có rất nhiều IP vẫn khóa được tạm thời) được chấp nhận có chủ đích cho v1; CAPTCHA / backoff tăng dần đưa vào lộ trình sau v1. Limiter change-password fail-closed khi Valkey lỗi.
 
+- ADR-109 ✅ **Cookie refresh dùng tiền tố `__Host-`** ở staging/production: `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/` (không `Domain`). Lý do: `__Secure-` không cấm `Domain=` ⇒ subdomain anh em cài được cookie đè (cookie-tossing, login CSRF — F/B T-028); `__Host-` cấm hoàn toàn. Đánh đổi `Path=/` (cookie gửi tới mọi route của API origin riêng) được chấp nhận: vẫn HttpOnly + SameSite=Strict, header Cookie đã redact trong log, route ngoài /auth dùng Bearer không đọc cookie. Dev giữ `tf_rt`. Nhiều cookie trùng tên ⇒ thu hồi family của MỌI giá trị rồi 401/204 + clear. Chưa có người dùng thật ⇒ chi phí chuyển đổi bằng 0. Ghi đè thuộc tính cookie trong ADR-024.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
