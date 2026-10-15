@@ -58,3 +58,4 @@ Máy dev dùng chung có RAM/IO hạn chế; cấu hình máy (Defender, Dev Dri
 3. Việc nặng (Stryker, k6, `docker build`, `next build` nhiều lần, Playwright) **không chạy cùng lúc với việc nặng khác của chính mình**; Stryker/k6 chỉ chạy khi Tech Lead báo "máy rảnh".
 4. Commit WIP sớm và thường xuyên trên branch của mình (đã qua hook) — phiên có thể bị đóng bất ngờ khi máy cạn bộ nhớ.
 5. Xóa worktree không dùng nữa: `git worktree remove ../TaskFlow_wt/<X>` (bật `core.longpaths`).
+6. **Cổng nghiệm thu chạy trên snapshot của chính mình** (branch/commit cố định trong worktree của mình), không bao giờ trỏ vào worktree đang làm việc của người khác — họ có thể đổi branch giữa chừng (bài học T-028, F).
