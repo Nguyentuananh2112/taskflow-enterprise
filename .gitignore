@@ -36,3 +36,7 @@ apps/web/AGENTS.md
 *.dump
 *.sql.gz
 backups/
+
+# Trạng thái cục bộ của Claude Code (lịch hẹn, cài đặt máy) — không commit
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
