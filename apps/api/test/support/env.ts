@@ -31,3 +31,30 @@ export function productionEnvVars(
     ...overrides,
   });
 }
+
+/** Mặc định local: Valkey của compose `taskflow` (ADR-097). */
+const DEFAULT_VALKEY_URL_TEST = 'redis://127.0.0.1:6380';
+const warned = new Set<string>();
+
+/**
+ * URL Valkey cho test tầng I. Tên chuẩn `VALKEY_URL_TEST` — cùng mẫu `DATABASE_URL_TEST` (T-022).
+ * `TEST_VALKEY_URL` (tên cũ của T-016) vẫn đọc trong Phase 3 kèm cảnh báo deprecated; gỡ ở Phase 4.
+ */
+export function testValkeyUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const url = env['VALKEY_URL_TEST'];
+  if (url) return url;
+  const legacy = env['TEST_VALKEY_URL'];
+  if (legacy) {
+    if (!warned.has('TEST_VALKEY_URL')) {
+      warned.add('TEST_VALKEY_URL');
+      console.warn('[test] TEST_VALKEY_URL đã deprecated — dùng VALKEY_URL_TEST (T-022)');
+    }
+    return legacy;
+  }
+  return DEFAULT_VALKEY_URL_TEST;
+}
+
+/** `REQUIRE_INTEGRATION=1` (CI) ⇒ thiếu Postgres/Valkey là FAIL, không âm thầm bỏ qua. */
+export function integrationRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env['REQUIRE_INTEGRATION'] === '1';
+}

@@ -369,7 +369,7 @@ Workflow riêng `mutation.yml` (T-022): Stryker **hằng tuần** (thứ Hai 02:
   - `services`: postgres `18.6-bookworm` (healthcheck `pg_isready`) + valkey `9.1.2`. Lưu ý: `services` không truyền được `command`, nên khi cần tham số Valkey thì khởi động bằng `docker run` trong step.
   - Script init role (tạo thêm DB `taskflow_it`) → migrate `taskflow_template` + drift → `test:integration` với `DATABASE_URL_TEST` trỏ **`taskflow_it`** (harness xóa + dựng lại schema public; không được đụng template).
   - Timeout job 20 phút.
-- **security (T-022):** cùng services + migrate template; `pnpm --filter @taskflow/api test:security` với biến `SEC_*` (admin = migrator, app = `taskflow_app`, Valkey db 15). Mỗi file test spawn `src/main.ts` thật và clone 1 DB từ template.
+- **security (T-022):** cùng services; `pnpm --filter @taskflow/api test:security` với biến `SEC_*` (migrator, app = `taskflow_app`, DB `taskflow_sec` do harness tự tạo + migrate — ADR-106, Valkey db 15, `SEC_API_READY_TIMEOUT_MS=180000`). Mỗi file test spawn `src/main.ts` thật.
 - **build:**
   - `pnpm build`
   - `docker buildx build` cả 3 target, cache `type=gha`, **không push** trên PR
@@ -568,7 +568,7 @@ Coverage không thay được việc kiểm tra test có assert ý nghĩa; PR re
 ### 8.3 DB test cô lập (ADR-074)
 - Dùng Postgres test riêng: `postgres-test` khi chạy local, `services` khi chạy CI.
 - Hiện trạng (T-010/T-017, chốt ở T-022): postgres-test có **2 DB, không trộn**:
-  - `taskflow_template` — migrate bằng migrator; **suite bảo mật** clone `CREATE DATABASE … TEMPLATE` cho mỗi lần chạy, API chạy bằng **`taskflow_app`** để lỗi thiếu quyền lộ ra. Valkey db 15 riêng.
+  - `taskflow_sec` — **suite bảo mật** (ADR-106): harness tự tạo bằng migrator, xóa schema + migrate đầu mỗi file, API chạy bằng **`taskflow_app`** để lỗi thiếu quyền lộ ra. Valkey db 15 riêng. `taskflow_template` không còn dùng cho test (harness từ chối).
   - `taskflow_it` — **integration** (`DATABASE_URL_TEST`): harness xóa + dựng lại schema `public` rồi migrate. Nếu chạy vào template sẽ xóa luôn grant/default privileges của `taskflow_app` (gắn với schema) ⇒ suite bảo mật hỏng.
 - Khi cần chạy integration song song theo worker: clone `taskflow_w<N>` từ template như suite bảo mật (đã có cơ chế).
 - Giữa các test file: `TRUNCATE … RESTART IDENTITY CASCADE` toàn bộ bảng nghiệp vụ (lấy danh sách từ `pg_tables`, trừ `_prisma_migrations`). **Không** rollback transaction sau mỗi test, vì phải commit thật thì mới kiểm được ADR-012.

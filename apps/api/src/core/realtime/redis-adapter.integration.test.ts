@@ -2,7 +2,7 @@
 import { createClient } from 'redis';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { SpyLogger } from '../../../test/support';
+import { integrationRequired, SpyLogger, testValkeyUrl } from '../../../test/support';
 import {
   connected,
   disconnected,
@@ -13,7 +13,7 @@ import {
 import { createValkeyClient } from '../infrastructure/valkey';
 import { createValkeyAdapter, type ValkeyAdapter } from './redis-adapter';
 
-const URL = process.env['TEST_VALKEY_URL'] ?? 'redis://127.0.0.1:6380';
+const URL = testValkeyUrl();
 const probe = createClient({
   url: URL,
   socket: { connectTimeout: 1_000, reconnectStrategy: false },
@@ -23,8 +23,7 @@ const available = await probe.connect().then(
   () => true,
   () => false,
 );
-if (!available && process.env['REQUIRE_INTEGRATION'] === '1')
-  throw new Error(`Valkey không chạy ở ${URL}`);
+if (!available && integrationRequired()) throw new Error(`Valkey không chạy ở ${URL}`);
 
 const WS = '0199e5a2-7c1e-7cc3-9a3b-000000000001';
 const P1 = '0199e5a2-7c1e-7cc3-9a3b-0000000000a1';

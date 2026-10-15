@@ -1,4 +1,4 @@
-// Tầng I: Valkey thật (ADR-063, cổng local 6380 — ADR-097). Biến TEST_VALKEY_URL để đổi;
+// Tầng I: Valkey thật (ADR-063, cổng local 6380 — ADR-097). Biến VALKEY_URL_TEST để đổi (T-022);
 // REQUIRE_INTEGRATION=1 (CI) ⇒ thiếu Valkey là FAIL, không âm thầm bỏ qua.
 import { randomUUID } from 'node:crypto';
 
@@ -7,7 +7,13 @@ import { createClient } from 'redis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { errorOf, FakeClock, SpyLogger } from '../../../../test/support';
+import {
+  errorOf,
+  FakeClock,
+  integrationRequired,
+  SpyLogger,
+  testValkeyUrl,
+} from '../../../../test/support';
 import { createValkeyClient } from '../../infrastructure/valkey';
 import { HttpResponder } from '../envelope';
 import { globalErrorHandler } from '../error-handler';
@@ -15,7 +21,7 @@ import { createRateLimits, type RateLimitDeps } from './rate-limit';
 import type { RateLimitRule } from './rules';
 import { createValkeyStore, type CommandSender } from './store';
 
-const URL = process.env['TEST_VALKEY_URL'] ?? 'redis://127.0.0.1:6380';
+const URL = testValkeyUrl();
 const RUN = randomUUID().slice(0, 8); // khóa riêng mỗi lần chạy — không đụng dữ liệu khác trên Valkey dùng chung
 
 const probe = createClient({
@@ -27,8 +33,7 @@ const available = await probe.connect().then(
   () => true,
   () => false,
 );
-if (!available && process.env['REQUIRE_INTEGRATION'] === '1')
-  throw new Error(`Valkey không chạy ở ${URL}`);
+if (!available && integrationRequired()) throw new Error(`Valkey không chạy ở ${URL}`);
 
 function app(rules: readonly RateLimitRule[], deps: RateLimitDeps, status = 200) {
   const a = express();

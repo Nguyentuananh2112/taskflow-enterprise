@@ -101,24 +101,23 @@ pnpm --filter @taskflow/api db:migrate       # chỉ khi sửa schema: tạo mig
 pnpm --filter @taskflow/api db:check-drift   # schema.prisma ↔ DB phải khớp (CI cũng chạy)
 Remove-Item Env:DATABASE_URL
 ```
-Postgres-test (cổng 5434) có 2 DB, mỗi DB một việc — **không trộn** (T-022):
+Postgres-test (cổng 5434) dùng chung ⇒ **mỗi người/việc một DB riêng** (ADR-106, TEAM.md). Harness integration và suite bảo mật đều **xóa schema `public`** của DB đích; cấm trỏ vào `taskflow_template` hoặc DB dev (5435):
 | DB | Dùng cho | Ghi chú |
 |---|---|---|
-| `taskflow_template` | suite bảo mật (`test:security`) clone `CREATE DATABASE … TEMPLATE` cho mỗi lần chạy, API chạy bằng `taskflow_app` | phải **migrate trước** bằng migrator |
-| `taskflow_it` | `test:integration` — **harness xóa sạch schema `public`** rồi tự migrate | nếu trỏ vào `taskflow_template` sẽ làm mất grant của `taskflow_app` ⇒ suite bảo mật hỏng |
+| `taskflow_it` | `test:integration` mặc định (CI cũng dùng) | init script tạo sẵn (`TASKFLOW_EXTRA_DBS`) |
+| `taskflow_<ticket>` (vd `taskflow_t020`) | integration của từng engineer khi chạy song song | tự tạo: `CREATE DATABASE taskflow_t020` bằng `taskflow_migrator` (có CREATEDB) |
+| `taskflow_sec` | suite bảo mật `test:security` | harness tự tạo + migrate, giữ khóa advisory để 2 lần chạy không giẫm nhau |
 ```powershell
-# Integration (DB taskflow_it)
+# Integration
 $env:DATABASE_URL_TEST = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434/taskflow_it'
 pnpm --filter @taskflow/api test:integration
 Remove-Item Env:DATABASE_URL_TEST
 
-# Suite bảo mật: migrate template một lần (và sau mỗi migration mới), rồi chạy. Mặc định đã trỏ 5434/6380.
-$env:DATABASE_URL = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434/taskflow_template'
-pnpm --filter @taskflow/api db:deploy
-Remove-Item Env:DATABASE_URL
+# Suite bảo mật (mặc định đã trỏ postgres-test 5434 / Valkey 6380 db 15 / DB taskflow_sec)
 pnpm --filter @taskflow/api test:security
 ```
-Compose đang chạy từ trước T-022 chưa có DB `taskflow_it`: postgres-test dùng tmpfs nên chỉ cần `docker compose up -d --force-recreate --wait postgres-test` (mất dữ liệu test — vốn là dữ liệu tạm), rồi migrate lại template.
+Compose tạo trước T-022 chưa có `taskflow_it`: `docker compose exec -T -e PGPASSWORD=migrator_local_only postgres-test psql -h 127.0.0.1 -U taskflow_migrator -d postgres -c 'CREATE DATABASE taskflow_it'` (không cần recreate).
+> Suite bảo mật xóa bộ đếm Valkey **db 15**: hai người chạy cùng lúc trên Valkey dùng chung sẽ làm `rate-limit.sec.ts` đỏ oan — đặt `SEC_REDIS_URL=redis://127.0.0.1:6380/<db riêng>` hoặc chạy lần lượt.
 
 Mutation test (Stryker, chậm — CI chạy hằng tuần, workflow `Mutation (weekly)`): `pnpm --filter @taskflow/api mutation:<nhóm>` (vd `mutation:core-http`), báo cáo ở `apps/api/coverage/mutation/`.
 
