@@ -182,6 +182,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     }),
     cookie: new RefreshCookie(d.cookieSecure, clock),
     responder: d.responder,
+    logger,
   });
   const router = authRoutes({
     controller,

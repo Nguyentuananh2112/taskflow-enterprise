@@ -1,5 +1,6 @@
 import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError, ValidationError } from '../../../../core/errors';
+import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { saveWorkspaceOrFail } from '../optimistic-save';
 import type { IWorkspaceRealtimeNotifier } from '../ports/collaborators.port';
@@ -22,6 +23,7 @@ export interface DeleteWorkspaceDeps {
   notifier: IWorkspaceRealtimeNotifier;
   uow: IUnitOfWork;
   clock: IClock;
+  logger: ILogger;
 }
 
 /**
@@ -51,9 +53,17 @@ export class DeleteWorkspaceUseCase {
       const projectIds = await this.d.projects.listIds(ws.id);
       const memberUserIds = await this.d.memberships.listUserIds(ws.id);
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };
-      this.d.uow.afterCommit(() =>
-        this.d.notifier.closeWorkspace({ workspaceId: ws.id, projectIds, memberUserIds }, meta),
-      );
+      this.d.uow.afterCommit(() => {
+        // Sự kiện bảo mật (X9): mọi thành viên mất quyền truy cập; khôi phục được tới purgeAt.
+        this.d.logger.info(
+          { workspaceId: ws.id, actorId: actor.userId, purgeAt: ws.purgeAt },
+          'workspace.deleted',
+        );
+        return this.d.notifier.closeWorkspace(
+          { workspaceId: ws.id, projectIds, memberUserIds },
+          meta,
+        );
+      });
       return toDeletedWorkspaceView(ws.toSnapshot());
     });
   }

@@ -143,7 +143,7 @@ describe('RestoreWorkspaceUseCase (ADR-050, security.md 3.6)', () => {
     await deleteA();
     h.workspaces.restoreIfWithinGrace = () => Promise.resolve(false);
     expect(await caught(restore(ctx.alice.userId))).toBeInstanceOf(ResourceNotFoundError);
-    expect(h.logger.entries).toEqual([]);
+    expect(h.logger.messages()).not.toContain('workspace.restored'); // restore thất bại ⇒ không log khôi phục
   });
 });
 

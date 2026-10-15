@@ -1,5 +1,6 @@
 import type { IClock, IIdGenerator } from '../../../../core/domain';
 import { ForbiddenError, ResourceNotFoundError, ValidationError } from '../../../../core/errors';
+import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { assertWorkspaceLive } from '../workspace-guard';
 import { Membership } from '../../domain/membership';
@@ -40,6 +41,7 @@ export class AddMemberUseCase {
       uow: IUnitOfWork;
       ids: IIdGenerator;
       clock: IClock;
+      logger: ILogger;
     },
   ) {}
 
@@ -70,6 +72,13 @@ export class AddMemberUseCase {
         now: this.d.clock.now(),
       });
       await this.d.memberships.add(membership); // đã là thành viên ⇒ 409 (unique)
+      // Sự kiện bảo mật (X9): cấp quyền truy cập workspace.
+      this.d.uow.afterCommit(() => {
+        this.d.logger.info(
+          { workspaceId: actor.workspaceId, userId: user.id, actorId: actor.userId, role },
+          'member.added',
+        );
+      });
       return toMemberView(membership.toSnapshot(), user);
     });
   }
