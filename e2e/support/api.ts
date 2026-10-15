@@ -24,7 +24,8 @@ async function call<T>(
       ...(method === 'GET' ? {} : { 'content-type': 'application/json' }),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    ...(method === 'GET' ? {} : { data: body === undefined ? '' : JSON.stringify(body) }),
+    // Không có body ⇒ không gửi `data` (chuỗi rỗng bị coi là JSON hỏng ⇒ 400 invalid_json).
+    ...(method === 'GET' || body === undefined ? {} : { data: JSON.stringify(body) }),
   });
   if (res.status() !== expected) {
     throw new Error(
@@ -109,3 +110,121 @@ export function apiCreateTask(
 
 export const boardPath = (s: Pick<Seeded, 'workspaceId' | 'projectId'>) =>
   `/w/${s.workspaceId}/p/${s.projectId}`;
+
+export function apiLogin(
+  request: APIRequestContext,
+  user: E2EUser,
+): Promise<{ accessToken: string }> {
+  return call(
+    request,
+    'POST',
+    '/auth/login',
+    undefined,
+    { email: user.email, password: user.password },
+    200,
+  );
+}
+
+const taskPath = (s: Seeded, taskId: string) =>
+  `/workspaces/${s.workspaceId}/projects/${s.projectId}/tasks/${taskId}`;
+
+export function apiMoveTask(
+  request: APIRequestContext,
+  s: Seeded,
+  task: TaskRef,
+  status: string,
+): Promise<TaskRef> {
+  return call(
+    request,
+    'PATCH',
+    `${taskPath(s, task.id)}/move`,
+    s.accessToken,
+    { expectedVersion: task.version, status },
+    200,
+  );
+}
+
+export function apiAssign(
+  request: APIRequestContext,
+  s: Seeded,
+  task: TaskRef,
+  assigneeId: string | null,
+): Promise<TaskRef> {
+  return call(
+    request,
+    'PATCH',
+    `${taskPath(s, task.id)}/assignee`,
+    s.accessToken,
+    { expectedVersion: task.version, assigneeId },
+    200,
+  );
+}
+
+export function apiChangeRole(
+  request: APIRequestContext,
+  owner: Seeded,
+  userId: string,
+  role: Role,
+): Promise<unknown> {
+  return call(
+    request,
+    'PATCH',
+    `/workspaces/${owner.workspaceId}/members/${userId}`,
+    owner.accessToken,
+    { role },
+    200,
+  );
+}
+
+export async function apiRemoveMember(
+  request: APIRequestContext,
+  owner: Seeded,
+  userId: string,
+): Promise<void> {
+  const res = await request.delete(`${API_URL}/workspaces/${owner.workspaceId}/members/${userId}`, {
+    headers: { origin: WEB_ORIGIN, authorization: `Bearer ${owner.accessToken}` },
+  });
+  if (!res.ok())
+    throw new Error(`DELETE member — ${String(res.status())}: ${(await res.text()).slice(0, 300)}`);
+}
+
+export function apiArchiveProject(request: APIRequestContext, owner: Seeded): Promise<unknown> {
+  return call(
+    request,
+    'POST',
+    `/workspaces/${owner.workspaceId}/projects/${owner.projectId}/archive`,
+    owner.accessToken,
+    undefined,
+    200,
+  );
+}
+
+export async function apiDeleteWorkspace(request: APIRequestContext, owner: Seeded): Promise<void> {
+  const ws = await call<{ slug: string }>(
+    request,
+    'GET',
+    `/workspaces/${owner.workspaceId}`,
+    owner.accessToken,
+    undefined,
+    200,
+  );
+  await call(
+    request,
+    'DELETE',
+    `/workspaces/${owner.workspaceId}`,
+    owner.accessToken,
+    { confirmSlug: ws.slug },
+    200,
+  );
+}
+
+export function apiRestoreWorkspace(request: APIRequestContext, owner: Seeded): Promise<unknown> {
+  return call(
+    request,
+    'POST',
+    `/workspaces/${owner.workspaceId}/restore`,
+    owner.accessToken,
+    undefined,
+    200,
+  );
+}
