@@ -1,0 +1,205 @@
+// Prisma 7.10.0 (ADR-060/062, stack-versions §8.1). URL nằm ở apps/api/prisma.config.ts:
+//   datasource: { url: process.env.DATABASE_URL ?? "" }   (ADR-061; không dùng env())
+// Client tạo ở composition root với driver adapter @prisma/adapter-pg (ADR-016).
+// Luôn chạy CLI bằng `pnpm exec prisma`, cấm `npx prisma` (ADR-061).
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql" // không có url ở đây
+}
+
+enum WorkspaceRole {
+  OWNER
+  PM
+  MEMBER
+  VIEWER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskAuditAction {
+  CREATED
+  UPDATED            // title/description/priority/dueDate
+  STATUS_CHANGED     // đổi cột (có thể kèm đổi rank)
+  MOVED              // chỉ đổi rank trong cùng cột
+  ASSIGNEE_CHANGED
+  DELETED
+}
+
+enum RefreshTokenRevokeReason { // chốt với T-002
+  ROTATED
+  LOGOUT
+  LOGOUT_ALL
+  REUSE_DETECTED
+  PASSWORD_CHANGED
+  USER_DELETED
+}
+
+model User {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  email             String    @unique @db.VarChar(254) // trim+lowercase+NFC ở app; CHECK (email = lower(email)) bằng SQL tay
+  passwordHash      String    @map("password_hash")    // argon2id PHC string `$argon2id$v=19$…` (ADR-065)
+  fullName          String    @map("full_name") @db.VarChar(100)
+  tokenVersion      Int       @default(0) @map("token_version")          // ADR-025
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(3)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)       // D2; khác null ⇒ login/refresh bị từ chối như sai thông tin; set cùng tx với tăng token_version + thu hồi token (USER_DELETED)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships   WorkspaceMember[]
+  refreshTokens RefreshToken[]
+  assignedTasks Task[]            @relation("TaskAssignee")
+  createdTasks  Task[]            @relation("TaskCreator")
+  auditLogs     TaskAuditLog[]
+  deletedWorkspaces Workspace[]   @relation("WorkspaceDeleter")
+
+  @@map("users")
+}
+
+model RefreshToken { // ADR-024, chốt với T-002
+  id            String                    @id @default(uuid(7)) @db.Uuid
+  userId        String                    @map("user_id") @db.Uuid
+  tokenHash     String                    @unique @map("token_hash") @db.Char(64) // SHA-256 hex
+  familyId      String                    @map("family_id") @db.Uuid // nhóm phiên, KHÔNG phải FK
+  replacedById  String?                   @unique @map("replaced_by_id") @db.Uuid
+  expiresAt       DateTime                @map("expires_at") @db.Timestamptz(3)        // = min(now+7d, familyExpiresAt)
+  familyExpiresAt DateTime                @map("family_expires_at") @db.Timestamptz(3) // hạn tuyệt đối phiên (30 ngày từ login), copy khi xoay
+  revokedAt     DateTime?                 @map("revoked_at") @db.Timestamptz(3)
+  revokedReason RefreshTokenRevokeReason? @map("revoked_reason")
+  userAgent     String?                   @map("user_agent") @db.VarChar(255) // cắt 255, chỉ forensics/danh sách phiên
+  ip            String?                   @db.Inet
+  createdAt     DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken? @relation("TokenRotation", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces   RefreshToken? @relation("TokenRotation")
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Workspace {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String    @db.VarChar(100)
+  slug        String    @unique @db.VarChar(50) // vẫn giữ chỗ khi xóa mềm → khôi phục không đụng slug
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3) // ADR-047
+  purgeAt     DateTime? @map("purge_at") @db.Timestamptz(3)   // = deleted_at + 30 ngày
+  deletedById String?   @map("deleted_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  deletedBy User?             @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
+  members   WorkspaceMember[]
+  projects  Project[]
+
+  @@index([purgeAt], map: "workspaces_purge_at_idx", where: raw("purge_at IS NOT NULL")) // partialIndexes (ADR-062)
+  @@index([deletedById])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now()) @map("joined_at") @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@index([workspaceId, role]) // ADR-051: khóa dòng OWNER (ADR-046)
+  @@map("workspace_members")
+}
+
+model Project {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  workspaceId    String    @map("workspace_id") @db.Uuid
+  name           String    @db.VarChar(100)
+  keyPrefix      String    @map("key_prefix") @db.VarChar(10) // ^[A-Z][A-Z0-9]{1,9}$, bất biến
+  description    String?   @db.VarChar(2000)
+  nextTaskNumber Int       @default(1) @map("next_task_number")
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@unique([workspaceId, keyPrefix])
+  @@unique([id, workspaceId]) // đích của FK kép từ tasks (D6)
+  @@index([workspaceId, archivedAt])
+  @@map("projects")
+}
+
+model Task {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  workspaceId String       @map("workspace_id") @db.Uuid
+  projectId   String       @map("project_id") @db.Uuid
+  number      Int
+  title       String       @db.VarChar(150)
+  description String?      // ≤ 10 000 ký tự, kiểm ở app
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  rank        String       // COLLATE "C" — thêm tay trong migration (mục 1.3)
+  version     Int          @default(1)
+  dueDate     DateTime?    @map("due_date") @db.Date
+  assigneeId  String?      @map("assignee_id") @db.Uuid
+  createdById String?      @map("created_by_id") @db.Uuid // ADR-022
+  deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz(3)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  project   Project        @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  assignee  User?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy User?          @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  auditLogs TaskAuditLog[]
+
+  @@unique([projectId, number])
+  @@unique([projectId, status, rank], map: "tasks_rank_live_key", where: raw("deleted_at IS NULL")) // ADR-062; phục vụ cả đọc board (query luôn có deleted_at IS NULL)
+  @@index([assigneeId])
+  @@index([createdById])
+  @@map("tasks")
+}
+
+model TaskAuditLog {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  workspaceId String          @map("workspace_id") @db.Uuid // D5, không FK
+  projectId   String          @map("project_id") @db.Uuid   // D5, không FK
+  taskId      String          @map("task_id") @db.Uuid
+  actorId     String          @map("actor_id") @db.Uuid
+  action      TaskAuditAction
+  oldValue    Json?           @map("old_value")
+  newValue    Json?           @map("new_value")
+  requestId   String?         @map("request_id") @db.VarChar(64) // truy vết với log pino
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  task  Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict) // D3
+
+  @@index([taskId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([actorId])
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("task_audit_logs")
+}

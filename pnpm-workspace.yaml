@@ -9,6 +9,7 @@ catalog:
   '@next/eslint-plugin-next': 16.4.1
   '@node-rs/argon2': 2.2.2
   '@prisma/adapter-pg': 7.10.0
+  '@prisma/client': 7.10.0
   '@tailwindcss/postcss': 4.3.3
   '@testing-library/dom': 10.4.2
   '@testing-library/react': 16.3.3
@@ -37,6 +38,8 @@ catalog:
   pino-http: 11.0.0
   postcss: 8.5.30
   prettier: 3.9.10
+  # Prisma pin CHÍNH XÁC 7.10.0 (ADR-060); chỉ chạy CLI bằng `pnpm exec prisma` (ADR-061).
+  prisma: 7.10.0
   react: 19.3.1
   react-dom: 19.3.1
   redis: 6.3.0
@@ -53,6 +56,8 @@ catalog:
 # pnpm 11 chặn install script mặc định — chỉ cho phép gói cần build/tải binary.
 allowBuilds:
   esbuild: true
+  prisma: true
+  '@prisma/engines': true
   '@tailwindcss/oxide': true
   sharp: true
   unrs-resolver: true

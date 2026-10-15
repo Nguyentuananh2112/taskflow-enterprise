@@ -340,9 +340,12 @@ Sau commit: phát `workspace:access-revoked { workspaceId }` vào phòng `user:{
 - Không phát socket event; thành viên thấy lại workspace qua `GET /workspaces`.
 - OWNER xem danh sách có thể khôi phục qua `GET /workspaces?deleted=true` (kèm `purgeAt`). v1 không cache membership (T-002).
 
-**Purge job** — ĐỀ XUẤT (T-003c, T-001 không chốt cơ chế lịch): `setInterval` mỗi giờ trong process API, chỉ instance nào lấy được `pg_try_advisory_lock(<hằng số PURGE_LOCK_ID>)` mới chạy, nhả khóa khi xong. Không thêm thư viện hàng đợi, không phụ thuộc Valkey (ADR-063); an toàn khi nhiều instance (ADR-000). Nếu sau này có hàng đợi job thì chuyển sang đó.
+**Purge job** (ADR-095): `setInterval` mỗi giờ trong process API. Không thêm thư viện hàng đợi, không phụ thuộc Valkey (ADR-063); an toàn khi nhiều instance (ADR-000).
 
-- Chạy mỗi giờ, lấy `WHERE purge_at <= now()` theo lô. Với mỗi workspace: khóa dòng, kiểm lại `purge_at` (có thể vừa được khôi phục), rồi xóa cứng.
+- Khóa: **mỗi lô là một transaction**, câu đầu tiên là `SELECT pg_try_advisory_xact_lock(<PURGE_LOCK_ID>)`. Trả `false` ⇒ instance khác đang chạy lô ⇒ dừng lượt này. Khóa tự nhả khi transaction commit/rollback. **Không** dùng `pg_try_advisory_lock` mức session: với connection pool của Prisma, khóa có thể dính vào một connection khác hoặc không bao giờ được nhả.
+- Hệ quả: hai instance có thể xen kẽ lô của nhau giữa các transaction. Điều đó an toàn vì mỗi lô tự kiểm lại điều kiện và idempotent.
+
+- Mỗi lô: lấy một workspace `WHERE purge_at <= now()` (`FOR UPDATE SKIP LOCKED`), kiểm lại `purge_at` (có thể vừa được khôi phục), rồi xóa tối đa N dòng của nó. Lặp tới khi hết workspace quá hạn hoặc không giành được khóa.
 - Tránh một transaction khổng lồ: xóa `task_audit_logs` rồi `tasks` theo lô (vd 5 000 dòng) theo project, sau cùng `DELETE FROM workspaces` (cascade phần còn lại). Idempotent — chạy lại sau lỗi giữa chừng là an toàn.
 - Log có cấu trúc: `workspaceId`, số dòng đã xóa, thời gian chạy. Không phát socket event.
 - Dữ liệu đã purge không khôi phục được (ngoài backup DB — ngoài phạm vi tài liệu này).
@@ -629,14 +632,19 @@ type RealtimeEnvelope<TType extends string, TData> = {
 ```
 packages/contracts/src/
   common/
-    primitives.ts      Uuid, IsoDateTime, DateOnly, Cursor, Limit(max)
-    envelope.ts        ApiMeta, PageMeta, ApiSuccess(schema), ApiErrorBody, ApiResponse<T> (type)
-    error-codes.ts     ErrorCode (z.enum + const), BusinessRule (z.enum)
+    primitives.ts      Uuid, IsoDateTime, DateOnly, Version, Cursor, limitQuery(max, def), searchQuery(max),
+                       singleLineText(min, max), multiLineTextOrNull(max)
+    envelope.ts        ApiMeta, PageMeta, apiSuccess(schema) + type ApiSuccess<T>, ApiErrorBody, ApiError,
+                       ApiResponse<T> (type)
+    error-codes.ts     ErrorCode (z.enum), BusinessRule (z.enum), ValidationIssue, ValidationErrorDetails,
+                       NotFoundDetails, ResourceConflictDetails, BusinessRuleDetails, RateLimitedDetails,
+                       ForbiddenDetails
+    locale.ts          applyVietnameseZodLocale() (ADR-081), toValidationIssues(err) — bỏ `input` (ADR-096)
   auth/
     auth.schemas.ts    RegisterBody, LoginBody, ChangePasswordBody, AuthTokenDto, UserDto, UserRefDto,
                        MembershipDto, RegisterResponse, LoginResponse, MeResponse, UpdateMeBody, Password, Email, FullName
   workspace/
-    workspace.schemas.ts WorkspaceRole, WorkspaceDto, CreateWorkspaceBody, UpdateWorkspaceBody,
+    workspace.schemas.ts WorkspaceName, WorkspaceSlug, WorkspaceDto, CreateWorkspaceBody, UpdateWorkspaceBody,
                          DeleteWorkspaceBody, WorkspaceParams,
                          ListWorkspacesQuery, DeletedWorkspaceDto, ChangeMemberRoleResponse
     member.schemas.ts    MemberDto, AddMemberBody, ChangeMemberRoleBody, MemberParams, ListMembersQuery (có q),
@@ -648,10 +656,10 @@ packages/contracts/src/
     task.schemas.ts    TaskStatus, TaskPriority, TaskDto, TaskTitle, TaskDescription,
                        CreateTaskBody, UpdateTaskBody, MoveTaskBody, AssignTaskBody,
                        DeleteTaskQuery, DeleteTaskResponse, ListTasksQuery, TaskParams,
-                       VersionConflictDetails
-    task.constants.ts  TASK_STATUS_ORDER, TASK_STATUS_TRANSITIONS (ADR-080)
+                       VersionConflictDetails, InvalidStatusTransitionDetails, ProjectArchivedDetails, TaskKey
+    task.constants.ts  TaskStatus, TaskPriority, TASK_STATUS_ORDER, TASK_STATUS_TRANSITIONS (ADR-080)
   rbac/
-    permissions.ts     Permission (z.enum), ROLE_PERMISSIONS, ROLE_RANK (ADR-080)
+    permissions.ts     WorkspaceRole, Permission (z.enum), ROLE_PERMISSIONS, ROLE_RANK (ADR-080), roleHasPermission
   audit/
     audit.schemas.ts   TaskAuditAction, AuditLogDto, ListAuditLogsQuery
   realtime/
@@ -660,7 +668,10 @@ packages/contracts/src/
                        WorkspaceAccessRevokedEvent, AuthExpiredEvent, MemberRoleChangedEvent, ProjectJoinPayload,
                        AuthRenewPayload, SocketAck,
                        ClientToServerEvents, ServerToClientEvents (type map cho Socket.io generics)
-  index.ts             barrel; package.json "exports" có subpath ./auth, ./task, ... để tree-shake
+  system/
+    healthz.schemas.ts HealthzResponse (devops.md §6.2)
+  index.ts             barrel; package.json "exports" có subpath ./common, ./rbac, ./auth, ./workspace, ./project,
+                       ./task, ./audit, ./realtime, ./system (test khẳng định subpath ⊂ barrel gốc)
 ```
 
 ### 5.2. Quy ước đặt tên
@@ -716,7 +727,7 @@ Task mới luôn ở TODO. Sai ⇒ `422 INVALID_STATUS_TRANSITION` với `detail
 | R15 | Lệnh không đổi gì (vd assign cùng người, PATCH cùng giá trị, move về đúng chỗ) ⇒ trả `200` task hiện tại, **không** tăng version, không audit, không event. `expectedVersion` được kiểm **trước** no-op: no-op với version cũ vẫn `409` | update, move, assign | — | ADR-040, ADR-091 |
 | R16 | Task đã xóa mềm: mọi GET/ghi ⇒ `404`; riêng audit-logs vẫn đọc được | mọi | `404` | D1 |
 | R17 | `keyPrefix`: `^[A-Z][A-Z0-9]{1,9}$`, unique trong workspace, bất biến | create project | `400` / `409` | FR-03, D7 |
-| R19 | Workspace `name` trim 1–100; `slug` `^[a-z0-9]+(-[a-z0-9]+)*$` dài 3–50, unique, có slug dành riêng; tự sinh khi không gửi (mục 2.5) | create/update workspace, register | `400` / `409 RESOURCE_CONFLICT` | T-006, ĐỀ XUẤT |
+| R19 | Workspace `name` trim 1–100; `slug` `^[a-z0-9]+(-[a-z0-9]+)*$` dài 3–50, unique, có slug dành riêng; tự sinh khi không gửi (mục 2.5) | create/update workspace, register | `400` / `409 RESOURCE_CONFLICT` | ADR-094 |
 
 ---
 

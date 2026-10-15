@@ -3,7 +3,16 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./common": "./src/common/index.ts",
+    "./rbac": "./src/rbac/permissions.ts",
+    "./auth": "./src/auth/auth.schemas.ts",
+    "./workspace": "./src/workspace/index.ts",
+    "./project": "./src/project/project.schemas.ts",
+    "./task": "./src/task/index.ts",
+    "./audit": "./src/audit/audit.schemas.ts",
+    "./realtime": "./src/realtime/events.ts",
+    "./system": "./src/system/healthz.schemas.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
