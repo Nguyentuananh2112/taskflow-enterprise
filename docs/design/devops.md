@@ -388,32 +388,19 @@ Workflow riêng `mutation.yml` (T-022): Stryker **hằng tuần** (thứ Hai 02:
 - Không push thẳng `main`, không force-push, không xóa nhánh.
 - PR có label `db-migration` cần thêm approve của D.
 
-### 5.2 Workflow `release.yml` — push `main` (Phase 5, khi đã có staging)
-```
-ci (lặp lại trên commit merge)
-  └─ publish-images: build + push ghcr.io/<owner>/taskflow-{api,api-migrate,web}:<GIT_SHA>; ghi digest; SBOM + provenance
-        └─ deploy-staging (environment: staging, concurrency: deploy-staging, không cancel giữa chừng)
-              1. SSH vào droplet staging (key riêng, chỉ lệnh deploy)
-              2. docker compose pull (theo digest) → compose run --rm migrate → compose up -d api web
-              3. đợi /readyz xanh (timeout 2 phút) → Playwright @smoke chạy từ runner vào staging
-              4. lỗi ⇒ redeploy digest trước, báo đỏ
-```
-Image trên GHCR của repo public mặc định là public. Image không được chứa secret (§3.1), nên để public là chấp nhận được.
+### 5.2 Workflow `release.yml` — sau CI xanh trên `main` (D3, đã viết, TẮT mặc định)
+- Trigger `workflow_run` của CI (conclusion = success, branch main) + chạy tay. **Chỉ chạy khi biến repo `ENABLE_RELEASE=true`** — chưa chọn hosting thì không đẩy gì lên registry (ADR-070).
+- Build + push `ghcr.io/<owner>/taskflow-{api,api-migrate,web}:sha-<git_sha>` (GITHUB_TOKEN, `packages: write` chỉ ở job này), provenance + SBOM, cache `type=gha`. Digest ghi vào job summary + artifact `release-<sha>` (90 ngày).
+- Image GHCR của repo public mặc định public — image không chứa secret (§3.1).
 
-### 5.3 Workflow `deploy-production.yml` — thủ công (Phase 5)
-- **Trigger:** `workflow_dispatch`, input `git_sha` (mặc định là commit mới nhất đã deploy staging xanh).
-- **Environment `production`:** bật **required reviewers** = người dùng + Tech Lead, và giới hạn deployment branch chỉ `main` (miễn phí với repo public — ADR-072). Secret prod chỉ nằm ở environment này.
-- **Chặn:** commit phải có run `release.yml` thành công. **Không build lại** — deploy đúng digest đã qua staging.
-- **Các bước:**
-  1. Chạy job migrate (§4.1).
-  2. Cập nhật image digest cho `api`, `web`. Lệnh cụ thể theo nền tảng chọn ở Phase 5; đây là phần duy nhất gắn với nhà cung cấp.
-  3. Đợi `/readyz` xanh.
-  4. Smoke test read-only bằng tài khoản canary.
-  5. Tag `prod-<yyyyMMdd-HHmm>` + GitHub Release.
-- **Rollback:** chạy lại workflow với `git_sha` cũ. Không cần rollback DB nhờ expand/contract (§4.2). Nếu migration làm hỏng dữ liệu → runbook PITR (§4.4).
-- `concurrency: deploy-production`, `cancel-in-progress: false`. Deploy ngoài giờ cao điểm, có người theo dõi 30 phút sau deploy.
-
----
+### 5.3 Workflow `deploy.yml` — thủ công, 2 phương án hosting (D3)
+- `workflow_dispatch`: `environment` (staging | production), `target` (do-app-platform | vps), `git_sha` (40 ký tự). Environment protection: production = required reviewers (người dùng + Tech Lead) + chỉ branch `main` (miễn phí với repo public — ADR-072). `concurrency: deploy-<env>`, không hủy giữa chừng.
+- Bước 1: kiểm đầu vào + biến/secret của environment — thiếu ⇒ dừng với danh sách cần cấu hình. Bước 2: lấy **digest** của tag `sha-<git_sha>` (không build lại).
+- **App Platform** (`.do/app.yaml`): lấy spec đang chạy (secret đã mã hóa `EV[…]`) → yq thay digest + `GIT_SHA` → `doctl apps update --wait`; job `migrate` kind **PRE_DEPLOY** chạy trước rollout. Smoke lỗi ⇒ áp lại spec trước.
+- **VPS** (`deploy/vps/`): scp file deploy (đồng bộ mỗi lần) → `deploy.sh` (ghi digest → pull → migrate job → rollout api/web → `/readyz` → smoke qua Caddy → tự rollback). Smoke từ Internet lỗi ⇒ `deploy.sh --rollback`. SSH ghim host key (`VPS_KNOWN_HOSTS`), không `StrictHostKeyChecking=no`.
+- Smoke chung từ Internet: `/healthz` đúng `gitSha`, `/readyz` `"db":"ok"`, trang web, `/api/healthz`, header HSTS.
+- Rollback: chạy lại workflow với `git_sha` cũ (expand/contract ⇒ không rollback DB). Hỏng dữ liệu ⇒ PITR / restore (§4.4, runbook backup-restore).
+- Cách vận hành chi tiết, bootstrap từng phương án, sự cố: `docs/runbook/deploy.md`.
 
 ## 6. Observability (ADR-073: gói miễn phí, cảnh báo qua email)
 

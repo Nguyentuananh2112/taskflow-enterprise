@@ -99,8 +99,14 @@ jobs:
         run: |
           # Spec đang chạy (đã có secret mã hóa EV[…]) là gốc; chỉ thay digest + GIT_SHA ⇒ không đụng secret.
           doctl apps spec get "$APP_ID" --format yaml > previous.yaml
-          python3 .github/scripts/render_do_spec.py previous.yaml rendered.yaml \
-            "$GIT_SHA" "$API_DIGEST" "$WEB_DIGEST" "$MIGRATE_DIGEST"
+          # yq (mikefarah, có sẵn trên runner ubuntu): thay digest theo TÊN component + GIT_SHA trong envs.
+          yq '
+            (.services[] | select(.name == "api") | .image.digest) = strenv(API_DIGEST) |
+            (.services[] | select(.name == "web") | .image.digest) = strenv(WEB_DIGEST) |
+            (.jobs[] | select(.name == "migrate") | .image.digest) = strenv(MIGRATE_DIGEST) |
+            (.services[].envs[] | select(.key == "GIT_SHA") | .value) = strenv(GIT_SHA)
+          ' previous.yaml > rendered.yaml
+          diff -u previous.yaml rendered.yaml || true # log đúng phần đổi (không có secret — đã mã hóa EV[…])
           doctl apps update "$APP_ID" --spec rendered.yaml --wait
 
       # ---------------------------------------------------------------- (b) VPS + Compose + Caddy

@@ -20,8 +20,11 @@ if [ ! -f .env ]; then
     -e "s|^VALKEY_PASSWORD=.*|VALKEY_PASSWORD=$(rand)|" .env.example > .env
   echo '[bootstrap] .env đã sinh'
 fi
+# .env sinh lúc chạy (không có trong repo)
+set -a
 # shellcheck disable=SC1091
-set -a; . ./.env; set +a
+. ./.env
+set +a
 
 if [ ! -f .env.api ]; then
   sed -e "s|__TASKFLOW_APP_PASSWORD__|$TASKFLOW_APP_PASSWORD|" -e "s|__VALKEY_PASSWORD__|$VALKEY_PASSWORD|" \

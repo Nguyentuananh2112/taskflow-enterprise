@@ -63,6 +63,6 @@ else
   log 'deploy LỖI ⇒ rollback về bản trước'
   cp .env.previous .env
   "${COMPOSE[@]}" up -d --no-deps api web
-  wait_ready && smoke && log 'đã rollback' || log 'ROLLBACK cũng lỗi — xử lý tay (runbook deploy §Sự cố)'
+  if wait_ready && smoke; then log 'đã rollback'; else log 'ROLLBACK cũng lỗi — xử lý tay (runbook deploy §Sự cố)'; fi
   exit 1
 fi
