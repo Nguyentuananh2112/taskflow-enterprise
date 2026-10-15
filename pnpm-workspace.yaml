@@ -90,17 +90,6 @@ engineStrict: true
 # https://pnpm.io/settings/build#verifydepsbeforerun — Tech Lead quyết (D1, sau fix lefthook 78dcd88).
 verifyDepsBeforeRun: error
 
-# Ngoại lệ có chủ đích: bản vá bảo mật phát hành 2026-10-14 (< 24h) phải dùng ngay.
-#  - react/react-dom 19.3.1: GHSA-xqc2-xf4c-x3h3 (critical, RCE trong React Server Components)
-#  - next 16.4.1: GHSA-673q-mjm6-r5xr, GHSA-2464-fhr4-w9xw (critical, RCE), GHSA-p3m5-59mp-jv5r (high)
-# Xóa khỏi danh sách khi các bản trên đã > 24h tuổi.
-minimumReleaseAgeExclude:
-  - react
-  - react-dom
-  - scheduler
-  - next
-  - '@next/*'
-
 # `pnpm audit --prod --audit-level high` chạy trong CI (T-011). Ngoại lệ phải có lý do + ngày xét lại.
 auditConfig:
   ignoreGhsas:
