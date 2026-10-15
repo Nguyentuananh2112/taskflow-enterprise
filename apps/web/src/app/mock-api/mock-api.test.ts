@@ -9,6 +9,7 @@ import { REFRESH_GRACE_MS } from './mock-db';
 // đúng vòng đời refresh token.
 
 const BASE = 'http://localhost:4000/api/v1';
+const ORIGIN = 'http://localhost:4000';
 
 /** Dạng JSON đủ dùng cho assertion (mock đã tự parse bằng schema contracts trước khi trả). */
 type Body = {
@@ -29,7 +30,8 @@ function setup(accessTtlSec = 900) {
   ) => {
     const request = new Request(BASE + path, {
       method,
-      headers: { 'content-type': 'application/json', ...init.headers },
+      // Như trình duyệt: luôn có Origin (cùng origin với API trong mock dev).
+      headers: { 'content-type': 'application/json', origin: ORIGIN, ...init.headers },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     });
     const response = await getResponse(api.handlers, request);
@@ -172,7 +174,65 @@ describe('cờ APP_MOCK_API', () => {
     [{ APP_MOCK_API: '1', APP_ENV: 'production' }, false],
     [{ APP_MOCK_API: 'true', APP_ENV: 'local' }, false],
     [{ APP_ENV: 'local' }, false],
+    [{ APP_MOCK_API: '1' }, false], // không đặt APP_ENV ⇒ coi là production (T-029)
+    [{ APP_MOCK_API: '1', APP_ENV: 'LOCAL' }, false],
   ])('%j ⇒ %s', (env, expected) => {
     expect(isMockApiEnabled(env)).toBe(expected);
   });
+});
+
+describe('mock khắt khe như server (T-029 H2)', () => {
+  it.each([
+    ['thiếu Content-Type', {}],
+    ['text/plain', { 'content-type': 'text/plain' }],
+    ['charset utf-16', { 'content-type': 'application/json; charset=utf-16' }],
+  ])('POST %s ⇒ 415 UNSUPPORTED_MEDIA_TYPE (kể cả không có body)', async (_name, headers) => {
+    const { api } = setup();
+    const request = new Request(`${BASE}/auth/logout`, {
+      method: 'POST',
+      headers: { origin: ORIGIN, ...headers },
+    });
+    const response = await getResponse(api.handlers, request);
+    expect(response?.status).toBe(415);
+    expect(((await response?.json()) as Body).error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
+  it('application/json; charset=utf-8 hợp lệ; GET không cần Content-Type', async () => {
+    const { send, register } = setup();
+    await register();
+    const res = await send('POST', '/auth/login', {
+      body: { email: 'lan@example.com', password: 'cay-tre-xanh-ven-song' },
+      headers: { 'content-type': 'application/json; charset=UTF-8' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    ['thiếu Origin', { origin: '' }],
+    ['Origin lạ', { origin: 'https://evil.example' }],
+  ])(
+    'refresh/logout với %s ⇒ 403 ORIGIN_NOT_ALLOWED, phiên KHÔNG bị thu hồi',
+    async (_n, headers) => {
+      const { api, send, register } = setup();
+      const { cookie } = await register();
+      const strip = (h: Record<string, string>) =>
+        Object.fromEntries(Object.entries(h).filter(([, v]) => v !== ''));
+      const call = async (path: string) => {
+        const request = new Request(BASE + path, {
+          method: 'POST',
+          headers: strip({
+            'content-type': 'application/json',
+            cookie: `tf_rt=${cookie}`,
+            ...headers,
+          }),
+        });
+        return getResponse(api.handlers, request);
+      };
+      expect((await call('/auth/logout'))?.status).toBe(403);
+      expect((await call('/auth/refresh'))?.status).toBe(403);
+      // Cookie vẫn dùng được từ origin hợp lệ ⇒ logout bị chặn KHÔNG âm thầm thu hồi gì.
+      const ok = await send('POST', '/auth/refresh', { headers: { cookie: `tf_rt=${cookie}` } });
+      expect(ok.status).toBe(200);
+    },
+  );
 });

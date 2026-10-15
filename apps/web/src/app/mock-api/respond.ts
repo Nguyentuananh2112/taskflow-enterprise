@@ -63,4 +63,6 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   REFRESH_IN_PROGRESS: 'Đang làm mới phiên, thử lại sau giây lát.',
   EMAIL_ALREADY_EXISTS: 'Email đã được sử dụng.',
   RATE_LIMITED: 'Bạn thao tác quá nhanh, vui lòng thử lại sau.',
+  UNSUPPORTED_MEDIA_TYPE: 'Content-Type phải là application/json.',
+  ORIGIN_NOT_ALLOWED: 'Nguồn yêu cầu không được phép.',
 };

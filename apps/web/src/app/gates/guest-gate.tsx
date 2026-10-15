@@ -6,6 +6,8 @@ import { useEffect, type ReactNode } from 'react';
 import { session, useSession } from '@/entities/session';
 import { safeNextPath } from '@/shared/lib/safe-next-path';
 
+import { LogoutPendingAlert } from './logout-pending-alert';
+
 /**
  * Cổng màn khách (/login, /register — frontend.md §3.3): thử khôi phục phiên một lần; đã đăng nhập
  * (sẵn có, vừa đăng nhập/đăng ký, hoặc tab khác vừa đăng nhập) ⇒ chuyển tới `?next=` an toàn hoặc
@@ -25,5 +27,10 @@ export function GuestGate({ children }: Readonly<{ children: ReactNode }>) {
     router.replace(safeNextPath(next));
   }, [status, router]);
 
-  return children;
+  return (
+    <>
+      <LogoutPendingAlert />
+      {children}
+    </>
+  );
 }

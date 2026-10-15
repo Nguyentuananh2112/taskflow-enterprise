@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { applyServerErrors } from '@/shared/lib/form-errors';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
+import { ClientForm } from '@/shared/ui/client-form';
 import { Input } from '@/shared/ui/input';
 import { toast } from '@/shared/ui/toast';
 
@@ -33,7 +34,7 @@ export function ProfileForm({ user }: Readonly<{ user: UserDto }>) {
   });
 
   return (
-    <form noValidate onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
+    <ClientForm onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
       {errors.root?.server && <Alert>{errors.root.server.message}</Alert>}
       <Input label="Email" value={user.email} readOnly disabled autoComplete="email" />
       <Input
@@ -46,6 +47,6 @@ export function ProfileForm({ user }: Readonly<{ user: UserDto }>) {
       <Button type="submit" loading={isSubmitting} className="self-start">
         Lưu họ tên
       </Button>
-    </form>
+    </ClientForm>
   );
 }
