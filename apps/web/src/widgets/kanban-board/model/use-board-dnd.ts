@@ -78,12 +78,15 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
     drag.current = IDLE;
     dispatch({ type: 'end' });
     if (event.canceled || !activeId || !from || !before || !preview) return;
-    const to = findColumn(preview, activeId);
-    if (to === null) return;
-    if (!allowedTargets(from).includes(to)) {
-      toast({ title: `Không thể chuyển từ ${STATUS_LABEL[from]} sang ${STATUS_LABEL[to]}` });
+    // Quyết định theo đích THẬT lúc thả, không theo preview: preview có thể còn giữ cột hợp lệ vừa đi
+    // ngang (vd kéo Cần làm → Hoàn thành băng qua Đang làm trống — E2E-04). Không có đích ⇒ hủy.
+    const target = statusOf(event.operation.target?.data);
+    if (target === undefined) return;
+    if (!allowedTargets(from).includes(target)) {
+      toast({ title: `Không thể chuyển từ ${STATUS_LABEL[from]} sang ${STATUS_LABEL[target]}` });
       return;
     }
+    if (findColumn(preview, activeId) !== target) return; // preview chưa kịp theo đích ⇒ không đoán
     const task = latest.current.byId[activeId];
     if (!task) {
       toast({ title: 'Task vừa bị xóa', tone: 'error' });

@@ -85,6 +85,39 @@ describe('useBoardDnd — chuột vào cột TRỐNG (E2)', () => {
     expect(hook.result.current.state.over).toBeNull();
   });
 
+  it('đi ngang cột hợp lệ (trống) rồi thả trên cột BỊ CHẶN ⇒ không onMove (E2E-04)', () => {
+    const task = makeTask({ status: 'TODO' });
+    const { hook, handlers, onMove } = setup([task]);
+    const source = sourceOf(task);
+    act(() => handlers().onDragStart(op(source, null), null));
+    act(() =>
+      handlers().onDragOver(
+        op(source, { id: 'IN_PROGRESS', data: { status: 'IN_PROGRESS' } }),
+        null,
+      ),
+    );
+    expect(hook.result.current.state.preview?.IN_PROGRESS).toEqual([task.id]);
+    act(() => handlers().onDragOver(op(source, { id: 'DONE', data: { status: 'DONE' } }), null));
+    act(() => handlers().onDragEnd(op(source, { id: 'DONE', data: { status: 'DONE' } }), null));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(hook.result.current.state.preview).toBeNull(); // preview bỏ ⇒ board về dữ liệu thật
+  });
+
+  it('đi ngang cột hợp lệ rồi thả NGOÀI mọi đích (target null) ⇒ hủy, không onMove', () => {
+    const task = makeTask({ status: 'TODO' });
+    const { handlers, onMove } = setup([task]);
+    const source = sourceOf(task);
+    act(() => handlers().onDragStart(op(source, null), null));
+    act(() =>
+      handlers().onDragOver(
+        op(source, { id: 'IN_PROGRESS', data: { status: 'IN_PROGRESS' } }),
+        null,
+      ),
+    );
+    act(() => handlers().onDragEnd(op(source, null), null));
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
   it('cột bị chặn (state machine) ⇒ không "over", không đổi preview', () => {
     const task = makeTask({ status: 'TODO' });
     const { hook, handlers } = setup([task]);
