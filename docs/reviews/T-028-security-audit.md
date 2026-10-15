@@ -161,10 +161,10 @@ Không có Critical / High / Medium. Không có IDOR: tenant guard hai lớp đ�
 
 | ID | Mức | Lỗi | Vị trí | Chủ |
 |---|---|---|---|---|
-| T-L1 | Low | Race lách luật archive (ADR-023/045): `loadProject` đọc project không khóa ⇒ update/move/assign/delete ‖ archive ⇒ sửa task trong project đã archive (create không bị — cấp số nguyên tử) | `task-commands.ts:59-78`; `PrismaTaskProjectStore.findInWorkspace` | C (+ B nếu thêm biến thể `FOR SHARE` ở port workspace) |
-| T-L2 | Low | `save()` cập nhật không có phạm vi tenant (`where { id, version }`) — §4.1.2; chưa khai thác được | `feat/T-023:…/prisma-task.repository.ts:110`; in-memory tương tự | C |
-| T-L3 | Low | `listAuditLogs` lọc chỉ theo `taskId` (§4.1.5); đang được `taskExists` có phạm vi che | `task-read-model.port.ts:40`; `feat/T-023:…/prisma-task-read-model.ts:123-129` | C |
-| T-L4 | Low | Cursor tự chế với `id` không phải uuid ⇒ 500 (ASVS V2), ai cũng làm ngập alert được | `task.queries.ts:31-36` | C |
+| T-L1 | Low | Race lách luật archive (ADR-023/045): `loadProject` đọc project không khóa ⇒ update/move/assign/delete ‖ archive ⇒ sửa task trong project đã archive (create không bị — cấp số nguyên tử) | `task-commands.ts:59-78`; `PrismaTaskProjectStore.findInWorkspace` | C — **đã sửa `feat/T-023@472a398`** (B đọc lại diff) |
+| T-L2 | Low | `save()` cập nhật không có phạm vi tenant (`where { id, version }`) — §4.1.2; chưa khai thác được | `feat/T-023:…/prisma-task.repository.ts:110`; in-memory tương tự | C — **đã sửa `feat/T-023@472a398`** (B đọc lại diff) |
+| T-L3 | Low | `listAuditLogs` lọc chỉ theo `taskId` (§4.1.5); đang được `taskExists` có phạm vi che | `task-read-model.port.ts:40`; `feat/T-023:…/prisma-task-read-model.ts:123-129` | C — **đã sửa `feat/T-023@472a398`** (B đọc lại diff) |
+| T-L4 | Low | Cursor tự chế với `id` không phải uuid ⇒ 500 (ASVS V2), ai cũng làm ngập alert được | `task.queries.ts:31-36` | C — **đã sửa `feat/T-023@472a398`** (B đọc lại diff) |
 | T-L5 | Low | Mọi request task đi qua `authenticate` + limiter `api-user` **hai lần** (router workspace catch-all mount trước) ⇒ hạn thực tế 150/phút thay vì 300 (§6.4) | `feat/T-024:composition/container.ts:146-147`; `workspace.routes.ts:46` | A (B phối hợp router workspace) |
 | T-L6 | Low | OWNER / PM gửi body assign / query delete sai ⇒ 403 thay vì 400 (permission tối thiểu `:own` mà OWNER / PM chỉ có `:any`) | `feat/T-024:…/task.routes.ts:61,67`; `task-membership.ts:68` | A |
 | T-L7 | Low | Response task thiếu `Cache-Control: no-store` (ASVS V14.3.2) | `feat/T-024:…/task.controller.ts` | A (hoặc toàn cục — T-031 L4) |
@@ -190,6 +190,18 @@ Không có Critical / High / Medium. Không có IDOR: tenant guard hai lớp đ�
   - `refresh-cookie-logging.test.ts`: header Cookie / Set-Cookie bị redact.
 - **Tài liệu:** security.md §2.3, SEC-34; test-spec LOG-10.
 - **Còn cập nhật (chủ tài liệu khác):** checklist `devops.md:620` (D) vẫn ghi `__Secure-tf_rt; Path=/api/v1/auth`; suite đen `test/security/auth.sec.ts:274` (F).
+
+## DoD `feat/T-028-task`
+
+Chạy tuần tự, `--maxWorkers=2` (ADR-107), kiểm exit code từng lệnh:
+
+```text
+$ pnpm typecheck                         → exit 0
+$ pnpm lint                              → exit 0
+$ pnpm test -- --maxWorkers=2            → exit 0 · Test Files 118 passed · Tests 1209 passed
+$ DATABASE_URL_TEST=…/taskflow_t020 VALKEY_URL_TEST=redis://127.0.0.1:6380/12   pnpm --filter @taskflow/api test:integration -- --maxWorkers=2
+                                         → exit 0 · Test Files 23 passed · Tests 213 passed
+```
 
 ## Việc còn lại
 
