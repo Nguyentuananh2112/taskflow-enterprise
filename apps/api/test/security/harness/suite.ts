@@ -42,9 +42,10 @@ export function useApi(
   let skipReason: string | undefined;
 
   beforeAll(async () => {
-    // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
-    await flushRateLimitCounters();
     db = await prepareSuiteDatabase(config, API_DIR);
+    // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
+    // Chỉ SAU khi giữ khóa (prepareSuiteDatabase) — trước đó sẽ xóa giữa chừng của lần chạy khác.
+    await flushRateLimitCounters();
     try {
       api = await startApi(baseEnv(db.appUrl, envOverrides));
     } catch (err) {

@@ -13,8 +13,9 @@ export interface SuiteDatabase {
   release(): Promise<void>;
 }
 
-const LOCK_KEY = 'taskflow-security-suite';
-const LOCK_WAIT_MS = 120_000;
+const LOCK_PREFIX = 'taskflow-security-suite';
+/** Lần chạy khác giữ khóa trong suốt 1 file (vd rate-limit.sec.ts) ⇒ chờ đủ lâu, vẫn dưới hookTimeout. */
+const LOCK_WAIT_MS = Number(process.env.SEC_LOCK_WAIT_MS ?? 300_000);
 /** Máy dev dùng chung có lúc rất tải (Stryker của người khác) ⇒ CLI Prisma khởi động chậm. */
 const MIGRATE_TIMEOUT_MS = Number(process.env.SEC_MIGRATE_TIMEOUT_MS ?? 300_000);
 const ident = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -38,19 +39,38 @@ async function ensureDatabase(config: SecurityHarnessConfig): Promise<void> {
   }
 }
 
-/** Khóa advisory mức session: hai lần chạy suite (hai session/agent) không xóa schema của nhau. */
-async function acquireLock(client: pg.Client, dbName: string): Promise<void> {
-  const deadline = Date.now() + LOCK_WAIT_MS;
-  for (;;) {
-    const res = await client.query<{ ok: boolean }>(
-      'SELECT pg_try_advisory_lock(hashtext($1)) AS ok',
-      [LOCK_KEY],
-    );
-    if (res.rows[0]?.ok) return;
-    if (Date.now() > deadline) {
-      throw new Error(`DB ${dbName} đang được một lần chạy suite khác giữ quá ${LOCK_WAIT_MS}ms`);
+/**
+ * Khóa advisory mức session, giữ suốt 1 file: hai lần chạy suite (hai session/agent) không xóa schema
+ * hay FLUSHDB Valkey của nhau. Hai khóa — theo DB đích VÀ theo Valkey (cùng db 15 nhưng khác DB
+ * Postgres vẫn đụng nhau: findings D, rate-limit.sec.ts đỏ). Khóa advisory chỉ có hiệu lực trong một
+ * database ⇒ luôn lấy trên DB `postgres` để mọi lần chạy cùng cluster thấy nhau. Lấy cả hai hoặc không.
+ */
+async function acquireLocks(config: SecurityHarnessConfig): Promise<pg.Client> {
+  const keys = [
+    `${LOCK_PREFIX}:pg:${config.pgHost}:${String(config.pgPort)}/${config.dbName}`,
+    `${LOCK_PREFIX}:valkey:${config.redisUrl}`,
+  ];
+  const client = await connect(postgresUrl(config, 'migrator', 'postgres'));
+  try {
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    for (;;) {
+      const res = await client.query<{ a: boolean; b: boolean }>(
+        'SELECT pg_try_advisory_lock(hashtext($1)) AS a, pg_try_advisory_lock(hashtext($2)) AS b',
+        keys,
+      );
+      const { a, b } = res.rows[0] ?? { a: false, b: false };
+      if (a && b) return client;
+      await client.query('SELECT pg_advisory_unlock_all()'); // không giữ một nửa ⇒ không deadlock
+      if (Date.now() > deadline) {
+        throw new Error(
+          `DB ${config.dbName} / Valkey ${config.redisUrl} đang được một lần chạy suite khác giữ quá ${String(LOCK_WAIT_MS)}ms (SEC_LOCK_WAIT_MS)`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 1_000));
     }
-    await new Promise((r) => setTimeout(r, 1_000));
+  } catch (err) {
+    await client.end();
+    throw err;
   }
 }
 
@@ -89,34 +109,34 @@ export async function prepareSuiteDatabase(
   apiDir: string,
 ): Promise<SuiteDatabase> {
   await ensureDatabase(config);
+  const lock = await acquireLocks(config);
   const migratorUrl = postgresUrl(config, 'migrator');
-  const lock = await connect(migratorUrl);
+  const ddl = await connect(migratorUrl).catch(async (err: unknown) => {
+    await lock.end();
+    throw err;
+  });
   try {
-    await acquireLock(lock, config.dbName);
     const app = ident(config.appUser);
-    await lock.query('DROP SCHEMA IF EXISTS public CASCADE');
-    await lock.query(`CREATE SCHEMA public AUTHORIZATION ${ident(config.migratorUser)}`);
-    await lock.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
+    await ddl.query('DROP SCHEMA IF EXISTS public CASCADE');
+    await ddl.query(`CREATE SCHEMA public AUTHORIZATION ${ident(config.migratorUser)}`);
+    await ddl.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
     migrate(apiDir, migratorUrl);
-    await lock.query(`GRANT CONNECT, TEMPORARY ON DATABASE ${ident(config.dbName)} TO ${app}`);
-    await lock.query(`GRANT USAGE ON SCHEMA public TO ${app}`);
-    await lock.query(
+    await ddl.query(`GRANT CONNECT, TEMPORARY ON DATABASE ${ident(config.dbName)} TO ${app}`);
+    await ddl.query(`GRANT USAGE ON SCHEMA public TO ${app}`);
+    await ddl.query(
       `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${app}`,
     );
-    await lock.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${app}`);
+    await ddl.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${app}`);
   } catch (err) {
     await lock.end();
     throw err;
+  } finally {
+    await ddl.end();
   }
 
   return {
     appUrl: postgresUrl(config, 'app'),
-    release: async () => {
-      try {
-        await lock.query('SELECT pg_advisory_unlock(hashtext($1))', [LOCK_KEY]);
-      } finally {
-        await lock.end();
-      }
-    },
+    // Đóng session ⇒ Postgres tự nhả mọi khóa advisory (kể cả khi process test chết giữa chừng).
+    release: () => lock.end(),
   };
 }

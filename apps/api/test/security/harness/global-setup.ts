@@ -2,6 +2,18 @@ import { API_DIR, startApi } from './api-process';
 import { loadHarnessConfig } from './config';
 import { prepareSuiteDatabase } from './database';
 import { baseEnv } from './suite-env';
+import { pingValkey } from './valkey';
+
+/** Gợi ý sửa cho lỗi hạ tầng hay gặp — người chạy biết ngay cần làm gì. */
+function hintFor(message: string): string {
+  if (/ERR_MODULE_NOT_FOUND[\s\S]*generated[\\/]prisma/.test(message)) {
+    return '\n→ Prisma client chưa generate trong API đang test: `pnpm --filter @taskflow/api db:generate` (hoặc chạy qua `test:security`).';
+  }
+  if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND/.test(message)) {
+    return '\n→ Kiểm compose `taskflow` (postgres-test 5434, valkey 6380) hoặc biến SEC_PG_* / SEC_REDIS_URL.';
+  }
+  return '';
+}
 
 /**
  * Chuẩn bị hạ tầng MỘT lần trước mọi file (T-017c), timeout riêng — để test không đỏ vì lý do hạ tầng.
@@ -18,15 +30,19 @@ export default async function setup(): Promise<void> {
     try {
       return await fn();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      // AggregateError của net (nhiều địa chỉ) có message rỗng ⇒ ghép thêm `code`.
+      const code = (err as { code?: unknown } | null)?.code;
+      const message = `${err instanceof Error ? err.message : String(err)}${typeof code === 'string' ? ` [${code}]` : ''}`;
       throw new Error(
-        `[hạ tầng suite bảo mật] bước "${name}" lỗi — không phải lỗi test:\n${message}`,
+        `[hạ tầng suite bảo mật] bước "${name}" lỗi — không phải lỗi test:\n${message}${hintFor(message)}`,
         { cause: err },
       );
     }
   };
 
   const config = loadHarnessConfig(); // từ chối DB/cổng cấm (ADR-106) trước mọi kết nối
+  // App khởi động được khi Valkey chết (đọc fallback DB) ⇒ warm-up không bắt được — phải kiểm riêng.
+  await step(`kết nối Valkey ${config.redisUrl}`, pingValkey);
   const db = await step('chuẩn bị DB + migrate', () => prepareSuiteDatabase(config, API_DIR));
   try {
     const api = await step('warm-up process API', () =>

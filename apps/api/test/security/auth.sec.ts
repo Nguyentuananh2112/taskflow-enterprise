@@ -130,9 +130,12 @@ describe('Thu hồi phiên', () => {
   // Findings A4 — lost update trên users: login (đọc → argon2 → save) chạy song song với thao tác
   // bảo mật không được ghi đè ngược passwordHash/tokenVersion. Bộ đếm rate limit (Valkey db 15)
   // được xóa mỗi vòng để 20 lần login không bị 429.
+  const login = (email: string, password: string) =>
+    actors.json('POST', '/auth/login', undefined, { email, password });
+
   pendingRoute(
     'SEC-23b',
-    'Race login(mật khẩu cũ) ‖ đổi mật khẩu, 20 vòng ⇒ mật khẩu mới luôn đúng, mật khẩu cũ luôn sai',
+    'Race login(mật khẩu cũ) ‖ đổi mật khẩu, 20 vòng ⇒ trạng thái cuối khớp đúng bên thắng (mới đúng + cũ sai, hoặc ngược lại khi đổi thua race)',
     `${AUTH} · ${T020}`,
     async () => {
       for (let round = 0; round < 20; round += 1) {
@@ -140,43 +143,82 @@ describe('Thu hồi phiên', () => {
         const user = await actors.register(`race-pw-${round}`);
         const newPassword = `brand-new-passphrase-${round}-xyz`;
         const [racingLogin, change] = await Promise.all([
-          actors.json('POST', '/auth/login', undefined, {
-            email: user.email,
-            password: user.password,
-          }),
+          login(user.email, user.password),
           actors.json('POST', '/auth/change-password', user.accessToken, {
             currentPassword: user.password,
             newPassword,
           }),
         ]);
-        // Đổi mật khẩu phải thành công — nếu không, vòng này không kiểm được gì (không xanh giả).
-        expect(change.status, `vòng ${round}: change-password ${change.text.slice(0, 200)}`).toBe(
-          200,
+        const ctx = `vòng ${round} (login song song ${racingLogin.status}, đổi ${change.status})`;
+        // ADR-104: đổi mật khẩu thua race (hash đổi giữa verify và UPDATE) ⇒ 400 INVALID_CURRENT_PASSWORD.
+        // Mọi status khác là lỗi — không xanh giả. Xóa cache trước khi kiểm ⇒ đọc từ DB.
+        if (change.status !== 200) {
+          expect(change.status, `${ctx}: ${change.text.slice(0, 200)}`).toBe(400);
+          expect(errorEnvelope(change).error.code, ctx).toBe('INVALID_CURRENT_PASSWORD');
+        }
+        const [winner, loser] =
+          change.status === 200 ? [newPassword, user.password] : [user.password, newPassword];
+        await flushRateLimitCounters();
+        expect((await login(user.email, winner)).status, `${ctx}: mật khẩu bên thắng`).toBe(200);
+        expect((await login(user.email, loser)).status, `${ctx}: mật khẩu bên thua`).toBe(401);
+      }
+    },
+  );
+  // Ép nhánh "đổi mật khẩu thua race" bằng hộp đen (TL duyệt, thay cho hook trễ trong src): hai lần
+  // đổi cùng currentPassword chạy song song — bên sau luôn thua, dù thua ở bước verify hay ở UPDATE
+  // có điều kiện `password_hash = oldHash` (ADR-104).
+  pendingRoute(
+    'SEC-23c',
+    '2 change-password song song cùng currentPassword, 20 vòng ⇒ đúng 1×200 + 1×400 INVALID_CURRENT_PASSWORD, chỉ mật khẩu bên thắng đăng nhập được',
+    `${AUTH} · ${T020}`,
+    async () => {
+      for (let round = 0; round < 20; round += 1) {
+        await flushRateLimitCounters();
+        const user = await actors.register(`race-cp-${round}`);
+        const candidates = [`winner-a-passphrase-${round}`, `winner-b-passphrase-${round}`];
+        const results = await Promise.all(
+          candidates.map((newPassword) =>
+            actors.json('POST', '/auth/change-password', user.accessToken, {
+              currentPassword: user.password,
+              newPassword,
+            }),
+          ),
         );
-        const login = (password: string) =>
-          actors.json('POST', '/auth/login', undefined, { email: user.email, password });
-        const ctx = `vòng ${round} (login song song: ${racingLogin.status})`;
-        expect((await login(newPassword)).status, `${ctx}: mật khẩu mới`).toBe(200);
-        expect((await login(user.password)).status, `${ctx}: mật khẩu cũ`).toBe(401);
+        const ctx = `vòng ${round} (${results.map((r) => r.status).join('/')})`;
+        expect(results.map((r) => r.status).sort(), ctx).toEqual([200, 400]);
+        const loserRes = results.find((r) => r.status === 400);
+        expect(loserRes && errorEnvelope(loserRes).error.code, ctx).toBe(
+          'INVALID_CURRENT_PASSWORD',
+        );
+        const winnerIdx = results.findIndex((r) => r.status === 200);
+        await flushRateLimitCounters();
+        for (const [i, password] of [...candidates, user.password].entries()) {
+          const expected = i === winnerIdx ? 200 : 401;
+          expect((await login(user.email, password)).status, `${ctx}: mật khẩu #${i}`).toBe(
+            expected,
+          );
+        }
       }
     },
   );
   pendingRoute(
     'SEC-21c',
-    'Race login ‖ logout-all, 20 vòng ⇒ access token cấp TRƯỚC logout-all luôn 401',
+    'Race login ‖ logout-all, 20 vòng ⇒ access token cấp TRƯỚC logout-all luôn 401 (cả khi cache tv bị xóa ⇒ đọc DB)',
     `${AUTH} · ${T020}`,
     async () => {
       for (let round = 0; round < 20; round += 1) {
         await flushRateLimitCounters();
         const user = await actors.register(`race-tv-${round}`);
-        await Promise.all([
-          actors.json('POST', '/auth/login', undefined, {
-            email: user.email,
-            password: user.password,
-          }),
+        const [, logoutAll] = await Promise.all([
+          login(user.email, user.password),
           actors.json('POST', '/auth/logout-all', user.accessToken),
         ]);
+        expect(logoutAll.status, `vòng ${round}: logout-all`).toBe(204);
         expect((await me(user.accessToken)).status, `vòng ${round}`).toBe(401);
+        // ADR-105 ghi tv mới vào Valkey TRƯỚC commit ⇒ cache che mất lost update trong DB. Xóa cache
+        // để lần đọc sau lấy tv từ DB: login song song không được ghi đè ngược token_version (A4).
+        await flushRateLimitCounters();
+        expect((await me(user.accessToken)).status, `vòng ${round}, đọc DB`).toBe(401);
       }
     },
   );

@@ -21,7 +21,7 @@
     "mutation:auth-domain": "stryker run stryker/auth-domain.config.mjs",
     "mutation:auth-application": "stryker run stryker/auth-application.config.mjs",
     "mutation:auth-infrastructure": "stryker run stryker/auth-infrastructure.config.mjs",
-    "test:security": "vitest run --config test/security/vitest.config.ts"
+    "test:security": "prisma generate --no-hints && vitest run --config test/security/vitest.config.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "catalog:",
