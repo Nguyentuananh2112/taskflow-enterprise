@@ -49,7 +49,7 @@ describe('cache miss sau khi Valkey mất dữ liệu (X3)', () => {
     );
   });
 
-  it('TTL sid-revoked khôi phục = phần còn lại của cửa sổ 900s; phiên thu hồi quá 900s ⇒ không khôi phục', async () => {
+  it('TTL sid-revoked khôi phục = phần còn lại của cửa sổ 905s (TTL + clockTolerance); phiên thu hồi quá cửa sổ ⇒ không khôi phục', async () => {
     const alice = await h.seedUser();
     const old = await h.seedSession(alice);
     await new LogoutUseCase(h).execute({ refreshToken: old.refreshToken });
@@ -62,7 +62,7 @@ describe('cache miss sau khi Valkey mất dữ liệu (X3)', () => {
 
     await auth.authenticate(bearer(live.accessToken));
     expect(h.store.revokedSessions.has(old.familyId)).toBe(false);
-    expect(h.store.revokedSessions.get(recent.familyId)).toBe(600);
+    expect(h.store.revokedSessions.get(recent.familyId)).toBe(605);
   });
 
   it('khôi phục sid-revoked lỗi ⇒ KHÔNG nạp tv (lần sau vẫn hỏi DB)', async () => {

@@ -5,7 +5,7 @@ import {
   UnauthorizedError,
 } from '../../../core/errors';
 import type { ILogger } from '../../../core/logging/logger';
-import { ACCESS_TOKEN_TTL_SECONDS, bestEffort } from './auth-shared';
+import { bestEffort, SESSION_REVOCATION_TTL_SECONDS } from './auth-shared';
 import type { IAccessTokenService } from './ports/access-token-service.port';
 import type { IRefreshTokenRepository } from './ports/refresh-token-repository.port';
 import type {
@@ -88,7 +88,7 @@ export class AccessTokenAuthenticator {
    */
   async #refill(userId: string, tokenVersion: number): Promise<void> {
     const now = this.d.clock.now().getTime();
-    const windowMs = ACCESS_TOKEN_TTL_SECONDS * 1000;
+    const windowMs = SESSION_REVOCATION_TTL_SECONDS * 1000;
     const revoked = await this.d.refreshTokens.listRevokedSessionsSince(
       userId,
       new Date(now - windowMs),

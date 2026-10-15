@@ -6,6 +6,12 @@ import type { User } from '../domain/user';
 
 /** = TTL access token (security.md 2.1): `sid-revoked` chỉ cần sống đến khi token cuối của phiên hết hạn. */
 export const ACCESS_TOKEN_TTL_SECONDS = 900;
+/**
+ * `auth:sid-revoked:{familyId}` phải sống ít nhất bằng thời gian một access token của phiên còn
+ * được chấp nhận: TTL + `clockTolerance` của jose (mặc định 5s — `JoseAccessTokenService`). Thiếu
+ * phần tolerance ⇒ token cấp ngay trước khi thu hồi còn qua được ~5s sau khi khóa hết hạn (T-032).
+ */
+export const SESSION_REVOCATION_TTL_SECONDS = ACCESS_TOKEN_TTL_SECONDS + 5;
 
 export interface UserView {
   id: string;

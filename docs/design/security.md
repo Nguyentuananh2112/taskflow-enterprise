@@ -207,7 +207,7 @@ Valkey (giấy phép BSD) thay Redis, client `node-redis` 6 (ADR-060). Tên key 
 | Key | Giá trị | TTL | Ghi bởi | Đọc bởi |
 |---|---|---|---|---|
 | `auth:tv:{userId}` | token_version (int) | **60s** (ADR-105) | logout-all, đổi mật khẩu, xóa user: `SET … EX 60` (vô điều kiện) **TRƯỚC commit**, rồi ghi lại sau commit. Đọc miss (read-through): load DB rồi **chỉ** `SET … EX 60 NX` | middleware HTTP + socket |
-| `auth:sid-revoked:{familyId}` | `1` | 900s (= TTL access token) | logout, reuse detected — **TRƯỚC commit**, rồi ghi lại sau commit | middleware HTTP + socket |
+| `auth:sid-revoked:{familyId}` | `1` | 905s (= TTL access token 900s + `clockTolerance` 5s của jose — T-032) | logout, reuse detected — **TRƯỚC commit**, rồi ghi lại sau commit | middleware HTTP + socket |
 | `rl:{rule}:{key}` | bộ đếm | theo cửa sổ | rate-limit store | rate-limit |
 
 - **Thu hồi fail-closed (ADR-105, finding A3 của QA):** giá trị thu hồi (`tv` mới, `sid-revoked`) được ghi vào Valkey **bên trong transaction, trước commit**. Ghi lỗi ⇒ `503 SERVICE_UNAVAILABLE` và rollback — không bao giờ có trạng thái "DB đã thu hồi nhưng cache vẫn cho token cũ qua". Sau commit ghi lại lần nữa (best-effort, chỉ log cảnh báo nếu lỗi).

@@ -4,7 +4,7 @@ import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { RefreshToken, SessionMeta } from '../../domain/refresh-token';
 import {
-  ACCESS_TOKEN_TTL_SECONDS,
+  SESSION_REVOCATION_TTL_SECONDS,
   bestEffort,
   toUserView,
   writeRevocationOrFail,
@@ -89,7 +89,7 @@ export class RefreshSessionUseCase {
       await this.d.refreshTokens.revokeFamily(familyId, 'REUSE_DETECTED', now);
       // ADR-105: chặn access token của family bị lộ TRƯỚC commit; lỗi ⇒ 503 + rollback.
       await writeRevocationOrFail(() =>
-        this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
+        this.d.store.revokeSession(familyId, SESSION_REVOCATION_TTL_SECONDS),
       );
       this.d.uow.afterCommit(async () => {
         this.d.logger.warn(
@@ -97,7 +97,7 @@ export class RefreshSessionUseCase {
           'refresh.reuse_detected',
         );
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { familyId }, () =>
-          this.d.store.revokeSession(familyId, ACCESS_TOKEN_TTL_SECONDS),
+          this.d.store.revokeSession(familyId, SESSION_REVOCATION_TTL_SECONDS),
         );
         await this.d.notifier.disconnectSession(familyId);
       });
