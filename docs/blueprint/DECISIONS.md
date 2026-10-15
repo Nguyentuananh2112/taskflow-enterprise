@@ -99,5 +99,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-106 ✅ Môi trường test dùng chung: mỗi engineer/QA một database riêng trên postgres-test (xem TEAM.md); harness phải từ chối chạy nếu trỏ vào `taskflow_template` hoặc DB dev.
 
+- ADR-107 ✅ Giữ nguyên cấu hình máy dev (người dùng chốt); giảm tải bằng quy trình: dùng lại worktree, giới hạn worker, không chạy song song việc nặng, commit WIP thường xuyên (TEAM.md).
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
