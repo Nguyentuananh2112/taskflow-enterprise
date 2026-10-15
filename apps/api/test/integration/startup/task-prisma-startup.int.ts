@@ -1,5 +1,5 @@
 // T-023: sau khi module Task có repository Prisma, `main.ts` THẬT ở staging với cấu hình mặc định
-// (PERSISTENCE / PERSISTENCE_TASK = prisma) phải khởi động được — guard "không module bộ nhớ ở
+// (PERSISTENCE = prisma) phải khởi động được — guard "không module bộ nhớ ở
 // staging/production" (T-020) không còn chặn vì `modules.task = prisma`.
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -26,9 +26,8 @@ describe('khởi động main.ts với Prisma đầy đủ (T-023)', () => {
         DATABASE_URL: testDatabaseUrl(),
         REDIS_URL: testValkeyUrl(),
       });
-      // Không đặt PERSISTENCE/PERSISTENCE_TASK: khẳng định giá trị MẶC ĐỊNH là prisma.
+      // Không đặt PERSISTENCE: khẳng định giá trị MẶC ĐỊNH là prisma.
       delete env.PERSISTENCE;
-      delete env.PERSISTENCE_TASK;
       let output = '';
       const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
         cwd: API_DIR,

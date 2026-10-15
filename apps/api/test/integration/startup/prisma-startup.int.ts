@@ -114,20 +114,20 @@ describe('Khởi động main.ts với Prisma + Valkey thật (T-020)', () => {
   );
 
   it(
-    'staging + PERSISTENCE_TASK=memory ⇒ từ chối khởi động (exit ≠ 0), nêu đúng tên biến',
+    'staging + PERSISTENCE=memory ⇒ từ chối khởi động (exit ≠ 0), nêu đúng tên biến',
     async () => {
       const api = startApi(
         productionEnvVars({
           PORT: String(PORT + 1),
           DATABASE_URL: testDatabaseUrl(),
           APP_ENV: 'staging',
-          PERSISTENCE_TASK: 'memory',
+          PERSISTENCE: 'memory',
         }),
       );
       children.push(api.child);
       const code = await api.exited;
       expect(code).not.toBe(0);
-      expect(api.output()).toContain('PERSISTENCE_TASK');
+      expect(api.output()).toContain('PERSISTENCE');
     },
     STARTUP_TIMEOUT_MS,
   );

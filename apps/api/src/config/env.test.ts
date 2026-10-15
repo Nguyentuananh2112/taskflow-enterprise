@@ -114,22 +114,18 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     ['thiếu SENTRY_DSN', { SENTRY_DSN: undefined }, 'SENTRY_DSN'],
     ['thiếu METRICS_TOKEN', { METRICS_TOKEN: undefined }, 'METRICS_TOKEN'],
     ['T-020: lưu trữ bộ nhớ ở staging/production', { PERSISTENCE: 'memory' }, 'PERSISTENCE'],
-    [
-      'T-020: module Task chạy bộ nhớ ở staging/production',
-      { PERSISTENCE_TASK: 'memory' },
-      'PERSISTENCE_TASK',
-    ],
   ])('%s', (_label, overrides, variable) => {
     expect(variablesOf(productionEnvVars(overrides))).toEqual([variable]);
   });
 
-  it('T-020: mặc định PERSISTENCE / PERSISTENCE_TASK = prisma; memory được phép ở local/test', () => {
-    expect(loadEnv(testEnvVars())).toMatchObject({
-      PERSISTENCE: 'prisma',
-      PERSISTENCE_TASK: 'prisma',
-    });
-    expect(variablesOf(testEnvVars({ PERSISTENCE: 'memory', PERSISTENCE_TASK: 'memory' }))).toEqual(
-      [],
+  it('T-020: mặc định PERSISTENCE = prisma; memory được phép ở local/test', () => {
+    expect(loadEnv(testEnvVars())).toMatchObject({ PERSISTENCE: 'prisma' });
+    expect(variablesOf(testEnvVars({ PERSISTENCE: 'memory' }))).toEqual([]);
+  });
+
+  it('T-024: không còn biến PERSISTENCE_TASK (Task theo PERSISTENCE) — giá trị cũ bị bỏ qua', () => {
+    expect(loadEnv(testEnvVars({ PERSISTENCE_TASK: 'memory' }))).not.toHaveProperty(
+      'PERSISTENCE_TASK',
     );
   });
 

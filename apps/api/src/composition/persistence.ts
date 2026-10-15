@@ -29,7 +29,11 @@ import {
   PrismaTaskProjectStore,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
-import { TaskMirroredMemberships, TaskMirroredProjects, TaskMirroredWorkspaces } from './task-mirrors';
+import {
+  TaskMirroredMemberships,
+  TaskMirroredProjects,
+  TaskMirroredWorkspaces,
+} from './task-mirrors';
 import { MirroringUserRepository } from './users';
 
 export type StorageKind = 'memory' | 'prisma';

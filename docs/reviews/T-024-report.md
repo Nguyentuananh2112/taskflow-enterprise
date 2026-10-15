@@ -87,3 +87,20 @@ Route `/workspaces/:wsId/projects/:projectId*` (T-021) giờ tra project bằng 
 | Info | `requireTaskScope` checks the project, and the live task (except on audit-logs, which stays readable after deletion), **before** body/query validation. This follows security.md order. | An invalid body against a missing project/task gives 404, including for a VIEWER. |
 
 DoD after rebasing onto main f1355ce: typecheck, lint and test (120 files, 1280 tests) all exit 0.
+
+## Final rebase after T-023 (main 1c14631)
+
+- `Persistence.task` is now **required**:
+  - `createPrismaPersistence` uses C's Prisma task repositories (task, read model, audit) plus B's (project store, assignee directory, user ref reader), all on the same `db`;
+  - `createMemoryPersistence` keeps the in-memory task module, mirrored from the Workspace/Auth repositories (`task-mirrors.ts`, the `onWrite` hook).
+- **The hybrid state is removed:** the `PERSISTENCE_TASK` variable is gone, so Task always follows `PERSISTENCE`. Files changed:
+  - `env.ts` / `env.test.ts`;
+  - `apps/api/.env.example`;
+  - the startup test `prisma-startup.int.ts` (B), which now checks that staging with `PERSISTENCE=memory` refuses to start;
+  - the comment in `task-prisma-startup.int.ts` (C).
+- `task.module.ts` (add/add conflict): kept A's version. C's version only declared `TaskRepositories`, with the same name and shape.
+- **DoD:**
+  - typecheck 0, lint 0;
+  - API: 83 files, 914 tests, exit 0;
+  - full repo: 1439/1440. The one failure is E's `apps/web/test/board-perf.test.tsx`, a 5 s timeout under parallel load. It passes when run alone, and this branch has no changes under `apps/web`.
+  - integration on its own DB `taskflow_t024`: 33 files, 331 tests, exit 0.
