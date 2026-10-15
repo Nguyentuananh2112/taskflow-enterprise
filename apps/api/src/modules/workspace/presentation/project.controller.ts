@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import { compact } from '../../../core/http/compact';
 import type { HttpResponder } from '../../../core/http/envelope';
 import { pageMeta } from '../../../core/http/pagination';
+import { clientIdOf } from '../../../core/http/request-user';
 import type { CreateProjectUseCase } from '../application/use-cases/create-project.use-case';
 import type {
   GetProjectQuery,
@@ -56,7 +57,11 @@ export class ProjectController {
     const body = req.body as UpdateProjectBody;
     this.d.responder.ok(
       res,
-      await this.d.update.execute(actorOf(req), { projectId: projectIdOf(req), ...compact(body) }),
+      await this.d.update.execute(actorOf(req), {
+        ...compact(body),
+        projectId: projectIdOf(req),
+        originClientId: clientIdOf(req),
+      }),
     );
   };
 
@@ -66,6 +71,7 @@ export class ProjectController {
       await this.d.setArchived.execute(actorOf(req), {
         projectId: projectIdOf(req),
         archived: true,
+        originClientId: clientIdOf(req),
       }),
     );
   };
@@ -76,6 +82,7 @@ export class ProjectController {
       await this.d.setArchived.execute(actorOf(req), {
         projectId: projectIdOf(req),
         archived: false,
+        originClientId: clientIdOf(req),
       }),
     );
   };

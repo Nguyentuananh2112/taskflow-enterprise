@@ -142,8 +142,8 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     list: new ListProjectsQuery({ queries }),
     create: new CreateProjectUseCase({ projects, workspaces, uow, ids, clock }),
     get: getProject,
-    update: new UpdateProjectUseCase({ projects, workspaces, uow, clock }),
-    setArchived: new SetProjectArchivedUseCase({ projects, workspaces, uow, clock }),
+    update: new UpdateProjectUseCase({ projects, workspaces, notifier, uow, clock }),
+    setArchived: new SetProjectArchivedUseCase({ projects, workspaces, notifier, uow, clock }),
     responder: d.responder,
   });
 

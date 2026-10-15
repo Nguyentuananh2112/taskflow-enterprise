@@ -56,6 +56,27 @@ export interface IWorkspaceRealtimeNotifier {
     input: { workspaceId: string; projectIds: string[]; memberUserIds: string[] },
     meta: RealtimeEventMeta,
   ): Promise<void>;
+  /**
+   * `project:updated` (data-and-api §615) tới phòng `project:{id}` sau update / archive / unarchive
+   * — FE khóa board khi `isArchived`. Gateway dựng envelope; `data.project` đúng `ProjectDto`.
+   */
+  emitToProject(
+    input: { projectId: string; type: 'project:updated'; data: { project: ProjectEventDto } },
+    meta: RealtimeEventMeta,
+  ): Promise<void>;
+}
+
+/** `ProjectDto` (contracts) dạng truyền qua socket — ngày là chuỗi ISO. */
+export interface ProjectEventDto {
+  id: string;
+  workspaceId: string;
+  name: string;
+  keyPrefix: string;
+  description: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Chốt với A (T-016) — `core/realtime` của A định nghĩa; Workspace hiện thực. */
