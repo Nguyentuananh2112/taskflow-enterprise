@@ -6,6 +6,7 @@ import { createContainer, type ContainerConfig } from '../../src/composition/con
 import { createMemoryPersistence } from '../../src/composition/persistence';
 import { CryptoRandom } from '../../src/core/infrastructure/system';
 import { createLogger } from '../../src/core/logging/pino-logger';
+import type { DestinationStream } from 'pino';
 import { PasswordPolicy } from '../../src/modules/auth/domain/password-policy';
 import { FakePasswordHasher } from '../../src/modules/auth/testing/fakes';
 import { envelopeOf } from './http';
@@ -19,10 +20,17 @@ export const NOW = '2026-11-01T00:00:00.000Z';
  * App HTTP đầy đủ (composition root thật) trên lưu trữ InMemory — dùng cho test tầng route.
  * Hasher giả cho nhanh (argon2 thật có test riêng ở T-013); JWT, cookie, rate limit, policy thật.
  */
-export function createTestApp(overrides: Partial<ContainerConfig> = {}) {
+export function createTestApp(
+  overrides: Partial<ContainerConfig> = {},
+  /** Ghi log ra stream này (mức info) thay vì im lặng — test kiểm nội dung log (T-032). */
+  options: { logDestination?: DestinationStream } = {},
+) {
   applyVietnameseZodLocale();
   const clock = new FakeClock(NOW);
-  const logger = createLogger({ level: 'silent', gitSha: 'test', appEnv: 'test' });
+  const logger = createLogger(
+    { level: options.logDestination ? 'info' : 'silent', gitSha: 'test', appEnv: 'test' },
+    options.logDestination,
+  );
   const persistence = createMemoryPersistence(logger);
   const stores = new Map<string, MemoryStore>();
   const container = createContainer({
