@@ -46,24 +46,20 @@
 
 ## Definition of Done
 
-Rebase lên main `2210d12` (đã có T-023, T-024, bản sửa test web của E). Chạy tuần tự, `--maxWorkers=2`, kiểm exit code:
+Rebase lên main `8d41ff3` (đã có T-023, T-024, T-031, bản sửa test web của E). Chạy tuần tự, `--maxWorkers=2`, kiểm exit code — **lần chạy cuối, tất cả xanh**:
 
 ```text
 $ pnpm typecheck  → exit 0
 $ pnpm lint       → exit 0
+$ pnpm test -- --maxWorkers=2
+                  → exit 0 · Test Files 146 passed · Tests 1519 passed
 $ DATABASE_URL_TEST=…/taskflow_t020 VALKEY_URL_TEST=redis://127.0.0.1:6380/12   pnpm --filter @taskflow/api test:integration -- --maxWorkers=2
                   → exit 0 · Test Files 38 passed · Tests 355 passed
-$ pnpm test -- --maxWorkers=2 (lần chạy đầy đủ cuối cùng)
-                  → exit 0 · Test Files 144 passed · Tests 1479 passed
 ```
 
-**Ghi chú trung thực về `pnpm test`:**
-- Có những lần chạy khác exit 1, **toàn bộ ở `apps/web`** (T-032 không đổi file nào trong `apps/web` / `packages`):
-  - 4 test bị timeout 5000ms, kèm `vitest-pool: Worker forks emitted error` / `Failed to start forks worker` — máy thiếu tài nguyên;
-  - lần cuối: 1 timeout ở `task-drawer.test.tsx`.
-- Các file đó chạy riêng đều xanh.
-- Trước khi rebase lên `2210d12`, `board-perf.test.tsx` cũ timeout ở cả 3 lần chạy đầy đủ — main đã thay nó bằng bản xác định (`8089dc7`).
-- Đã báo Tech Lead / E: timeout 5s của các test web nặng (drawer, board) dễ đỏ khi máy tải cao.
+**X9 + mixin T-031:** `test/http/security-event-context.http.test.ts` (composition thật) — `auth.login_failed` và `member.added` mang `reqId` = `X-Request-Id` của response và `ip` thật sau trust proxy; không có email. `createTestApp` thêm tùy chọn `logDestination` (mặc định vẫn im lặng).
+
+**Ghi chú trung thực:** trước khi rebase lên main có bản sửa test web, có những lần `pnpm test` exit 1 **chỉ ở `apps/web`** (timeout 5000ms / `Worker forks emitted error` khi máy thiếu tài nguyên; T-032 không đổi file nào trong `apps/web` / `packages`). Tech Lead đã giao E xử lý.
 
 ## Việc liên quan người khác
 
