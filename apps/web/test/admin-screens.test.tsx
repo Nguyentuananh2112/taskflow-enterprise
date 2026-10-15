@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
-import { FakeRealtimeHub, seedBoard, type BoardFixture } from '@test/board-harness';
+import { FakeRealtimeHub, openBoard, seedBoard, type BoardFixture } from '@test/board-harness';
 import { startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
@@ -163,6 +163,10 @@ describe('thành viên', () => {
     expect(mock.db.workspaces.member(f.wsId, an.id)?.role).toBe('VIEWER');
 
     await u.selectOptions(screen.getByRole('combobox', { name: 'Vai trò của Trần Lan' }), 'PM');
+    // F8: tự hạ khỏi Chủ sở hữu phải xác nhận.
+    const selfDialog = await screen.findByRole('dialog', { name: /Đổi vai trò của bạn/ });
+    expect(selfDialog.textContent).toMatch(/mất quyền Chủ sở hữu/);
+    await u.click(within(selfDialog).getByRole('button', { name: 'Đổi vai trò' }));
     expect(await screen.findByText('Workspace phải còn ít nhất một Chủ sở hữu')).toBeTruthy();
     expect(mock.db.workspaces.member(f.wsId, f.owner.id)?.role).toBe('OWNER');
   });
@@ -276,5 +280,95 @@ describe('tạo workspace', () => {
     await u.click(screen.getByRole('button', { name: 'Tạo workspace' }));
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/w\/[0-9a-f-]+\/projects$/));
     expect(await screen.findByText('Dự án đầu tiên')).toBeTruthy();
+  });
+});
+
+describe('review B T-034 (F1/F3/F4/F6)', () => {
+  it('F3: slug bị đổi ở tab khác khi dialog đang mở ⇒ báo lỗi, xóa ô nhập, nhãn hiện slug mới', async () => {
+    const f = fresh();
+    f.signInAs(f.owner);
+    openApp(`/w/${f.wsId}/settings`, tabFor(f.owner.id));
+    const u = user();
+    await u.click(await screen.findByRole('button', { name: 'Xóa workspace' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toMatch(/chỉ Chủ sở hữu khôi phục được/);
+    const old = mock.db.workspaces.active(f.wsId)?.slug ?? '';
+    await u.type(within(dialog).getByRole('textbox'), old);
+    act(() => void mock.db.workspaces.update(f.wsId, { slug: 'slug-moi' }));
+    await u.click(within(dialog).getByRole('button', { name: 'Xóa workspace' }));
+    expect(await within(dialog).findByText(/Slug vừa thay đổi/)).toBeTruthy();
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox').value).toBe('');
+    expect(await within(dialog).findByLabelText('Gõ "slug-moi" để xác nhận')).toBeTruthy();
+    expect(mock.db.workspaces.active(f.wsId)).toBeDefined();
+  });
+
+  it('F3: workspace đã bị xóa ở tab khác ⇒ về /w + thông báo', async () => {
+    const f = fresh();
+    f.signInAs(f.owner);
+    openApp(`/w/${f.wsId}/settings`, tabFor(f.owner.id));
+    const u = user();
+    await u.click(await screen.findByRole('button', { name: 'Xóa workspace' }));
+    const dialog = await screen.findByRole('dialog');
+    const slug = mock.db.workspaces.active(f.wsId)?.slug ?? '';
+    await u.type(within(dialog).getByRole('textbox'), slug);
+    act(() => void mock.db.workspaces.softDelete(f.wsId));
+    await u.click(within(dialog).getByRole('button', { name: 'Xóa workspace' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/w'));
+    expect(await screen.findByText('Workspace không còn tồn tại')).toBeTruthy();
+  });
+
+  it('F1: khôi phục bị 429 ⇒ câu rate-limit (không phải "Không thể khôi phục")', async () => {
+    const f = fresh();
+    f.signInAs(f.owner);
+    mock.db.workspaces.softDelete(f.wsId);
+    // Đốt hết hạn mức restore 10/giờ bằng id lạ (404 cũng tính).
+    for (let i = 0; i < 10; i += 1) {
+      await f
+        .apiAs(f.owner, 'POST', `/workspaces/${crypto.randomUUID()}/restore`)
+        .catch(() => null);
+    }
+    openApp('/w', tabFor(f.owner.id));
+    const u = user();
+    await u.click(await screen.findByText(/Đã xóa — khôi phục được \(1\)/));
+    await u.click(await screen.findByRole('button', { name: /^Khôi phục/ }));
+    expect(await screen.findByText(/Bạn thao tác quá nhanh/)).toBeTruthy();
+    expect(screen.queryByText('Không thể khôi phục workspace này')).toBeNull();
+  });
+
+  it('F4: tự rời khi đang được giao task ⇒ toast kèm số task bỏ giao', async () => {
+    const f = fresh();
+    const an = f.addUser('Nguyễn An', 'an@example.com', 'MEMBER');
+    await f.apiAs(f.owner, 'POST', f.tasksPath, { title: 'Việc của An', assigneeId: an.id });
+    f.signInAs(an);
+    openApp(`/w/${f.wsId}/settings/members`, tabFor(an.id));
+    const u = user();
+    await u.click(await screen.findByRole('button', { name: 'Rời Nguyễn An' }));
+    await u.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Rời' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/w'));
+    expect(await screen.findByText('1 task được bỏ giao')).toBeTruthy();
+  });
+
+  it('F6: bị xóa khi đang mở board ⇒ rút khỏi phòng project; join lại ⇒ RESOURCE_NOT_FOUND', async () => {
+    const f = fresh();
+    const an = f.addUser('Nguyễn An', 'an@example.com', 'MEMBER');
+    f.signInAs(an);
+    const tab = tabFor(an.id);
+    openBoard(f.boardUrl, tab);
+    await waitFor(() => expect(tab.rooms.has(f.project.id)).toBe(true));
+    await act(() => f.apiAs(f.owner, 'DELETE', `/workspaces/${f.wsId}/members/${an.id}`));
+    await waitFor(() => expect(window.location.pathname).toBe('/w'));
+    expect(tab.rooms.has(f.project.id)).toBe(false);
+    expect(await tab.joinProject({ workspaceId: f.wsId, projectId: f.project.id })).toEqual({
+      ok: false,
+      code: 'RESOURCE_NOT_FOUND',
+    });
+  });
+
+  it('F6: hub có sổ thành viên nhưng client không có userId ⇒ join bị từ chối', async () => {
+    const f = fresh();
+    const anon = hub.client(getClientId());
+    expect(await anon.joinProject({ workspaceId: f.wsId, projectId: f.project.id })).toMatchObject({
+      ok: false,
+    });
   });
 });

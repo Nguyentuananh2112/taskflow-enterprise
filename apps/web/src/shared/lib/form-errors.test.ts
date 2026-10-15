@@ -15,7 +15,7 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
     const setError = vi.fn<SetFieldError>();
     const details = {
       issues: [
-        { path: ['password'], code: 'custom', message: 'Mật khẩu quá phổ biến' },
+        { path: ['password'], code: 'common_password', message: '<i>server</i>' },
         { path: ['nickname'], code: 'unrecognized_keys', message: 'Trường lạ' },
       ],
     };
@@ -23,9 +23,31 @@ describe('applyServerErrors (frontend.md §7.3)', () => {
       fields: FIELDS,
     });
     expect(setError.mock.calls).toEqual([
-      ['password', { type: 'custom', message: 'Mật khẩu quá phổ biến' }],
-      [ROOT_ERROR, { type: 'server', message: 'Trường lạ' }],
+      [
+        'password',
+        { type: 'common_password', message: 'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.' },
+      ],
+      [ROOT_ERROR, { type: 'server', message: 'Dữ liệu gửi lên có trường không hợp lệ.' }],
     ]);
+  });
+
+  it('VALIDATION_ERROR: câu theo issue.code, KHÔNG nguyên văn issue.message; code lạ ⇒ câu chung (F2)', () => {
+    const setError = vi.fn<SetFieldError>();
+    const details = {
+      issues: [
+        { path: ['email'], code: 'weird_rule', message: 'raw server text' },
+        { path: [], code: 'weird_rule', message: 'raw root 1' },
+        { path: ['x'], code: 'other_rule', message: 'raw root 2' },
+      ],
+    };
+    applyServerErrors(setError, apiError({ code: 'VALIDATION_ERROR', details }), {
+      fields: FIELDS,
+    });
+    expect(setError.mock.calls).toEqual([
+      ['email', { type: 'weird_rule', message: 'Giá trị không hợp lệ.' }],
+      [ROOT_ERROR, { type: 'server', message: 'Giá trị không hợp lệ.' }],
+    ]);
+    expect(JSON.stringify(setError.mock.calls)).not.toMatch(/raw/);
   });
 
   it('mã gắn cố định vào field (EMAIL_ALREADY_EXISTS → email)', () => {

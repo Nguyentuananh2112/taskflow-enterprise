@@ -4,6 +4,7 @@ import type { WorkspaceDto } from '@taskflow/contracts/workspace';
 import { useState } from 'react';
 
 import { isApiError } from '@/shared/api';
+import { serverErrorMessage } from '@/shared/lib/form-errors';
 import { Button } from '@/shared/ui/button';
 import { Dialog, DialogClose } from '@/shared/ui/dialog';
 import { Input } from '@/shared/ui/input';
@@ -12,7 +13,7 @@ import { toast } from '@/shared/ui/toast';
 import { useDeleteWorkspace } from '../model/use-delete-workspace';
 
 const CONSEQUENCE =
-  'Workspace sẽ bị ẩn với mọi thành viên và xóa vĩnh viễn sau 30 ngày. Chủ sở hữu có thể khôi phục trong thời gian này.';
+  'Workspace sẽ biến mất ngay với mọi thành viên và bị xóa vĩnh viễn sau 30 ngày. Trong thời gian này chỉ Chủ sở hữu khôi phục được.';
 
 type Props = Readonly<{ workspace: WorkspaceDto; onDeleted: () => void }>;
 
@@ -28,10 +29,16 @@ export function DeleteWorkspaceSection({ workspace, onDeleted }: Props) {
       toast({ title: `Đã xóa ${workspace.name}`, description: 'Có thể khôi phục trong 30 ngày.' });
       onDeleted();
     } catch (cause) {
+      if (isApiError(cause, 'RESOURCE_NOT_FOUND')) {
+        toast({ title: 'Workspace không còn tồn tại', tone: 'error' });
+        return onDeleted();
+      }
+      const stale = isApiError(cause, 'VALIDATION_ERROR') || isApiError(cause, 'VERSION_CONFLICT');
+      if (stale) setTyped('');
       setError(
-        isApiError(cause, 'VALIDATION_ERROR')
-          ? 'Slug không khớp.'
-          : 'Không xóa được workspace. Thử lại.',
+        stale
+          ? 'Slug vừa thay đổi hoặc không khớp. Gõ lại slug ở trên.'
+          : serverErrorMessage(cause),
       );
     }
   };

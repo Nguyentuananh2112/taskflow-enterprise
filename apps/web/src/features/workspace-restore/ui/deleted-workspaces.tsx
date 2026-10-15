@@ -3,6 +3,8 @@
 import type { DeletedWorkspaceDto } from '@taskflow/contracts/workspace';
 
 import { useDeletedWorkspaces } from '@/entities/workspace';
+import { isApiError } from '@/shared/api';
+import { serverErrorMessage } from '@/shared/lib/form-errors';
 import { Button } from '@/shared/ui/button';
 import { toast } from '@/shared/ui/toast';
 
@@ -21,7 +23,14 @@ export function DeletedWorkspaces() {
   const onRestore = (ws: DeletedWorkspaceDto) =>
     restore.mutate(ws.id, {
       onSuccess: () => toast({ title: `Đã khôi phục ${ws.name}`, tone: 'success' }),
-      onError: () => toast({ title: 'Không thể khôi phục workspace này', tone: 'error' }),
+      // 404 một kiểu (không lộ "hết hạn" hay "không phải OWNER"); lỗi khác (429, mạng…) ⇒ câu theo code.
+      onError: (error) =>
+        toast({
+          title: isApiError(error, 'RESOURCE_NOT_FOUND')
+            ? 'Không thể khôi phục workspace này'
+            : serverErrorMessage(error),
+          tone: 'error',
+        }),
     });
 
   return (

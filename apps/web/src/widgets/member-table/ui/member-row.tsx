@@ -43,7 +43,7 @@ export function MemberRow({ wsId, member, permission, onLeft }: Props) {
       </td>
       <td className="py-2 pr-3">
         {permission.can('member:update-role') ? (
-          <RoleSelect wsId={wsId} member={member} />
+          <RoleSelect wsId={wsId} member={member} isSelf={isSelf} />
         ) : (
           <Badge>{ROLE_LABEL[member.role]}</Badge>
         )}

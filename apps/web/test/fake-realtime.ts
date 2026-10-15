@@ -32,7 +32,9 @@ export class FakeRealtimeHub {
   /** `RESOURCE_NOT_FOUND` như server khi không còn là thành viên / ws xóa / project ∉ ws. */
   canJoin(userId: string | undefined, workspaceId: string, projectId: string): boolean {
     if (this.denyJoin.has(projectId)) return false;
-    if (!this.db || !this.board || userId === undefined) return true;
+    if (!this.db || !this.board) return true;
+    // Có sổ thành viên mà không biết người dùng ⇒ từ chối như gateway (không mở mặc định — B F6).
+    if (userId === undefined) return false;
     return (
       this.db.membershipIn(userId, workspaceId) !== undefined &&
       this.board.getProject(workspaceId, projectId) !== undefined

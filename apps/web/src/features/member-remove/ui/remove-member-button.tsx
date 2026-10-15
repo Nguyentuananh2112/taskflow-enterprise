@@ -29,7 +29,11 @@ export function RemoveMemberButton({ wsId, member, isSelf, onLeft }: Props) {
         context.client.removeQueries({ queryKey: workspaceKeys.root(wsId) });
         void context.client.invalidateQueries({ queryKey: workspaceKeys.list });
         void context.client.invalidateQueries({ queryKey: sessionKeys.me });
-        toast({ title: 'Bạn đã rời workspace', tone: 'success' });
+        toast({
+          title: 'Bạn đã rời workspace',
+          ...(note ? { description: note } : {}),
+          tone: 'success',
+        });
         return onLeft();
       }
       void context.client.invalidateQueries({ queryKey: memberKeys.all(wsId) });

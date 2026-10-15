@@ -55,11 +55,15 @@ export function createAuthHandlers(
       if (body.response) return body.response;
       const { email, password, fullName } = body.data;
       if (COMMON_PASSWORDS.has(password.toLowerCase())) {
-        return ruleViolation('password', 'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.');
+        return ruleViolation(
+          'password',
+          'common_password',
+          'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.',
+        );
       }
       const localPart = email.split('@')[0] ?? '';
       if (localPart.length >= 3 && password.toLowerCase().includes(localPart)) {
-        return ruleViolation('password', 'Mật khẩu không được chứa phần trước @ của email.');
+        return ruleViolation('password', 'contains_email', 'Mật khẩu không được chứa email.');
       }
       if (db.findUserByEmail(email)) return fail(409, 'EMAIL_ALREADY_EXISTS');
       const { user, defaultWorkspaceId } = db.createUser({ email, password, fullName });

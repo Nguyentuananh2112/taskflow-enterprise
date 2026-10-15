@@ -58,8 +58,8 @@ export async function parseBody<S extends z.ZodType>(
 }
 
 /** Lỗi validation do luật ở application (vd mật khẩu phổ biến) — cùng dạng `details.issues`. */
-export function ruleViolation(path: string, message: string) {
-  return fail(400, 'VALIDATION_ERROR', { issues: [{ path: [path], code: 'custom', message }] });
+export function ruleViolation(path: string, code: string, message: string) {
+  return fail(400, 'VALIDATION_ERROR', { issues: [{ path: [path], code, message }] });
 }
 
 /** Cursor opaque (base64url của offset) — đủ cho mock; server thật mã hóa khóa sắp xếp. */

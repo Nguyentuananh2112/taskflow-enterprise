@@ -36,6 +36,8 @@ export function useRealtimeSession(): void {
       void queryClient.invalidateQueries({ queryKey: sessionKeys.me });
       // Bảng thành viên (T-034) hiển thị role của chính mình ⇒ làm mới.
       void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
+      // Picker /w hiển thị role theo workspace (B F9).
+      void queryClient.invalidateQueries({ queryKey: workspaceKeys.list });
       toast({ title: `Vai trò của bạn đã đổi thành ${ROLE_LABEL[role]}` });
     });
     const offRevoked = client.on('workspace:access-revoked', (raw) => {
