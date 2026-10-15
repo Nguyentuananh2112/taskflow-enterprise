@@ -19,6 +19,8 @@ type Props = Readonly<{
   tasks: readonly TaskDto[];
   /** Đang kéo thẻ từ cột `from` mà cột này không hợp lệ ⇒ mờ + ⊘ + không nhận thả. */
   blockedFrom: TaskStatus | null;
+  /** Đích thả hiện tại nằm trong cột này (chính cột hoặc một thẻ của cột) — tô viền vùng thả. */
+  isOver: boolean;
   canDrag: boolean;
   pendingIds: ReadonlySet<string>;
   reducedMotion: boolean;
@@ -52,7 +54,7 @@ function BoardColumnImpl(props: Props) {
       className={cn(
         'flex min-h-48 w-72 shrink-0 flex-col gap-2 rounded-card bg-bg-subtle p-2 transition-opacity',
         blocked && 'opacity-50',
-        isDropTarget && 'ring-2 ring-primary',
+        (isDropTarget || props.isOver) && 'ring-2 ring-primary',
       )}
     >
       <h2 id={headingId} className="flex items-center gap-2 px-1 text-xs font-semibold uppercase">

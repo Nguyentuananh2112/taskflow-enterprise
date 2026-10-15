@@ -83,6 +83,7 @@ export function KanbanBoard({ scope, board, canDrag, onOpen }: Props) {
             status={status}
             tasks={view[status]}
             blockedFrom={allowed && !allowed.includes(status) ? state.from : null}
+            isOver={state.over === status}
             canDrag={canDrag}
             pendingIds={pendingIds}
             reducedMotion={reducedMotion}

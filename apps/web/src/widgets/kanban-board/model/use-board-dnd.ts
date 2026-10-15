@@ -44,7 +44,13 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
     const task = id === undefined ? undefined : latest.current.byId[String(id)];
     if (!task) return;
     const snapshot = toColumnIds(latest.current.columns);
-    drag.current = { activeId: task.id, from: task.status, before: snapshot, preview: snapshot };
+    drag.current = {
+      activeId: task.id,
+      from: task.status,
+      before: snapshot,
+      preview: snapshot,
+      over: null,
+    };
     dispatch({ type: 'start', activeId: task.id, from: task.status, columns: snapshot });
   }, []);
 
@@ -52,7 +58,12 @@ export function useBoardDnd({ columns, byId, onMove }: Options) {
     const { from, preview } = drag.current;
     const to = statusOf(event.operation.target?.data);
     if (from === null || preview === null) return;
-    if (to !== undefined && !allowedTargets(from).includes(to)) {
+    const allowed = to !== undefined && allowedTargets(from).includes(to);
+    if (drag.current.over !== (allowed ? to : null)) {
+      drag.current = { ...drag.current, over: allowed ? to : null };
+      dispatch({ type: 'target', over: allowed ? to : null });
+    }
+    if (to !== undefined && !allowed) {
       event.preventDefault(); // chặn sắp xếp lạc quan mặc định; preview giữ nguyên
       return;
     }
