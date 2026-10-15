@@ -1,12 +1,15 @@
 packages:
   - apps/*
   - packages/*
+  - e2e
 
 # Một nơi duy nhất chốt phiên bản dùng chung (docs/research/stack-versions.md, ADR-060).
 # package.json tham chiếu bằng "catalog:". Pin chính xác, không dùng ^/~.
 catalog:
   '@eslint/js': 10.0.1
   '@next/eslint-plugin-next': 16.4.1
+  # T-026: 1.64.1 (2026-10-14) chưa qua minimumReleaseAge 24h lúc chọn ⇒ 1.64.0 (2026-10-07).
+  '@playwright/test': 1.64.0
   '@node-rs/argon2': 2.2.2
   '@prisma/adapter-pg': 7.10.0
   '@stryker-mutator/core': 10.0.0

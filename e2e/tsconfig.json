@@ -1,0 +1,9 @@
+{
+  "extends": "@taskflow/config/tsconfig/node.json",
+  "compilerOptions": {
+    // Hàm trong page.evaluate / addInitScript chạy trong trình duyệt ⇒ cần kiểu DOM.
+    "lib": ["es2024", "dom", "dom.iterable"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "playwright-report", "test-results"]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@taskflow/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@taskflow/config": "workspace:*",
+    "@types/node": "catalog:",
+    "redis": "catalog:",
+    "typescript": "catalog:"
+  }
+}
