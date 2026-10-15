@@ -1,11 +1,13 @@
 import {
   ApiError as ApiErrorEnvelope,
+  ApiErrorBody,
+  ErrorCode,
   apiSuccess,
   type PageMeta,
 } from '@taskflow/contracts/common';
-import type * as z from 'zod';
+import * as z from 'zod';
 
-import { ApiError, CLIENT_ERROR_CODES } from './api-error';
+import { ApiError, CLIENT_ERROR_CODES, isApiError } from './api-error';
 import { createSingleFlight } from './single-flight';
 
 // Fetch wrapper duy nhất của web (ADR-060: không axios; frontend.md §3.3). Nơi duy nhất được gọi fetch.
@@ -26,6 +28,14 @@ export type HttpDeps = Readonly<{
   fetch?: typeof fetch;
   auth?: AuthHooks;
 }>;
+
+/**
+ * Envelope lỗi của contracts nhưng `code` là string bất kỳ (ADR-102): vỏ vẫn parse chặt, chỉ nới
+ * enum mã lỗi để web cũ không hỏng khi API mới thêm mã.
+ */
+const ErrorEnvelopeAnyCode = ApiErrorEnvelope.extend({
+  error: ApiErrorBody.extend({ code: z.string().min(1) }),
+});
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type Query = Readonly<Record<string, string | number | boolean | null | undefined>>;
@@ -105,11 +115,19 @@ export function createHttpClient(deps: HttpDeps) {
     const isFailure =
       typeof body === 'object' && body !== null && 'success' in body && body.success === false;
     if (isFailure) {
-      const failure = ApiErrorEnvelope.safeParse(body);
+      const failure = ErrorEnvelopeAnyCode.safeParse(body);
       if (!failure.success) throw bad(failure.error);
       const { code, message, details } = failure.data.error;
       const requestId = failure.data.meta.requestId;
-      throw new ApiError({ status: response.status, code, message, details, requestId });
+      const known = ErrorCode.safeParse(code);
+      throw new ApiError({
+        status: response.status,
+        code: known.success ? known.data : CLIENT_ERROR_CODES.unknown,
+        message,
+        details,
+        requestId,
+        ...(known.success ? {} : { serverCode: code }),
+      });
     }
     const success = apiSuccess(schema).safeParse(body);
     if (!success.success) throw bad(success.error);
@@ -123,8 +141,22 @@ export function createHttpClient(deps: HttpDeps) {
   async function renewed(sentToken: string | null): Promise<boolean> {
     const current = deps.auth?.getAccessToken() ?? null;
     if (current !== null && current !== sentToken) return true;
-    return (await refresh?.run().catch(() => false)) ?? false;
+    return (await refresh?.run()) ?? false;
   }
+
+  /**
+   * Refresh ném lỗi (mạng, 5xx) ⇒ KHÔNG kết thúc phiên (frontend.md §3.3: lỗi mạng không đẩy về
+   * /login) — trả lỗi mạng cho request này, phiên vẫn giữ để thử lại sau.
+   */
+  const refreshUnavailable = (cause: unknown) =>
+    isApiError(cause)
+      ? cause
+      : new ApiError({
+          status: 0,
+          code: CLIENT_ERROR_CODES.network,
+          message: 'Không kết nối được máy chủ.',
+          cause,
+        });
 
   async function request<S extends z.ZodType>(
     method: Method,
@@ -139,7 +171,12 @@ export function createHttpClient(deps: HttpDeps) {
       if (!(error instanceof ApiError) || !deps.auth || !refresh) throw error;
       // Chỉ TOKEN_EXPIRED mới tự refresh (security.md §2.5) — và chỉ thử lại 1 lần.
       if (error.code === 'TOKEN_EXPIRED') {
-        if (!retried && (await renewed(sentToken))) return request(method, path, opts, true);
+        if (!retried) {
+          const ok = await renewed(sentToken).catch((cause: unknown) => {
+            throw refreshUnavailable(cause);
+          });
+          if (ok) return request(method, path, opts, true);
+        }
         deps.auth.onSessionEnded('expired');
       } else if (error.code === 'UNAUTHORIZED' && sentToken !== null) {
         // tv lệch / sid bị thu hồi (security.md §2.5): token không còn giá trị, không refresh.

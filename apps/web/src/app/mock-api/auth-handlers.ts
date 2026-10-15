@@ -1,0 +1,155 @@
+import {
+  AuthTokenDto,
+  ChangePasswordBody,
+  LoginBody,
+  LoginResponse,
+  MeResponse,
+  RegisterBody,
+  RegisterResponse,
+  UpdateMeBody,
+  UserDto,
+} from '@taskflow/contracts/auth';
+import { http, type HttpHandler } from 'msw';
+
+import type { MockDb } from './mock-db';
+import { fail, noContent, ok, parseBody, ruleViolation } from './respond';
+
+// Handler /auth/* của mock API — hành vi theo data-and-api.md §2.4 và security.md §1, §2.3, §6.4–6.5.
+
+const COOKIE = 'tf_rt';
+/** Mẫu nhỏ của danh sách mật khẩu phổ biến (server thật dùng file ~10k mục — security.md §6.5). */
+const COMMON_PASSWORDS = new Set(['password1234', '123456789012', 'qwertyuiop12', 'matkhau12345']);
+const LOGIN_FAILURE_LIMIT = 5;
+
+const readCookie = (request: Request): string | undefined =>
+  request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((part) => part.trim().split('='))
+    .find(([name]) => name === COOKIE)?.[1];
+
+/** `basePath` = pathname của API_URL (vd `/api/v1`) — cookie chỉ gửi cho `${basePath}/auth`. */
+const cookieHeader = (basePath: string, token: string | null) =>
+  `${COOKIE}=${token ?? ''}; Path=${basePath}/auth; HttpOnly; SameSite=Strict; Max-Age=${token ? 30 * 86_400 : 0}`;
+
+export function createAuthHandlers(baseUrl: string, db: MockDb): HttpHandler[] {
+  const url = (path: string) => `${baseUrl}${path}`;
+  const basePath = new URL(baseUrl).pathname;
+  const setCookie = (token: string | null) => ({ 'Set-Cookie': cookieHeader(basePath, token) });
+  const loginFailures = new Map<string, number>();
+
+  /** Bearer ⇒ user, hoặc response lỗi 401 đúng mã (TOKEN_EXPIRED chỉ khi token hết hạn). */
+  const authenticate = (request: Request) => {
+    const token = request.headers.get('authorization')?.replace(/^Bearer /, '');
+    const result = token ? db.verifyAccess(token) : { status: 'invalid' as const };
+    if (result.status === 'ok') return { user: result.user };
+    return {
+      response:
+        result.status === 'expired' ? fail(401, 'TOKEN_EXPIRED') : fail(401, 'UNAUTHORIZED'),
+    };
+  };
+
+  return [
+    http.post(url('/auth/register'), async ({ request }) => {
+      const body = await parseBody(request, RegisterBody);
+      if (body.response) return body.response;
+      const { email, password, fullName } = body.data;
+      if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+        return ruleViolation('password', 'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.');
+      }
+      const localPart = email.split('@')[0] ?? '';
+      if (localPart.length >= 3 && password.toLowerCase().includes(localPart)) {
+        return ruleViolation('password', 'Mật khẩu không được chứa phần trước @ của email.');
+      }
+      if (db.findUserByEmail(email)) return fail(409, 'EMAIL_ALREADY_EXISTS');
+      const { user, defaultWorkspaceId } = db.createUser({ email, password, fullName });
+      const tokens = db.issueAccess(user);
+      return ok(
+        RegisterResponse,
+        { ...tokens, user: UserDto.parse(user), defaultWorkspaceId },
+        { status: 201, headers: setCookie(db.issueRefresh(user.id)) },
+      );
+    }),
+
+    http.post(url('/auth/login'), async ({ request }) => {
+      const body = await parseBody(request, LoginBody);
+      if (body.response) return body.response;
+      const { email, password } = body.data;
+      const failures = loginFailures.get(email) ?? 0;
+      if (failures >= LOGIN_FAILURE_LIMIT) {
+        return fail(
+          429,
+          'RATE_LIMITED',
+          { retryAfterSec: 60 },
+          { headers: { 'Retry-After': '60' } },
+        );
+      }
+      const user = db.findUserByEmail(email);
+      if (!user || user.password !== password) {
+        loginFailures.set(email, failures + 1);
+        return fail(401, 'INVALID_CREDENTIALS');
+      }
+      loginFailures.delete(email);
+      return ok(
+        LoginResponse,
+        { ...db.issueAccess(user), user: UserDto.parse(user) },
+        { headers: setCookie(db.issueRefresh(user.id)) },
+      );
+    }),
+
+    http.post(url('/auth/refresh'), ({ request }) => {
+      const result = db.rotateRefresh(readCookie(request));
+      if (result.status === 'in-progress') return fail(409, 'REFRESH_IN_PROGRESS');
+      const user = result.status === 'ok' ? db.getUser(result.userId) : undefined;
+      if (result.status !== 'ok' || !user) {
+        return fail(401, 'REFRESH_TOKEN_INVALID', null, { headers: setCookie(null) });
+      }
+      return ok(AuthTokenDto, db.issueAccess(user), { headers: setCookie(result.refreshToken) });
+    }),
+
+    http.post(url('/auth/logout'), ({ request }) => {
+      db.revokeRefresh(readCookie(request));
+      return noContent({ headers: setCookie(null) });
+    }),
+
+    http.post(url('/auth/logout-all'), ({ request }) => {
+      const auth = authenticate(request);
+      if (auth.response) return auth.response;
+      db.revokeAllSessions(auth.user.id, 'LOGOUT_ALL');
+      return noContent({ headers: setCookie(null) });
+    }),
+
+    http.get(url('/auth/me'), ({ request }) => {
+      const auth = authenticate(request);
+      if (auth.response) return auth.response;
+      return ok(MeResponse, {
+        user: UserDto.parse(auth.user),
+        memberships: db.membershipsOf(auth.user.id),
+      });
+    }),
+
+    http.patch(url('/auth/me'), async ({ request }) => {
+      const auth = authenticate(request);
+      if (auth.response) return auth.response;
+      const body = await parseBody(request, UpdateMeBody);
+      if (body.response) return body.response;
+      auth.user.fullName = body.data.fullName;
+      return ok(UserDto, UserDto.parse(auth.user));
+    }),
+
+    http.post(url('/auth/change-password'), async ({ request }) => {
+      const auth = authenticate(request);
+      if (auth.response) return auth.response;
+      const body = await parseBody(request, ChangePasswordBody);
+      if (body.response) return body.response;
+      if (body.data.currentPassword !== auth.user.password) {
+        return fail(400, 'INVALID_CURRENT_PASSWORD');
+      }
+      auth.user.password = body.data.newPassword;
+      db.revokeAllSessions(auth.user.id, 'PASSWORD_CHANGED');
+      return ok(AuthTokenDto, db.issueAccess(auth.user), {
+        headers: setCookie(db.issueRefresh(auth.user.id)),
+      });
+    }),
+  ];
+}

@@ -1,5 +1,5 @@
 export { ApiError, CLIENT_ERROR_CODES, isApiError, type ApiErrorCode } from './api-error';
-export { http, setAuthHooks } from './client';
+export { cookieHttp, http, setAuthHooks } from './client';
 export {
   createHttpClient,
   type ApiResult,

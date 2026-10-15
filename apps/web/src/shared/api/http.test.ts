@@ -134,6 +134,24 @@ describe('http — lỗi có kiểu', () => {
     });
   });
 
+  it('error.code lạ (API mới hơn web — ADR-102) ⇒ UNKNOWN_ERROR, giữ status/message/requestId', async () => {
+    const { http } = setup([fail(422, 'SOMETHING_NEW')]);
+    const error = await http.get('/x', { schema: Item }).catch((e: unknown) => e);
+    expect(isApiError(error, CLIENT_ERROR_CODES.unknown)).toBe(true);
+    expect(error).toMatchObject({
+      status: 422,
+      message: 'msg SOMETHING_NEW',
+      requestId: 'req-e',
+      serverCode: 'SOMETHING_NEW',
+    });
+  });
+
+  it('error.code đã biết ⇒ giữ nguyên code, không có serverCode', async () => {
+    const { http } = setup([fail(409, 'VERSION_CONFLICT')]);
+    const error = await http.get('/x', { schema: Item }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'VERSION_CONFLICT', serverCode: undefined });
+  });
+
   it('fetch ném lỗi ⇒ NETWORK_ERROR, status 0', async () => {
     const { http } = setup([
       () => {
@@ -159,7 +177,12 @@ describe('http — lỗi có kiểu', () => {
     ['không phải JSON (502 HTML từ proxy)', new Response('<html>502</html>', { status: 502 })],
     ['JSON nhưng sai envelope', new Response('{"foo":1}', { status: 200 })],
     ['data không khớp schema contracts', ok({ id: 123 })],
-    ['error.code lạ (không có trong ErrorCode của contracts)', fail(400, 'SOMETHING_NEW')],
+    [
+      'envelope lỗi thiếu meta',
+      new Response('{"success":false,"error":{"code":"X","message":"m","details":null}}', {
+        status: 400,
+      }),
+    ],
     ['envelope thành công thiếu meta.requestId', ok({ id: 'a' }, { requestId: '' })],
   ])('%s ⇒ BAD_RESPONSE', async (_label, response) => {
     const { http } = setup([response]);
@@ -208,13 +231,14 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     expect(auth.onSessionEnded).toHaveBeenCalledWith('expired');
   });
 
-  it('refresh ném lỗi (mạng) ⇒ xử lý như thất bại, không treo', async () => {
-    const auth = fakeAuth({ refresh: vi.fn(() => Promise.reject(new Error('offline'))) });
+  it('refresh ném lỗi (mạng) ⇒ NETWORK_ERROR, KHÔNG kết thúc phiên, không treo', async () => {
+    const auth = fakeAuth({ refresh: vi.fn(() => Promise.reject(new TypeError('offline'))) });
     const { http } = setup([fail(401, 'TOKEN_EXPIRED')], auth);
     await expect(http.get('/me', { schema: Item })).rejects.toMatchObject({
-      code: 'TOKEN_EXPIRED',
+      code: CLIENT_ERROR_CODES.network,
+      status: 0,
     });
-    expect(auth.onSessionEnded).toHaveBeenCalledWith('expired');
+    expect(auth.onSessionEnded).not.toHaveBeenCalled();
   });
 
   it('UNAUTHORIZED (tv lệch / sid thu hồi) ⇒ KHÔNG refresh, kết thúc phiên "revoked"', async () => {
