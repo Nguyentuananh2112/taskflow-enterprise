@@ -613,6 +613,8 @@ Mỗi test tự đăng ký user/workspace mới qua API, không dùng chung user
 ---
 
 ## 9. Checklist go-live (Phase 5)
+> Checklist **chung** (mạng, dữ liệu, vận hành). Phần bảo mật đi sâu — cách kiểm từng mục và bằng chứng cần lưu — ở `docs/runbook/security-go-live.md` (Engineer B); khi hai tài liệu lệch nhau, runbook bảo mật và `security.md` đúng hơn.
+
 Mỗi mục phải có người ký xác nhận và bằng chứng (link log/ảnh/run CI) trong `docs/ops/go-live.md`.
 
 **Mạng & HTTPS**
@@ -624,7 +626,7 @@ Mỗi mục phải có người ký xác nhận và bằng chứng (link log/ả
 **Bảo mật ứng dụng**
 5. ☐ Cookie refresh ở staging/prod (ADR-109, ghi đè ADR-024): `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/`, **không** có `Domain` (SEC-34 trên staging). Dev giữ `tf_rt; Path=/api/v1/auth`.
 6. ☐ `CORS_ORIGINS` chỉ chứa `https://app.<domain>` (SEC-30).
-7. ☐ Rate limit bật, dùng Valkey store. Login sai 6 lần → 429 (SEC-28). Tắt Valkey → login/register fail-closed.
+7. ☐ Rate limit bật, dùng Valkey store. Login theo ADR-108: chỉ đếm `401 INVALID_CREDENTIALS`, bucket (IP, emailHash) 10 lần/15 phút + theo email 100/giờ ⇒ vượt thì 429 + `Retry-After` (SEC-28). Tắt Valkey → login/register fail-closed. Cách kiểm chi tiết: `docs/runbook/security-go-live.md`.
 8. ☐ helmet header có mặt; CSP của web dùng nonce, không có `unsafe-inline`.
 9. ☐ Toàn bộ SEC-01…55, test IDOR và 2 test-spec (ADR-090) xanh trên commit sẽ deploy.
 10. ☐ ZAP baseline scan staging: không có cảnh báo High.
