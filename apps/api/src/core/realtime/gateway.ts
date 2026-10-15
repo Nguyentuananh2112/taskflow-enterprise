@@ -11,6 +11,7 @@ import {
   createEnvelope,
   rooms,
   type ClientToServerEvents,
+  type InterServerEvents,
   type ServerToClientEvents,
   type SocketData,
 } from './events';
@@ -20,8 +21,13 @@ import type {
   RealtimeEventMeta,
   WorkspaceRole,
 } from './ports';
-import { AUTH_RENEW_LIMIT } from '../http/rate-limit/rules';
+import {
+  AUTH_RENEW_LIMIT,
+  MAX_SOCKETS_PER_USER,
+  PROJECT_JOIN_LIMIT_PER_USER,
+} from '../http/rate-limit/rules';
 import { SlidingWindow } from '../http/rate-limit/sliding-window';
+import { joinPersonalRooms, leaveWorkspaceRoomsLocal, localSocketCount } from './local-rooms';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
 export interface RealtimeGatewayOptions {
@@ -56,14 +62,10 @@ export function clientIp(req: IncomingMessage, trustProxyHops: number): string {
  * Hiện thực `IAuthRealtimeNotifier` (auth) và port realtime của Workspace (T-015) theo cấu trúc.
  */
 export class RealtimeGateway {
-  readonly io: Server<
-    ClientToServerEvents,
-    ServerToClientEvents,
-    Record<string, never>,
-    SocketData
-  >;
+  readonly io: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
   readonly #renewsByUser = new SlidingWindow(AUTH_RENEW_LIMIT.user);
+  readonly #joinsByUser = new SlidingWindow(PROJECT_JOIN_LIMIT_PER_USER);
 
   constructor(
     httpServer: HttpServer,
@@ -90,6 +92,9 @@ export class RealtimeGateway {
     });
     this.io.use((socket, next) => void this.#authenticate(socket, next));
     this.io.on('connection', (socket) => this.#onConnection(socket));
+    this.io.on('workspace:leave-rooms', (input) =>
+      leaveWorkspaceRoomsLocal(this.io.of('/'), input),
+    );
   }
 
   async #authenticate(socket: AppSocket, next: (err?: Error) => void): Promise<void> {
@@ -97,6 +102,12 @@ export class RealtimeGateway {
     try {
       if (typeof auth.token !== 'string' || !auth.token) throw new Error('missing token');
       const principal = await this.o.authenticator.authenticate(auth.token);
+      // Review B M2: chặn một user mở hàng loạt socket (mỗi socket có hạn mức join/renew riêng) làm
+      // cạn pool DB dùng chung. Đếm LOCAL theo phòng user — handshake song song có thể lọt vài socket.
+      if (localSocketCount(this.io.of('/'), rooms.user(principal.userId)) >= MAX_SOCKETS_PER_USER) {
+        this.o.logger.warn({ userId: principal.userId }, 'realtime.socket_cap_reached');
+        return next(Object.assign(new Error('RATE_LIMITED'), { data: { code: 'RATE_LIMITED' } }));
+      }
       socket.data = { ...principal, clientId: ClientId.parse(auth.clientId), joined: new Map() };
       next();
     } catch (err) {
@@ -112,8 +123,14 @@ export class RealtimeGateway {
   }
 
   #onConnection(socket: AppSocket): void {
-    void socket.join([rooms.user(socket.data.userId), rooms.session(socket.data.sid)]);
-    registerSocketHandlers(socket, { ...this.o, renewsByUser: this.#renewsByUser });
+    // Đăng ký handler ĐỒNG BỘ (event client gửi ngay sau connect không bị rơi); `project:join` chờ
+    // `verified` nên không vào được phòng nào trước khi phiên được xác thực lại.
+    registerSocketHandlers(socket, {
+      ...this.o,
+      renewsByUser: this.#renewsByUser,
+      joinsByUser: this.#joinsByUser,
+      verified: joinPersonalRooms(socket, this.o),
+    });
   }
 
   // ---------- IAuthRealtimeNotifier (security §5.4) ----------
@@ -138,6 +155,7 @@ export class RealtimeGateway {
   ): Promise<void> {
     const { userId, workspaceId, projectIds } = input;
     this.#leave(rooms.user(userId), projectIds.map(rooms.project));
+    this.#leaveWorkspaceRooms({ workspaceId, userId });
     this.#emit(rooms.user(userId), 'workspace:access-revoked', { workspaceId }, meta);
     return Promise.resolve();
   }
@@ -162,6 +180,7 @@ export class RealtimeGateway {
     }
     const projectRooms = projectIds.map(rooms.project);
     if (projectRooms.length) this.#leave(projectRooms, projectRooms);
+    this.#leaveWorkspaceRooms({ workspaceId, userId: null });
     return Promise.resolve();
   }
 
@@ -184,6 +203,20 @@ export class RealtimeGateway {
   #disconnect(room: string): void {
     this.io.local.in(room).disconnectSockets(true);
     this.io.in(room).disconnectSockets(true);
+  }
+
+  /** Review B G1: rời phòng theo `data.joined` — LOCAL trước (T-028 H3), rồi báo instance khác. */
+  #leaveWorkspaceRooms(input: { workspaceId: string; userId: string | null }): void {
+    leaveWorkspaceRoomsLocal(this.io.of('/'), input);
+    if (!this.o.adapter) return; // adapter bộ nhớ: chỉ một instance, serverSideEmit không hỗ trợ
+    try {
+      this.io.serverSideEmit('workspace:leave-rooms', input);
+    } catch (err) {
+      this.o.logger.error(
+        { err, workspaceId: input.workspaceId },
+        'realtime.leave_rooms_broadcast_failed',
+      );
+    }
   }
 
   #leave(from: string | string[], leave: string[]): void {

@@ -20,11 +20,21 @@ export class FakeSocketAuthenticator implements ISocketAuthenticator {
   ttlMs = 15 * 60_000;
   readonly errors = new Map<string, Error>();
   readonly calls: string[] = [];
+  /**
+   * Chạy trước khi trả kết quả lần gọi thứ `call` (đếm từ 1, mọi token) — mô phỏng thu hồi phiên
+   * commit giữa hai lần xác thực (vd đặt `errors` rồi mới trả), hoặc giữ lần gọi treo.
+   */
+  before: ((token: string, call: number) => Promise<void> | void) | undefined;
 
   constructor(private readonly clock: { now(): Date }) {}
 
   authenticate(token: string): Promise<SocketPrincipal> {
     this.calls.push(token);
+    if (!this.before) return this.#resolve(token);
+    return Promise.resolve(this.before(token, this.calls.length)).then(() => this.#resolve(token));
+  }
+
+  #resolve(token: string): Promise<SocketPrincipal> {
     const error = this.errors.get(token);
     if (error) return Promise.reject(error);
     const [kind, userId, sid] = token.split(':');

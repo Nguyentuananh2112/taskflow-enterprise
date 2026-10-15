@@ -31,6 +31,15 @@ export interface ClientToServerEvents {
 
 export type ServerToClientEvents = Record<string, (event: RealtimeEnvelope) => void>;
 
+/**
+ * Server ↔ server (`serverSideEmit` qua redis-adapter) — không bao giờ tới client. Rời phòng project
+ * theo workspace dựa trên `data.joined` của từng socket (review B G1: `projectIds` là ảnh chụp trong
+ * tx ⇒ thiếu project tạo/join song song). `userId: null` ⇒ mọi socket (workspace bị xóa).
+ */
+export interface InterServerEvents {
+  'workspace:leave-rooms': (input: { workspaceId: string; userId: string | null }) => void;
+}
+
 export interface SocketData {
   userId: string;
   sid: string;
