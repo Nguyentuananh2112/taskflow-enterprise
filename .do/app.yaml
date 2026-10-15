@@ -150,5 +150,6 @@ services:
       - { key: APP_ENV, value: production, scope: RUN_TIME }
       - { key: API_URL, value: 'https://api.example.com/api/v1', scope: RUN_TIME }
       - { key: WS_URL, value: 'https://api.example.com', scope: RUN_TIME }
+      - { key: TRUST_PROXY_HOPS, value: '1', scope: RUN_TIME } # tunnel Sentry /monitoring (server-env.ts) — ĐO lại
       - { key: SENTRY_DSN, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
       - { key: GIT_SHA, value: __GIT_SHA__, scope: RUN_TIME }

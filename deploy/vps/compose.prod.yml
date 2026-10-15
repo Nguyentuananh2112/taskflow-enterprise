@@ -45,6 +45,7 @@ services:
       APP_ENV: production
       API_URL: https://${API_DOMAIN}/api/v1
       WS_URL: https://${API_DOMAIN}
+      TRUST_PROXY_HOPS: 1 # sau đúng 1 proxy (Caddy) — hạn mức tunnel Sentry /monitoring
       SENTRY_DSN: ${WEB_SENTRY_DSN:-}
       GIT_SHA: ${GIT_SHA:?}
     stop_grace_period: 30s
@@ -76,6 +77,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+      start_period: 120s # lần khởi tạo cluster đầu tiên (initdb + init script) có thể chậm trên đĩa yếu
     stop_grace_period: 60s
 
   valkey:
