@@ -4,6 +4,8 @@ import { useMe } from '@/entities/session';
 import { LogoutAllSection } from '@/features/auth-logout';
 import { ChangePasswordForm } from '@/features/change-password';
 import { ProfileForm } from '@/features/profile-edit';
+import { Button } from '@/shared/ui/button';
+import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
 const CARD = 'flex flex-col gap-4 rounded-card border border-border bg-surface p-6 shadow-card';
@@ -18,9 +20,15 @@ export function AccountPage() {
         <h2 id="profile-heading" className="text-base font-semibold">
           Hồ sơ
         </h2>
-        {me.data ? (
-          <ProfileForm user={me.data.user} />
-        ) : (
+        {me.data && <ProfileForm user={me.data.user} />}
+        {/* Lỗi tải (mạng/5xx) ⇒ báo + Thử lại thay vì skeleton mãi (frontend.md §1.2, E3). */}
+        {!me.data && me.isError && (
+          <EmptyState
+            title="Không tải được hồ sơ"
+            action={<Button onClick={() => void me.refetch()}>Thử lại</Button>}
+          />
+        )}
+        {!me.data && !me.isError && (
           <div role="status" aria-busy="true" aria-label="Đang tải hồ sơ" className="grid gap-3">
             <Skeleton className="h-10" />
             <Skeleton className="h-10" />

@@ -7,6 +7,7 @@ import { testRouter } from '@test/navigation';
 import { AppShell } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import type { RealtimeClient } from '@/shared/socket';
+import { AccountPage } from '@/views/account';
 import { BoardPage } from '@/views/board';
 import { MembersPage } from '@/views/members';
 import { ProjectListPage } from '@/views/project-list';
@@ -19,6 +20,7 @@ import { WorkspaceSettingsPage } from '@/views/workspace-settings';
 // Dùng: vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock)
 
 const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
+  [/^\/account$/, () => <AccountPage />],
   [/^\/w$/, () => <WorkspacePickerPage />],
   [/^\/w\/new$/, () => <WorkspaceNewPage />],
   [/^\/w\/[^/]+\/projects$/, () => <ProjectListPage />],
