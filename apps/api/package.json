@@ -4,11 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false --env-file-if-exists=.env src/main.ts",
-    "build": "tsdown",
+    "build": "prisma generate --no-hints && tsdown",
     "start": "node dist/main.js",
     "typecheck": "prisma generate --no-hints && tsc --noEmit",
     "lint:deps": "depcruise src --config .dependency-cruiser.cjs",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --maxWorkers=4",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

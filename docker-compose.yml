@@ -38,13 +38,17 @@ services:
       - pgdata:/var/lib/postgresql
 
   # DB cho integration test: dữ liệu trong RAM, tắt fsync (chỉ dùng cho test — devops.md §8.3).
-  # DB "taskflow_template" do migrator sở hữu; test harness migrate vào đây rồi
-  # CREATE DATABASE taskflow_w<N> TEMPLATE taskflow_template cho từng worker Vitest (ADR-074).
+  # - "taskflow_template": migrate vào đây (user migrator); suite bảo mật clone `CREATE DATABASE … TEMPLATE`
+  #   cho mỗi lần chạy (ADR-074). KHÔNG chạy integration vào DB này.
+  # - "taskflow_it": cho `test:integration` (harness xóa + dựng lại schema public) — T-022.
   postgres-test:
     <<: *postgres
     environment:
       <<: *postgres-env
       POSTGRES_DB: taskflow_template
+      # DB riêng cho integration test (harness xóa + dựng lại schema public ⇒ không dùng chung template
+      # mà suite bảo mật clone cho user app — T-022).
+      TASKFLOW_EXTRA_DBS: taskflow_it
     command:
       - postgres
       - -c
