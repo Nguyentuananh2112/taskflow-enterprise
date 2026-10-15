@@ -19,8 +19,9 @@ import { LruSet } from '@/shared/lib/lru-set';
 import { createQueryClient } from '@/shared/query';
 import { KanbanBoard } from '@/widgets/kanban-board';
 
-// Ngân sách §4.7: board 500 task; merge 1 event < 4ms. jsdom chậm hơn trình duyệt thật và không có
-// layout ⇒ số ở đây là CẬN TRÊN cho phần JS/React; số trên Chrome thật ghi trong báo cáo T-025.
+// Đo ms theo ngân sách §4.7 (board 500 task; merge 1 event < 4ms). CHẠY RIÊNG: `pnpm --filter
+// @taskflow/web test:perf` — không nằm trong `pnpm test` vì ngưỡng tuyệt đối phụ thuộc tốc độ máy.
+// jsdom chậm hơn trình duyệt thật và không có layout ⇒ số ở đây là CẬN TRÊN cho phần JS/React.
 
 const STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const scope = { wsId: WS_ID, projectId: PROJECT_ID };
