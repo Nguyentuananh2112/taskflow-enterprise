@@ -151,13 +151,99 @@ describe('createRateLimit', () => {
 });
 
 describe('createGlobalRateLimit & helpers', () => {
-  it('chỉ giới hạn request chưa xác thực (có Authorization ⇒ để rule theo user sau authenticate)', async () => {
-    const app = appWith([createGlobalRateLimit(rule({ limit: 1 }), deps())]);
-    expect((await request(app).post('/t').send({})).status).toBe(200);
-    expect((await request(app).post('/t').send({})).status).toBe(429);
-    expect((await request(app).post('/t').set('Authorization', 'Bearer x').send({})).status).toBe(
-      200,
+  /** App mô phỏng `authenticate`: `Bearer good` ⇒ 200, token khác ⇒ 401; không token ⇒ 200 (public). */
+  function guardedApp(
+    limits: { anonymous?: number; bearerIp?: number; authFailure?: number } = {},
+  ) {
+    const app = express();
+    app.set('trust proxy', 1);
+    app.use(
+      ...createGlobalRateLimit(deps(), {
+        anonymous: rule({ id: 'anon', limit: limits.anonymous ?? 100 }),
+        bearerIp: rule({ id: 'bearer', limit: limits.bearerIp ?? 1000 }),
+        authFailure: rule({
+          id: 'auth-fail',
+          limit: limits.authFailure ?? 30,
+          countOnlyStatuses: [401],
+        }),
+      }),
     );
+    app.get('/r', (req, res) => {
+      const auth = req.headers.authorization;
+      res.sendStatus(auth === undefined || auth === 'Bearer good' ? 200 : 401);
+    });
+    app.get('/forbidden', (_req, res) => {
+      res.sendStatus(403);
+    });
+    app.use(
+      globalErrorHandler({
+        responder: new HttpResponder(new FakeClock()),
+        logger: new SpyLogger(),
+        exposeInternalErrors: false,
+      }),
+    );
+    return app;
+  }
+
+  it('không có token: 100/phút/IP', async () => {
+    const app = guardedApp({ anonymous: 2 });
+    expect((await request(app).get('/r')).status).toBe(200);
+    expect((await request(app).get('/r')).status).toBe(200);
+    expect((await request(app).get('/r')).status).toBe(429);
+  });
+
+  it('review T-016: "Authorization: Bearer garbage" KHÔNG né được giới hạn IP — sau 30 lần 401 ⇒ 429', async () => {
+    const app = guardedApp({ authFailure: 3 });
+    for (let i = 0; i < 3; i++) {
+      expect((await request(app).get('/r').set('Authorization', 'Bearer garbage')).status).toBe(
+        401,
+      );
+    }
+    const blocked = await request(app).get('/r').set('Authorization', 'Bearer garbage');
+    expect(blocked.status).toBe(429);
+    expect(errorOf(blocked).code).toBe('RATE_LIMITED');
+    // IP đã bị chặn cho mọi request có token trong cửa sổ (kẻ tấn công không xoay token để né).
+    expect((await request(app).get('/r').set('Authorization', 'Bearer other-garbage')).status).toBe(
+      429,
+    );
+    // IP khác không bị ảnh hưởng.
+    expect(
+      (
+        await request(app)
+          .get('/r')
+          .set('X-Forwarded-For', '198.51.100.9')
+          .set('Authorization', 'Bearer good')
+      ).status,
+    ).toBe(200);
+  });
+
+  it('bucket 401 chỉ đếm 401 — token hợp lệ (200) và lỗi khác (403) không bị tính', async () => {
+    const app = guardedApp({ authFailure: 2 });
+    for (let i = 0; i < 5; i++) {
+      expect((await request(app).get('/r').set('Authorization', 'Bearer good')).status).toBe(200);
+      expect(
+        (await request(app).get('/forbidden').set('Authorization', 'Bearer good')).status,
+      ).toBe(403);
+    }
+  });
+
+  it('có token: trần thô theo IP (1000/phút) vẫn áp dụng cho token hợp lệ', async () => {
+    const app = guardedApp({ bearerIp: 2 });
+    expect((await request(app).get('/r').set('Authorization', 'Bearer good')).status).toBe(200);
+    expect((await request(app).get('/r').set('Authorization', 'Bearer good')).status).toBe(200);
+    expect((await request(app).get('/r').set('Authorization', 'Bearer good')).status).toBe(429);
+    // bucket không-token tách riêng
+    expect((await request(app).get('/r')).status).toBe(200);
+  });
+
+  it('bảng mặc định: 100 / 1000 / 30 lần 401 mỗi phút theo IP', () => {
+    expect([
+      RATE_LIMIT_RULES.anonymous[0].limit,
+      RATE_LIMIT_RULES.bearerIp[0].limit,
+      RATE_LIMIT_RULES.authFailure[0].limit,
+    ]).toEqual([100, 1000, 30]);
+    expect(RATE_LIMIT_RULES.authFailure[0].countOnlyStatuses).toEqual([401]);
+    expect(createGlobalRateLimit(deps())).toHaveLength(3);
   });
 
   it('hashEmail: SHA-256 của email chuẩn hóa, không lộ email; thiếu email ⇒ hằng số', () => {

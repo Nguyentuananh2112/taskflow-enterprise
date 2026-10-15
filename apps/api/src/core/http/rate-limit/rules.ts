@@ -24,6 +24,8 @@ export interface RateLimitRule {
   readonly failMode: 'open' | 'closed';
   /** Chỉ đếm request thất bại (status ≥ 400), vd "5 lần đăng nhập SAI". */
   readonly countFailedOnly?: boolean;
+  /** Chỉ đếm request có status thuộc danh sách (vd chỉ 401 — xác thực thất bại). */
+  readonly countOnlyStatuses?: readonly number[];
 }
 
 const MINUTE = 60_000;
@@ -92,6 +94,29 @@ export const RATE_LIMIT_RULES = {
     rule({ id: 'api-user', windowMs: MINUTE, limit: 300, key: 'user', failMode: 'open' }),
   ],
   anonymous: [rule({ id: 'api-ip', windowMs: MINUTE, limit: 100, key: 'ip', failMode: 'open' })],
+  /**
+   * Trần THÔ theo IP cho request CÓ `Authorization` (review T-016): giới hạn chính vẫn là 300/phút/user
+   * sau `authenticate`; trần này chỉ chặn việc xoay token để né giới hạn IP. 1000 ≈ 3 người dùng ở
+   * mức trần user cùng lúc, trong khi sử dụng thực tế mỗi người ≪ 300/phút ⇒ văn phòng NAT vài chục
+   * người không bị chạm tới.
+   */
+  bearerIp: [
+    rule({ id: 'api-bearer-ip', windowMs: MINUTE, limit: 1000, key: 'ip', failMode: 'open' }),
+  ],
+  /**
+   * Xác thực thất bại (401) theo IP: 30/phút — chặn token rác TRƯỚC bước verify (CPU + log).
+   * `TOKEN_EXPIRED` cũng là 401: dùng bình thường mỗi người ≤ 1 lần/15 phút ⇒ xa ngưỡng.
+   */
+  authFailure: [
+    rule({
+      id: 'api-auth-fail-ip',
+      windowMs: MINUTE,
+      limit: 30,
+      key: 'ip',
+      failMode: 'open',
+      countOnlyStatuses: [401],
+    }),
+  ],
   /** Socket.io handshake (security.md §5.1). */
   socketHandshake: [
     rule({ id: 'socket-handshake-ip', windowMs: MINUTE, limit: 20, key: 'ip', failMode: 'open' }),

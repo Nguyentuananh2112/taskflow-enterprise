@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     config: appConfigFromEnv(env),
     logger,
     clock,
-    rateLimit: [createGlobalRateLimit(RATE_LIMIT_RULES.anonymous[0], rateLimitDeps)],
+    rateLimit: createGlobalRateLimit(rateLimitDeps),
     probes: [databaseProbe(pool), valkeyProbe(valkey)],
     isShuttingDown: () => lifecycleRef.current?.isShuttingDown() ?? false,
   });

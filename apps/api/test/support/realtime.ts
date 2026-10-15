@@ -41,6 +41,14 @@ export class FakeSocketAuthenticator implements ISocketAuthenticator {
 export class FakeProjectAccessChecker implements IProjectAccessChecker {
   readonly #allowed = new Set<string>();
   failWith: Error | undefined;
+  /** Số lần đã kiểm (để test biết đang ở lần kiểm thứ mấy). */
+  checks = 0;
+  /**
+   * Chạy SAU khi đã quyết định kết quả nhưng TRƯỚC khi trả về — mô phỏng một giao dịch khác
+   * (vd xóa thành viên + afterCommit) chen vào giữa lần kiểm và hành động tiếp theo (TOCTOU).
+   * Trả về `'throw'` để lần kiểm này ném lỗi.
+   */
+  interleave: ((check: number) => Promise<void | 'throw'> | void | 'throw') | undefined;
 
   allow(userId: string, workspaceId: string, projectId: string): this {
     this.#allowed.add(`${userId}|${workspaceId}|${projectId}`);
@@ -61,7 +69,13 @@ export class FakeProjectAccessChecker implements IProjectAccessChecker {
     projectId: string;
   }): Promise<boolean> {
     if (this.failWith) return Promise.reject(this.failWith);
-    return Promise.resolve(this.#allowed.has(`${userId}|${workspaceId}|${projectId}`));
+    const check = ++this.checks;
+    const allowed = this.#allowed.has(`${userId}|${workspaceId}|${projectId}`);
+    if (!this.interleave) return Promise.resolve(allowed);
+    return Promise.resolve(this.interleave(check)).then((outcome) => {
+      if (outcome === 'throw') throw new Error(`check ${check} failed`);
+      return allowed;
+    });
   }
 }
 

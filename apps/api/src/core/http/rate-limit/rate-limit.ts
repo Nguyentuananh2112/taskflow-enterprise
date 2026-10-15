@@ -5,7 +5,7 @@ import { ipKeyGenerator, rateLimit, type Store } from 'express-rate-limit';
 
 import { RateLimitedError } from '../../errors';
 import type { ILogger } from '../../logging/logger';
-import type { RateLimitKey, RateLimitRule } from './rules';
+import { RATE_LIMIT_RULES, type RateLimitKey, type RateLimitRule } from './rules';
 import { FailModeStore } from './store';
 
 export interface RateLimitDeps {
@@ -55,7 +55,13 @@ export function createRateLimit(rule: RateLimitRule, deps: RateLimitDeps): Reque
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     identifier: rule.id,
-    skipSuccessfulRequests: rule.countFailedOnly ?? false,
+    skipSuccessfulRequests: Boolean(rule.countFailedOnly ?? rule.countOnlyStatuses),
+    ...(rule.countOnlyStatuses
+      ? {
+          requestWasSuccessful: (_req: Request, res: { statusCode: number }) =>
+            !rule.countOnlyStatuses?.includes(res.statusCode),
+        }
+      : {}),
     store: new FailModeStore(deps.storeFor(rule), rule, deps.logger, now),
     keyGenerator: (req) => keyOf(rule.key, req, deps),
     handler: (req, _res, next) => {
@@ -71,20 +77,43 @@ export function createRateLimit(rule: RateLimitRule, deps: RateLimitDeps): Reque
   });
 }
 
+export interface GlobalRateLimitRules {
+  anonymous: RateLimitRule;
+  bearerIp: RateLimitRule;
+  authFailure: RateLimitRule;
+}
+
+const DEFAULT_GLOBAL_RULES: GlobalRateLimitRules = {
+  anonymous: RATE_LIMIT_RULES.anonymous[0],
+  bearerIp: RATE_LIMIT_RULES.bearerIp[0],
+  authFailure: RATE_LIMIT_RULES.authFailure[0],
+};
+
 /**
- * Giới hạn toàn cục cho request **chưa xác thực** (100/phút/IP — security §6.4). Request có
- * `Authorization` được bỏ qua ở đây: route đã xác thực gắn `RATE_LIMIT_RULES.authenticated`
- * SAU middleware `authenticate` (đếm theo user — không phạt cả văn phòng chung một IP NAT).
+ * Giới hạn toàn cục theo IP — MỌI request đều qua ít nhất một bucket IP (security §6.4):
+ * - không có `Authorization`: 100/phút/IP;
+ * - có `Authorization` (token thật hay rác): trần thô 1000/phút/IP **và** 30 lần 401/phút/IP —
+ *   token rác hết lượt là bị chặn ở đây, trước khi tốn CPU verify.
+ * Route đã xác thực gắn thêm `RATE_LIMIT_RULES.authenticated` (300/phút/user) SAU `authenticate`.
  */
-export function createGlobalRateLimit(rule: RateLimitRule, deps: RateLimitDeps): RequestHandler {
-  const limiter = createRateLimit(rule, deps);
-  return (req, res, next) => {
-    if (req.headers.authorization) {
-      next();
-      return;
-    }
-    void limiter(req, res, next);
-  };
+export function createGlobalRateLimit(
+  deps: RateLimitDeps,
+  rules: GlobalRateLimitRules = DEFAULT_GLOBAL_RULES,
+): RequestHandler[] {
+  const when =
+    (withToken: boolean, limiter: RequestHandler): RequestHandler =>
+    (req, res, next) => {
+      if (Boolean(req.headers.authorization) !== withToken) {
+        next();
+        return;
+      }
+      void limiter(req, res, next);
+    };
+  return [
+    when(false, createRateLimit(rules.anonymous, deps)),
+    when(true, createRateLimit(rules.authFailure, deps)),
+    when(true, createRateLimit(rules.bearerIp, deps)),
+  ];
 }
 
 /** Nhiều rule cho một route (vd login 3 lớp) — áp tuần tự. */

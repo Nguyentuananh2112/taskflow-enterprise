@@ -74,18 +74,35 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
     if (!parsed.success) return ack({ ok: false, code: 'VALIDATION_ERROR' });
     const { workspaceId, projectId } = parsed.data;
     const { joined, userId } = socket.data;
-    if (!joined.has(projectId) && joined.size >= MAX_PROJECT_ROOMS_PER_SOCKET) {
+    const room = rooms.project(projectId);
+    // Đếm theo phòng thực tế: thu hồi phía server (socketsLeave) không cập nhật `joined`.
+    const projectRooms = [...socket.rooms].filter((r) => r.startsWith('project:'));
+    if (!socket.rooms.has(room) && projectRooms.length >= MAX_PROJECT_ROOMS_PER_SOCKET) {
       return ack({ ok: false, code: 'BUSINESS_RULE_VIOLATION' });
     }
+    const check = () => deps.accessChecker.canAccessProject({ userId, workspaceId, projectId });
     try {
-      if (!(await deps.accessChecker.canAccessProject({ userId, workspaceId, projectId }))) {
-        return ack({ ok: false, code: 'RESOURCE_NOT_FOUND' });
-      }
+      if (!(await check())) return ack({ ok: false, code: 'RESOURCE_NOT_FOUND' });
     } catch (err) {
       deps.logger.error({ err, userId, projectId }, 'realtime.project_join_check_failed');
       return ack({ ok: false, code: 'SERVICE_UNAVAILABLE' });
     }
-    await socket.join(rooms.project(projectId));
+    await socket.join(room);
+    // TOCTOU (review T-016): thu hồi commit giữa lần kiểm trên và `join` đã chạy socketsLeave
+    // TRƯỚC khi ta vào phòng ⇒ kiểm lại SAU join. Thu hồi commit sau lần kiểm này sẽ tự
+    // socketsLeave sau join. Kiểm lại lỗi ⇒ fail-closed (rời phòng).
+    let stillAllowed: boolean;
+    try {
+      stillAllowed = await check();
+    } catch (err) {
+      deps.logger.error({ err, userId, projectId }, 'realtime.project_join_recheck_failed');
+      stillAllowed = false;
+    }
+    if (!stillAllowed) {
+      await socket.leave(room);
+      joined.delete(projectId);
+      return ack({ ok: false, code: 'RESOURCE_NOT_FOUND' });
+    }
     joined.set(projectId, workspaceId);
     ack({ ok: true });
   });

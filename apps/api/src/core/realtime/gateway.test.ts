@@ -126,6 +126,72 @@ describe('project:join / project:leave', () => {
     });
   });
 
+  it('TOCTOU (review T-016): thu hồi commit giữa lần kiểm và join ⇒ không ở lại phòng, ack RESOURCE_NOT_FOUND', async () => {
+    rt = await startRealtime();
+    rt.accessChecker.allow('u1', WS, P1);
+    const socket = rt.client();
+    await connected(socket);
+    rt.accessChecker.interleave = async (check) => {
+      if (check !== 1) return;
+      // Lần kiểm 1 đã quyết định "được"; trước khi socket.join chạy, use case xóa thành viên commit
+      // (DB không còn quyền) và afterCommit gọi gateway — lúc này socket CHƯA ở phòng nên socketsLeave hụt.
+      rt.accessChecker.revoke('u1', WS, P1);
+      await rt.gateway.revokeWorkspaceAccess(
+        { userId: 'u1', workspaceId: WS, projectIds: [P1] },
+        { actorId: 'owner' },
+      );
+    };
+
+    expect(await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 })).toEqual({
+      ok: false,
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])]).not.toContain(`project:${P1}`);
+    const leaked = noEvent(socket, 'task:updated');
+    await rt.gateway.emitToProject(
+      { projectId: P1, type: 'task:updated', data: {} },
+      { actorId: 'owner' },
+    );
+    expect(await leaked).toBe(true);
+  });
+
+  it('TOCTOU: kiểm lại sau join lỗi ⇒ fail-closed (rời phòng, log)', async () => {
+    rt = await startRealtime();
+    rt.accessChecker.allow('u1', WS, P1);
+    rt.accessChecker.interleave = (check) => (check === 2 ? 'throw' : undefined);
+    const socket = rt.client();
+    await connected(socket);
+    expect(await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: P1 })).toEqual({
+      ok: false,
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    const [server] = await rt.gateway.io.fetchSockets();
+    expect([...(server?.rooms ?? [])]).not.toContain(`project:${P1}`);
+    expect(rt.logger.messages('error')).toContain('realtime.project_join_recheck_failed');
+  });
+
+  it('giới hạn 20 phòng đếm theo phòng thực tế (phòng bị thu hồi phía server trả lại suất)', async () => {
+    rt = await startRealtime();
+    const ids = Array.from(
+      { length: 21 },
+      (_, i) => `0199e5a2-7c1e-7cc3-9a3b-${String(i).padStart(12, '0')}`,
+    );
+    ids.forEach((id) => rt.accessChecker.allow('u1', WS, id));
+    const socket = rt.client();
+    await connected(socket);
+    for (const id of ids.slice(0, 20)) {
+      await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: id });
+    }
+    await rt.gateway.revokeWorkspaceAccess(
+      { userId: 'u1', workspaceId: WS, projectIds: [ids[0] ?? ''] },
+      { actorId: 'owner' },
+    );
+    expect(
+      await emitWithAck(socket, 'project:join', { workspaceId: WS, projectId: ids[20] }),
+    ).toEqual({ ok: true });
+  });
+
   it('checker lỗi ⇒ SERVICE_UNAVAILABLE (log), không join', async () => {
     rt = await startRealtime();
     rt.accessChecker.failWith = new Error('db down');

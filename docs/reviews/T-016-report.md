@@ -84,3 +84,27 @@ $ pnpm --filter @taskflow/api test:coverage
 Rebase lên `main` @ 4e186ac (đã có T-010 contracts + Prisma, T-015/T-018 tickets). Xung đột catalog/`package.json` với T-010 giải bằng hợp (lockfile tạo lại). Sau rebase:
 - `core/realtime/events.ts` **dùng schema của contracts** (`ProjectJoinPayload`, `ProjectLeavePayload`, `AuthRenewPayload`, `SocketAck`) thay bản khai tạm — bỏ `TODO(T-010 merge)`.
 - DoD chạy lại: install --frozen-lockfile / typecheck / lint (api 146 module, 0 vi phạm) / **test 50 file, 556 test** / build — tất cả exit 0; coverage không đổi (realtime 99.35/95.45, rate-limit 96.47/91.42).
+
+## Rev2 — sửa theo review Tech Lead + QA F
+
+### 1. [MEDIUM] Token rác né giới hạn IP
+Trước: `createGlobalRateLimit` bỏ qua mọi request có `Authorization` ⇒ `Bearer garbage` không bị đếm ở đâu.
+Sau (`core/http/rate-limit/rate-limit.ts`, `rules.ts`) — **mọi request đều qua ít nhất một bucket IP**:
+
+| Request | Bucket | Lý do con số |
+|---|---|---|
+| không có `Authorization` | `api-ip` 100/phút/IP | security §6.4 |
+| có `Authorization` (thật hay rác) | `api-bearer-ip` **1000**/phút/IP | trần thô chống xoay token; giới hạn chính vẫn 300/phút/**user** sau `authenticate`. 1000 ≈ 3 người dùng chạm trần user cùng lúc — văn phòng NAT vài chục người dùng thực tế (≪ 300/phút/người) không chạm tới |
+| có `Authorization`, phản hồi **401** | `api-auth-fail-ip` **30**/phút/IP, chỉ đếm 401 (`countOnlyStatuses`) | hết lượt ⇒ 429 **trước** `authenticate` (không tốn CPU verify/log). `TOKEN_EXPIRED` cũng là 401: dùng bình thường ≤ 1 lần/15 phút/người ⇒ xa ngưỡng; 403/404/422 không bị tính |
+
+Test (`rate-limit.test.ts`): `Authorization: Bearer garbage` ⇒ 401 ×N rồi **429**; IP đó đổi token rác khác vẫn 429; IP khác không ảnh hưởng; 200/403 không bị đếm vào bucket 401; token hợp lệ vẫn chịu trần 1000; bảng mặc định 100/1000/30.
+
+### 2. [LOW] TOCTOU ở `project:join`
+Sau `socket.join` **kiểm lại quyền một lần**; mất quyền ⇒ `leave` + ack `RESOURCE_NOT_FOUND`; kiểm lại lỗi ⇒ fail-closed (rời phòng, log `realtime.project_join_recheck_failed`). Lập luận: thu hồi commit trước lần kiểm 2 ⇒ lần kiểm 2 thấy (DB đã commit); thu hồi commit sau lần kiểm 2 ⇒ `socketsLeave` của nó chạy sau `join` ⇒ tự gỡ.
+Test mô phỏng xen kẽ: fake checker có hook `interleave` chạy **giữa** lần kiểm 1 và `join` (thu hồi trong "DB" + gọi `gateway.revokeWorkspaceAccess` như afterCommit) ⇒ ack `RESOURCE_NOT_FOUND`, socket không ở phòng, không nhận event. **Kiểm tra đột biến**: bỏ lần kiểm lại ⇒ 2 test TOCTOU đỏ.
+Kèm theo: giới hạn 20 phòng đếm theo `socket.rooms` thực tế (thu hồi phía server không cập nhật map `joined`) — có test.
+
+### Rebase & DoD rev2
+- Rebase lên `main` @ 2ae41e9 (có T-015); commit cherry-pick cũ `c40a2ad` được git bỏ tự động (đã có upstream).
+- Valkey của compose dùng chung không còn chạy (container `taskflow-*` đã bị gỡ) ⇒ chạy tầng I trên Valkey 9.1.2 **riêng tạm** (`t016-valkey`, `127.0.0.1:6390`, đã xóa sau khi test) với `TEST_VALKEY_URL=redis://127.0.0.1:6390 REQUIRE_INTEGRATION=1` — 4 test Valkey thật đều CHẠY (không skip).
+- DoD rev2: install --frozen-lockfile / typecheck / lint (api 195 module, 0 vi phạm) / **test 79 file, 802 test** (gồm 4 test Valkey thật) / build — tất cả exit 0. Coverage: `core/realtime` 99.40 / 95.58 (stmts/branches), rate-limit 96.59 / 92.10.
