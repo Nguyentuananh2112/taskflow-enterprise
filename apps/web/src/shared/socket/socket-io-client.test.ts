@@ -102,6 +102,18 @@ describe('createSocketIoClient', () => {
     expect(JSON.stringify(fake.state.options)).not.toContain('query');
   });
 
+  it('extraHeaders chỉ khi truyền (test Node với API thật); app không truyền', () => {
+    setup();
+    expect(fake.state.options).not.toHaveProperty('extraHeaders');
+    createSocketIoClient({
+      url: 'https://api.example.com',
+      clientId: CLIENT_ID,
+      auth: { token: () => null, renew: () => Promise.resolve(false), revoked: () => undefined },
+      extraHeaders: { origin: 'http://localhost:3001' },
+    });
+    expect(fake.state.options.extraHeaders).toEqual({ origin: 'http://localhost:3001' });
+  });
+
   it('connect lần 2 trở đi ⇒ báo reconnect (để join lại phòng + refetch)', () => {
     const { client } = setup();
     const onReconnect = vi.fn();

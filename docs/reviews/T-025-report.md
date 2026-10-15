@@ -37,7 +37,6 @@ Phát hiện khi đo: truyền callback không ổn định xuống board (`onOp
 Best practices chỉ trừ `inspector-issues` (CSP, không URL) — giống T-012/T-019. Ở chế độ mock dev không có Socket.io ⇒ header hiện "Mất kết nối thời gian thực" + "Tải lại bảng" (thiết kế, xem QĐ-4).
 
 ### Chưa làm được trong lượt này
-- **Lượt với API thật**: T-024 chưa merge vào main lúc viết báo cáo ⇒ chưa chạy. Sẽ chạy và dán kết quả khi Tech Lead báo T-024 merge.
 - Kéo thả chuột thật trên trình duyệt: công cụ điều khiển Chrome của session bị ngắt giữa chừng ⇒ chưa thao tác tay; luồng kéo đã có test logic (dnd handlers qua preview/intent) + E2E sẽ phủ.
 
 ## 3. Quyết định tự đưa ra (cần Tech Lead duyệt)
@@ -73,3 +72,21 @@ $ pnpm --filter @taskflow/web build → exit 0 (route mới: /w/[wsId], /w/[wsId
 ```
 Build và Lighthouse chạy trên bản trước rebase (trước khi gộp T-029); phần gộp chỉ đụng mock/phiên, đã có test.
 Hook pre-commit (lefthook: gitleaks + prettier + eslint) chạy đầy đủ cho mọi commit của nhánh; gitleaks `main..HEAD`: no leaks found.
+
+## 8. Lượt chạy với API thật (sau khi T-024 merge — branch `docs/T-025-real-api` từ main `2210d12`)
+**Môi trường:** API `apps/api` chạy `tsx src/main.ts` ở :4000 (`APP_ENV=local`, `PERSISTENCE=prisma`, `PERSISTENCE_TASK=prisma`, `CORS_ORIGINS=http://localhost:3001`); Postgres-test dùng chung :5434 với **DB riêng `taskflow_t025`** (tạo bằng `taskflow_migrator`, `prisma migrate deploy` — app kết nối bằng `taskflow_migrator` vì DB mới không có grant cho `taskflow_app`, chỉ cho lượt kiểm này); Valkey dùng chung :6380 **db 9**. Web: build prod `next start` :3001, `API_URL=http://localhost:4000/api/v1`, `APP_ENV=local`, **không** mock. `/readyz` ⇒ `{"db":"ok","valkey":"ok"}`.
+
+**1. Chrome thật (Lighthouse 13.5.0, đăng nhập bằng cookie refresh thật của API):**
+| Trang | Accessibility | Best practices | Ghi chú |
+|---|---|---|---|
+| Board (mobile) | **100** | **100** | console sạch |
+| Board + drawer `?task=` (desktop) | **100** | **100** | ảnh chụp: header **"Trực tuyến"** (Socket.io thật kết nối trong Chrome), lịch sử từ audit-logs thật |
+Một lượt board đầu có 1 lỗi console `net::ERR_INSUFFICIENT_RESOURCES` (giới hạn tài nguyên của Chrome headless khi máy bận); **không tái hiện** ở 2 lượt sau (lượt có audit `network-requests`: 37 request, không lỗi). Log API của toàn bộ lượt: không vòng lặp request, mỗi lần tải board 1 `GET …/tasks?limit=500`.
+
+**2. Hai tab với REST + Socket.io thật** — `apps/web/real-api/board-two-tabs.real.tsx` (bộ riêng `pnpm --filter @taskflow/web test:real-api`, KHÔNG nằm trong `pnpm test`/CI vì cần API đang chạy): hai cây app thật, hai QueryClient, **hai kết nối Socket.io thật** (clientId khác nhau, handshake token + Origin). A chọn "Chuyển tới Đang làm" (cùng đường `useMoveTask` với kéo thả) ⇒ server ghi DB (`GET` lại: `IN_PROGRESS`, `version + 1`) và phát `task:moved` ⇒ **B thấy thẻ sang cột Đang làm**; B tạo task (X-Client-Id của B) ⇒ **A thấy**. Chạy 2 lần: `Tests 1 passed`, exit 0 cả hai.
+- Phát hiện khi chạy: socket.io-client trong Node (`ws`) **không tự gửi `Origin`** ⇒ server từ chối handshake đúng (`allowRequest`); trình duyệt thì tự gửi. Thêm tùy chọn `extraHeaders` vào `createSocketIoClient` — chỉ test Node dùng, app không truyền (có unit test khẳng định mặc định không có).
+
+**3. Hình dạng lỗi thật khớp FE/mock** (gọi trực tiếp API): 409 `VERSION_CONFLICT` có `details.current` + `currentVersion`; 422 `INVALID_STATUS_TRANSITION` `{from, to, allowed}`; 422 `BUSINESS_RULE_VIOLATION` `{rule: "INVALID_ANCHOR"}`; POST không Content-Type ⇒ 415; move về đúng chỗ ⇒ 200 không tăng version (R15). Seed qua API thật: đăng ký, tạo task, move theo state machine, sửa ưu tiên/hạn chót đều thành công.
+
+**Chưa phủ ở lượt này:** kéo chuột/bàn phím thật trên trình duyệt (công cụ điều khiển Chrome của session không còn) — để E2E Playwright (E2E-02/03/04); DB `taskflow_t025` giữ lại để Tech Lead chạy lại nếu cần (xóa: `DROP DATABASE taskflow_t025` bằng `taskflow_migrator`).
+

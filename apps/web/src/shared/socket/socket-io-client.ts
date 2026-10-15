@@ -24,17 +24,32 @@ type UntypedEmitter = {
   off(event: string, listener: (payload: unknown) => void): unknown;
 };
 
-type Options = Readonly<{ url: string; clientId: string; auth: SocketAuthHooks }>;
+type Options = Readonly<{
+  url: string;
+  clientId: string;
+  auth: SocketAuthHooks;
+  /**
+   * Chỉ cho môi trường NGOÀI trình duyệt (test Node với API thật): `ws` không tự gửi `Origin` mà server
+   * bắt buộc (allowRequest). Trình duyệt tự gửi Origin của trang — app không truyền tùy chọn này.
+   */
+  extraHeaders?: Readonly<Record<string, string>>;
+}>;
 
 const ACK_TIMEOUT_MS = 5_000;
 const UNAVAILABLE: SocketAck = { ok: false, code: 'SERVICE_UNAVAILABLE' };
 
-export function createSocketIoClient({ url, clientId, auth }: Options): RealtimeClient {
+export function createSocketIoClient({
+  url,
+  clientId,
+  auth,
+  extraHeaders,
+}: Options): RealtimeClient {
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(url, {
     transports: ['websocket'],
     autoConnect: false,
     withCredentials: false,
     auth: (cb) => cb({ token: auth.token(), clientId }),
+    ...(extraHeaders ? { extraHeaders: { ...extraHeaders } } : {}),
   });
   let current: RealtimeStatus = 'offline';
   let connectedBefore = false;

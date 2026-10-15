@@ -13,6 +13,7 @@
     "src",
     "test",
     "perf",
+    "real-api",
     "*.config.ts",
     "proxy.ts",
     "instrumentation-client.ts",
