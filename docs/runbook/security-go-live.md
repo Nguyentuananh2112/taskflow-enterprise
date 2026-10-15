@@ -6,6 +6,8 @@
 - Khi hai tài liệu lệch nhau, **tài liệu này và `security.md` đúng hơn** — báo Engineer B để đồng bộ.
 - Bằng chứng (log, ảnh, link run CI) ghi vào `docs/ops/go-live.md`, kèm người ký.
 
+**Mục CHẶN go-live (G1, 2026-10-15)** — chưa đạt thì **không** bật production, không ngoại lệ: **4.5**, **5.7**, **5.8**, **7.7**. Mục 4.5 chỉ chặn khi chạy > 1 instance.
+
 **Nguyên tắc:** app **tự từ chối khởi động** khi cấu hình production sai ở những chỗ nó kiểm được (`apps/api/src/config/env.ts`). Checklist này phủ phần app **không** tự kiểm được: topology, tài khoản, quy trình.
 
 ---
@@ -49,6 +51,7 @@
 | 4.2 | Login theo **ADR-108**: 20 lần / 15 phút theo IP (trước validate); 10 lần **401** / 15 phút theo (IP, email) và 100 lần 401 / giờ theo email (sau validate). | SEC-28: lần login sai thứ 11 cùng IP + email ⇒ 429 + `Retry-After`; cùng email từ IP khác vẫn đăng nhập được. | Run suite bảo mật |
 | 4.3 | Valkey chết ⇒ login / register / refresh / change-password **fail-closed** (503); API thường vẫn chạy (fallback DB cho `tv` / `sid`). | Diễn tập trên staging: dừng Valkey 1 phút. | Ghi chép |
 | 4.4 | Chạy **> 1 instance API** ⇒ `SOCKET_REDIS_ADAPTER=true`. Thiếu ⇒ logout-all / xóa thành viên không ngắt socket ở instance khác. Rủi ro đã chấp nhận khi Valkey chết: xem `security.md` §5.4. | Đếm instance; kiểm env. | — |
+| 4.5 | **CHẶN khi > 1 instance (ADR-115):** hạn mức realtime theo user — 20 socket / user, 60 `project:join` / phút / user, `auth:renew` 30 / phút / user — phải **đếm dùng chung qua Valkey**. v1 đếm trong bộ nhớ từng instance ⇒ N instance thì trần nhân N. Valkey lỗi ⇒ rơi về hạn mức cục bộ (fail-open có chủ đích), kèm log `warn` + metric. Một instance thì không cần. | Code đếm dùng chung đã merge; trên staging 2 instance: mở 21 socket cùng user chia đều 2 instance ⇒ socket thứ 21 bị `RATE_LIMITED`; dừng Valkey ⇒ thấy log / metric fallback. | Link PR + output |
 
 ## 5. Database
 
@@ -60,6 +63,8 @@
 | 5.4 | `PERSISTENCE` = `prisma` (app từ chối `memory` ở staging / production). Job bảo trì (purge workspace hết hạn) chạy (`MAINTENANCE_JOBS_ENABLED` không đặt hoặc `true`). | Log `maintenance.*` sau giờ đầu. | Dòng log |
 | 5.5 | **Backup mã hóa:** PITR bật; `pg_dump -Fc` hằng ngày, mã hóa phía client (age / gpg — khóa riêng **không** lưu cùng chỗ với backup), gửi sang object storage **khác nhà cung cấp**, bucket bật versioning / object lock. Backup / dump **không bao giờ** vào repo hay artifact CI (repo public — ADR-072). | Liệt kê bucket: file có đuôi `.age` / `.gpg`; thử đọc không có khóa ⇒ không đọc được. | Danh sách object |
 | 5.6 | **Đã diễn tập restore** (PITR và logical) — backup chưa từng restore coi như chưa có. | `restore-drills.md` | Kết quả diễn tập |
+| 5.7 | **CHẶN:** diễn tập backup / restore tự động (B2) **xanh trên bản đã sửa theo review G1** (`fix/B2-backup-review`: object lock bắt buộc, chọn bản trước thời điểm bị chiếm, mật khẩu DB qua `PGPASSWORD` thay vì argv). Bản sửa chưa merge — đang chờ người dùng duyệt chạy docker. Sau merge, bucket thật phải bật **versioning + object lock (compliance, ≥ 14 ngày)** ngay lúc tạo (5.5 không còn là "nếu hỗ trợ"). | Run `backup-drill.yml` xanh trên commit đã merge bản sửa; `aws s3api get-object-lock-configuration` trên bucket thật ⇒ `COMPLIANCE`. | Link run + output |
+| 5.8 | **CHẶN:** job dọn `refresh_tokens` (G2 S2 — token hết hạn / thu hồi quá hạn giữ) **đã chạy ít nhất 1 lượt trên staging**. Thiếu job thì bảng (có `ip`, `user_agent`) tăng mãi. | Log `maintenance.*` của job sau lượt đầu, có số dòng đã xóa; `SELECT count(*) FROM refresh_tokens WHERE expires_at < now() - interval '<hạn giữ>'` ⇒ 0. | Dòng log + output |
 
 ## 6. Log, Sentry, metrics
 
@@ -89,6 +94,7 @@
 | 7.4 | 2FA bắt buộc cho mọi tài khoản: GitHub, hosting, GHCR, Sentry, DNS / registrar, uptime monitor, object storage backup. | Danh sách tài khoản + trạng thái 2FA. | Bảng |
 | 7.5 | Image public trên GHCR không chứa secret: Trivy `vuln,secret` xanh; `docker history` không có `ENV`/`ARG` chứa secret. | Run CI Trivy. | Link |
 | 7.6 | `pnpm audit --prod`: không advisory nào mở ngoài danh sách đã chấp nhận (`pnpm-workspace.yaml` `auditConfig`), và mọi mục chấp nhận còn hạn xem lại. | Chạy lệnh. | Output |
+| 7.7 | **CHẶN: KHÔNG bật `ENABLE_RELEASE`** (biến repo của `release.yml`) trước khi sửa G1-D3 H1 **đã vào `main`**: release chỉ chạy cho `workflow_run.event == 'push'` từ **chính repo** (`head_repository.full_name == github.repository`) trên nhánh `main`. Nếu không, PR từ fork có nhánh tên `main` đẩy được image do người ngoài build lên GHCR chính thức. | Sau merge, mở **PR thử từ một fork** với nhánh tên `main` ⇒ CI chạy, workflow Release **bị bỏ qua** (skipped), GHCR không có tag `sha-<sha của fork>`. Xóa fork thử sau đó. | Link run CI + run Release (skipped) |
 
 ## 8. Kiểm thử bảo mật trên commit sẽ deploy
 
