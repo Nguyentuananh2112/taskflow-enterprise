@@ -1,0 +1,158 @@
+# Deploy THỦ CÔNG (devops.md §5.3, D3) cho cả 2 phương án hosting (ADR-070): DigitalOcean App Platform hoặc VPS.
+# - Deploy đúng image đã build ở release.yml (tag sha-<git_sha>) — lấy DIGEST, không build lại.
+# - Environment `staging` / `production` ⇒ secret + protection rules (production: required reviewers = người dùng
+#   + Tech Lead, chỉ branch main — miễn phí với repo public, ADR-072). Cấu hình ở Settings → Environments.
+# - Migrate là job riêng TRƯỚC rollout (App Platform: PRE_DEPLOY; VPS: deploy.sh). Smoke sau deploy; lỗi ⇒ rollback.
+# - Thiếu secret ⇒ dừng sớm với hướng dẫn (chưa có tài khoản/tài nguyên thật — D3).
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: staging | production
+        type: choice
+        options: [staging, production]
+        required: true
+      target:
+        description: Hosting (ADR-070)
+        type: choice
+        options: [do-app-platform, vps]
+        required: true
+      git_sha:
+        description: Commit đã release (40 ký tự) — production phải là commit đã deploy staging xanh
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  GIT_SHA: ${{ inputs.git_sha }}
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }} · ${{ inputs.target }} · ${{ inputs.git_sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.APP_BASE_URL }}
+    steps:
+      - name: Kiểm đầu vào + cấu hình environment
+        env:
+          TARGET: ${{ inputs.target }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          HAS_DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN != '' }}
+          HAS_DO_APP: ${{ vars.DO_APP_ID != '' }}
+          HAS_VPS: ${{ secrets.VPS_SSH_KEY != '' && vars.VPS_HOST != '' && vars.VPS_USER != '' && secrets.VPS_KNOWN_HOSTS != '' }}
+        run: |
+          [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::git_sha phải là SHA đầy đủ 40 ký tự"; exit 1; }
+          missing=()
+          [ -n "$API_BASE_URL" ] || missing+=('vars.API_BASE_URL')
+          [ -n "$APP_BASE_URL" ] || missing+=('vars.APP_BASE_URL')
+          if [ "$TARGET" = do-app-platform ]; then
+            [ "$HAS_DO_TOKEN" = true ] || missing+=('secrets.DIGITALOCEAN_ACCESS_TOKEN')
+            [ "$HAS_DO_APP" = true ] || missing+=('vars.DO_APP_ID')
+          else
+            [ "$HAS_VPS" = true ] || missing+=('vars.VPS_HOST vars.VPS_USER secrets.VPS_SSH_KEY secrets.VPS_KNOWN_HOSTS')
+          fi
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Environment '${{ inputs.environment }}' chưa cấu hình: ${missing[*]} — xem docs/runbook/deploy.md"
+            exit 1
+          fi
+
+      - name: Lấy digest image đã release (không build lại)
+        id: digests
+        run: |
+          for name in taskflow-api taskflow-web taskflow-api-migrate; do
+            ref="ghcr.io/$OWNER/$name:sha-$GIT_SHA"
+            digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest) ||
+              { echo "::error::Không thấy $ref — chạy Release images cho commit này trước"; exit 1; }
+            echo "${name//-/_}=$digest" >> "$GITHUB_OUTPUT"
+            echo "$ref → $digest"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.git_sha }}
+          persist-credentials: false
+
+      # ---------------------------------------------------------------- (a) DigitalOcean App Platform
+      - if: inputs.target == 'do-app-platform'
+        uses: digitalocean/action-doctl@3cb3953159719656269e044e0e24ca16dd2a690f # v2.5.2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: App Platform — cập nhật spec theo digest (PRE_DEPLOY migrate chạy trước rollout)
+        if: inputs.target == 'do-app-platform'
+        env:
+          APP_ID: ${{ vars.DO_APP_ID }}
+          API_DIGEST: ${{ steps.digests.outputs.taskflow_api }}
+          WEB_DIGEST: ${{ steps.digests.outputs.taskflow_web }}
+          MIGRATE_DIGEST: ${{ steps.digests.outputs.taskflow_api_migrate }}
+        run: |
+          # Spec đang chạy (đã có secret mã hóa EV[…]) là gốc; chỉ thay digest + GIT_SHA ⇒ không đụng secret.
+          doctl apps spec get "$APP_ID" --format yaml > previous.yaml
+          python3 .github/scripts/render_do_spec.py previous.yaml rendered.yaml \
+            "$GIT_SHA" "$API_DIGEST" "$WEB_DIGEST" "$MIGRATE_DIGEST"
+          doctl apps update "$APP_ID" --spec rendered.yaml --wait
+
+      # ---------------------------------------------------------------- (b) VPS + Compose + Caddy
+      - name: VPS — đồng bộ file deploy + deploy.sh (migrate → rollout → smoke → tự rollback)
+        if: inputs.target == 'vps'
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          HOST: ${{ vars.VPS_HOST }}
+          USER: ${{ vars.VPS_USER }}
+          API_DIGEST: ${{ steps.digests.outputs.taskflow_api }}
+          WEB_DIGEST: ${{ steps.digests.outputs.taskflow_web }}
+          MIGRATE_DIGEST: ${{ steps.digests.outputs.taskflow_api_migrate }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts # ghim host key — không StrictHostKeyChecking=no
+          ssh_() { ssh -i ~/.ssh/deploy -o BatchMode=yes "$USER@$HOST" "$@"; }
+          scp -i ~/.ssh/deploy -o BatchMode=yes deploy/vps/compose.prod.yml deploy/vps/Caddyfile \
+            deploy/vps/deploy.sh deploy/vps/bootstrap.sh deploy/vps/.env.example deploy/vps/.env.api.example \
+            "$USER@$HOST:/opt/taskflow/"
+          scp -i ~/.ssh/deploy -o BatchMode=yes docker/postgres/init/01-roles.sh "$USER@$HOST:/opt/taskflow/postgres-init/"
+          ssh_ "cd /opt/taskflow && bash deploy.sh '$GIT_SHA' '$API_DIGEST' '$WEB_DIGEST' '$MIGRATE_DIGEST'"
+
+      # ---------------------------------------------------------------- smoke từ Internet (cả 2 phương án)
+      - name: Smoke sau deploy (HTTPS thật)
+        id: smoke
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+        run: |
+          for _ in $(seq 1 30); do curl -fsS --max-time 10 "$API_BASE_URL/healthz" >/dev/null && break; sleep 5; done
+          body=$(curl -fsS --max-time 10 "$API_BASE_URL/healthz")
+          echo "$body" | grep -q "\"gitSha\":\"$GIT_SHA\"" || { echo "::error::API chưa chạy $GIT_SHA: $body"; exit 1; }
+          curl -fsS --max-time 10 "$API_BASE_URL/readyz" | grep -q '"db":"ok"'
+          curl -fsS --max-time 10 -o /dev/null "$APP_BASE_URL/"
+          curl -fsS --max-time 10 "$APP_BASE_URL/api/healthz" >/dev/null
+          # ADR-109: cookie refresh không bao giờ lộ ở response không phải /auth; HSTS phải có.
+          curl -fsSI --max-time 10 "$API_BASE_URL/healthz" | grep -qi '^strict-transport-security:'
+          echo "Smoke OK — $GIT_SHA"
+
+      - name: Rollback App Platform (smoke lỗi)
+        if: failure() && inputs.target == 'do-app-platform' && hashFiles('previous.yaml') != ''
+        env:
+          APP_ID: ${{ vars.DO_APP_ID }}
+        run: |
+          echo "::warning::Deploy/smoke lỗi ⇒ quay về spec trước"
+          doctl apps update "$APP_ID" --spec previous.yaml --wait
+      # VPS: deploy.sh đã tự rollback khi rollout/smoke nội bộ lỗi; smoke từ Internet lỗi ⇒ rollback tay:
+      - name: Rollback VPS (smoke từ Internet lỗi)
+        if: failure() && inputs.target == 'vps' && steps.smoke.outcome == 'failure'
+        env:
+          HOST: ${{ vars.VPS_HOST }}
+          USER: ${{ vars.VPS_USER }}
+        run: ssh -i ~/.ssh/deploy -o BatchMode=yes "$USER@$HOST" 'cd /opt/taskflow && bash deploy.sh --rollback'

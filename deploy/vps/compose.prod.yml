@@ -1,0 +1,122 @@
+# Phương án A (devops.md §1.2): 1 VPS + Docker Compose + Caddy (HTTPS tự động). CHƯA chạy ở đâu (D3) —
+# dùng khi người dùng chọn VPS. Trên VPS: thư mục /opt/taskflow chứa file này, Caddyfile, .env (từ .env.example),
+# secrets/ (bootstrap.sh sinh). Deploy: deploy.sh (theo DIGEST image, migrate trước, smoke, tự rollback).
+# Không bao giờ chạy từ git worktree (runbook local-dev §3) — đây là máy production.
+name: taskflow-prod
+
+x-restart: &restart
+  restart: unless-stopped
+  init: true
+  logging: { driver: json-file, options: { max-size: 20m, max-file: '5' } }
+
+services:
+  caddy:
+    <<: *restart
+    image: caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?}
+      API_DOMAIN: ${API_DOMAIN:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # chứng chỉ Let's Encrypt — mất volume = xin lại (giới hạn tần suất của LE)
+      - caddy_config:/config
+    depends_on: [api, web]
+
+  api:
+    <<: *restart
+    image: ghcr.io/${GHCR_OWNER:?}/taskflow-api@${API_DIGEST:?}
+    env_file: .env.api # khớp apps/api/src/config/env.ts; NODE_ENV=production ⇒ app tự kiểm cấu hình
+    environment:
+      GIT_SHA: ${GIT_SHA:?}
+      # Valkey TLS tự ký (env.ts bắt buộc rediss:// ở production) — CA do bootstrap.sh sinh.
+      NODE_EXTRA_CA_CERTS: /run/valkey-tls/ca.crt
+    volumes: ['./secrets/valkey-tls/ca.crt:/run/valkey-tls/ca.crt:ro']
+    stop_grace_period: 30s # > drain 5 s + SHUTDOWN_TIMEOUT_MS 20 s (§7.3)
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+
+  web:
+    <<: *restart
+    image: ghcr.io/${GHCR_OWNER:?}/taskflow-web@${WEB_DIGEST:?}
+    environment:
+      APP_ENV: production
+      API_URL: https://${API_DOMAIN}/api/v1
+      WS_URL: https://${API_DOMAIN}
+      SENTRY_DSN: ${WEB_SENTRY_DSN:-}
+      GIT_SHA: ${GIT_SHA:?}
+    stop_grace_period: 30s
+
+  # Job migrate: `docker compose --profile migrate run --rm migrate` (deploy.sh làm) — KHÔNG chạy trong app start.
+  migrate:
+    image: ghcr.io/${GHCR_OWNER:?}/taskflow-api-migrate@${MIGRATE_DIGEST:?}
+    profiles: [migrate]
+    environment:
+      DATABASE_URL: postgresql://taskflow_migrator:${TASKFLOW_MIGRATOR_PASSWORD:?}@postgres:5432/taskflow
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    <<: *restart
+    image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: taskflow
+      TASKFLOW_MIGRATOR_PASSWORD: ${TASKFLOW_MIGRATOR_PASSWORD:?}
+      TASKFLOW_APP_PASSWORD: ${TASKFLOW_APP_PASSWORD:?}
+    volumes:
+      - pgdata:/var/lib/postgresql # PG18 (stack-versions §6)
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro # = docker/postgres/init/01-roles.sh của repo
+    # Không map cổng ra ngoài. Sao lưu: script pg_dump mã hóa của B (backlog B2) + diễn tập restore (devops.md §4.3–4.4).
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d taskflow']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 60s
+
+  valkey:
+    <<: *restart
+    image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+    command:
+      - valkey-server
+      - --port
+      - '0'
+      - --tls-port
+      - '6379'
+      - --tls-cert-file
+      - /tls/valkey.crt
+      - --tls-key-file
+      - /tls/valkey.key
+      - --tls-ca-cert-file
+      - /tls/ca.crt
+      - --tls-auth-clients
+      - 'no'
+      - --requirepass
+      - ${VALKEY_PASSWORD:?}
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction # không âm thầm xóa bộ đếm rate-limit (§7.1)
+    volumes: ['./secrets/valkey-tls:/tls:ro']
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - valkey-cli --tls --cacert /tls/ca.crt -a "$$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
