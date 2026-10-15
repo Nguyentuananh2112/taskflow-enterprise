@@ -86,5 +86,11 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-097 ✅ **Cổng local riêng cho TaskFlow** (máy dev có dự án khác chiếm 5432/6379/3000): Postgres host **5433**, Valkey host **6380**, web **3001**, API **4000**. Bên trong mạng Docker vẫn dùng cổng chuẩn (5432/6379). Mọi giá trị đi qua `.env`; `FRONTEND_URL`/`CORS_ORIGINS` mặc định `http://localhost:3001`. Đặt `name: taskflow` cho compose project để không lẫn container. **Sửa đổi (sau T-009):** Postgres của docker-compose dùng host **5435** (dev) và **5434** (DB test) — theo compose của D; cổng 5433 chỉ là container tạm của C, xóa sau khi T-011 merge.
 - ADR-098 ✅ JWT access secret là chuỗi UTF-8 ≥ 32 byte; `kid` **suy ra từ secret** (đã hiện thực ở T-013) ⇒ **bỏ** biến `JWT_ACCESS_KID` / `JWT_ACCESS_KID_PREVIOUS`. Chỉ còn `JWT_ACCESS_SECRET` + `JWT_ACCESS_SECRET_PREVIOUS`.
 
+### Review T-012 (frontend nền)
+- ADR-099 ✅ Font Inter **tự host** (không `next/font/google`: không gọi mạng lúc build, không lộ IP người dùng cho bên thứ ba, hợp CSP).
+- ADR-100 ✅ Toast dùng Radix Toast + store tự viết; **không dùng sonner** (tự chèn `<style>` không có nonce ⇒ vi phạm CSP). Thêm `get-nonce` 1.0.1 để style của Radix mang nonce.
+- ADR-101 ✅ `upgrade-insecure-requests` + HSTS chỉ bật khi `APP_ENV ∈ {staging, production}` (không theo `NODE_ENV`) — E2E chạy http trên host khác localhost không bị gãy; HSTS không bao giờ gửi ở môi trường local.
+- ADR-102 ✅ **Tương thích tiến khi deploy lệch phiên bản**: FE gặp `error.code` lạ (API mới hơn web) ⇒ giữ nguyên `status` + `message`, map về mã chung `UNKNOWN_ERROR` và xử lý như lỗi chung theo HTTP status — **không** coi là `BAD_RESPONSE`. `BAD_RESPONSE` chỉ dành cho body không phải envelope hợp lệ.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
