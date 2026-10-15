@@ -7,7 +7,10 @@ import {
   MaintenanceScheduler,
   PurgeIncompleteError,
   PURGE_FIRST_RUN_AFTER_MS,
+  purgeRefreshTokensJob,
   purgeWorkspacesJob,
+  REFRESH_TOKEN_PURGE_FIRST_RUN_AFTER_MS,
+  REFRESH_TOKEN_PURGE_INTERVAL_MS,
   type ScheduledJob,
 } from './maintenance-jobs';
 
@@ -204,6 +207,55 @@ describe('purgeWorkspacesJob', () => {
       purged: 0,
       failed: 2,
     });
+  });
+});
+
+describe('purgeRefreshTokensJob (G2 S2)', () => {
+  const deps = (purgeExpired: (cutoff: Date, limit: number) => Promise<number | null>) => {
+    const logger = new SpyLogger();
+    return {
+      logger,
+      job: purgeRefreshTokensJob({
+        purger: { purgeExpired },
+        uow: new FakeUnitOfWork(),
+        clock: new FakeClock(),
+        logger,
+      }),
+    };
+  };
+
+  it('chạy mỗi ngày, lượt đầu sau 90 s (lệch khỏi purge workspace); signal đã hủy ⇒ không xóa', async () => {
+    let calls = 0;
+    const { job: j } = deps(() => {
+      calls += 1;
+      return Promise.resolve(0);
+    });
+    expect(j.intervalMs).toBe(REFRESH_TOKEN_PURGE_INTERVAL_MS);
+    expect(j.firstRunAfterMs).toBe(REFRESH_TOKEN_PURGE_FIRST_RUN_AFTER_MS);
+    expect(REFRESH_TOKEN_PURGE_FIRST_RUN_AFTER_MS).not.toBe(PURGE_FIRST_RUN_AFTER_MS);
+    const aborted = new AbortController();
+    aborted.abort();
+    await j.run(aborted.signal);
+    expect(calls).toBe(0);
+  });
+
+  it('tổng kết chỉ có số đếm; instance khác giữ khóa ⇒ busy (info), không phải lỗi', async () => {
+    const { job: j, logger } = deps(() => Promise.resolve(3));
+    await j.run(new AbortController().signal);
+    expect(
+      logger.entries.find((e) => e.msg === 'maintenance.refresh_token_purge_summary')?.data,
+    ).toEqual({ deleted: 3, batches: 1, busy: false, complete: true, aborted: false });
+
+    const busy = deps(() => Promise.resolve(null));
+    await expect(busy.job.run()).resolves.toBeUndefined();
+    expect(
+      busy.logger.entries.find((e) => e.msg === 'maintenance.refresh_token_purge_summary')?.data,
+    ).toMatchObject({ deleted: 0, busy: true });
+  });
+
+  it('lỗi DB ⇒ lượt thất bại (scheduler log run_failed + metric failure)', async () => {
+    const { job: j } = deps(() => Promise.reject(new Error('db down')));
+    await expect(j.run()).rejects.toThrow('db down');
   });
 });
 

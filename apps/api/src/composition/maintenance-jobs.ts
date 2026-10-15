@@ -1,6 +1,8 @@
 import type { IClock } from '../core/domain';
 import type { ILogger } from '../core/logging/logger';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
+import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
+import { PurgeExpiredRefreshTokensJob } from '../modules/auth/application/use-cases/purge-expired-refresh-tokens.job';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import type { IWorkspaceRepository } from '../modules/workspace/application/ports/repositories.port';
 import { PurgeDeletedWorkspacesJob } from '../modules/workspace/application/use-cases/purge-deleted-workspaces.job';
@@ -153,6 +155,39 @@ export class PurgeIncompleteError extends Error {
     super(`Purge chưa xong: ${failed} workspace lỗi — thử lại lượt sau.`);
     this.name = 'PurgeIncompleteError';
   }
+}
+
+/** Dọn refresh token mỗi ngày (G2 S2); lượt đầu sau khởi động lệch khỏi purge workspace (30 s). */
+export const REFRESH_TOKEN_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const REFRESH_TOKEN_PURGE_JITTER_MS = 30 * 60 * 1000;
+export const REFRESH_TOKEN_PURGE_FIRST_RUN_AFTER_MS = 90_000;
+
+/**
+ * Lượt dọn refresh token (G2 S2, security.md §2.2). Log tổng kết chỉ có số đếm. Instance khác đang
+ * chạy lô ⇒ `busy` (info, không phải lỗi). Chưa xóa hết (chạm trần lô) ⇒ lượt sau làm tiếp.
+ */
+export function purgeRefreshTokensJob(d: {
+  purger: IRefreshTokenPurger;
+  uow: IUnitOfWork;
+  clock: IClock;
+  logger: ILogger;
+}): ScheduledJob {
+  const job = new PurgeExpiredRefreshTokensJob(d);
+  return {
+    name: 'purge-expired-refresh-tokens',
+    intervalMs: REFRESH_TOKEN_PURGE_INTERVAL_MS,
+    jitterMs: REFRESH_TOKEN_PURGE_JITTER_MS,
+    firstRunAfterMs: REFRESH_TOKEN_PURGE_FIRST_RUN_AFTER_MS,
+    async run(signal) {
+      if (signal?.aborted) return;
+      const { deleted, batches, busy, complete } = await job.execute(signal ? { signal } : {});
+      const aborted = signal?.aborted ?? false;
+      d.logger.info(
+        { deleted, batches, busy, complete, aborted },
+        'maintenance.refresh_token_purge_summary',
+      );
+    },
+  };
 }
 
 /** Mặc định: bật ở staging/production, tắt ở local/test (env ghi đè được). */

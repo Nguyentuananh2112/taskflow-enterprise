@@ -7,6 +7,8 @@ import {
   ValkeySessionRevocationStore,
   type ValkeyCommands,
 } from '../modules/auth/infrastructure/cache/valkey-session-revocation.store';
+import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
+import { PrismaRefreshTokenPurger } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.purger';
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
 import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
@@ -51,6 +53,8 @@ export interface Persistence {
   task: TaskRepositories;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
   workspacePurger?: IWorkspacePurger;
+  /** Dọn refresh token hết hạn (G2 S2) — chỉ có ở Prisma, như `workspacePurger`. */
+  refreshTokenPurger?: IRefreshTokenPurger;
   uow: IUnitOfWork;
 }
 
@@ -134,6 +138,7 @@ export function createPrismaPersistence(d: {
       audit: new PrismaTaskAuditLogRepository(db),
     },
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
+    refreshTokenPurger: new PrismaRefreshTokenPurger(db),
     uow,
   };
 }
