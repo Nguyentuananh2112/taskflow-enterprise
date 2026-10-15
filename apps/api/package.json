@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --clear-screen=false --env-file-if-exists=.env src/main.ts",
+    "dev": "node --watch --env-file-if-exists=.env --import tsx src/main.ts",
     "build": "prisma generate --no-hints && tsdown",
     "start": "node dist/main.js",
     "typecheck": "prisma generate --no-hints && tsc --noEmit",
