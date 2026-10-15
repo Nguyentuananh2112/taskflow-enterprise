@@ -7,7 +7,7 @@ import { flushRateLimitCounters as flushCounters } from './harness/valkey';
 // Rate limit toàn cục (security.md §6.4). Suite tự phát hiện limiter: chưa có (main trước T-016)
 // ⇒ skip có nhãn PENDING-ROUTE; có ⇒ chạy thật. Bộ đếm nằm ở Valkey db 15 riêng, xóa trước mỗi test.
 
-const api = useApi();
+const api = useApi({ TRUST_PROXY_HOPS: '0' });
 const PROBE = '/api/v1/__sec-probe';
 const ANON_LIMIT = 100;
 /**

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, it } from 'vitest';
 import { startApi, type RunningApi } from './api-process';
 import { loadHarnessConfig, TEST_JWT_SECRET } from './config';
 import { createEphemeralDatabase, type EphemeralDatabase } from './database';
+import { flushRateLimitCounters } from './valkey';
 import { rawRequest, type RawRequest, type RawResponse } from './http-client';
 
 export interface ApiUnderTest {
@@ -23,7 +24,9 @@ export function baseEnv(dbUrl: string, overrides: Record<string, string> = {}) {
     JWT_ACCESS_SECRET: TEST_JWT_SECRET,
     CORS_ORIGINS: config.webOrigin,
     COOKIE_SECURE: 'false',
-    TRUST_PROXY_HOPS: '0',
+    // 1 hop: harness gán X-Forwarded-For riêng cho mỗi request chưa xác thực (né rate limit
+    // register 5/giờ/IP khi seed nhiều user). rate-limit.sec.ts ghi đè lại 0.
+    TRUST_PROXY_HOPS: '1',
     GIT_SHA: 'security-suite',
     LOG_LEVEL: 'info',
     ...overrides,
@@ -40,9 +43,11 @@ export function useApi(envOverrides: Record<string, string> = {}): ApiUnderTest 
   let api: RunningApi | undefined;
 
   beforeAll(async () => {
+    // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
+    await flushRateLimitCounters();
     db = await createEphemeralDatabase(config);
     api = await startApi(baseEnv(db.appUrl, envOverrides));
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     await api?.stop();
@@ -68,8 +73,23 @@ export function useApi(envOverrides: Record<string, string> = {}): ApiUnderTest 
  * Case SEC chưa chạy được vì route/tính năng chưa có. Tên luôn mang nhãn `PENDING-ROUTE` để báo
  * cáo đếm được; bị skip (KHÔNG xanh giả). Phase 3: đổi `pendingRoute` → `it` khi route merge.
  */
+function runPending(blockedBy: string): boolean {
+  const raw = process.env.SEC_RUN_PENDING ?? '';
+  if (raw === 'all') return true;
+  const tags = raw
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  return tags.some((tag) => blockedBy.includes(tag));
+}
+
 export function pendingRoute(id: string, title: string, blockedBy: string, fn?: () => unknown) {
-  return it.skip(`[PENDING-ROUTE ${blockedBy}] ${id} — ${title}`, fn ?? (() => undefined));
+  const name = `[PENDING-ROUTE ${blockedBy}] ${id} — ${title}`;
+  // Nghiệm thu branch có route: `SEC_RUN_PENDING=all` hoặc danh sách nhãn (vd `auth,workspaces`) khớp
+  // chuỗi con của `blockedBy` ⇒ chạy thật các case ĐÃ có thân test. Case chưa có thân luôn là todo —
+  // không bao giờ xanh giả.
+  if (!fn) return it.todo(name);
+  return runPending(blockedBy) ? it(name, fn) : it.skip(name, fn);
 }
 
 /** Case thuộc tầng khác (Playwright/k6) — chỉ liệt kê để ma trận SEC đầy đủ. */

@@ -3,7 +3,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 import { errorEnvelope } from './harness/http-client';
-import { pendingRoute, useApi } from './harness/suite';
+import { useApi } from './harness/suite';
 
 // Lớp vận chuyển: chạy được ngay trên app thật (chưa cần route nghiệp vụ).
 // Mọi POST tới `/api/v1/__sec-probe` đi qua toàn bộ chuỗi middleware trước khi tới 404.
@@ -117,15 +117,31 @@ describe('SEC-31 — giới hạn body và Content-Type', () => {
     expect(res.status).toBe(415);
   });
 
-  it('charset không hỗ trợ ⇒ 415', async () => {
+  it('charset ngoài họ UTF (latin1) ⇒ 415', async () => {
     const res = await api.request({
       method: 'POST',
       path: PROBE,
-      headers: { 'content-type': 'application/json; charset=utf-7' },
+      headers: { 'content-type': 'application/json; charset=iso-8859-1' },
       body: '{}',
     });
     expect(res.status).toBe(415);
+    expect(errorEnvelope(res).error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
   });
+
+  // Findings A5: body-parser nhận mọi charset `utf-*` (iconv giải mã cả UTF-7/UTF-16) — RFC 8259
+  // yêu cầu JSON trao đổi là UTF-8. Đỏ tới khi requireJsonContentType chỉ chấp nhận utf-8/không charset.
+  it.each(['utf-7', 'utf-16le', 'utf-16be'])(
+    'FINDING A5: charset=%s (không phải UTF-8) ⇒ 415',
+    async (charset) => {
+      const res = await api.request({
+        method: 'POST',
+        path: PROBE,
+        headers: { 'content-type': `application/json; charset=${charset}` },
+        body: '{}',
+      });
+      expect(res.status).toBe(415);
+    },
+  );
 
   it('JSON hỏng ⇒ 400 VALIDATION_ERROR, không phản chiếu input (ADR-096)', async () => {
     const secret = 'Sup3r-Secret-Passw0rd!';
@@ -204,8 +220,4 @@ describe('Lỗi & request id (security.md §6.7, devops.md §6.1)', () => {
   });
 });
 
-pendingRoute(
-  'SEC-29',
-  'POST /auth/refresh với Origin lạ/thiếu ⇒ 403 ORIGIN_NOT_ALLOWED, token không bị xoay',
-  'auth routes (Phase 3)',
-);
+// SEC-29 (Origin trên /auth/refresh): xem auth.sec.ts.

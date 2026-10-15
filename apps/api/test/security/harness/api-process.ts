@@ -36,7 +36,7 @@ export async function freePort(): Promise<number> {
  */
 export async function startApi(
   env: Record<string, string>,
-  { readyTimeoutMs = 30_000 } = {},
+  { readyTimeoutMs = 90_000 } = {},
 ): Promise<RunningApi> {
   const port = await freePort();
   const lines: string[] = [];

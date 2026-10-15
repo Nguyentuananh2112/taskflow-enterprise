@@ -70,7 +70,7 @@ describe('Refresh token rotation & reuse', () => {
     AUTH,
     async () => {
       const alice = await actors.register('origin');
-      for (const origin of ['https://evil.example', undefined]) {
+      for (const origin of ['https://evil.example', null]) {
         const res = await actors.refresh(alice.refreshCookie, origin);
         expect(res.status).toBe(403);
         expect(errorEnvelope(res).error.code).toBe('ORIGIN_NOT_ALLOWED');

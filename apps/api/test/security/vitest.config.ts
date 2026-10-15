@@ -14,6 +14,6 @@ export default defineConfig({
     // Mỗi file tự khởi động 1 process API + 1 DB clone ⇒ chạy tuần tự cho nhẹ RAM.
     fileParallelism: false,
     testTimeout: 20_000,
-    hookTimeout: 60_000,
+    hookTimeout: 120_000,
   },
 });

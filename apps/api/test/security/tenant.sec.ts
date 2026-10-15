@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 
-import { Actors, seedTenants, type Tenants } from './harness/actors';
+import { Actors, seedTasks, seedTenants, type Tenants } from './harness/actors';
 import { errorEnvelope } from './harness/http-client';
 import { pendingRoute, useApi } from './harness/suite';
 
@@ -12,6 +12,8 @@ const api = useApi();
 const actors = new Actors(api);
 let seeded: Promise<Tenants> | undefined;
 const tenants = () => (seeded ??= seedTenants(actors));
+let withTasks: ReturnType<typeof seedTasks> | undefined;
+const tenantsWithTasks = async () => (withTasks ??= seedTasks(actors, await tenants()));
 
 const WS = 'workspaces/:wsId routes (T-015 + Phase 3)';
 const TASK = 'task routes (Phase 3)';
@@ -39,7 +41,7 @@ describe('IDOR chéo workspace', () => {
     'Bob dùng URL ws B với projectId/taskId thuộc A ⇒ 404, DB không đổi',
     TASK,
     async () => {
-      const t = await tenants();
+      const t = await tenantsWithTasks();
       const base = `/workspaces/${t.wsB}/projects/${t.projectA.id}/tasks`;
       const attempts = [
         actors.json('GET', base, t.bob.accessToken),
@@ -81,7 +83,7 @@ describe('Mass assignment', () => {
     'Body chứa workspaceId/projectId/createdById/role/version lạ ⇒ 400, không ghi',
     TASK,
     async () => {
-      const t = await tenants();
+      const t = await tenantsWithTasks();
       const res = await actors.json(
         'POST',
         `/workspaces/${t.wsA}/projects/${t.projectA.id}/tasks`,
@@ -96,7 +98,7 @@ describe('Mass assignment', () => {
 
 describe('RBAC', () => {
   pendingRoute('SEC-05', 'Vic (VIEWER) tạo/sửa/move/assign/xóa task ⇒ 403 cả 5', TASK, async () => {
-    const t = await tenants();
+    const t = await tenantsWithTasks();
     const base = `/workspaces/${t.wsA}/projects/${t.projectA.id}/tasks`;
     const v = t.pamTask.version;
     const results = await Promise.all([
@@ -122,7 +124,7 @@ describe('RBAC', () => {
   });
 
   pendingRoute('SEC-06', 'Mia xóa task do Pam tạo ⇒ 403, task còn nguyên', TASK, async () => {
-    const t = await tenants();
+    const t = await tenantsWithTasks();
     const base = `/workspaces/${t.wsA}/projects/${t.projectA.id}/tasks`;
     const res = await actors.json('DELETE', `${base}/${t.pamTask.id}`, t.mia.accessToken);
     expect(res.status).toBe(403);
@@ -162,6 +164,37 @@ describe('Toàn vẹn & race', () => {
     'SEC-40',
     'Đăng ký đồng thời trùng fullName / trùng email ⇒ slug khác nhau / 409, không mồ côi',
     'auth routes (Phase 3)',
+    async () => {
+      const register = (email: string, fullName: string) =>
+        actors.json('POST', '/auth/register', undefined, {
+          email,
+          password: 'correct-horse-battery-staple-9',
+          fullName,
+        });
+      const tag = `${Date.now()}`;
+      // Cùng fullName ⇒ cùng slug gốc: cả 5 phải 201 và slug workspace khác nhau.
+      const sameName = await Promise.all(
+        Array.from({ length: 5 }, (_, i) =>
+          register(`dup-${tag}-${i}@sec.example`, `Trùng Tên ${tag}`),
+        ),
+      );
+      expect(sameName.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+      const slugs = await Promise.all(
+        sameName.map(async (r) => {
+          const token = (r.json as { data: { accessToken: string } }).data.accessToken;
+          const me = await actors.json('GET', '/auth/me', token);
+          return (me.json as { data: { memberships: { slug: string }[] } }).data.memberships[0]
+            ?.slug;
+        }),
+      );
+      expect(new Set(slugs).size).toBe(5);
+
+      // Cùng email: đúng 1 cái 201, còn lại 409 EMAIL_ALREADY_EXISTS — không 500.
+      const sameEmail = await Promise.all(
+        Array.from({ length: 5 }, () => register(`same-${tag}@sec.example`, 'Same Email')),
+      );
+      expect(sameEmail.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409]);
+    },
   );
   pendingRoute(
     'SEC-44',
