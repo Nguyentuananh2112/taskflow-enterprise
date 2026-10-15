@@ -20,8 +20,9 @@ import {
   type ColumnIds,
   type MoveIntent,
 } from '@/features/task-move';
+import { useCspNonce } from '@/shared/config';
 
-import { boardPlugins } from '../model/a11y-announcements';
+import { createBoardPlugins } from '../model/a11y-announcements';
 import { useBoardDnd } from '../model/use-board-dnd';
 import { useReducedMotion } from '../model/use-reduced-motion';
 import { BoardColumn } from './board-column';
@@ -55,6 +56,9 @@ export function KanbanBoard({ scope, board, canDrag, onOpen }: Props) {
     (task: TaskDto, intent: MoveIntent) => move({ base: task, intent }),
     [move],
   );
+  const nonce = useCspNonce();
+  // Ổn định theo nonce: provider không dựng lại manager mỗi lần render.
+  const plugins = useMemo(() => createBoardPlugins(nonce), [nonce]);
   const columns = useMemo(() => toColumns(board), [board]);
   const { state, handlers } = useBoardDnd({ columns, byId: board.byId, onMove });
   const view = useMemo(
@@ -71,7 +75,7 @@ export function KanbanBoard({ scope, board, canDrag, onOpen }: Props) {
   const allowed = state.from ? allowedTargets(state.from) : null;
 
   return (
-    <DragDropProvider plugins={boardPlugins} {...handlers}>
+    <DragDropProvider plugins={plugins} {...handlers}>
       <div className="flex gap-3 overflow-x-auto pb-4">
         {TASK_STATUS_ORDER.map((status) => (
           <BoardColumn

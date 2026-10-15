@@ -5,7 +5,7 @@ import { applyVietnameseZodLocale } from '@taskflow/contracts/common';
 import { setNonce } from 'get-nonce';
 import { useState, type ReactNode } from 'react';
 
-import { RuntimeConfigBoot, type PublicRuntimeConfig } from '@/shared/config';
+import { CspNonceProvider, RuntimeConfigBoot, type PublicRuntimeConfig } from '@/shared/config';
 import { createQueryClient } from '@/shared/query';
 import { Toaster } from '@/shared/ui/toast';
 
@@ -36,13 +36,15 @@ export function AppProviders({ config, nonce, realtime, children }: Props) {
   const [queryClient] = useState(createQueryClient);
   return (
     <RuntimeConfigBoot config={config}>
-      <QueryClientProvider client={queryClient}>
-        <SessionEffects />
-        <RealtimeProvider {...(realtime ? { createClient: realtime } : {})}>
-          {children}
-        </RealtimeProvider>
-        <Toaster />
-      </QueryClientProvider>
+      <CspNonceProvider nonce={nonce}>
+        <QueryClientProvider client={queryClient}>
+          <SessionEffects />
+          <RealtimeProvider {...(realtime ? { createClient: realtime } : {})}>
+            {children}
+          </RealtimeProvider>
+          <Toaster />
+        </QueryClientProvider>
+      </CspNonceProvider>
     </RuntimeConfigBoot>
   );
 }
