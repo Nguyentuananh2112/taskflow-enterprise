@@ -6,6 +6,7 @@ import {
   maintenanceEnabled,
   MaintenanceScheduler,
   PurgeIncompleteError,
+  PURGE_FIRST_RUN_AFTER_MS,
   purgeWorkspacesJob,
   type ScheduledJob,
 } from './maintenance-jobs';
@@ -44,6 +45,41 @@ describe('MaintenanceScheduler (T-033)', () => {
     const stopping = s.stop(1_000); // lượt 2 còn chạy ⇒ stop chờ tối đa 1 s (timer giả)
     await vi.advanceTimersByTimeAsync(1_000);
     await stopping;
+  });
+
+  it('F6 (review B): firstRunAfterMs ⇒ lượt ĐẦU sau khoảng đó + jitter, các lượt sau theo interval', async () => {
+    let runs = 0;
+    const quick: ScheduledJob = {
+      ...job(() => Promise.resolve(void (runs += 1))),
+      firstRunAfterMs: 30_000,
+    };
+    const s = new MaintenanceScheduler([quick], { logger: new SpyLogger(), random: () => 0.5 });
+    s.start();
+    await vi.advanceTimersByTimeAsync(34_999);
+    expect(runs).toBe(0);
+    await vi.advanceTimersByTimeAsync(1); // 30 s + jitter 5 s — không chờ cả interval 60 s
+    expect(runs).toBe(1);
+    await vi.advanceTimersByTimeAsync(65_000); // lượt 2: interval + jitter
+    expect(runs).toBe(2);
+    await s.stop(1_000);
+  });
+
+  it('F7 (review B): stop() hủy AbortSignal của lượt đang chạy ⇒ job dừng giữa các bước', async () => {
+    const seen: boolean[] = [];
+    const stepwise = job(async (signal) => {
+      for (let step = 0; step < 5; step++) {
+        if (signal?.aborted) return;
+        seen.push(signal?.aborted ?? false);
+        await new Promise((r) => setTimeout(r, 1_000));
+      }
+    });
+    const s = new MaintenanceScheduler([stepwise], { logger: new SpyLogger(), random: () => 0 });
+    s.start();
+    await vi.advanceTimersByTimeAsync(60_000 + 1_500); // lượt bắt đầu, đã xong 2 bước
+    const stopping = s.stop(10_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await stopping;
+    expect(seen).toEqual([false, false]); // bước thứ 3 thấy signal.aborted ⇒ dừng
   });
 
   it('job ném lỗi ⇒ log maintenance.run_failed (chỉ tên/mã lỗi), lượt sau vẫn chạy', async () => {
@@ -117,9 +153,22 @@ describe('purgeWorkspacesJob', () => {
     };
   };
 
+  it('F6/F7: lượt đầu sau PURGE_FIRST_RUN_AFTER_MS (không chờ cả chu kỳ); signal đã hủy ⇒ không purge', async () => {
+    let calls = 0;
+    const { job } = deps(() => {
+      calls += 1;
+      return Promise.resolve(true);
+    });
+    expect(job.firstRunAfterMs).toBe(PURGE_FIRST_RUN_AFTER_MS);
+    const aborted = new AbortController();
+    aborted.abort();
+    await job.run(aborted.signal);
+    expect(calls).toBe(0);
+  });
+
   it('ghi tổng kết purged/skipped', async () => {
     const { job: j, logger } = deps(() => Promise.resolve(true));
-    await j.run();
+    await j.run(new AbortController().signal);
     expect(logger.entries.find((e) => e.msg === 'maintenance.purge_summary')?.data).toMatchObject({
       purged: 2,
       skipped: 0,
@@ -128,7 +177,7 @@ describe('purgeWorkspacesJob', () => {
 
   it('instance khác đang giữ khóa lô ⇒ bỏ lượt (info), không coi là lỗi', async () => {
     const { job: j, logger } = deps(() => Promise.reject(new PurgeRunBusyError()));
-    await expect(j.run()).resolves.toBeUndefined();
+    await expect(j.run(new AbortController().signal)).resolves.toBeUndefined();
     expect(logger.messages('info')).toContain('maintenance.purge_skipped_busy');
   });
 
