@@ -2,6 +2,11 @@ import { Writable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  leakedSecrets,
+  prismaCheckViolation,
+  prismaValidationError,
+} from '../../../test/support/prisma-errors';
 import { createLogger } from './pino-logger';
 
 function capture() {
@@ -65,6 +70,29 @@ describe('createLogger', () => {
     expect(text).toContain('"host":"api"');
     expect(text).toContain('[REDACTED]');
   });
+
+  it.each([
+    ['production', false],
+    ['local', true],
+  ] as const)(
+    'T-031 mục 0 (%s): `err` qua serializer allow-list — không email/hash; stack chỉ ngoài prod',
+    (appEnv, hasStack) => {
+      const { lines, stream } = capture();
+      const logger = createLogger({ level: 'info', gitSha: 'abc', appEnv }, stream);
+      logger.error({ err: prismaCheckViolation() }, 'db');
+      logger.error({ err: prismaValidationError() }, 'db');
+      logger.error({ err: new Error('plain') }, 'plain');
+      // Dự phòng: lỗi Prisma lỡ log dưới key khác ⇒ redact path bắt `meta.driverAdapterError`.
+      logger.error({ failure: prismaCheckViolation() }, 'other-key');
+      expect(leakedSecrets(lines.slice(0, 2).concat(lines[3] ?? {}))).toEqual([]);
+      expect(lines[0]?.['err']).toMatchObject({
+        name: 'PrismaClientKnownRequestError',
+        code: 'P2039',
+      });
+      expect(lines[1]?.['err']).toEqual({ name: 'PrismaClientValidationError' });
+      expect(Boolean((lines[2]?.['err'] as { stack?: string }).stack)).toBe(hasStack);
+    },
+  );
 
   it('tôn trọng LOG_LEVEL', () => {
     const { lines, stream } = capture();
