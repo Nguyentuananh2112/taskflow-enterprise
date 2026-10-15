@@ -44,7 +44,7 @@ it('A chuyển thẻ sang Đang làm ⇒ B thấy ngay; B tạo task ⇒ A thấ
       return (init?.method ?? 'GET') === 'GET' && /\/tasks\?/.test(url);
     }).length;
 
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await user.click(within(tabA).getByRole('button', { name: `Thao tác với ${task.key}` }));
   await user.click(await screen.findByRole('menuitem', { name: 'Chuyển tới Đang làm' }));
 

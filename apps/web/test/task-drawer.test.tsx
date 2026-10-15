@@ -32,7 +32,7 @@ async function openTask(title = 'Sửa lỗi header', realtime = true) {
   openBoard(`${fx.boardUrl}?task=${task.id}`, hub.client(getClientId()));
   const drawer = await screen.findByRole('dialog', { name: task.key });
   await within(drawer).findByLabelText(/^Tiêu đề/);
-  return { task, drawer, user: userEvent.setup() };
+  return { task, drawer, user: userEvent.setup({ delay: null }) };
 }
 
 const titleField = (drawer: HTMLElement) =>
@@ -119,7 +119,7 @@ describe('drawer chi tiết task', () => {
     const picker = await within(drawer).findByLabelText<HTMLSelectElement>('Người phụ trách');
     await waitFor(() => expect(picker.options.length).toBe(3));
     expect([...picker.options].map((o) => o.text)).toEqual(['Chưa giao', 'Trần Lan', 'Mai Hoa']);
-    await userEvent.setup().selectOptions(picker, hoa.id);
+    await userEvent.setup({ delay: null }).selectOptions(picker, hoa.id);
     await waitFor(() =>
       expect(mock.board.getTask(fx.project.id, task.id)?.assignee?.id).toBe(hoa.id),
     );
@@ -138,7 +138,9 @@ describe('drawer chi tiết task', () => {
     await within(drawer).findByLabelText(/^Tiêu đề/);
     expect(within(drawer).queryByLabelText('Người phụ trách')).toBeNull();
     expect(within(drawer).queryByRole('button', { name: 'Xóa task' })).toBeNull();
-    await userEvent.setup().click(within(drawer).getByRole('button', { name: 'Nhận việc' }));
+    await userEvent
+      .setup({ delay: null })
+      .click(within(drawer).getByRole('button', { name: 'Nhận việc' }));
     await waitFor(() =>
       expect(mock.board.getTask(fx.project.id, task.id)?.assignee?.id).toBe(an.id),
     );

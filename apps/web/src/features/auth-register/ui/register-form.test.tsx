@@ -23,7 +23,7 @@ function Status() {
 }
 
 async function submit(values: { fullName?: string; email?: string; password?: string }) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   if (values.fullName) await user.type(screen.getByLabelText(/Họ tên/), values.fullName);
   if (values.email) await user.type(screen.getByLabelText(/Email/), values.email);
   if (values.password) await user.type(screen.getByLabelText(/Mật khẩu/), values.password);

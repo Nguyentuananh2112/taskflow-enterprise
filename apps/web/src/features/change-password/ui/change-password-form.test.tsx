@@ -25,7 +25,7 @@ async function signIn() {
 }
 
 async function submit(current: string, next: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await user.type(screen.getByLabelText(/Mật khẩu hiện tại/), current);
   await user.type(screen.getByLabelText(/Mật khẩu mới/), next);
   await user.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }));
