@@ -430,7 +430,8 @@ Socket là kênh **chỉ đọc** (server → client). Mọi thao tác ghi đi q
 - Client: `io(WS_URL, { transports: ['websocket'], auth: (cb) => cb({ token: getAccessToken(), clientId }), withCredentials: false })` — **chỉ websocket** (ADR-074), không long-polling. Token **không** đặt trong query string (bị ghi vào log proxy). `clientId` = uuid theo tab (giống header REST `X-Client-Id`), Zod validate uuid, lưu `socket.data.clientId`.
 - Server: `transports: ['websocket']`. **Trình duyệt không áp dụng CORS cho WebSocket**, nên phải tự kiểm `Origin` trong `allowRequest`: Origin không thuộc whitelist (hoặc thiếu) ⇒ từ chối handshake. Đây là chặn tấn công cross-site WebSocket hijacking. Rủi ro vốn đã thấp vì xác thực bằng token trong `auth` chứ không bằng cookie, nhưng vẫn bắt buộc (phòng thủ nhiều lớp). Sau đó `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' }` → client nhận ở `connect_error`, refresh rồi kết nối lại.
 - Thành công: `socket.data.user = { id, sid, exp }`; tự join `user:{userId}` và `session:{sid}` (dùng cho logout / logout-all).
-- Rate limit kết nối: 20 handshake/phút/IP.
+- **Xác thực lại sau khi vào phòng cá nhân** (G1 realtime M1): logout / logout-all / đổi mật khẩu commit **trong lúc** handshake đang verify thì lệnh thu hồi không thấy socket (chưa ở phòng `user` / `session`). Vì vậy: vào phòng `user` + `session` **trước**, rồi verify token **lần nữa**; thất bại hoặc lỗi ⇒ ngắt (fail-closed). `project:join` chờ kết quả lần verify này. Thu hồi commit trước lần verify thứ hai ⇒ lần đó thất bại; commit sau ⇒ socket đã ở phòng nên bị ngắt.
+- Rate limit kết nối: 20 handshake/phút/IP. Tối đa **20 socket đồng thời/user/instance** — vượt ⇒ handshake `RATE_LIMITED` (G1 realtime M2: mỗi socket có hạn mức join / renew riêng, nhiều socket nhân hạn mức lên và làm cạn pool DB dùng chung).
 
 ### 5.2 `project:join`
 ```
@@ -441,12 +442,12 @@ server: Zod validate → SELECT membership(workspaceId, user) JOIN workspace(del
 'project:leave', { projectId }, ack
 ```
 - Project archived vẫn join được (đọc được).
-- Tối đa 20 phòng project/socket; 30 lần `project:join`/phút/socket.
+- Tối đa 20 phòng project/socket — join đang chạy cũng được tính (giữ suất **trước** khi await) để join song song không vượt trần; 30 lần `project:join`/phút/socket **và** 60 lần/phút/user gộp mọi socket của user trên instance (mỗi join tốn vài truy vấn kể cả khi bị từ chối).
 - Mọi event server→client dùng vỏ chung `{ eventId, type, occurredAt, actorId, originClientId, data }` (contract T-003). `data` chỉ chứa DTO task — không có email/hash/token.
 - **`X-Client-Id` / `clientId` KHÔNG phải thông tin xác thực**: client tự sinh, giả mạo được, chỉ dùng để FE bỏ qua event do chính tab mình gây ra (`originClientId`). Server không được dùng nó cho bất kỳ quyết định phân quyền, rate limit hay định danh nào; giá trị không phải uuid ⇒ bỏ qua (coi như null), không ghi vào audit log.
 
 ### 5.3 Token hết hạn khi socket đang mở
-- Server đặt timer theo `exp` của token. Trước hạn, client refresh qua HTTP rồi gửi `'auth:renew', { token }, ack`. Server verify đầy đủ (2.5), **`sub` phải trùng** user hiện tại (khác → ngắt). Thành công → đặt lại timer, cập nhật `sid` room nếu đổi, và **kiểm tra lại membership mọi phòng đang join** (lưới an toàn ~15 phút/lần nếu lỡ mất sự kiện thu hồi).
+- Server đặt timer theo `exp` của token. Trước hạn, client refresh qua HTTP rồi gửi `'auth:renew', { token }, ack`. Server verify đầy đủ (2.5), **`sub` phải trùng** user hiện tại (khác → ngắt). Thành công → đặt lại timer, cập nhật `sid` room nếu đổi (đổi `sid` ⇒ vào phòng `session` mới rồi verify **lại**, cùng lý do với 5.1), và **kiểm tra lại membership mọi phòng đang join** (lưới an toàn ~15 phút/lần nếu lỡ mất sự kiện thu hồi). Kiểm lại bị **lỗi** (DB) ⇒ ack `SERVICE_UNAVAILABLE` rồi **ngắt** (fail-closed — đây là lưới an toàn duy nhất cho thu hồi bị lỡ); client gặp `io server disconnect` refresh, kết nối lại, join lại và tải lại board. Reconnect phía client phải có jitter để một lần DB chập chờn không gây dồn kết nối.
 - Timer chạy hết mà chưa renew → `emit('auth:expired')` rồi `disconnect(true)`. Client refresh và kết nối lại, join lại các phòng.
 - **Rate limit `auth:renew` (T-030, finding M5 của T-028):**
   - Mỗi lần renew có thể tốn tới ~20 truy vấn DB (recheck membership mọi phòng). Vì vậy giới hạn chạy **trước mọi việc khác**: **5/phút/socket** và **30/phút/user** (`AUTH_RENEW_LIMIT`, `core/http/rate-limit/rules.ts`).
@@ -499,25 +500,34 @@ Header của web (Next.js) và CSP nonce: xem **6.8** (yêu cầu cho ticket Pha
 ### 6.4 Rate limit (Valkey store, ADR-028)
 Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-limit` 8, `standardHeaders: "draft-8"`, store `rate-limit-redis` qua node-redis). Key tính theo IP thật (sau `trust proxy`). `keyGenerator` tự viết có dùng IP **phải** đi qua `ipKeyGenerator(ip)` — IPv6 được gom theo /56, nếu không kẻ tấn công xoay địa chỉ trong một dải IPv6 để né giới hạn.
 
-| Endpoint | Giới hạn | Khóa |
-|---|---|---|
-| `POST /auth/login` | 20 / 15 phút — chạy **trước** validate, đếm mọi request | IP |
-|  | 10 lần **401** / 15 phút — **sau** validate (ADR-108) | IP + email(hash) |
-|  | 100 lần **401** / giờ — **sau** validate (ADR-108) | email(hash) — chống stuffing phân tán |
-| `POST /auth/register` | 5 / giờ | IP |
-| `POST /auth/refresh` | 60 / 5 phút | IP |
-| `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user |
-| `POST /auth/change-password` | 5 / 15 phút — **fail-closed** (ADR-108) | user |
-| `PATCH /auth/me` | 30 / giờ | user |
-| `POST ws/members` | 30 / giờ | user |
-| `POST /workspaces` | 10 / giờ | user |
-| `POST ws/restore` | 10 / giờ | user |
-| API đã xác thực (mặc định) | 300 / phút | user |
-| API chưa xác thực khác | 100 / phút | IP |
-| Socket handshake | 20 / phút | IP |
-| Socket `project:join` | 30 / phút | socket |
+| Endpoint | Giới hạn | Khóa | Đếm ở |
+|---|---|---|---|
+| `POST /auth/login` | 20 / 15 phút — chạy **trước** validate, đếm mọi request | IP | Valkey |
+|  | 10 lần **401** / 15 phút — **sau** validate (ADR-108) | IP + email(hash) | Valkey |
+|  | 100 lần **401** / giờ — **sau** validate (ADR-108) | email(hash) — chống stuffing phân tán | Valkey |
+| `POST /auth/register` | 5 / giờ | IP | Valkey |
+| `POST /auth/refresh` | 60 / 5 phút | IP | Valkey |
+| `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user | Valkey |
+| `POST /auth/change-password` | 5 / 15 phút — **fail-closed** (ADR-108) | user | Valkey |
+| `PATCH /auth/me` | 30 / giờ | user | Valkey |
+| `POST ws/members` | 30 / giờ | user | Valkey |
+| `POST /workspaces` | 10 / giờ | user | Valkey |
+| `POST ws/restore` | 10 / giờ | user | Valkey |
+| API đã xác thực (mặc định) | 300 / phút | user | Valkey |
+| API chưa xác thực khác | 100 / phút | IP | Valkey |
+| Socket handshake | 20 / phút | IP | Valkey |
+| Socket `project:join` | 30 / phút | socket | bộ nhớ socket |
+| Request có `Authorization` (trần thô, chống xoay token) | 1000 / phút | IP | Valkey |
+| Xác thực thất bại (`401`) — trước bước verify token | 30 lần **401** / phút | IP | Valkey |
+| `GET /readyz` | 60 / phút (T-031) | IP | bộ nhớ instance — không phụ thuộc Valkey |
+| Sentry tunnel `POST /monitoring` (web, T-035) | 30 / phút + 300 / phút | IP + instance | bộ nhớ instance (web) |
+| Socket kết nối đồng thời | 20 socket *(fix/realtime-g1)* | user | bộ nhớ instance (phòng `user:`) |
+| Socket `project:join` (gộp) | 60 / phút *(fix/realtime-g1)* | user | bộ nhớ instance |
+| Socket `auth:renew` | 5 / phút + 30 / phút (T-030) | socket + user | bộ nhớ socket / instance |
 
 **ADR-108 — chống khóa tài khoản từ xa (M4 của T-028):** hai bucket theo email chạy **sau** validate (body sai ⇒ `400`, không bị đếm; email đã chuẩn hóa) và **chỉ đếm `401 INVALID_CREDENTIALS`** — `400` / `429` không đếm, nên chờ hết cửa sổ là mở lại (không gia hạn mãi). Bucket chặt theo cặp (IP, email) chặn dò từ một IP mà không khóa chủ tài khoản ở IP khác; bucket theo email 100/giờ đủ cao để vài chục IP không khóa được người dùng thật. Rủi ro còn lại (kẻ tấn công có ≥ 100 lần 401/giờ trên nhiều IP vẫn làm chậm nạn nhân trong một giờ) được chấp nhận có chủ đích; CAPTCHA / backoff thuộc lộ trình sau v1.
+
+Các hạn mức đếm trong **bộ nhớ** (socket, `/readyz`, tunnel) không phụ thuộc Valkey. Với nhiều instance, hạn mức theo user của realtime nhân lên theo số instance: chấp nhận ở v1 (1 instance), đếm dùng chung qua Valkey khi bật `SOCKET_REDIS_ADAPTER` — khi Valkey lỗi thì rơi về hạn mức cục bộ, không fail-closed (ADR-115).
 
 Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dịch vụ) nhưng **fail-closed với login/register/refresh/change-password** (`503 SERVICE_UNAVAILABLE`) — tránh brute force tự do khi Valkey chết. `/readyz` **không** đỏ khi chỉ Valkey lỗi (ADR-074): API vẫn phục vụ người đã đăng nhập (fallback DB, 2.4), chỉ login/register tạm từ chối. Phải có cảnh báo vận hành riêng cho Valkey vì readyz không báo.
 
