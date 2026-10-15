@@ -105,5 +105,7 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 
 - ADR-109 ✅ **Cookie refresh dùng tiền tố `__Host-`** ở staging/production: `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/` (không `Domain`). Lý do: `__Secure-` không cấm `Domain=` ⇒ subdomain anh em cài được cookie đè (cookie-tossing, login CSRF — F/B T-028); `__Host-` cấm hoàn toàn. Đánh đổi `Path=/` (cookie gửi tới mọi route của API origin riêng) được chấp nhận: vẫn HttpOnly + SameSite=Strict, header Cookie đã redact trong log, route ngoài /auth dùng Bearer không đọc cookie. Dev giữ `tf_rt`. Nhiều cookie trùng tên ⇒ thu hồi family của MỌI giá trị rồi 401/204 + clear. Chưa có người dùng thật ⇒ chi phí chuyển đổi bằng 0. Ghi đè thuộc tính cookie trong ADR-024.
 
+- ADR-110 ✅ **Cấm ghi snapshot aggregate không kiểm soát đồng thời** (mở rộng ADR-104 thành nguyên tắc chung — X2/X8 của F: workspace bị xóa hồi sinh 14/40 lần). Mọi aggregate có thể bị ghi đồng thời (Task, Workspace, Project) dùng **optimistic lock** (`version` + `updateMany where version` ⇒ 409); trường bảo mật của User dùng lệnh nguyên tử theo ý định (ADR-104). Repository không được có `save()` ghi cả bản ghi không điều kiện. Review checklist + test race bắt buộc cho mọi aggregate mới.
+
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
