@@ -83,7 +83,8 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-095 ✅ Job purge workspace: `setInterval` mỗi giờ trong process API, chỉ chạy khi giành được khóa advisory. **Dùng `pg_try_advisory_xact_lock` bên trong transaction** (khóa mức session không an toàn với connection pool của Prisma). Không thêm hàng đợi, không phụ thuộc Valkey. Xử lý theo lô, idempotent.
 - ADR-096 ✅ Lỗi validation **không trả lại input** của người dùng (tránh phản xạ dữ liệu nhạy cảm như mật khẩu vào log/response).
 
-- ADR-097 ✅ **Cổng local riêng cho TaskFlow** (máy dev có dự án khác chiếm 5432/6379/3000): Postgres host **5433**, Valkey host **6380**, web **3001**, API **4000**. Bên trong mạng Docker vẫn dùng cổng chuẩn (5432/6379). Mọi giá trị đi qua `.env`; `FRONTEND_URL`/`CORS_ORIGINS` mặc định `http://localhost:3001`. Đặt `name: taskflow` cho compose project để không lẫn container.
+- ADR-097 ✅ **Cổng local riêng cho TaskFlow** (máy dev có dự án khác chiếm 5432/6379/3000): Postgres host **5433**, Valkey host **6380**, web **3001**, API **4000**. Bên trong mạng Docker vẫn dùng cổng chuẩn (5432/6379). Mọi giá trị đi qua `.env`; `FRONTEND_URL`/`CORS_ORIGINS` mặc định `http://localhost:3001`. Đặt `name: taskflow` cho compose project để không lẫn container. **Sửa đổi (sau T-009):** Postgres của docker-compose dùng host **5435** (dev) và **5434** (DB test) — theo compose của D; cổng 5433 chỉ là container tạm của C, xóa sau khi T-011 merge.
+- ADR-098 ✅ JWT access secret là chuỗi UTF-8 ≥ 32 byte; `kid` **suy ra từ secret** (đã hiện thực ở T-013) ⇒ **bỏ** biến `JWT_ACCESS_KID` / `JWT_ACCESS_KID_PREVIOUS`. Chỉ còn `JWT_ACCESS_SECRET` + `JWT_ACCESS_SECRET_PREVIOUS`.
 
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
