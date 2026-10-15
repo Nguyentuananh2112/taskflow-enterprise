@@ -23,6 +23,18 @@
 ## Kiểm chứng (không tài nguyên thật)
 <!-- KẾT QUẢ -->
 
+## Đọc chéo đã xử lý
+| Nguồn | Mục | Xử lý | Commit |
+|---|---|---|---|
+| G1 (B) | **H1** `workflow_run` lọc nhánh theo TÊN ⇒ fork có nhánh `main` lọt vào release (packages:write) | job `if`: `workflow_run.event == 'push'` + `head_branch == 'main'` + `head_repository.full_name == github.repository`; dispatch chỉ `refs/heads/main` | `7027b06` |
+| G1 | **M1** user deploy ∈ nhóm docker ≈ root | forced command `deploy/vps/ci-entry.sh` (`restrict,command=…`, root sở hữu): chỉ `receive` (tar, allowlist file cấu hình) / `deploy <sha40> <digest…>` / `rollback`; deploy.yml bỏ scp/shell. deploy.sh, bootstrap.sh, unit systemd: admin cài tay | `0bee5ce` |
+| G1 | **M2** "staging trước, chỉ main" chỉ nằm ở runbook | job `guard` trước bước duyệt: ref main; production đòi deployment staging `success` cho đúng SHA (Deployments API) | `b7bab0d` |
+| G1 | **M3** URL backup có mật khẩu bị backup.sh từ chối; `.env.*.example` bị `.gitignore` chặn | URL không mật khẩu + `PGPASSWORD` (SECRET) ở app.yaml/.env.backup.example/runbook; `!.env.*.example` | `7027b06` |
+| G1 | Low: deploy.sh không kiểm sha | `^[0-9a-f]{40}$` | `7027b06` |
+| G2 (A) | **O1** `pnpm db:deploy` ở gốc không tồn tại; **O2** migrate trong doc bỏ grant; **O3** target thật là `runtime`/`migrate` | sửa devops.md §3/§4.1/§8; workflow D3 vốn đã dùng `migrate.mjs` (migrate + grant) và target `runtime`/`migrate` | `7027b06` |
+
+Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted sources Managed PG/Valkey; chú thích owner `/opt/taskflow` (bootstrap vs runbook).
+
 ## Quyết định tự đưa ra (cần Tech Lead/người dùng duyệt)
 1. **Release tắt mặc định** (`ENABLE_RELEASE`) — GHCR miễn phí nhưng vẫn là tài nguyên công khai; chỉ bật khi đã chọn hosting.
 2. **App Platform: user migrator được bind tự động, user app là SECRET tạo tay 1 lần** — DO chỉ bind một user/DB; tách quyền (ADR-074) quan trọng hơn tiện lợi.
