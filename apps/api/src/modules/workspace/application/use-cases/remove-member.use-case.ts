@@ -54,13 +54,11 @@ export class RemoveMemberUseCase {
       assertNotLastOwner(owners, target);
 
       await this.d.memberships.remove(actor.workspaceId, target.userId);
-      const { unassignedTaskCount } = await this.d.cleaner.unassignAllForUser({
-        workspaceId: actor.workspaceId,
-        userId: target.userId,
-        actorId: actor.userId,
-      });
       const projectIds = await this.d.projects.listIds(actor.workspaceId);
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };
+      // Thu hồi ĐĂNG KÝ TRƯỚC các hook bỏ gán task (hook chạy tuần tự theo thứ tự đăng ký): người bị
+      // xóa rời phòng ngay sau commit, không tiếp tục nhận event của workspace trong lúc 2N hook
+      // `task:updated` / publish của cleaner chạy (G1 realtime F3).
       this.d.uow.afterCommit(() => {
         // Sự kiện bảo mật (ASVS V16, T-028): mất quyền truy cập workspace.
         this.d.logger.info(
@@ -71,6 +69,11 @@ export class RemoveMemberUseCase {
           { userId: target.userId, workspaceId: actor.workspaceId, projectIds },
           meta,
         );
+      });
+      const { unassignedTaskCount } = await this.d.cleaner.unassignAllForUser({
+        workspaceId: actor.workspaceId,
+        userId: target.userId,
+        actorId: actor.userId,
       });
       return { userId: target.userId, unassignedTaskCount };
     });
