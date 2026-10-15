@@ -84,17 +84,28 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
 
 const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH']);
 
+/** Tách `type/subtype; charset=…` của header Content-Type (chữ thường, bỏ nháy). */
+export function parseContentType(header: string | undefined): { type: string; charset?: string } {
+  const [type = '', ...params] = (header ?? '').split(';').map((p) => p.trim().toLowerCase());
+  const charset = params
+    .map((p) => /^charsets*=s*"?([^";s]+)"?$/.exec(p)?.[1])
+    .find((c): c is string => c !== undefined);
+  return charset === undefined ? { type } : { type, charset };
+}
+
+const UTF8 = new Set(['utf-8', 'utf8']);
+
 /**
- * POST/PUT/PATCH bắt buộc `Content-Type: application/json` (kể cả khi không có body) để
- * trình duyệt luôn preflight — một lớp chống CSRF (security.md §6.3). Sai ⇒ 415.
+ * POST/PUT/PATCH bắt buộc `Content-Type: application/json` (kể cả khi không có body) để trình duyệt
+ * luôn preflight — một lớp chống CSRF (security.md §6.3). JSON chỉ được là UTF-8 (RFC 8259): mọi
+ * `charset` khác (utf-7, utf-16…) ⇒ 415, kể cả DELETE có body (QA F, T-021 finding A5). Sai ⇒ 415.
  */
 export const requireJsonContentType: RequestHandler = (req, _res, next) => {
-  if (!METHODS_WITH_BODY.has(req.method)) {
-    next();
-    return;
-  }
-  const mediaType = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
-  next(mediaType === 'application/json' ? undefined : new UnsupportedMediaTypeError());
+  const { type, charset } = parseContentType(req.headers['content-type']);
+  const bodyRequired = METHODS_WITH_BODY.has(req.method);
+  const wrongType = bodyRequired && type !== 'application/json';
+  const wrongCharset = type === 'application/json' && charset !== undefined && !UTF8.has(charset);
+  next(wrongType || wrongCharset ? new UnsupportedMediaTypeError() : undefined);
 };
 
 /** `express.json` với giới hạn body (ADR-028). Không bật `urlencoded`. */

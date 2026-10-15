@@ -39,8 +39,20 @@ $ pnpm --filter @taskflow/api test:coverage   Statements 97.91% · Branches 94.2
 - `realtime.http.test.ts` (4): gateway trên container thật — token thật kết nối, token rác bị từ chối; `project:join` dùng membership thật (ws khác ⇒ NOT_FOUND); **`POST /auth/logout-all` ngắt socket đang mở**; xóa thành viên qua HTTP ⇒ `workspace:access-revoked` (actorId đúng).
 - **Kiểm tra đột biến**: bỏ tenant guard trong `loadMembership` ⇒ 5 test đỏ (IDOR, thứ tự, Policy); bỏ `permit` ⇒ test thứ tự (403 trước 400 body) đỏ. Đã khôi phục.
 
-## Kết quả bộ SEC của QA F trên branch này
-(chờ F — xem mục cập nhật bên dưới)
+## Kết quả bộ SEC của QA F trên branch này (hộp đen: spawn đúng `src/main.ts` của worktree, Valkey 6380/db15)
+
+Lần chạy 1 @ 061976b (nguyên văn tóm tắt của F):
+- **PASS (13)**: SEC-01 (IDOR ws khác ⇒ 404, body giống ws không tồn tại) · SEC-18 (reuse refresh >10s ⇒ 401, family thu hồi, access của sid 401) · SEC-21 (logout-all) · SEC-21c (race login‖logout-all ×20) · SEC-23b (race login‖change-password ×20) · SEC-25 (alg none / secret sai / sửa sub / thiếu tv / sai iss, aud) · SEC-29 (refresh Origin lạ/thiếu ⇒ 403, token không xoay) · SEC-30 (CORS, 11 case) · SEC-31 (413/415/bom gzip/JSON hỏng không phản chiếu) · SEC-33 (log không chứa password/token/cookie/authorization) · SEC-56 (WS Origin/polling, 7 case) · SEC-57 (PATCH /auth/me mass assignment) · SEC-58 (member search q=bob/%/_) + cổng T-016 bypass (2 case).
+- **FAIL (2)** — đều đã sửa trên branch (mục "Sửa theo QA F"):
+  - **SEC-40** (Medium): `InMemoryUnitOfWork.inTransaction` là cờ chung của instance ⇒ request B chạy lọt vào transaction của request A. Tái hiện: 5 register song song (email khác, cùng fullName) ⇒ 3×201 + 2×409 nhưng 2 user "409" vẫn đăng nhập được với memberships = [] (user mồ côi); biến thể 500 `AfterCommitOutsideTransactionError`; rollback của A xóa dữ liệu B.
+  - **Finding A5** (Low, core/http): `Content-Type: application/json; charset=utf-7|utf-16le|utf-16be` được chấp nhận (body-parser nhận mọi `utf-*`); RFC 8259 yêu cầu UTF-8.
+- **Không chạy được trên branch này**: `production.sec.ts` (main.ts từ chối InMemory ở production — đúng hành vi, chờ T-020); case cần task (SEC-02..12, 42..45) — chờ T-018.
+- **F chưa viết thân test** (không tính pass/fail): SEC-13..17, 19, 20, 22, 23, 24, 26..28, 32, 34..39, 41, 46, 47, 51..55.
+
+## Sửa theo QA F
+1. **SEC-40** — `InMemoryUnitOfWork` dùng **AsyncLocalStorage** (như `PrismaUnitOfWork`): chỉ `run()` lồng trong CHÍNH chuỗi async mới dùng lại transaction; request khác xếp hàng; `afterCommit` đọc hook từ store của chuỗi async. Test mới: `composition/in-memory-unit-of-work.test.ts` (2 `run` song song — cái sau không chạy trước khi cái đầu xong; rollback của cái đầu không xóa dữ liệu cái sau; `afterCommit` lạc chuỗi ⇒ lỗi) + `auth.http.test.ts` "5 register song song ⇒ 5×201, mỗi người có workspace OWNER". **Chạy lại trên bản cũ**: test HTTP cho `[201, 409, 409, 409, 409]`, test đơn vị đỏ 2/4 ⇒ test thật sự bắt lỗi.
+2. **A5** — `requireJsonContentType` (core/http, thuộc phạm vi T-021): `application/json` chỉ chấp nhận không có `charset` hoặc `utf-8`/`utf8` (kể cả có nháy, hoa/thường); charset khác ⇒ 415, áp cả DELETE có body. Test `app.test.ts`: utf-7/utf-16le/UTF-16BE/iso-8859-1 ⇒ 415; 3 dạng UTF-8 hợp lệ ⇒ chấp nhận.
+DoD sau sửa: typecheck / lint (api 213 module, 0 vi phạm) / **test 84 file, 858 test** / build — exit 0; coverage API 98.07% stmts / 94.56% branches.
 
 ## Quyết định tự đưa ra (có thể bác)
 1. **Body/query validate SAU kiểm quyền** (403 trước 400 body): người không có quyền không học được luật validate. Params (uuid) vẫn validate trước (400 trước 404 — data-and-api §2.2).

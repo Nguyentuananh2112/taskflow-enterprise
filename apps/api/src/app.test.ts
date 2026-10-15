@@ -169,6 +169,39 @@ describe('body & Content-Type', () => {
     expect((await request(build()).post(TASK)).status).toBe(415);
   });
 
+  it.each(['utf-7', 'utf-16le', 'UTF-16BE', '"iso-8859-1"'])(
+    'JSON với charset=%s ⇒ 415 (RFC 8259: chỉ UTF-8 — QA F finding A5)',
+    async (charset) => {
+      const res = await request(build())
+        .post(TASK)
+        .set('Content-Type', `application/json; charset=${charset}`)
+        .send('{"title":"abc"}');
+      expect(res.status).toBe(415);
+      expect(errorOf(res).code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    },
+  );
+
+  it.each([
+    'application/json',
+    'application/json; charset=utf-8',
+    'application/json;charset="UTF-8"',
+  ])('%s ⇒ chấp nhận', async (contentType) => {
+    const res = await request(build())
+      .post(TASK)
+      .set('Content-Type', contentType)
+      .send('{"title":"abc"}');
+    expect(res.status).toBe(200);
+  });
+
+  it('DELETE có body JSON charset lạ ⇒ 415; DELETE không body ⇒ không cần Content-Type', async () => {
+    const del = (ct?: string) => {
+      const req = request(build()).delete('/api/v1/nope');
+      return ct ? req.set('Content-Type', ct).send('{}') : req;
+    };
+    expect((await del('application/json; charset=utf-16le')).status).toBe(415);
+    expect((await del()).status).toBe(404);
+  });
+
   it('vượt body limit ⇒ 413 PAYLOAD_TOO_LARGE', async () => {
     const res = await request(build())
       .post(TASK)

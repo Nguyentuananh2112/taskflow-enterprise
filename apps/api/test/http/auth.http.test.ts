@@ -103,6 +103,30 @@ describe('POST /auth/register', () => {
   });
 });
 
+describe('đồng thời (SEC-40, lỗi QA F ở T-021)', () => {
+  it('5 register song song (email khác, cùng fullName ⇒ va slug) ⇒ cả 5 đều 201, mỗi người có workspace OWNER', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        post('/register')
+          .set('X-Forwarded-For', t.nextIp())
+          .send({ email: `twin${i}@example.com`, password: PASSWORD, fullName: 'Song Sinh' }),
+      ),
+    );
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+    for (const res of results) {
+      const data = envelopeOf<{ accessToken: string; defaultWorkspaceId: string }>(res).data;
+      const me = await request(t.app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${data?.accessToken ?? ''}`);
+      expect(
+        envelopeOf<{ memberships: { workspaceId: string; role: string }[] }>(me).data?.memberships,
+      ).toEqual([
+        expect.objectContaining({ workspaceId: data?.defaultWorkspaceId, role: 'OWNER' }),
+      ]);
+    }
+  });
+});
+
 describe('POST /auth/login', () => {
   it('200 + cookie; sai mật khẩu và email không tồn tại cùng một 401 INVALID_CREDENTIALS', async () => {
     const mia = await t.register('Mia');
