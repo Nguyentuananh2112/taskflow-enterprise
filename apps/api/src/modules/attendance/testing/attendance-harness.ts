@@ -1,5 +1,7 @@
 import { FakeClock, FakeUnitOfWork, SequentialIdGenerator } from '../../../../test/support';
 import type { AttendanceDeps } from '../application/attendance-days';
+import type { HrAuditAction } from '../application/ports/collaborators.port';
+import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
 import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-case';
 import { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
 import { instantOf } from '../domain/local-time';
@@ -18,6 +20,25 @@ export const VN = 'Asia/Ho_Chi_Minh';
 export const W1 = '0199e5a2-0000-7000-8000-0000000000a1';
 export const MIA = '0199e5a2-0000-7000-8000-0000000000b1';
 export const MAX = '0199e5a2-0000-7000-8000-0000000000b2';
+/** MEMBER có grant HR_MANAGE (test-spec §0.2). */
+export const HANA = '0199e5a2-0000-7000-8000-0000000000c1';
+export const OLIVIA = '0199e5a2-0000-7000-8000-0000000000c0';
+export const VIC = '0199e5a2-0000-7000-8000-0000000000b9';
+export const W2 = '0199e5a2-0000-7000-8000-0000000000a2';
+const ROLES: Record<string, 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER'> = {
+  [OLIVIA]: 'OWNER',
+  [HANA]: 'MEMBER',
+  [MIA]: 'MEMBER',
+  [MAX]: 'MEMBER',
+  [VIC]: 'VIEWER',
+};
+const NAMES: Record<string, string> = {
+  [OLIVIA]: 'Olivia',
+  [HANA]: 'Hana',
+  [MIA]: 'Mia',
+  [MAX]: 'Max',
+  [VIC]: 'Vic',
+};
 export const S0: WorkSchedule = {
   effectiveFrom: '2026-01-01',
   timezone: VN,
@@ -52,6 +73,46 @@ export function createAttendanceHarness(now = '2026-11-17 07:55') {
     ids: new SequentialIdGenerator(),
     uow: new FakeUnitOfWork(),
   };
+  const members = new Map<string, 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER'>(Object.entries(ROLES));
+  const notified: { recipientId: string; eventId: string; actorId: string }[] = [];
+  const audit: {
+    action: HrAuditAction;
+    actorId: string;
+    targetUserId: string | null;
+    refId: string | null;
+    after: unknown;
+  }[] = [];
+  const eventUseCases = new AttendanceEventsUseCases({
+    ...deps,
+    users: {
+      findRefs: (ids) =>
+        Promise.resolve(
+          new Map(ids.filter((id) => NAMES[id]).map((id) => [id, { id, fullName: NAMES[id]! }])),
+        ),
+    },
+    members: {
+      roleOf: ({ workspaceId, userId }) =>
+        Promise.resolve(workspaceId === W1 ? (members.get(userId) ?? null) : null),
+    },
+    notifier: {
+      attendanceAdjusted: (n) => {
+        notified.push({ recipientId: n.recipientId, eventId: n.eventId, actorId: n.actorId });
+        return Promise.resolve();
+      },
+    },
+    audit: {
+      append: (e) => {
+        audit.push({
+          action: e.action,
+          actorId: e.actorId,
+          targetUserId: e.targetUserId,
+          refId: e.refId,
+          after: e.after,
+        });
+        return Promise.resolve();
+      },
+    },
+  });
   const checkInOut = new CheckInOutUseCase(deps);
   return {
     deps,
@@ -61,6 +122,10 @@ export function createAttendanceHarness(now = '2026-11-17 07:55') {
     leaves,
     checkInOut,
     queries: new MyAttendanceQueries(deps),
+    eventUseCases,
+    members,
+    notified,
+    audit,
     /** Đặt đồng hồ theo giờ VN. */
     at: (local: string) => clock.set(vnTime(local)),
     punch: (kind: 'IN' | 'OUT', idempotencyKey: string, userId = MIA) =>

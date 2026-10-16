@@ -58,4 +58,19 @@ export interface IAttendanceEventStore {
   }): Promise<AttendanceEventRecord | null>;
   /** Ném `AlreadyCheckedInError` / `IdempotencyKeyTakenError` khi vi phạm unique tương ứng. */
   add(event: AttendanceEventRecord): Promise<void>;
+  /** Lượt theo id TRONG workspace (id của ws khác ⇒ null ⇒ 404, ADR-020). */
+  findById(workspaceId: string, id: string): Promise<AttendanceEventRecord | null>;
+  /**
+   * Hủy có điều kiện trong MỘT câu lệnh: chỉ khi `voidedAt IS NULL` (2 HR hủy song song ⇒ đúng 1 thắng).
+   * Trả `false` khi lượt đã bị hủy trước đó. Dòng không bao giờ bị xóa (ADR-121).
+   */
+  void(q: {
+    workspaceId: string;
+    id: string;
+    voidedAt: Date;
+    voidedBy: string;
+    voidReason: string;
+  }): Promise<boolean>;
+  /** Người này đã từng có lượt chấm nào trong workspace (kể cả người đã rời — AT-20)? */
+  hasAnyForUser(workspaceId: string, userId: string): Promise<boolean>;
 }

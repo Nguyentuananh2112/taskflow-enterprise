@@ -78,6 +78,32 @@ export class InMemoryAttendanceEventStore implements IAttendanceEventStore {
     this.rows.push({ ...event });
     return Promise.resolve();
   }
+
+  findById(workspaceId: string, id: string) {
+    const row = this.rows.find((e) => e.workspaceId === workspaceId && e.id === id);
+    return Promise.resolve(row ? { ...row } : null);
+  }
+
+  void(q: {
+    workspaceId: string;
+    id: string;
+    voidedAt: Date;
+    voidedBy: string;
+    voidReason: string;
+  }) {
+    const row = this.rows.find(
+      (e) => e.workspaceId === q.workspaceId && e.id === q.id && e.voidedAt === null,
+    );
+    if (!row) return Promise.resolve(false);
+    Object.assign(row, { voidedAt: q.voidedAt, voidedBy: q.voidedBy, voidReason: q.voidReason });
+    return Promise.resolve(true);
+  }
+
+  hasAnyForUser(workspaceId: string, userId: string) {
+    return Promise.resolve(
+      this.rows.some((e) => e.workspaceId === workspaceId && e.userId === userId),
+    );
+  }
 }
 
 export class InMemoryWorkCalendarStore implements IWorkCalendarStore {
