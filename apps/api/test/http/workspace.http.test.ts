@@ -250,6 +250,25 @@ describe('F3: validate ở route với người có quyền + GET project thành
     }
   });
 
+  it('W-19: query / body strict — ?deleted=yes, DELETE thiếu confirmSlug / có field lạ, PATCH member có field lạ ⇒ 400', async () => {
+    const id = alice.workspaceId;
+    await addMember(alice, id, bob, 'MEMBER');
+    const list = await as(alice).get(ws('?deleted=yes'));
+    expect(list.status, list.text.slice(0, 200)).toBe(400);
+    const del = await as(alice).delete(ws(`/${id}`), {});
+    expect(del.status).toBe(400);
+    expect(errorOf(del).details?.issues?.map((i) => i.path.join('.'))).toContain('confirmSlug');
+    // confirmSlug ĐÚNG + field lạ: chỉ schema strict chặn được (use case sẽ xóa thật).
+    const slug = envelopeOf<{ slug: string }>(await as(alice).get(ws(`/${id}`))).data?.slug;
+    const extra = await as(alice).delete(ws(`/${id}`), { confirmSlug: slug, force: true });
+    expect(extra.status, extra.text.slice(0, 200)).toBe(400);
+    const role = await as(alice).patch(ws(`/${id}/members/${bob.id}`), { role: 'PM', x: 1 });
+    expect(role.status, role.text.slice(0, 200)).toBe(400);
+    expect(errorOf(role).code).toBe('VALIDATION_ERROR');
+    // Đối chứng: workspace chưa bị xóa, bob vẫn MEMBER (các request trên không làm gì).
+    expect((await as(alice).get(ws(`/${id}`))).status).toBe(200);
+  });
+
   it('W-11: VIEWER / MEMBER của chính ws GET /projects/:id ⇒ 200, đúng ProjectDto của project đó', async () => {
     const id = alice.workspaceId;
     const carol = await t.register('Carol');
