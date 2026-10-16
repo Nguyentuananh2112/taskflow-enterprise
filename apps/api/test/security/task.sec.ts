@@ -4,7 +4,7 @@ import { describe, expect } from 'vitest';
 
 import { Actors, seedTasks, seedTenants, type Actor, type Role } from './harness/actors';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { secCase, useApi } from './harness/suite';
+import { outOfScope, secCase, useApi } from './harness/suite';
 
 // Task: IDOR, RBAC/Policy, archived, VERSION_CONFLICT, bỏ gán khi hạ VIEWER (security.md §8,
 // data-and-api §2.7). Case CÓ ghi dữ liệu tự tạo task/project/member riêng — không làm bẩn fixture
@@ -218,10 +218,12 @@ describe('RBAC & Policy', () => {
     );
   });
 
-  secCase(
+  // Không có API nào làm `created_by_id` NULL (chỉ xóa cứng user — v1 không có) ⇒ phủ ở tầng I: UC-DL04
+  // chạy trên Postgres thật qua runner LSP; map ForbiddenError ⇒ 403 đã có SEC-07/08 hộp đen.
+  outOfScope(
     'SEC-09',
-    'Task createdById = null: MEMBER 403 / PM 200 (cần xóa user tạo task — chưa có API)',
-    TASK,
+    'Task createdById = null: MEMBER 403 / PM 200 (về hộp đen khi có API xóa tài khoản — sau v1)',
+    'tầng I (LSP use case)',
   );
 
   secCase(

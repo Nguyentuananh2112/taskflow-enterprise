@@ -158,8 +158,8 @@ describe('DeleteTaskUseCase', () => {
   it.each([
     ['UC-DL02', 'Max', U.Mia, false],
     ['UC-DL03', 'Pam', U.Mia, true],
-    ['UC-DL04 (MEMBER)', 'Mia', null, false],
-    ['UC-DL04 (PM)', 'Pam', null, true],
+    ['UC-DL04 / SEC-09 (MEMBER)', 'Mia', null, false],
+    ['UC-DL04 / SEC-09 (PM)', 'Pam', null, true],
     ['UC-DL05', 'Vic', U.Vic, false],
   ] as const)('%s: %s xóa task tạo bởi %s ⇒ %s', async (_, who, createdById, ok) => {
     const h = await createTaskHarness();
