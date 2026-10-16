@@ -56,7 +56,8 @@ export const TaskCard = memo(function TaskCard({
       <button
         type="button"
         id={titleId}
-        onClick={() => onOpen(task.id)}
+        // Thẻ kéo được bằng cả thân (widget kanban): click mà sensor đã hủy (sau kéo) ⇒ không mở drawer.
+        onClick={(event) => !event.defaultPrevented && onOpen(task.id)}
         className="rounded-control text-left text-sm font-medium text-text hover:underline"
       >
         {task.title}

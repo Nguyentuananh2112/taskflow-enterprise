@@ -36,6 +36,10 @@ const EnvSchema = z
     DATABASE_URL: postgresUrl,
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
     REDIS_URL: redisUrl,
+    // F5: socket Valkey không nhận byte nào trong khoảng này ⇒ bị hủy ⇒ login/register/refresh 503
+    // (fail-closed, ADR-108). Chỉ nâng khi Valkey ở xa / mạng trễ — KHÔNG dùng để che event loop nghẽn.
+    // Mặc định = VALKEY_SOCKET_TIMEOUT_MS của core/infrastructure/valkey.ts.
+    VALKEY_SOCKET_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(3_000),
     // `kid` suy ra từ secret trong adapter (T-013) ⇒ không có biến JWT_ACCESS_KID riêng.
     JWT_ACCESS_SECRET: jwtSecret,
     JWT_ACCESS_SECRET_PREVIOUS: jwtSecret.optional(),

@@ -1,57 +1,43 @@
-import { DropdownMenu as Menu } from 'radix-ui';
+import { useState, type KeyboardEvent, type PointerEvent } from 'react';
 
-import { cn } from '@/shared/lib/cn';
+import { RadixMenu, triggerClass, type MenuProps } from './radix-menu';
 
-// Menu thả xuống (Radix): phím mũi tên, Enter/Space, Esc, trả focus về nút mở; nội dung trong portal.
+export type { MenuItem } from './radix-menu';
 
-export type MenuItem = Readonly<{
-  key: string;
-  label: string;
-  onSelect: () => void;
-  disabled?: boolean;
-  tone?: 'default' | 'danger';
-}>;
+const OPEN_KEYS = new Set(['Enter', ' ', 'ArrowDown']);
 
-type Props = Readonly<{
-  /** Tên truy cập của nút mở (nút chỉ có icon "⋯"). */
-  label: string;
-  items: readonly MenuItem[];
-  className?: string;
-}>;
+/**
+ * Menu "⋯" mount LƯỜI (perf/board-mount bậc 1): board 500 thẻ không dựng 500 Root Radix. Trước lần
+ * tương tác đầu chỉ là một `<button>` thật — cùng tên truy cập, `aria-haspopup="menu"`,
+ * `aria-expanded="false"`, cùng vị trí tab ⇒ axe / trình đọc màn hình không đổi. Nhấn chuột trái
+ * (pointerdown, như Radix) hoặc Enter / Space / ArrowDown ⇒ thay bằng menu Radix ĐÃ MỞ; từ đó giữ
+ * Radix cho thẻ này (đóng ⇒ focus về nút như cũ).
+ */
+export function DropdownMenu(props: MenuProps) {
+  const [openedBy, setOpenedBy] = useState<'pointer' | 'keyboard' | null>(null);
+  if (openedBy) return <RadixMenu {...props} openedBy={openedBy} />;
 
-export function DropdownMenu({ label, items, className }: Props) {
+  const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || event.ctrlKey) return;
+    event.preventDefault(); // như Radix: không để focus nhảy trước khi menu mở
+    setOpenedBy('pointer');
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!OPEN_KEYS.has(event.key)) return;
+    event.preventDefault();
+    setOpenedBy('keyboard');
+  };
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger
-        aria-label={label}
-        className={cn(
-          'inline-flex size-7 items-center justify-center rounded-control text-text-muted hover:bg-bg-subtle',
-          className,
-        )}
-      >
-        <span aria-hidden="true">⋯</span>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content
-          align="end"
-          sideOffset={4}
-          className="z-50 min-w-48 rounded-control border border-border bg-surface p-1 text-sm text-text shadow-raised"
-        >
-          {items.map((item) => (
-            <Menu.Item
-              key={item.key}
-              disabled={item.disabled ?? false}
-              onSelect={item.onSelect}
-              className={cn(
-                'cursor-pointer rounded-control px-2 py-1.5 outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-bg-subtle',
-                item.tone === 'danger' && 'text-danger',
-              )}
-            >
-              {item.label}
-            </Menu.Item>
-          ))}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+    <button
+      type="button"
+      aria-label={props.label}
+      aria-haspopup="menu"
+      aria-expanded={false}
+      className={triggerClass(props.className)}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+    >
+      <span aria-hidden="true">⋯</span>
+    </button>
   );
 }

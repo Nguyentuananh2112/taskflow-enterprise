@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { makeTask } from '@test/task-fixture';
 
+import { preventCardActivation } from '../model/card-drag-sensors';
 import { SortableTaskCard } from './sortable-task-card';
 
 // E2 (WCAG 2.1.1): kéo bằng bàn phím vào cột TRỐNG thả về cột cũ. Nguyên nhân: thẻ lấy `group` (và
@@ -48,5 +49,39 @@ describe('SortableTaskCard', () => {
       { sortable?: { group?: unknown }; data?: unknown } | undefined;
     expect(droppable?.sortable?.group).toBe('IN_PROGRESS');
     expect(droppable?.data).toMatchObject({ status: 'IN_PROGRESS', key: task.key });
+  });
+
+  it('kéo cả thẻ + nút "⋯" mount lười (perf/board-mount): nhấn ⋯ KHÔNG khởi động kéo; tiêu đề thì được', () => {
+    const task = makeTask({ status: 'TODO', title: 'Tổ hợp' });
+    const { container, getByRole } = render(
+      <DragDropProvider>
+        <ul>
+          <SortableTaskCard
+            task={task}
+            column="TODO"
+            index={0}
+            canDrag
+            pending={false}
+            blocked={false}
+            reducedMotion
+            onOpen={vi.fn()}
+            getColumns={() => ({ TODO: [task.id], IN_PROGRESS: [], REVIEW: [], DONE: [] })}
+            onMove={vi.fn()}
+          />
+        </ul>
+      </DragDropProvider>,
+    );
+    const element = container.querySelector('article') ?? undefined;
+    const handle = getByRole('button', { name: `Kéo ${task.key}` });
+    const menu = getByRole('button', { name: `Thao tác với ${task.key}` });
+    expect(menu.getAttribute('aria-haspopup')).toBe('menu'); // nút lười, chưa mount Radix
+    const down = (target: Element) =>
+      Object.defineProperty(new MouseEvent('pointerdown'), 'target', {
+        value: target,
+      }) as PointerEvent;
+    expect(preventCardActivation(down(menu), { element, handle })).toBe(true);
+    expect(
+      preventCardActivation(down(getByRole('button', { name: 'Tổ hợp' })), { element, handle }),
+    ).toBe(false);
   });
 });
