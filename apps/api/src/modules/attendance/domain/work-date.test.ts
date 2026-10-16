@@ -24,6 +24,56 @@ const placed = (kind: 'IN' | 'OUT', date: string, time: string, workDate = date)
   voidedAt: null,
 });
 
+describe('workDateFor — ca giữa ngày + thứ tự đầu vào (mutation GAP A1–A3, F @fec8215)', () => {
+  it('A1 IN luôn theo ngày của chính nó: IN 08:00 16/11 còn mở, IN 05:00 17/11 (trước 06:00) ⇒ 17/11', () => {
+    expect(workDateFor('IN', at(TUE, '05:00'), VN, [placed('IN', MON, '08:00')])).toBe(TUE);
+  });
+
+  it('A2 `previous` không theo thứ tự: [IN 16/11, IN 15/11] hay [IN 15/11, IN 16/11] ⇒ OUT 00:30 17/11 thuộc 16/11', () => {
+    const in15 = placed('IN', '2026-11-15', '08:00');
+    const in16 = placed('IN', MON, '08:00');
+    for (const previous of [
+      [in16, in15],
+      [in15, in16],
+    ]) {
+      expect(workDateFor('OUT', at(TUE, '00:30'), VN, previous)).toBe(MON);
+    }
+  });
+
+  it('A3 IN 08:00 → OUT 12:00 → IN 13:00 (cùng 16/11), OUT 00:30 17/11 ⇒ 16/11 (IN 13:00 còn mở; OUT 12:00 đóng IN TRƯỚC đó)', () => {
+    const previous = [
+      placed('IN', MON, '08:00'),
+      placed('OUT', MON, '12:00'),
+      placed('IN', MON, '13:00'),
+    ];
+    for (const order of [previous, [...previous].reverse()]) {
+      expect(workDateFor('OUT', at(TUE, '00:30'), VN, order)).toBe(MON);
+    }
+    // Đối chứng: OUT 17:30 cùng ngày đóng IN 13:00 ⇒ OUT 00:30 hôm sau mồ côi (SD-12e).
+    const closedAfter = [...previous, placed('OUT', MON, '17:30')];
+    expect(workDateFor('OUT', at(TUE, '00:30'), VN, closedAfter)).toBe(TUE);
+  });
+
+  it('A3 OUT của NGÀY KHÁC không đóng IN: OUT 15/11 23:00 + IN 16/11 08:00 ⇒ OUT 00:30 17/11 thuộc 16/11', () => {
+    const previous = [placed('OUT', '2026-11-15', '23:00'), placed('IN', MON, '08:00')];
+    expect(workDateFor('OUT', at(TUE, '00:30'), VN, previous)).toBe(MON);
+  });
+
+  it('A3 OUT SAU IN nhưng thuộc ngày công KHÁC không đóng IN: HR thêm OUT 00:10 gán 17/11, IN 16/11 còn mở ⇒ OUT 00:30 17/11 thuộc 16/11', () => {
+    const previous = [placed('IN', MON, '08:00'), placed('OUT', TUE, '00:10')];
+    expect(workDateFor('OUT', at(TUE, '00:30'), VN, previous)).toBe(MON);
+  });
+
+  it('A3 lượt OUT đã hủy không đóng IN; lượt IN đã hủy không mở ngày', () => {
+    const voidedOut = { ...placed('OUT', MON, '17:30'), voidedAt: new Date(0) };
+    expect(workDateFor('OUT', at(TUE, '00:30'), VN, [placed('IN', MON, '08:00'), voidedOut])).toBe(
+      MON,
+    );
+    const voidedIn = { ...placed('IN', MON, '08:00'), voidedAt: new Date(0) };
+    expect(workDateFor('OUT', at(TUE, '00:30'), VN, [voidedIn])).toBe(TUE);
+  });
+});
+
 describe('workDateFor — ngày công của một lượt mới', () => {
   it('SD-32 IN theo ngày của múi giờ lịch, không theo UTC: 16/11 18:30Z = 17/11 01:30 VN ⇒ 17/11', () => {
     expect(workDateFor('IN', new Date('2026-11-16T18:30:00Z'), VN, [])).toBe(TUE);

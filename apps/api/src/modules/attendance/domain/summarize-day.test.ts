@@ -385,6 +385,21 @@ describe('summarizeDay — lượt cùng phút (E2E-HR-01, F)', () => {
   });
 });
 
+describe('summarizeDay — nhiều lượt trong ngày + scheduledMinutes (mutation GAP A4–A5, F @fec8215)', () => {
+  it('A4 IN 08:00 · OUT 12:00 · IN 13:00 (không OUT) ⇒ lastOut là OUT 12:00, không phải lượt IN 13:00', () => {
+    const r = day(MON, [ev('IN', MON, '08:00'), ev('OUT', MON, '12:00'), ev('IN', MON, '13:00')]);
+    expect(r.firstIn).toEqual(at(MON, '08:00'));
+    expect(r.lastOut).toEqual(at(MON, '12:00'));
+    expect(r).toMatchObject({ status: 'PRESENT', workedMin: 240, earlyMin: 330 });
+  });
+
+  it('A5 scheduledMinutes: S0 = 480 (570 − 90 nghỉ trưa); không nghỉ trưa = 570; nghỉ ngoài ca không trừ', () => {
+    expect(scheduledMinutes(S0)).toBe(480);
+    expect(scheduledMinutes({ ...S0, breakStartMin: 720, breakEndMin: 720 })).toBe(570);
+    expect(scheduledMinutes({ ...S0, startMin: 780, endMin: 1050 })).toBe(240);
+  });
+});
+
 describe('summarizeDay — chặn muộn/sớm trong ca (SD-35, SD-36)', () => {
   it('SD-35 vào sau giờ kết thúc ⇒ late, lateMin = cả ca (570), không hơn; worked 0', () => {
     const r = day(MON, [ev('IN', MON, '18:00'), ev('OUT', MON, '19:00')]);
