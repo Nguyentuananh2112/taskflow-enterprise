@@ -49,7 +49,7 @@ Ký hiệu giờ trong bảng = **giờ địa phương theo múi giờ của l�
 
 ## 1. `summarizeDay` (tầng U, M ≥ 90 %)
 
-Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `{ status, firstIn, lastOut, workedMin, lateMin, earlyMin, flags: { late, early, absentHalf } }`. Mặc định `schedule = S0`, `leave = null`, `holiday = null`, `now` = sau ngày đang xét (ngày đã qua) trừ khi ghi khác.
+Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `{ status, firstIn, lastOut, workedMin, lateMin, earlyMin, flags: { late, early, absentHalf, inProgress } }`. Mặc định `schedule = S0`, `leave = null`, `holiday = null`, `now` = sau ngày đang xét (ngày đã qua) trừ khi ghi khác.
 
 | ID | Ngày / bối cảnh | Lượt chấm (giờ địa phương) | Kỳ vọng |
 |---|---|---|---|
@@ -60,10 +60,11 @@ Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `
 | SD-05 | IN trong giờ trưa | IN 12:30 · OUT 17:30 | worked **240** (chỉ 13:30–17:30), lateMin 270 |
 | SD-06 | OUT trước trưa | IN 08:00 · OUT 11:00 | worked 180, `early`, earlyMin **390** |
 | SD-07 | chỉ IN, ngày đã qua | IN 08:00 | `MISSING_OUT`, `lastOut = null`, worked 0 |
-| SD-08 | chỉ IN, hôm nay, `now` 15:00 (trước `end`) | IN 08:00 | **xem Q1**: đề xuất `PRESENT` (đang làm), chưa cờ `early` |
+| SD-08 | chỉ IN, hôm nay, `now` 15:00 (trước `end`) | IN 08:00 | `PRESENT` + `inProgress = true`, KHÔNG cờ `early` (Q1) |
 | SD-09 | chỉ IN, hôm nay, `now` 17:31 | IN 08:00 | `MISSING_OUT` |
 | SD-10 | OUT 2 lần | IN 08:00 · OUT 12:00 · OUT 17:40 | `lastOut` = 17:40, worked 480, không `early` |
 | SD-11 | ra sau 00:00 (A#7) | IN 08:00 (16/11) · OUT 00:30 (17/11) | OUT gắn **16/11** (`workDate` của IN mở ≤ 16 h); 16/11 worked 480; 17/11 không có lượt mồ côi |
+| SD-11b | ra sau 00:00, sáng hôm sau lại vào (Q8) | IN 08:00 (16/11) · OUT 00:30 (17/11) · IN 08:00 (17/11) · OUT 17:30 (17/11) | OUT 00:30 gắn 16/11; IN 08:00 mở ngày 17/11 ⇒ cả hai ngày `PRESENT`, mỗi ngày worked 480 |
 | SD-12 | OUT mồ côi | IN 08:00 (15/11, quá 16 h) · OUT 01:00 (17/11) | OUT thuộc 17/11, hiển thị thô; 17/11 không `PRESENT` từ lượt đó |
 | SD-13 | nghỉ AM + đi làm PM | leave `AM` · IN 13:25 · OUT 17:30 | `PRESENT`, mốc bắt đầu = `breakEnd` 13:30 ⇒ không `late`, worked 240 |
 | SD-14 | nghỉ AM + vào muộn, `grace 5` | leave `AM` · IN 13:36 · OUT 17:30 | `late`, lateMin **6** (so với 13:30) |
@@ -78,9 +79,10 @@ Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `
 | SD-23 | ngày làm đã qua, không gì | — | `ABSENT` |
 | SD-24 | tương lai | — (date > hôm nay) | `PENDING` |
 | SD-25 | hôm nay, `now` 07:30, chưa IN | — | `PENDING` |
-| SD-26 | hôm nay, `now` 17:31, chưa IN | — | `ABSENT` (**xem Q2**: hay chỉ sau hết ngày?) |
+| SD-26 | hôm nay, `now` 17:31, chưa IN | — | `ABSENT` ngay sau `end`, theo `now` truyền vào (Q2) |
+| SD-26b | hôm nay, `now` đúng 17:30 (= `end`), chưa IN | — | `PENDING` (biên: chỉ `ABSENT` khi `now > end`) |
 | SD-27 | lượt bị hủy bỏ qua | IN 07:50 (`voidedAt`) · IN 08:10 · OUT 17:30 | `firstIn` = 08:10, `late`, lateMin 10 |
-| SD-28 | chỉ OUT (không IN) | OUT 17:30 | `ABSENT` (**xem Q3**) hoặc trạng thái riêng; giờ thô |
+| SD-28 | chỉ OUT (không IN) | OUT 17:30 | `ABSENT` + giờ thô, OUT mồ côi (Q3) |
 | SD-29 | đổi lịch giữa tháng | S1 hiệu lực 16/11: `start 510` (08:30). IN 08:20 ngày 13/11 và ngày 16/11 | 13/11 (S0): `late` 20 · 16/11 (S1): không `late` |
 | SD-30 | DST mùa xuân, `Europe/Berlin`, lịch làm cả CN | 29/03/2026 · IN 07:55 · OUT 17:35 (CEST) | worked **480**, không `late` (sai offset sẽ ra lệch 60) |
 | SD-31 | DST mùa thu, `Europe/Berlin` | 25/10/2026 · IN 07:55 · OUT 17:35 (CET) | worked 480, không `early` |
@@ -148,7 +150,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | LB-05 | `PATCH …/Hana/2026` bởi Hana | **403** (tự chỉnh — B-H1) |
 | LB-06 | `PATCH …/<userId chưa từng có dữ liệu>/2026` | 404 |
 | LB-07 | `year` ngoài ±1 năm | 400/422 |
-| LB-08 | `adjustment` làm `remaining` âm khi có đơn APPROVED | **xem Q4** |
+| LB-08 | `adjustment` làm `remaining` âm khi có đơn APPROVED | cho phép, hiển thị `remaining` âm; đơn ANNUAL mới ⇒ 422 `insufficient_balance` (Q4) |
 | LB-09 | biểu diễn: 0,5 ngày ↔ 1 nửa ngày, `Decimal(4,1)` ở DB | không lệch làm tròn (đọc lại đúng 10,5) |
 
 ## 5. Chấm công: lệnh và luật (tầng A + I)
@@ -161,7 +163,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-04 | cùng key nhưng `kind` khác (IN rồi OUT) | 422 `idempotency_key_reused` |
 | AT-05 | key của Mia dùng lại bởi Max | không va (key gắn theo user — A#1); Max được 201 |
 | AT-06 | replay key sau khi Mia bị xóa khỏi ws | 404 (vẫn kiểm membership TRƯỚC replay — B-M6) |
-| AT-07 | check-out chưa IN | 422 (**xem Q5**: mã lỗi) |
+| AT-07 | check-out chưa IN | 422 `not_checked_in` (Q5) |
 | AT-08 | check-out 2 lần | 201 cả hai, `lastOut` = lượt sau |
 | AT-09 | `Idempotency-Key` không phải UUID | 400 |
 | AT-10 | Vic check-in | 403 |
@@ -203,7 +205,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 |---|---|---|
 | SEC-HR-01 | Otto (W2) gọi mọi route `attendance/*`, `leave-*` của W1 | 404, body giống hệt ws không tồn tại |
 | SEC-HR-02 | Mia gọi route `hr:manage` (`GET attendance?month=`, `export.csv`, `approve`, `PATCH leave-balances`…) | 403; body sai cũng 403, không 400 (B-M4) |
-| SEC-HR-03 | Mia `GET attendance?userId=Max` / `leave-requests?userId=Max` (nếu route nhận tham số) | không lộ dữ liệu người khác (403 hoặc bị bỏ qua — **xem Q6**) |
+| SEC-HR-03 | Mia gửi `?userId=Max` tới route `me` (`attendance/me`, `leave-requests?mine=1`, `leave-balances/me`) | tham số bị bỏ qua hoặc 400 strict, luôn chỉ trả dữ liệu của Mia (route nhân viên không nhận `userId` — Q6) |
 | SEC-HR-04 | IDOR: Hana W1 approve/void id đơn/lượt chấm của W2 | 404 |
 | SEC-HR-05 | Max hủy đơn của Mia | 404 (không lộ id tồn tại) |
 | SEC-HR-06 | Vic check-in / gửi đơn | 403 |
@@ -272,15 +274,15 @@ Nhóm Stryker mới (thêm script `mutation:<nhóm>`, workflow hằng tuần t�
 
 Repo Prisma vẫn loại khỏi mutation (chỉ integration phủ — F3).
 
-## 11. Câu hỏi mở (cho TL / A / D trước khi chốt)
+## 11. Câu hỏi mở — ĐÃ CHỐT (TL, 2026-10-16)
 
-| # | Câu hỏi | Đề xuất của F |
+| # | Câu hỏi | Chốt (TL) |
 |---|---|---|
-| Q1 | Hôm nay đã IN, chưa tới `end`, chưa OUT ⇒ trạng thái gì? (danh sách §4 không có "đang làm") | `PRESENT` không cờ `early`; chỉ thành `MISSING_OUT` khi `now > end` |
-| Q2 | Ngày làm hôm nay, đã qua `end`, chưa IN ⇒ `ABSENT` ngay hay chờ hết ngày? | `ABSENT` ngay sau `end` (khớp "ngày làm đã qua") — cần chốt để test không flaky quanh 17:30 |
-| Q3 | Chỉ có OUT, không có IN | `ABSENT` + giờ thô (OUT mồ côi) |
-| Q4 | HR giảm `adjustment` làm `remaining` âm khi đã có đơn APPROVED | cho phép (dữ liệu thật) nhưng chặn đơn ANNUAL mới; hiển thị âm |
-| Q5 | Mã lỗi check-out khi chưa IN | 422 `not_checked_in` |
-| Q6 | Route nhân viên có nhận `userId` không, hay luôn là `me`? | chỉ `me` (không tham số) — giảm bề mặt IDOR |
-| Q7 | `grace` áp cho về sớm không? | không (thiết kế chỉ ghi cho muộn) — có ca SD-06 khẳng định |
-| Q8 | Ra sau 00:00 khi ngày hôm sau là ngày làm và người đó lại IN lúc 08:00 | OUT 00:30 gắn ngày trước; IN 08:00 mở ngày mới — thêm ca SD-11b khi chốt |
+| Q1 | Hôm nay đã IN, chưa tới `end`, chưa OUT ⇒ trạng thái gì? (danh sách §4 không có "đang làm") | **ĐÃ CHỐT (TL):** `PRESENT` + cờ `inProgress = true` khi `now < end` và chưa OUT (web hiện "đang làm"); KHÔNG cờ `early`; thành `MISSING_OUT` khi `now > end` (SD-08, SD-09) |
+| Q2 | Ngày làm hôm nay, đã qua `end`, chưa IN ⇒ `ABSENT` ngay hay chờ hết ngày? | **ĐÃ CHỐT (TL):** `ABSENT` ngay sau `end`, tính theo `now` truyền vào nên test tất định (SD-26, SD-26b) |
+| Q3 | Chỉ có OUT, không có IN | **ĐÃ CHỐT (TL):** `ABSENT` + giờ thô (OUT mồ côi) (SD-28) |
+| Q4 | HR giảm `adjustment` làm `remaining` âm khi đã có đơn APPROVED | **ĐÃ CHỐT (TL):** cho phép (dữ liệu thật), hiển thị âm, chặn đơn ANNUAL mới (LB-08) |
+| Q5 | Mã lỗi check-out khi chưa IN | **ĐÃ CHỐT (TL):** 422 `not_checked_in` (AT-07) |
+| Q6 | Route nhân viên có nhận `userId` không, hay luôn là `me`? | **ĐÃ CHỐT (TL):** chỉ `me`, không tham số `userId` — giảm bề mặt IDOR (SEC-HR-03) |
+| Q7 | `grace` áp cho về sớm không? | **ĐÃ CHỐT (TL):** không, `grace` chỉ áp cho muộn (SD-06) |
+| Q8 | Ra sau 00:00 khi ngày hôm sau là ngày làm và người đó lại IN lúc 08:00 | **ĐÃ CHỐT (TL):** OUT 00:30 gắn ngày trước; IN 08:00 mở ngày mới (SD-11b) |
