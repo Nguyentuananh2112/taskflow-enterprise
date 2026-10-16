@@ -198,6 +198,20 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     ]);
   });
 
+  it('F5: VALKEY_SOCKET_TIMEOUT_MS mặc định 3000; nhận số nguyên 500–30000; ngoài khoảng / không phải số ⇒ lỗi đúng tên biến', () => {
+    expect(loadEnv(testEnvVars()).VALKEY_SOCKET_TIMEOUT_MS).toBe(3_000);
+    for (const ok of ['500', '10000', '30000']) {
+      expect(
+        loadEnv({ ...testEnvVars(), VALKEY_SOCKET_TIMEOUT_MS: ok }).VALKEY_SOCKET_TIMEOUT_MS,
+      ).toBe(Number(ok));
+    }
+    for (const bad of ['499', '30001', '1500.5', 'abc']) {
+      expect(variablesOf({ ...testEnvVars(), VALKEY_SOCKET_TIMEOUT_MS: bad })).toEqual([
+        'VALKEY_SOCKET_TIMEOUT_MS',
+      ]);
+    }
+  });
+
   it('T-035: mặc định trace 0.05, metrics cổng 9464 trên 0.0.0.0; trace ngoài 0…1 ⇒ lỗi', () => {
     expect(loadEnv(testEnvVars({ METRICS_PORT: undefined }))).toMatchObject({
       SENTRY_TRACES_SAMPLE_RATE: 0.05,

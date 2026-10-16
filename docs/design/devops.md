@@ -138,6 +138,7 @@ Staging đặt `NODE_ENV=production` là cố ý: staging phải chạy giống 
 | `PORT` | | | int, mặc định 4000 | |
 | `DATABASE_URL` | **✔** | ✔ | url `postgresql://` | Container app: user `taskflow_app`. **Job migrate dùng cùng tên biến** nhưng trỏ tới user `taskflow_migrator` và luôn kết nối thẳng. Vì `prisma.config.ts` chỉ đọc `process.env.DATABASE_URL ?? ""` (ADR-061), nên **không** có biến `DIRECT_DATABASE_URL` riêng |
 | `DATABASE_POOL_MAX` | | | int 1–50, mặc định 10 | §4.5 |
+| `VALKEY_SOCKET_TIMEOUT_MS` | | | int 500–30000, mặc định 3000 | Socket Valkey im lặng quá ngưỡng ⇒ hủy ⇒ login/register/refresh 503 (fail-closed, ADR-108). Chỉ nâng khi Valkey ở xa / mạng trễ (F5) |
 | `REDIS_URL` | **✔** | ✔ | url `redis://` hoặc `rediss://`; prod bắt buộc `rediss://` | Trỏ tới **Valkey** (ADR-063). Giữ tên `REDIS_URL` vì đây là giao thức RESP và là tên quen thuộc của client node-redis |
 | `JWT_ACCESS_SECRET` | **✔** | ✔ | chuỗi **UTF-8 ≥ 32 byte** (không phải base64); production từ chối tiền tố `change-me`/`test-only` | T-002 §2.1, ADR-098. `kid` **suy ra từ secret** — không có biến `JWT_ACCESS_KID` |
 | `JWT_ACCESS_SECRET_PREVIOUS` | **✔** | | như trên, phải khác secret hiện tại | chỉ có trong cửa sổ xoay khóa |

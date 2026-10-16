@@ -13,17 +13,18 @@ export function valkeyReconnectDelay(retries: number): number {
  * dùng timeout socket: không nhận byte nào trong `VALKEY_SOCKET_TIMEOUT_MS` ⇒ hủy socket, mọi lệnh
  * đang chờ lỗi ngay (rate limit fail-open/closed, readyz degraded), rồi reconnect như thường.
  * `PING` mỗi `VALKEY_PING_INTERVAL_MS` để kết nối khỏe nhưng nhàn rỗi không bị coi là treo.
+ * Production chỉnh timeout qua env cùng tên (F5) — mặc định ở đây; ping giữ cố định 1 s.
  */
 export const VALKEY_SOCKET_TIMEOUT_MS = 3_000;
 export const VALKEY_PING_INTERVAL_MS = 1_000;
 
-const buildClient = (url: string) =>
+const buildClient = (url: string, socketTimeout: number) =>
   createClient({
     url,
     disableOfflineQueue: true,
     pingInterval: VALKEY_PING_INTERVAL_MS,
     socket: {
-      socketTimeout: VALKEY_SOCKET_TIMEOUT_MS,
+      socketTimeout,
       connectTimeout: 5_000,
       reconnectStrategy: valkeyReconnectDelay,
     },
@@ -37,8 +38,13 @@ export type ValkeyClient = ReturnType<typeof buildClient>;
  * `disableOfflineQueue`: lệnh khi mất kết nối thất bại ngay (rate limit fail-open/closed rõ ràng),
  * không xếp hàng vô hạn.
  */
-export function createValkeyClient(url: string, logger: ILogger): ValkeyClient {
-  const client = buildClient(url);
+export function createValkeyClient(
+  url: string,
+  logger: ILogger,
+  /** env `VALKEY_SOCKET_TIMEOUT_MS` (F5); test và client phụ dùng mặc định. */
+  socketTimeoutMs: number = VALKEY_SOCKET_TIMEOUT_MS,
+): ValkeyClient {
+  const client = buildClient(url, socketTimeoutMs);
   let lastErrorLoggedAt = 0;
   client.on('error', (err: unknown) => {
     // Khi Valkey sập, node-redis phát lỗi mỗi lần reconnect — chỉ log tối đa 1 lần / 30s.
