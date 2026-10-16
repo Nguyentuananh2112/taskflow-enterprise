@@ -12,6 +12,7 @@ import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { PageMain } from '@/shared/ui/page';
+import { AttendanceCard } from '@/widgets/attendance-card';
 
 import { ProjectListHeader } from './project-list-header';
 
@@ -39,6 +40,8 @@ export function ProjectListPage() {
   }
   return (
     <PageMain className="gap-6">
+      {/* Màn hạ cánh sau khi chọn workspace ⇒ thẻ Chấm công ở ĐẦU trang (attendance-leave.md §6). */}
+      <AttendanceCard wsId={wsId} enabled={valid && can('attendance:self')} />
       <ProjectListHeader wsId={wsId} canCreate={can('project:create')} />
       <nav aria-label="Lọc dự án" className="flex gap-2">
         {TABS.map((tab) => (

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { useSession } from '@/entities/session';
 import { LogoutButton } from '@/features/auth-logout';
@@ -8,8 +9,15 @@ import { cn } from '@/shared/lib/cn';
 import { Avatar } from '@/shared/ui/avatar';
 import { PAGE_CONTAINER } from '@/shared/ui/page';
 
+import { HeaderAttendance } from './header-attendance';
+
+type Props = Readonly<{
+  /** Ô do tầng app ráp vào (vd chuông thông báo) — widget không import widget khác (FSD). */
+  actions?: ReactNode;
+}>;
+
 /** Thanh trên của khu đã đăng nhập: logo, người dùng, Tài khoản, Đăng xuất. */
-export function AppHeader() {
+export function AppHeader({ actions }: Props) {
   const { user } = useSession();
   return (
     <header className="border-b border-border bg-surface">
@@ -18,6 +26,8 @@ export function AppHeader() {
           TaskFlow
         </Link>
         <nav aria-label="Tài khoản" className="ml-auto flex items-center gap-2">
+          <HeaderAttendance />
+          {actions}
           {user && (
             <span className="flex items-center gap-2 text-sm">
               <Avatar name={user.fullName} colorKey={user.id} size="sm" decorative />

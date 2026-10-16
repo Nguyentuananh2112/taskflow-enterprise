@@ -8,6 +8,7 @@ import { AppShell } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import type { RealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
+import { AttendancePage } from '@/views/attendance';
 import { BoardPage } from '@/views/board';
 import { MembersPage } from '@/views/members';
 import { ProjectListPage } from '@/views/project-list';
@@ -24,6 +25,7 @@ const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/w$/, () => <WorkspacePickerPage />],
   [/^\/w\/new$/, () => <WorkspaceNewPage />],
   [/^\/w\/[^/]+\/projects$/, () => <ProjectListPage />],
+  [/^\/w\/[^/]+\/attendance$/, () => <AttendancePage />],
   [/^\/w\/[^/]+\/settings$/, () => <WorkspaceSettingsPage />],
   [/^\/w\/[^/]+\/settings\/members$/, () => <MembersPage />],
   [/^\/w\/[^/]+\/p\/[^/]+\/settings$/, () => <ProjectSettingsPage />],

@@ -1,10 +1,16 @@
-import { MemberRoleChangedEvent, WorkspaceAccessRevokedEvent } from '@taskflow/contracts/realtime';
+import {
+  MemberGrantsChangedEvent,
+  MemberRoleChangedEvent,
+  NotificationNewEvent,
+  WorkspaceAccessRevokedEvent,
+} from '@taskflow/contracts/realtime';
 import type { WorkspaceDto } from '@taskflow/contracts/workspace';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
 import { memberKeys } from '@/entities/member';
+import { notificationKeys } from '@/entities/notification';
 import { sessionKeys } from '@/entities/session';
 import {
   ROLE_LABEL,
@@ -59,9 +65,38 @@ export function useRealtimeSession(): void {
         }
       }
     });
+    // ADR-119: quyền cấp thêm đổi ⇒ `usePermission` đổi tức thì (mục HR hiện/ẩn, không reload — E2E-HR-03).
+    const offGrants = client.on('member:grants-changed', (raw) => {
+      const event = MemberGrantsChangedEvent.safeParse(raw);
+      if (!event.success) return;
+      const { workspaceId, grants } = event.data.data;
+      queryClient.setQueryData<WorkspaceDto>(
+        workspaceKeys.detail(workspaceId),
+        (old) => old && { ...old, myGrants: grants },
+      );
+      void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
+      toast({
+        title: grants.includes('HR_MANAGE')
+          ? 'Bạn được cấp quyền Quản lý nhân sự'
+          : 'Quyền Quản lý nhân sự của bạn đã được thu hồi',
+      });
+    });
+    // ADR-123: thông báo bền đã ghi ở server ⇒ chỉ cần tải lại chuông (số + danh sách).
+    const offNotification = client.on('notification:new', (raw) => {
+      if (NotificationNewEvent.safeParse(raw).success) {
+        void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      }
+    });
+    // Rớt socket thì có thể lỡ `notification:new` ⇒ kết nối lại thì tải lại chuông.
+    const offReconnect = client.onReconnect(
+      () => void queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
+    );
     return () => {
       offRole();
       offRevoked();
+      offGrants();
+      offNotification();
+      offReconnect();
     };
   }, [client, queryClient, router]);
 }

@@ -46,6 +46,11 @@ export type RequestOptions<S extends z.ZodType> = Readonly<{
   body?: unknown;
   query?: Query;
   signal?: AbortSignal;
+  /**
+   * Header `Idempotency-Key` (chấm công — attendance-leave.md §5): mỗi lần BẤM một key mới; tự thử
+   * lại sau lỗi mạng thì gửi lại CÙNG key ⇒ server trả kết quả cũ, không tạo lượt thứ hai.
+   */
+  idempotencyKey?: string;
 }>;
 
 export type ApiResult<T> = { data: T; page: PageMeta | undefined; requestId: string | undefined };
@@ -75,6 +80,7 @@ export function createHttpClient(deps: HttpDeps) {
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     if (token) headers.set('Authorization', `Bearer ${token}`);
     if (method !== 'GET') headers.set('X-Client-Id', deps.clientId());
+    if (opts.idempotencyKey) headers.set('Idempotency-Key', opts.idempotencyKey);
 
     const url = buildUrl(deps.baseUrl(), path, opts.query); // lỗi lập trình: ném thẳng, không bọc
     let response: Response;
