@@ -17,4 +17,7 @@ Engineer E · 2026-10-16 · từ main `25ba093` · findings gốc: `docs/reviews
 - `project-event-order.test.ts` (3 ca: chưa cache, cũ/mới, cùng ms).
 
 ## Kết quả lệnh
-Xem cuối file.
+Trên `6b4d503` (rebase lên main `910ab11`, đã gồm E5 + ADR-117; `pnpm install --frozen-lockfile`):
+- `VITEST_MAX_WORKERS=2 pnpm verify` ⇒ **exit 0** (175 file / 1717 test, audit sạch). Lần chạy trước rebase (`cb40622`) cũng exit 0.
+- `apps/web` `pnpm build` (prod) ⇒ **exit 0**.
+- `tsc --noEmit` web exit 0, `eslint src test` exit 0; hook pre-commit đủ (prettier, gitleaks, eslint).
