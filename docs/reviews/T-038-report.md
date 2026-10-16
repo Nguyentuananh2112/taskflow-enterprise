@@ -1,6 +1,6 @@
 # T-038 — Chấm công (attendance) — báo cáo Engineer A
 
-Nhánh `feat/T-038-attendance`. Đã rebase lên main có T-040; mục "Lệnh đã chạy" sẽ bổ sung khi báo DONE.
+Nhánh `feat/T-038-attendance`. **DONE** — TL merge `0fb023f` vào main (`f9cdcc7`); kết quả cổng: mục "Lệnh đã chạy".
 
 ## Đã làm (theo phạm vi ticket)
 
@@ -33,6 +33,14 @@ Nhánh `feat/T-038-attendance`. Đã rebase lên main có T-040; mục "Lệnh �
 - Hạn mức xuất CSV theo user (20/giờ), không theo cặp user + workspace — `RateLimitKey` chưa có khóa ws; chặt hơn yêu cầu.
 - Nhiệm kỳ: đổi role sang/từ VIEWER không cắt nhiệm kỳ (B ghi ở T-037b).
 
+## Sự cố ở cổng hộp đen — CC-HR-02 (đã sửa)
+
+Hai check-in song song cùng Idempotency-Key trả `[201, 409]` thay vì `[201, 200 replay]`: bên thua bị unique
+`attendance_events_web_in_once_key` chặn TRƯỚC unique idempotency (Postgres không cam kết thứ tự kiểm), use case
+chỉ thử lại với lỗi trùng key. Sửa ở `0fb023f`: lỗi của CẢ HAI unique đều thử lại một lần trong transaction mới
+(cùng key + cùng loại ⇒ replay 200; khác loại ⇒ 422; key khác ⇒ 409, kể cả khi lần thử lại lại bị chặn). Store
+in-memory có `uniqueCheckOrder` để test cả hai thứ tự; 3 mutant thủ công đều chết.
+
 ## Kiểm thử
 
 - Unit tầng A (attendance) 107, HTTP in-process 9 (`test/http/attendance.http.test.ts`), contracts 133.
@@ -40,4 +48,16 @@ Nhánh `feat/T-038-attendance`. Đã rebase lên main có T-040; mục "Lệnh �
 
 ## Lệnh đã chạy (exit code)
 
-Bổ sung khi báo DONE (sau rebase lên main có T-040, integration 5 runner, verify của TL, security `SEC_RUN_PENDING=T-038` của F).
+Mọi bước đọc **exit code**.
+
+| Bước | Ai / ở đâu | Kết quả |
+|---|---|---|
+| verify (lint, typecheck, unit, depcruise…) | TL, `0fb023f` + align của F trên main e6d4c61 | exit 0 — 8/8 bước |
+| integration đầy đủ (gồm 5 runner LSP attendance) | TL | exit 0 — 529/529 |
+| security | TL | exit 0 — 140 passed, 23 pending (T-039) |
+| web build · e2e-tsc | TL | exit 0 · exit 0 |
+| cổng hộp đen `SEC_RUN_PENDING=T-038` (gồm CC-HR-02 sau sửa) | F, `test/T-042-hr-align` | exit 0 — 19/19 |
+| unit API trước khi gửi | A, `0fb023f` | exit 0 — 1416/1416 (133 file) |
+| tsc · eslint · depcruise | A, `0fb023f` | 0 · 0 · 0 |
+
+Merge: `0fb023f` → main `f9cdcc7` (TL).
