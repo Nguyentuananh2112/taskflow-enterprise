@@ -20,7 +20,8 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {};
 export const PENDING_PREFIX = '[PENDING ';
 
 /**
- * Ca SEC CHƯA có thân (`secCase` không `fn`, `outOfScope`) — nợ thật của ma trận SEC (BACKLOG F4), id → file.
+ * Ca SEC CHƯA có thân — NỢ THẬT của ma trận SEC (BACKLOG F4), id → file. Ca đã phủ ở tầng khác KHÔNG
+ * nằm ở đây mà ở `OUT_OF_SCOPE`.
  * Reporter đỏ nếu (a) có todo KHÔNG nằm ở đây (một ca vừa bị xóa thân / bọc `it.todo` ⇒ mất kiểm mà suite
  * vẫn xanh — review B), hoặc (b) id ở đây không còn là todo trong file đã chạy (viết thân xong ⇒ xóa mục
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
@@ -36,9 +37,8 @@ export const TODO_BUDGET: Readonly<Record<string, string>> = {
   'SEC-26': 'auth.sec.ts',
   'SEC-27': 'auth.sec.ts',
   'SEC-32': 'auth.sec.ts',
-  'SEC-48': 'auth.sec.ts',
+  // outOfScope('E2E Playwright') nhưng CHƯA có E2E nào kiểm XSS title/description ⇒ nợ thật (F).
   'SEC-49': 'auth.sec.ts',
-  'SEC-50': 'auth.sec.ts',
   'GATE-T016-401': 'rate-limit.sec.ts',
   'SEC-28': 'rate-limit.sec.ts',
   'SEC-28b': 'rate-limit.sec.ts',
@@ -62,4 +62,31 @@ export const TODO_BUDGET: Readonly<Record<string, string>> = {
   'SEC-53': 'tenant.sec.ts',
   'SEC-54': 'tenant.sec.ts',
   'SEC-55': 'tenant.sec.ts',
+};
+
+export interface OutOfScopeCase {
+  /** File `.sec.ts` khai báo ca (`outOfScope(id, title, coveredBy)`). */
+  readonly file: string;
+  /** Nhãn tầng phủ — phải trùng tham số `where` của `outOfScope` (tên ca `[coveredBy] id — …`). */
+  readonly coveredBy: string;
+  /** Đường dẫn (từ gốc repo) tới test thật phủ ca này; file phải tồn tại và chứa đúng id. */
+  readonly ref: string;
+}
+
+/**
+ * Ca SEC kiểm ở tầng khác (E2E, unit…) — chỉ liệt kê để ma trận SEC đủ. Reporter đỏ nếu tên ca không
+ * khớp `coveredBy`, `ref` không tồn tại / không chứa id (con trỏ chết ⇒ thực ra không ai kiểm), hoặc mục
+ * ở đây không còn là ca `outOfScope` trong file đã chạy.
+ */
+export const OUT_OF_SCOPE: Readonly<Record<string, OutOfScopeCase>> = {
+  'SEC-48': {
+    file: 'auth.sec.ts',
+    coveredBy: 'E2E Playwright',
+    ref: 'e2e/specs/browser-security.e2e.ts',
+  },
+  'SEC-50': {
+    file: 'auth.sec.ts',
+    coveredBy: 'E2E Playwright',
+    ref: 'e2e/specs/browser-security.e2e.ts',
+  },
 };
