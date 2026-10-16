@@ -84,7 +84,7 @@ export async function startServer(
     clock,
     ids,
     random: new CryptoRandom(),
-    hasher: await Argon2idPasswordHasher.create(),
+    hasher: await Argon2idPasswordHasher.forEnv(env.APP_ENV, logger),
     policy: new PasswordPolicy(loadCommonPasswordList()),
     persistence,
     rateLimitStore,

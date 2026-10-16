@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ServiceUnavailableError, UnauthorizedError } from '../../../../core/errors';
 import { type AuthHarness, createAuthHarness, GHOST_ID } from '../../testing/auth-harness';
+import { AccessTokenAuthenticator } from '../access-token-authenticator';
 import { LogoutAllUseCase } from './logout-all.use-case';
 
 let h: AuthHarness;
@@ -64,6 +65,30 @@ describe('LogoutAllUseCase (security.md 1.6, ADR-025)', () => {
     expect(h.uow.rollbacks).toBe(1);
     expect(h.notifier.calls).toEqual([]);
     expect(h.events.published).toEqual([]);
+  });
+
+  it('ALL-05 (ADR-105, SEC-24d): ghi tv TRƯỚC commit thành công, ghi lại SAU commit lỗi ⇒ logout-all vẫn xong, giá trị thu hồi còn, access cũ 401', async () => {
+    const alice = await h.seedUser();
+    const session = await h.seedSession(alice);
+    const write = h.store.setTokenVersion.bind(h.store);
+    let calls = 0;
+    h.store.setTokenVersion = (userId, tv) => {
+      calls += 1;
+      return calls === 1 ? write(userId, tv) : Promise.reject(new Error('valkey down'));
+    };
+
+    await expect(logoutAll.execute({ userId: alice.id })).resolves.toBeUndefined();
+
+    expect(calls).toBe(2); // trước commit + ghi lại sau commit
+    expect(h.uow.rollbacks).toBe(0);
+    expect(h.store.tokenVersions.get(alice.id)).toBe(1); // giá trị ghi TRƯỚC commit vẫn còn
+    expect(h.logger.messages('warn')).toContain('auth.session_cache_write_failed');
+    expect(h.notifier.calls).toEqual([
+      { method: 'disconnectUser', args: [alice.id], duringTransaction: false },
+    ]);
+    await expect(
+      new AccessTokenAuthenticator(h).authenticate(`Bearer ${session.accessToken}`),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
   it('user không tồn tại (token hợp lệ nhưng user đã bị xóa cứng) ⇒ 401', async () => {

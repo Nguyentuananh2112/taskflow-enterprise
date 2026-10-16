@@ -1,8 +1,9 @@
-import { SignJWT, decodeJwt } from 'jose';
+import { SignJWT, decodeJwt, decodeProtectedHeader } from 'jose';
 import { describe, expect } from 'vitest';
 
 import { Actors, refreshCookieOf, type Actor } from './harness/actors';
 import { TEST_JWT_SECRET } from './harness/config';
+import { backdateRefreshFamily } from './harness/db-clock';
 import { errorEnvelope } from './harness/http-client';
 import { outOfScope, secCase, useApi } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
@@ -15,8 +16,33 @@ const AUTH = 'auth routes (Phase 3)';
 const T020 = 'T-020 Prisma + Valkey (ADR-104/105)';
 
 const me = (token: string) => actors.json('GET', '/auth/me', token);
+const sidOf = (token: string) => decodeJwt(token)['sid'];
 
-/** Token giả mạo: bắt đầu từ claim THẬT của `actor`, đổi từng chỗ một. */
+/** Phiên thứ hai của cùng user (thiết bị khác) qua `POST /auth/login`. */
+async function loginAgain(actor: Actor) {
+  const res = await actors.json('POST', '/auth/login', undefined, {
+    email: actor.email,
+    password: actor.password,
+  });
+  expect(res.status, `login: ${res.text.slice(0, 200)}`).toBe(200);
+  return {
+    accessToken: (res.json as { data: { accessToken: string } }).data.accessToken,
+    refreshCookie: refreshCookieOf(res),
+  };
+}
+
+const logout = (cookie: string) =>
+  api.request({
+    method: 'POST',
+    path: '/api/v1/auth/logout',
+    headers: { 'content-type': 'application/json', origin: api.webOrigin, cookie },
+    body: '',
+  });
+
+/**
+ * Token giả mạo: bắt đầu từ claim VÀ header THẬT của `actor` (gồm `kid` — API từ chối token thiếu
+ * `kid` ngay ở bước tra khóa), đổi từng chỗ một ⇒ mỗi biến thể bị từ chối đúng vì chỗ bị đổi.
+ */
 async function forge(
   actor: Actor,
   mutate: (claims: Record<string, unknown>) => void,
@@ -24,8 +50,9 @@ async function forge(
 ) {
   const claims: Record<string, unknown> = { ...decodeJwt(actor.accessToken) };
   mutate(claims);
+  const { kid } = decodeProtectedHeader(actor.accessToken);
   return new SignJWT(claims)
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT', ...(kid ? { kid } : {}) })
     .sign(new TextEncoder().encode(secret));
 }
 
@@ -35,7 +62,27 @@ function unsigned(claims: Record<string, unknown>) {
 }
 
 describe('Refresh token rotation & reuse', () => {
-  secCase('SEC-17', 'Refresh hợp lệ ⇒ 200, token cũ ROTATED, replacedById, cùng familyId', AUTH);
+  secCase(
+    'SEC-17',
+    'Refresh hợp lệ ⇒ 200, token cũ ROTATED, replacedById, cùng familyId',
+    AUTH,
+    async () => {
+      const alice = await actors.register('rotate');
+      const res = await actors.refresh(alice.refreshCookie);
+      expect(res.status).toBe(200);
+      const next = refreshCookieOf(res);
+      const access = (res.json as { data: { accessToken: string } }).data.accessToken;
+      expect(next, 'cookie mới khác cookie cũ').not.toBe(alice.refreshCookie);
+      expect(sidOf(access), 'cùng family (sid = familyId)').toBe(sidOf(alice.accessToken));
+      expect((await me(access)).status).toBe(200);
+      // Token cũ đã ROTATED (có replacedById): dùng lại trong ân hạn 10s ⇒ 409, không cấp token mới,
+      // không thu hồi family — token mới vẫn xoay được.
+      const again = await actors.refresh(alice.refreshCookie);
+      expect(again.status).toBe(409);
+      expect(errorEnvelope(again).error.code).toBe('REFRESH_IN_PROGRESS');
+      expect((await actors.refresh(next)).status).toBe(200);
+    },
+  );
 
   secCase(
     'SEC-18',
@@ -59,8 +106,37 @@ describe('Refresh token rotation & reuse', () => {
     'SEC-19',
     '2 refresh song song cùng token ⇒ đúng 1 cái 200, 1 cái 409, family không bị thu hồi',
     AUTH,
+    async () => {
+      for (let round = 0; round < 10; round += 1) {
+        const alice = await actors.register(`parallel-${round}`);
+        const results = await Promise.all([
+          actors.refresh(alice.refreshCookie),
+          actors.refresh(alice.refreshCookie),
+        ]);
+        const ctx = `vòng ${round} (${results.map((r) => r.status).join('/')})`;
+        expect(results.map((r) => r.status).sort(), ctx).toEqual([200, 409]);
+        const loser = results.find((r) => r.status === 409)!;
+        expect(errorEnvelope(loser).error.code, ctx).toBe('REFRESH_IN_PROGRESS');
+        const winner = results.find((r) => r.status === 200)!;
+        expect((await actors.refresh(refreshCookieOf(winner))).status, `${ctx}: family sống`).toBe(
+          200,
+        );
+        expect((await me(alice.accessToken)).status, `${ctx}: access cũ vẫn hợp lệ`).toBe(200);
+      }
+    },
   );
-  secCase('SEC-20', 'Refresh quá expiresAt / familyExpiresAt ⇒ 401', AUTH);
+  secCase('SEC-20', 'Refresh quá expiresAt / familyExpiresAt ⇒ 401', AUTH, async () => {
+    for (const column of ['expires_at', 'family_expires_at'] as const) {
+      const alice = await actors.register(`expired-${column}`);
+      // Ngoại lệ có chủ đích: API không có đồng hồ tua được (harness/db-clock.ts).
+      expect(await backdateRefreshFamily(String(sidOf(alice.accessToken)), column), column).toBe(1);
+      const res = await actors.refresh(alice.refreshCookie);
+      expect(res.status, column).toBe(401);
+      expect(errorEnvelope(res).error.code, column).toBe('REFRESH_TOKEN_INVALID');
+      // Hết hạn KHÔNG phải reuse ⇒ không thu hồi family / không chặn access còn hạn.
+      expect((await me(alice.accessToken)).status, `${column}: access còn hạn`).toBe(200);
+    }
+  });
   secCase(
     'SEC-29',
     'Refresh với Origin lạ/thiếu ⇒ 403 ORIGIN_NOT_ALLOWED, token không bị xoay',
@@ -84,9 +160,38 @@ describe('Thu hồi phiên', () => {
     expect((await me(alice.accessToken)).status).toBe(401);
     expect((await actors.refresh(alice.refreshCookie)).status).toBe(401);
   });
-  secCase('SEC-22', 'Logout 1 thiết bị: phiên đó 401, phiên khác 200', AUTH);
-  secCase('SEC-23', 'Đổi mật khẩu: phiên khác 401, phiên hiện tại token mới 200', AUTH);
-  secCase('SEC-24', 'Logout-all khi Valkey tắt ⇒ access cũ vẫn bị từ chối (fallback DB)', AUTH);
+  secCase('SEC-22', 'Logout 1 thiết bị: phiên đó 401, phiên khác 200', AUTH, async () => {
+    const alice = await actors.register('logout-one');
+    const other = await loginAgain(alice);
+    expect((await logout(alice.refreshCookie)).status).toBe(204);
+    expect((await me(alice.accessToken)).status, 'access của phiên đã logout').toBe(401);
+    expect((await actors.refresh(alice.refreshCookie)).status, 'refresh đã logout').toBe(401);
+    expect((await me(other.accessToken)).status, 'phiên khác: access').toBe(200);
+    expect((await actors.refresh(other.refreshCookie)).status, 'phiên khác: refresh').toBe(200);
+  });
+  secCase(
+    'SEC-23',
+    'Đổi mật khẩu: phiên khác 401, phiên hiện tại token mới 200',
+    AUTH,
+    async () => {
+      const alice = await actors.register('change-pw');
+      const other = await loginAgain(alice);
+      const change = await actors.json('POST', '/auth/change-password', alice.accessToken, {
+        currentPassword: alice.password,
+        newPassword: 'brand-new-passphrase-sec23',
+      });
+      expect(change.status, change.text.slice(0, 200)).toBe(200);
+      const fresh = (change.json as { data: { accessToken: string } }).data.accessToken;
+      const freshCookie = refreshCookieOf(change);
+      expect((await me(fresh)).status, 'phiên hiện tại: token mới').toBe(200);
+      expect((await actors.refresh(freshCookie)).status, 'phiên hiện tại: refresh mới').toBe(200);
+      expect((await me(alice.accessToken)).status, 'access cũ của phiên hiện tại').toBe(401);
+      expect((await me(other.accessToken)).status, 'phiên khác: access').toBe(401);
+      expect((await actors.refresh(other.refreshCookie)).status, 'phiên khác: refresh').toBe(401);
+      expect((await actors.refresh(alice.refreshCookie)).status, 'refresh cũ').toBe(401);
+    },
+  );
+  // SEC-24 nằm ở `valkey-outage.sec.ts` (cần container Valkey riêng để tắt).
   // ADR-105 (A3): ghi thu hồi vào Valkey TRƯỚC commit; lỗi ⇒ 503 + rollback; read-through chỉ SET NX.
   // Cổng nghiệm thu trên branch T-020 (Postgres + Valkey thật). 24b/24d cần container Valkey RIÊNG
   // do suite tự tạo/hủy: SEC-24b ở `valkey-outage.sec.ts`; 24d chưa viết thân.
@@ -108,10 +213,12 @@ describe('Thu hồi phiên', () => {
       }
     },
   );
-  secCase(
+  // Thời điểm tắt Valkey giữa ghi TRƯỚC commit và ghi lại SAU commit không chèn được từ hộp đen ⇒ phủ ở
+  // unit (ghi sau commit là best-effort, giá trị trước commit vẫn còn — ADR-105).
+  outOfScope(
     'SEC-24d',
     'Ghi trước commit thành công, ghi lại sau commit lỗi (Valkey tắt giữa chừng) rồi hồi phục ⇒ access cũ vẫn 401',
-    T020,
+    'unit: logout-all.use-case.test.ts ALL-05 / ADR-105',
   );
 
   // Findings A4 — lost update trên users: login (đọc → argon2 → save) chạy song song với thao tác
@@ -233,19 +340,160 @@ describe('JWT giả mạo', () => {
       }
     },
   );
-  secCase('SEC-26', 'JWT hết hạn ⇒ 401 TOKEN_EXPIRED', AUTH);
+  secCase('SEC-26', 'JWT hết hạn ⇒ 401 TOKEN_EXPIRED', AUTH, async () => {
+    const alice = await actors.register('expired-jwt');
+    const now = Math.floor(Date.now() / 1000);
+    // Claim THẬT (tv, sid, iss, aud) ký đúng secret, chỉ lùi exp quá clockTolerance 5s.
+    const expired = await forge(alice, (c) => {
+      c.iat = now - 960;
+      c.exp = now - 60;
+    });
+    const res = await me(expired);
+    expect(res.status).toBe(401);
+    expect(errorEnvelope(res).error.code).toBe('TOKEN_EXPIRED');
+    // Đối chứng: cùng claim, exp còn hạn ⇒ qua (lỗi trên đúng là do exp).
+    const valid = await forge(alice, (c) => {
+      c.exp = now + 600;
+    });
+    expect((await me(valid)).status).toBe(200);
+  });
 });
 
 describe('Đăng nhập & mật khẩu', () => {
+  /** Số dòng `test.argon2_verify` mới (theo target) kể từ `since` — log chỉ có ở APP_ENV=test. */
+  const verifiesSince = async (since: number) => {
+    const parse = () =>
+      api
+        .logs()
+        .slice(since)
+        .flatMap((line) => {
+          try {
+            const entry = JSON.parse(line) as { msg?: string; target?: string };
+            return entry.msg === 'test.argon2_verify' ? [entry.target] : [];
+          } catch {
+            return [];
+          }
+        });
+    // stdout của API có thể tới sau response ⇒ chờ dòng đầu, rồi thêm một nhịp để bắt dòng thừa.
+    const deadline = Date.now() + 5_000;
+    while (parse().length === 0 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    await new Promise((r) => setTimeout(r, 150));
+    return parse();
+  };
+  const wrongLogin = async (email: string) => {
+    const since = api.logs().length;
+    const res = await actors.json('POST', '/auth/login', undefined, {
+      email,
+      password: 'definitely-wrong-passphrase',
+    });
+    return { res, verifies: await verifiesSince(since) };
+  };
+
+  // Không đo thời gian (CI ồn ⇒ chập chờn): chứng minh trực tiếp nguyên nhân khiến thời gian bằng nhau —
+  // email lạ vẫn chạy đúng MỘT lần argon2.verify (trên hash giả), như email có thật sai mật khẩu.
   secCase(
     'SEC-27',
-    'Login email lạ vs sai mật khẩu: cùng status/code/message, chênh trung vị < 50ms',
+    'Login email lạ vs sai mật khẩu: cùng status/code/message; cả hai chạy đúng 1 lần argon2.verify (hash giả / hash thật)',
     AUTH,
+    async () => {
+      const alice = await actors.register('enum');
+      const unknown = await wrongLogin(`nobody-${Math.random().toString(36).slice(2)}@sec.example`);
+      const malformed = await wrongLogin('not-an-email-at-all');
+      const wrong = await wrongLogin(alice.email);
+
+      expect(unknown.res.status, 'email lạ').toBe(401);
+      expect(wrong.res.status, 'sai mật khẩu').toBe(401);
+      expect(errorEnvelope(unknown.res).error).toEqual(errorEnvelope(wrong.res).error);
+      expect(unknown.verifies, 'email lạ ⇒ verify hash giả đúng 1 lần').toEqual(['dummy']);
+      expect(wrong.verifies, 'sai mật khẩu ⇒ verify hash thật đúng 1 lần').toEqual(['stored']);
+      // Email sai định dạng bị schema `LoginBody` chặn (400) TRƯỚC use case: không chạm argon2, và lỗi
+      // định dạng không nói gì về việc tài khoản có tồn tại hay không.
+      expect(malformed.res.status, malformed.res.text.slice(0, 200)).toBe(400);
+      expect(errorEnvelope(malformed.res).error.code).toBe('VALIDATION_ERROR');
+      expect(malformed.verifies, 'email sai định dạng ⇒ không verify').toEqual([]);
+    },
   );
+
+  // Bản đo thời gian: CHỈ chạy local khi `SEC_TIMING=1` (máy yên). Không đăng ký ca ở chế độ khác ⇒
+  // không phải skip/todo (CI không bao giờ thấy ca chập chờn này).
+  if (process.env.SEC_TIMING === '1') {
+    secCase(
+      'SEC-27t',
+      'Login email lạ vs sai mật khẩu: chênh trung vị < 50ms (chỉ local, SEC_TIMING=1)',
+      AUTH,
+      async () => {
+        const alice = await actors.register('timing');
+        const attempt = async (email: string) => {
+          const started = performance.now();
+          const res = await actors.json('POST', '/auth/login', undefined, {
+            email,
+            password: 'definitely-wrong-passphrase',
+          });
+          expect(res.status).toBe(401);
+          return performance.now() - started;
+        };
+        const unknown = () => attempt(`nobody-${Math.random().toString(36).slice(2)}@sec.example`);
+        const wrong = () => attempt(alice.email);
+        await unknown(); // làm nóng
+        await wrong();
+        // Tổng 9 lần sai cho email của alice < ngưỡng (IP, email) = 10 (ADR-108).
+        const samples = { unknown: [] as number[], wrong: [] as number[] };
+        for (let i = 0; i < 8; i += 1) {
+          samples.unknown.push(await unknown());
+          samples.wrong.push(await wrong());
+        }
+        const median = (xs: number[]) => {
+          const sorted = [...xs].sort((a, b) => a - b);
+          const mid = sorted.length / 2;
+          return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+        };
+        const [mu, mw] = [median(samples.unknown), median(samples.wrong)];
+        expect(
+          Math.abs(mu - mw),
+          `trung vị email lạ ${mu.toFixed(1)} ms vs sai mật khẩu ${mw.toFixed(1)} ms`,
+        ).toBeLessThan(50);
+      },
+    );
+  }
   secCase(
     'SEC-32',
     'Mật khẩu 11/257 ký tự, phổ biến, chứa email ⇒ 400; 12/256 (cả tiếng Việt) ⇒ 201',
     AUTH,
+    async () => {
+      const fresh = () => `policy${Math.random().toString(36).slice(2, 10)}`;
+      const register = (local: string, password: string) =>
+        actors.json('POST', '/auth/register', undefined, {
+          email: `${local}@sec.example`,
+          password,
+          fullName: 'Sec Policy',
+        });
+      const withEmail = fresh(); // policy kiểm theo TOÀN BỘ phần local của email
+      const rejected: [string, string, string][] = [
+        ['ngắn 11', fresh(), 'abcdefghij1'],
+        ['dài 257', fresh(), `${'y'.repeat(256)}1`],
+        ['phổ biến', fresh(), 'password1234'],
+        ['phổ biến (chữ hoa)', fresh(), 'PASSWORD1234'],
+        ['chứa email', withEmail, `my-${withEmail.toUpperCase()}-pass`],
+      ];
+      for (const [label, local, password] of rejected) {
+        const res = await register(local, password);
+        expect(res.status, `${label}: ${res.text.slice(0, 200)}`).toBe(400);
+        expect(errorEnvelope(res).error.code, label).toBe('VALIDATION_ERROR');
+        expect(res.text, `${label}: không phản chiếu mật khẩu (ADR-096)`).not.toContain(password);
+      }
+      const accepted: [string, string, number][] = [
+        ['đúng 12', 'abcdefghijk1', 12],
+        ['đúng 256', `${'y'.repeat(255)}1`, 256],
+        // 12 KÝ TỰ nhưng > 12 byte UTF-8: đếm theo ký tự (NFC), không theo byte.
+        ['tiếng Việt 12 ký tự', 'mậtkhẩuđẹpqá', 12],
+      ];
+      for (const [label, password, chars] of accepted) {
+        expect([...password.normalize('NFC')].length, `${label}: dữ liệu test`).toBe(chars);
+        const res = await register(fresh(), password);
+        expect(res.status, `${label}: ${res.text.slice(0, 200)}`).toBe(201);
+      }
+    },
   );
   secCase(
     'SEC-33',

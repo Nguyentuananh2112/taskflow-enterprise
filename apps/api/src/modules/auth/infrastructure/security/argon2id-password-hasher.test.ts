@@ -89,6 +89,35 @@ describe('Argon2idPasswordHasher (ADR-065)', () => {
     await expect(hasher.hash('x'.repeat(257))).rejects.toThrow(RangeError);
   });
 
+  describe('onVerify (quan sát cho SEC-27, chỉ APP_ENV=test)', () => {
+    it('hash lưu ⇒ "stored"; null (email lạ) ⇒ "dummy"; mỗi lần đúng 1 lần; quá dài ⇒ không gọi argon2, không báo', async () => {
+      const seen: string[] = [];
+      const observed = await Argon2idPasswordHasher.create(undefined, (t) => seen.push(t));
+      const stored = await observed.hash('correct-horse-12');
+      expect(await observed.verify(stored, 'wrong-horse-12')).toBe(false);
+      expect(await observed.verify(null, 'correct-horse-12')).toBe(false);
+      expect(await observed.verify('$argon2id$hỏng', 'correct-horse-12')).toBe(false);
+      expect(await observed.verify(stored, 'x'.repeat(257))).toBe(false);
+      expect(seen).toEqual(['stored', 'dummy', 'stored']);
+    });
+  });
+
+  it.each([
+    ['test', 1],
+    ['local', 0],
+    ['staging', 0],
+    ['production', 0],
+  ])(
+    'forEnv(%s): log test.argon2_verify %i lần mỗi verify (chỉ APP_ENV=test)',
+    async (appEnv, n) => {
+      const info = vi.fn();
+      const h = await Argon2idPasswordHasher.forEnv(appEnv, { info });
+      await h.verify(null, 'correct-horse-12');
+      expect(info).toHaveBeenCalledTimes(n);
+      if (n) expect(info).toHaveBeenCalledWith({ target: 'dummy' }, 'test.argon2_verify');
+    },
+  );
+
   describe('needsRehash (dùng parseOptions)', () => {
     it('hash cùng tham số ⇒ false', async () => {
       expect(hasher.needsRehash(await hasher.hash('correct-horse-12'))).toBe(false);

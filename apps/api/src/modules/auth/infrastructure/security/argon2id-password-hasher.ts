@@ -7,6 +7,7 @@ import {
   type Options,
 } from '@node-rs/argon2';
 
+import type { ILogger } from '../../../../core/logging/logger';
 import type { IPasswordHasher } from '../../application/ports/password-hasher.port';
 import { PasswordPolicy } from '../../domain/password-policy';
 
@@ -32,16 +33,35 @@ export interface Argon2Impl {
 
 const REAL_IMPL: Argon2Impl = { hash: argonHash, verify: argonVerify };
 
+/**
+ * Quan sát (CHỈ để kiểm thử hộp đen — SEC-27): gọi SAU mỗi lần argon2.verify thật sự chạy, cho biết
+ * đã verify hash lưu trong DB (`stored`) hay hash giả (`dummy`, email không tồn tại / user đã xóa).
+ * Composition chỉ truyền hàm này khi `APP_ENV=test`; production không có ⇒ không thêm bề mặt.
+ */
+export type Argon2VerifyObserver = (target: 'stored' | 'dummy') => void;
+
 export class Argon2idPasswordHasher implements IPasswordHasher {
   private constructor(
     private readonly impl: Argon2Impl,
     private readonly dummyHash: string,
+    private readonly onVerify?: Argon2VerifyObserver,
   ) {}
 
   /** Tạo hash giả NGAY lúc khởi động — nếu tạo lười thì lần login "không có email" đầu tiên chậm gấp đôi. */
-  static async create(impl: Argon2Impl = REAL_IMPL): Promise<Argon2idPasswordHasher> {
+  static async create(
+    impl: Argon2Impl = REAL_IMPL,
+    onVerify?: Argon2VerifyObserver,
+  ): Promise<Argon2idPasswordHasher> {
     const dummy = await impl.hash(randomBytes(32).toString('base64url'), ARGON2ID_PARAMS);
-    return new Argon2idPasswordHasher(impl, dummy);
+    return new Argon2idPasswordHasher(impl, dummy, onVerify);
+  }
+
+  /** Composition root: observer `test.argon2_verify` CHỈ khi `APP_ENV=test` (SEC-27); nơi khác: không có. */
+  static forEnv(appEnv: string, logger: Pick<ILogger, 'info'>): Promise<Argon2idPasswordHasher> {
+    return Argon2idPasswordHasher.create(
+      REAL_IMPL,
+      appEnv === 'test' ? (target) => logger.info({ target }, 'test.argon2_verify') : undefined,
+    );
   }
 
   async hash(password: string): Promise<string> {
@@ -56,10 +76,10 @@ export class Argon2idPasswordHasher implements IPasswordHasher {
     if (PasswordPolicy.exceedsMaxLength(password)) return false;
     const normalized = PasswordPolicy.normalize(password);
     if (hashed === null) {
-      await this.safeVerify(this.dummyHash, normalized); // cân thời gian, kết quả bỏ đi
+      await this.safeVerify(this.dummyHash, normalized, 'dummy'); // cân thời gian, kết quả bỏ đi
       return false;
     }
-    return this.safeVerify(hashed, normalized);
+    return this.safeVerify(hashed, normalized, 'stored');
   }
 
   needsRehash(hashed: string): boolean {
@@ -80,11 +100,17 @@ export class Argon2idPasswordHasher implements IPasswordHasher {
   }
 
   /** Hash hỏng trong DB không được làm sập request login — coi như sai mật khẩu. */
-  private async safeVerify(hashed: string, password: string): Promise<boolean> {
+  private async safeVerify(
+    hashed: string,
+    password: string,
+    target: 'stored' | 'dummy',
+  ): Promise<boolean> {
     try {
       return await this.impl.verify(hashed, password);
     } catch {
       return false;
+    } finally {
+      this.onVerify?.(target);
     }
   }
 }
