@@ -1,11 +1,11 @@
 import type { DayStatus } from '@taskflow/contracts/attendance';
 
 import { DAY_STATUS, LEAVE_PART_LABEL, duration, timeOfDay } from '@/entities/attendance';
-import type { CompanyTodayDto } from '@/shared/api/m3-provisional';
+import type { AttendanceCompanyTodayDto } from '@/shared/api/m3-provisional';
 import { cn } from '@/shared/lib/cn';
 import { EmptyState } from '@/shared/ui/empty-state';
 
-type Props = Readonly<{ data: CompanyTodayDto }>;
+type Props = Readonly<{ data: AttendanceCompanyTodayDto }>;
 
 /** Thứ tự ô tổng: những gì HR cần xử lý trước (vắng, quên chấm ra) đứng đầu. */
 const SUMMARY: readonly DayStatus[] = ['ABSENT', 'MISSING_OUT', 'PRESENT', 'ON_LEAVE', 'PENDING'];

@@ -10,7 +10,7 @@ import { Cursor, limitQuery } from '@taskflow/contracts/common';
 import { HttpResponse, http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
-import { CompanyTodayDto, TimesheetRowDto } from '@/shared/api/m3-provisional';
+import { AttendanceCompanyTodayDto, AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
 
 import { DAY_STATUS } from '@/entities/attendance';
 import { MOCK_SCHEDULE, MOCK_TZ } from './mock-attendance';
@@ -69,7 +69,7 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
         .map((p) => ({ ...p, day: hr.day(wsId, p.user.id, date) }));
       const isWorkday =
         members[0]?.day.isWorkday ?? new Date(`${date}T00:00:00Z`).getUTCDay() !== 0;
-      return ok(CompanyTodayDto, {
+      return ok(AttendanceCompanyTodayDto, {
         serverNow: attendance.serverNow(),
         date,
         timezone: MOCK_TZ,
@@ -175,7 +175,7 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
         query.data.cursor,
         query.data.limit,
       );
-      return ok(z.array(TimesheetRowDto), page.data, { page: page.page });
+      return ok(z.array(AttendanceMemberMonthDto), page.data, { page: page.page });
     }),
   ];
 }

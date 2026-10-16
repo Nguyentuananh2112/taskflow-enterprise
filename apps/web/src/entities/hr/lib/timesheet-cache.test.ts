@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 
-import type { HrDayDto, TimesheetRowDto } from '@/shared/api/m3-provisional';
+import type { HrDayDto, AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
 
 import { hrKeys } from '../model/query-keys';
 import { replaceTimesheetDay, totalsOf } from './timesheet-cache';
@@ -25,7 +25,7 @@ const day = (date: string, over: Partial<HrDayDto> = {}): HrDayDto => ({
   ...over,
 });
 
-const row = (id: string, days: HrDayDto[]): TimesheetRowDto => ({
+const row = (id: string, days: HrDayDto[]): AttendanceMemberMonthDto => ({
   user: { id, fullName: id },
   left: false,
   days,
@@ -73,7 +73,7 @@ describe('replaceTimesheetDay', () => {
       lastOut: '2026-10-02T10:30:00.000Z',
     });
     replaceTimesheetDay(client, 'ws', 'a', fresh);
-    const pages = client.getQueryData<{ pages: Array<{ data: TimesheetRowDto[] }> }>(key);
+    const pages = client.getQueryData<{ pages: Array<{ data: AttendanceMemberMonthDto[] }> }>(key);
     const [nextA, nextB] = pages?.pages[0]?.data ?? [];
     expect(nextA?.days[1]).toMatchObject({ status: 'PRESENT', timezone: 'Asia/Ho_Chi_Minh' });
     expect(nextA?.days[0]).toBe(a.days[0]);

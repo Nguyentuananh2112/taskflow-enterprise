@@ -13,9 +13,9 @@ import * as z from 'zod';
 
 import { http } from '@/shared/api';
 import {
-  CompanyTodayDto,
+  AttendanceCompanyTodayDto,
   HolidayDto,
-  TimesheetRowDto,
+  AttendanceMemberMonthDto,
   WorkScheduleDto,
   type CreateWorkScheduleBody,
 } from '@/shared/api/m3-provisional';
@@ -26,11 +26,11 @@ const enc = encodeURIComponent;
 
 /** Chấm công phía HR (`hr:manage` — attendance-leave.md §5). */
 export const hrAttendanceApi = {
-  today: (wsId: string) => http.get(`${att(wsId)}/today`, { schema: CompanyTodayDto }),
+  today: (wsId: string) => http.get(`${att(wsId)}/today`, { schema: AttendanceCompanyTodayDto }),
   /** Một trang 50 nhân viên của bảng công tháng (cursor). */
   month: (wsId: string, month: string, cursor?: string) =>
     http.request('GET', att(wsId), {
-      schema: z.array(TimesheetRowDto),
+      schema: z.array(AttendanceMemberMonthDto),
       query: { month, cursor, limit: 50 },
     }),
   /** CSV cả công ty: fetch (Bearer) → Blob (§5 — không dùng URL ký). */

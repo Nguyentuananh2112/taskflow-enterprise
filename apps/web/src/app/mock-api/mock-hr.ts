@@ -3,7 +3,7 @@ import type { UserRefDto } from '@taskflow/contracts/auth';
 import type {
   HolidayDto,
   HrDayDto,
-  TimesheetRowDto,
+  AttendanceMemberMonthDto,
   WorkScheduleDto,
 } from '@/shared/api/m3-provisional';
 
@@ -86,7 +86,7 @@ export function monthDays(month: string): string[] {
   return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
-export function totalsOf(days: readonly HrDayDto[]): TimesheetRowDto['totals'] {
+export function totalsOf(days: readonly HrDayDto[]): AttendanceMemberMonthDto['totals'] {
   const sum = (f: (d: HrDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
   return {
     workedMin: sum((d) => d.workedMin),

@@ -12,7 +12,7 @@ export const HrDayDto = AttendanceDayDto.extend({ timezone: z.string().min(1) })
 export type HrDayDto = z.infer<typeof HrDayDto>;
 
 /** `GET attendance/today` (hr:manage) — không phân trang, sắp theo tên rồi id. */
-export const CompanyTodayDto = z.object({
+export const AttendanceCompanyTodayDto = z.object({
   serverNow: IsoDateTime,
   date: DateOnly,
   timezone: z.string().min(1),
@@ -23,10 +23,10 @@ export const CompanyTodayDto = z.object({
   /** Nhân viên hiện tại (không VIEWER) + người đã rời có lượt chấm hôm đó (`left`). */
   members: z.array(z.object({ user: UserRefDto, left: z.boolean(), day: HrDayDto })),
 });
-export type CompanyTodayDto = z.infer<typeof CompanyTodayDto>;
+export type AttendanceCompanyTodayDto = z.infer<typeof AttendanceCompanyTodayDto>;
 
 /** Một người trong `GET attendance?month=` (phân trang 50, cursor). */
-export const TimesheetRowDto = z.object({
+export const AttendanceMemberMonthDto = z.object({
   user: UserRefDto,
   left: z.boolean(),
   days: z.array(HrDayDto),
@@ -42,7 +42,7 @@ export const TimesheetRowDto = z.object({
     missingOutDays: z.int().min(0),
   }),
 });
-export type TimesheetRowDto = z.infer<typeof TimesheetRowDto>;
+export type AttendanceMemberMonthDto = z.infer<typeof AttendanceMemberMonthDto>;
 
 /** Phiên bản lịch (ADR-121); danh sách rỗng = lịch mặc định T2–T7 08:00–17:30. */
 export const WorkScheduleDto = WorkShiftDto.extend({

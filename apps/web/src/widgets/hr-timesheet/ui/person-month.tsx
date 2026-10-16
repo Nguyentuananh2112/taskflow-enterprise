@@ -4,9 +4,14 @@ import { useState } from 'react';
 
 import { MonthTable } from '@/entities/attendance';
 import { DayPunchesDialog } from '@/features/hr-attendance-adjust';
-import type { TimesheetRowDto } from '@/shared/api/m3-provisional';
+import type { AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
 
-type Props = Readonly<{ wsId: string; month: string; row: TimesheetRowDto; canEdit: boolean }>;
+type Props = Readonly<{
+  wsId: string;
+  month: string;
+  row: AttendanceMemberMonthDto;
+  canEdit: boolean;
+}>;
 
 /**
  * Lịch tháng của MỘT nhân viên (dùng lại `MonthTable` — `<table>` có tiêu đề hàng/cột, trạng thái bằng
