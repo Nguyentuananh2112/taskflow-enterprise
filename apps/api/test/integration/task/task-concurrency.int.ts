@@ -256,8 +256,9 @@ describe.each(rounds)('create ‖ rebalance cùng cột TODO (F3 T-2, ADR-116) �
   // Thứ tự xen được ÉP tất định: rebalance dừng ngay sau pha stash (khóa tạm `~<id>` chưa commit) tới khi
   // create xong hoặc hết 500 ms. Có khóa cột ⇒ create bị chặn ở `lockColumn`, chỉ xong SAU move, không
   // ai phải thử lại, task mới ở cuối cột. Bỏ khóa (mutant `lockColumn(projectId, '')`) ⇒ create đọc rank
-  // cũ, xong TRƯỚC move, rebalance đụng rank của nó ⇒ chạy lại cả transaction (`task.rank_conflict_retry`).
-  it('CC-RB02: create chen giữa rebalance ⇒ chờ khóa cột, xong sau move, không retry, vào cuối cột, không `~`', async () => {
+  // cũ, insert TRƯỚC khi rebalance ghi, rebalance đụng rank của nó ⇒ chạy lại cả transaction
+  // (`task.rank_conflict_retry`).
+  it('CC-RB02: create chen giữa rebalance ⇒ chờ khóa cột, insert sau khi rebalance ghi, không retry, vào cuối cột, không `~`', async () => {
     const LONG = `a0${'V'.repeat(70)}`;
     const a = await h.seedTask({ rank: 'a0' });
     const b = await h.seedTask({ rank: LONG });
@@ -268,6 +269,9 @@ describe.each(rounds)('create ‖ rebalance cùng cột TODO (F3 T-2, ADR-116) �
     const stashed = new Promise<void>((resolve) => (atStash = resolve));
     let createDone!: () => void;
     const created = new Promise<void>((resolve) => (createDone = resolve));
+    // Thứ tự đánh dấu ở ĐIỂM GHI DB (review D, Low): `uow.run` chờ hook afterCommit xong mới resolve ⇒
+    // thứ tự resolve của move/create không phải thứ tự commit/khóa.
+    const order: string[] = [];
     const saveRanks = h.deps.tasks.saveRanks.bind(h.deps.tasks);
     let first = true;
     h.deps.tasks.saveRanks = async (writes) => {
@@ -276,25 +280,30 @@ describe.each(rounds)('create ‖ rebalance cùng cột TODO (F3 T-2, ADR-116) �
         atStash();
         await Promise.race([created, new Promise((resolve) => setTimeout(resolve, 500))]);
       }
-      return saveRanks(writes);
+      const written = await saveRanks(writes);
+      order.push('rebalance-written');
+      return written;
+    };
+    const add = h.deps.tasks.add.bind(h.deps.tasks);
+    h.deps.tasks.add = async (task) => {
+      await add(task);
+      order.push('create-insert');
     };
 
-    const done: string[] = [];
-    const move = h.move
-      .execute({
-        ...h.scope('Mia'),
-        taskId: x.id,
-        input: { expectedVersion: 1, status: 'TODO', afterId: b.id },
-      })
-      .then((dto) => (done.push('move'), dto));
+    const move = h.move.execute({
+      ...h.scope('Mia'),
+      taskId: x.id,
+      input: { expectedVersion: 1, status: 'TODO', afterId: b.id },
+    });
     await stashed;
     // Gọi từ ngữ cảnh của test (không phải bên trong transaction của move — AsyncLocalStorage).
     const create = h.create
       .execute({ ...h.scope('Pam'), input: { title: 'Chen giữa rebalance' } })
-      .then((dto) => (done.push('create'), createDone(), dto));
+      .then((dto) => (createDone(), dto));
     const [moved, task] = await Promise.all([move, create]);
 
-    expect(done).toEqual(['move', 'create']);
+    // Có khóa: create chỉ insert SAU khi rebalance đã ghi (và commit — create chờ khóa cột tới đó).
+    expect(order).toEqual(['rebalance-written', 'create-insert']);
     expect(h.logger.messages('warn')).not.toContain('task.rank_conflict_retry');
     expect(await h.column('TODO')).toEqual([a.id, b.id, moved.id, c.id, task.id]);
     const rows = (await h.backend.taskRows()).filter((t) => t.status === 'TODO');
