@@ -17,6 +17,11 @@ import { PrismaRefreshTokenPurger } from '../modules/auth/infrastructure/persist
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
 import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
+import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
+import { PrismaLeaveEmployeeDirectory } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-employee-directory';
+import { PrismaLeaveReadModel } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
+import { PrismaLeaveRepository } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave.repository';
 import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
 import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
 import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
@@ -53,6 +58,7 @@ import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persi
 import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
+import { MemberListEmployeeDirectory } from './leave-adapters';
 import {
   InMemoryNotificationAudience,
   InMemoryNotificationContextReader,
@@ -68,7 +74,14 @@ export type StorageKind = 'memory' | 'prisma';
 
 /** Mọi module cùng một loại lưu trữ (T-020: không chạy lai). */
 const allModules = (kind: StorageKind) =>
-  ({ auth: kind, workspace: kind, task: kind, notifications: kind, attendance: kind }) as const;
+  ({
+    auth: kind,
+    workspace: kind,
+    task: kind,
+    notifications: kind,
+    attendance: kind,
+    leave: kind,
+  }) as const;
 
 export interface Persistence {
   kind: StorageKind;
@@ -82,6 +95,8 @@ export interface Persistence {
   notifications: NotificationRepositories;
   /** Chấm công (T-038): lượt chấm + lịch / ngày lễ. */
   attendance: AttendanceRepositories;
+  /** Module leave (T-039): đơn nghỉ + số dư + phía đọc. */
+  leave: LeaveRepositories;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
   workspacePurger?: IWorkspacePurger;
   /** Dọn refresh token hết hạn (G2 S2) — chỉ có ở Prisma, như `workspacePurger`. */
@@ -95,6 +110,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const ws = createInMemoryWorkspaceRepositories();
   const task = createInMemoryTaskRepositories();
   const attendance = createInMemoryAttendanceRepositories();
+  const leaveStore = new InMemoryLeaveRepository();
 
   // Bản sao của Workspace/Auth trong InMemoryTaskDatabase (Prisma đọc bảng chung nên không cần).
   const users = new MirroringUserRepository(auth.users, ws.directory, (user) => {
@@ -128,6 +144,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       notificationStore,
       attendance.events,
       attendance.calendar,
+      leaveStore,
     ],
     logger,
   );
@@ -146,6 +163,11 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       context: new InMemoryNotificationContextReader(users),
     },
     attendance,
+    leave: {
+      requests: leaveStore,
+      readModel: leaveStore,
+      employees: new MemberListEmployeeDirectory(ws.queries),
+    },
     uow,
   };
 }
@@ -204,6 +226,11 @@ export function createPrismaPersistence(d: {
       context: new PrismaNotificationContextReader(db),
     },
     attendance: createPrismaAttendanceRepositories(db),
+    leave: {
+      requests: new PrismaLeaveRepository(db),
+      readModel: new PrismaLeaveReadModel(db),
+      employees: new PrismaLeaveEmployeeDirectory(db),
+    },
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),
     uow,

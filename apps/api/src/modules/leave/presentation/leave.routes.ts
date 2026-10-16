@@ -41,17 +41,18 @@ const HR = 'hr:manage';
 export function leaveRoutes(d: LeaveRouteDeps): Router {
   const router = Router({ mergeParams: true });
   const c = d.controller;
-  const guard = (
-    params: z.ZodType,
-    permission: Parameters<typeof permitLeave>[1],
-    input: { body?: z.ZodType; query?: z.ZodType } = {},
-  ) => [validate({ params }), permitLeave(d.membership, permission), validate(input)];
-
   const noStore: RequestHandler = (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();
   };
-  router.use(noStore, d.authenticate, ...d.limit(RATE_LIMIT_RULES.authenticated));
+  // Gắn THEO TỪNG ROUTE, không `router.use`: router này mount ở `/workspaces/:wsId` nên `use` sẽ chạy cả cho route
+  // của module Workspace đi ngang qua ⇒ xác thực + đếm limiter 2 lần (cùng lỗi audit T-028 F1 của Task).
+  const base = [noStore, d.authenticate, ...d.limit(RATE_LIMIT_RULES.authenticated)];
+  const guard = (
+    params: z.ZodType,
+    permission: Parameters<typeof permitLeave>[1],
+    input: { body?: z.ZodType; query?: z.ZodType } = {},
+  ) => [...base, validate({ params }), permitLeave(d.membership, permission), validate(input)];
 
   router.get(
     '/leave-requests',

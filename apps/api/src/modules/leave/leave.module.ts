@@ -8,8 +8,16 @@ import type {
   ILeaveEmployeeDirectory,
   ILeaveReadModel,
 } from './application/ports/leave-read-model.port';
+import type { ILeaveRepository } from './application/ports/leave.ports';
 import { LeaveController } from './presentation/leave.controller';
 import { leaveRoutes, type LeaveRouteDeps } from './presentation/leave.routes';
+
+/** Lưu trữ của leave (composition root chọn bộ nhớ / Prisma). */
+export interface LeaveRepositories {
+  requests: ILeaveRepository;
+  readModel: ILeaveReadModel;
+  employees: ILeaveEmployeeDirectory;
+}
 
 export interface LeaveModuleDeps extends LeaveCommandDeps {
   readModel: ILeaveReadModel;

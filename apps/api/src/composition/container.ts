@@ -25,6 +25,8 @@ import type { IAccessTokenService } from '../modules/auth/application/ports/acce
 import type { IPasswordHasher } from '../modules/auth/application/ports/password-hasher.port';
 import type { PasswordPolicy } from '../modules/auth/domain/password-policy';
 import type { IRolePermissions } from '../modules/task/application/task-actor';
+import { createLeaveModule } from '../modules/leave/leave.module';
+import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import {
   NOTIFICATIONS_PATH,
@@ -37,6 +39,12 @@ import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
 import { attendanceMembership, noApprovedLeaves } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
+import {
+  defaultLeaveCalendar,
+  leaveAudit,
+  leaveMembership,
+  noLeaveNotifications,
+} from './leave-adapters';
 import type { Persistence } from './persistence';
 import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
@@ -189,6 +197,20 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
 
+  const leave = createLeaveModule({
+    ...persistence.leave,
+    users: persistence.task.users,
+    calendar: defaultLeaveCalendar, // TODO(T-038): adapter WorkCalendarPort của attendance (A)
+    notifier: noLeaveNotifications, // TODO(T-040): adapter thông báo bền (G)
+    membership: leaveMembership(() => workspace),
+    audit: leaveAudit(() => workspace),
+    uow: persistence.uow,
+    clock,
+    ids,
+    responder,
+    http: { authenticate: auth.authenticate, limit },
+  });
+
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
@@ -197,6 +219,8 @@ export function createContainer(d: ContainerDeps): Container {
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
     // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
     { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
+    // Leave cũng TRƯỚC /workspaces (cùng lý do với Task).
+    { path: LEAVE_PATH, router: leave.router },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
   ];
