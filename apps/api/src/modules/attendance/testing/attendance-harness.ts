@@ -1,4 +1,4 @@
-import { FakeClock, FakeUnitOfWork, SequentialIdGenerator } from '../../../../test/support';
+import { FakeClock, SequentialIdGenerator } from '../../../../test/support';
 import type { AttendanceDeps } from '../application/attendance-days';
 import type { HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
@@ -6,15 +6,13 @@ import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-cas
 import { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
 import { instantOf } from '../domain/local-time';
 import type { WorkSchedule } from '../domain/work-schedule';
-import {
-  FakeApprovedLeaves,
-  InMemoryAttendanceEventStore,
-  InMemoryWorkCalendarStore,
-} from '../infrastructure/persistence/in-memory/in-memory-attendance';
+import { FakeApprovedLeaves } from '../infrastructure/persistence/in-memory/in-memory-attendance';
+import { inMemoryAttendanceBackend, type AttendanceBackend } from './attendance-backend';
 
 /**
  * Bối cảnh chuẩn test-spec-hr §0.2 cho tầng A: workspace W1, lịch S0 (VN, T2–T7, 08:00–17:30, nghỉ trưa
- * 12:00–13:30, grace 0), đồng hồ giả theo GIỜ VN. Nối store in-memory (application không import infra).
+ * 12:00–13:30, grace 0), đồng hồ giả theo GIỜ VN. Lưu trữ qua `AttendanceBackend` — in-memory mặc định, Postgres ở
+ * runner LSP (application không import infra).
  */
 export const VN = 'Asia/Ho_Chi_Minh';
 export const W1 = '0199e5a2-0000-7000-8000-0000000000a1';
@@ -59,11 +57,17 @@ export const vnTime = (local: string) => {
 /** Idempotency-Key giả (UUID hợp lệ) theo số thứ tự. */
 export const key = (n: number) => `0199e5a2-0000-7000-8000-${String(n).padStart(12, '0')}`;
 
-export function createAttendanceHarness(now = '2026-11-17 07:55') {
+/** Người dùng / workspace nền mà backend Postgres phải seed (FK). */
+export const FIXTURE = { workspaces: [W1, W2], users: NAMES } as const;
+
+export async function createAttendanceHarness(
+  now = '2026-11-17 07:55',
+  backend: AttendanceBackend = inMemoryAttendanceBackend(W1),
+) {
+  await backend.seed();
   const clock = new FakeClock(vnTime(now));
-  const events = new InMemoryAttendanceEventStore();
-  // Không seed phiên bản nào (TL): workspace chưa lưu lịch ⇒ DEFAULT_SCHEDULE (= nội dung S0).
-  const calendar = new InMemoryWorkCalendarStore(W1);
+  // Không seed phiên bản lịch nào (TL): workspace chưa lưu lịch ⇒ DEFAULT_SCHEDULE (= nội dung S0).
+  const { events, calendar } = backend;
   const leaves = new FakeApprovedLeaves();
   const deps: AttendanceDeps = {
     events,
@@ -71,7 +75,7 @@ export function createAttendanceHarness(now = '2026-11-17 07:55') {
     leaves,
     clock,
     ids: new SequentialIdGenerator(),
-    uow: new FakeUnitOfWork(),
+    uow: backend.uow,
   };
   const members = new Map<string, 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER'>(Object.entries(ROLES));
   const notified: { recipientId: string; eventId: string; actorId: string }[] = [];
@@ -115,10 +119,9 @@ export function createAttendanceHarness(now = '2026-11-17 07:55') {
   });
   const checkInOut = new CheckInOutUseCase(deps);
   return {
+    backend,
     deps,
     clock,
-    events,
-    calendar,
     leaves,
     checkInOut,
     queries: new MyAttendanceQueries(deps),
