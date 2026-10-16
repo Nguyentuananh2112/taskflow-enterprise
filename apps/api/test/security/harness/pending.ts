@@ -36,17 +36,8 @@ export const TODO_BUDGET: Readonly<Record<string, string>> = {
   'SEC-41': 'realtime.sec.ts',
   'SEC-21b': 'realtime.sec.ts',
   'SEC-09': 'task.sec.ts',
-  'SEC-16': 'tenant.sec.ts',
-  'SEC-13': 'tenant.sec.ts',
-  'SEC-14': 'tenant.sec.ts',
-  'SEC-15': 'tenant.sec.ts',
-  'SEC-46': 'tenant.sec.ts',
-  'SEC-47': 'tenant.sec.ts',
-  'SEC-51': 'tenant.sec.ts',
-  'SEC-52': 'tenant.sec.ts',
-  'SEC-53': 'tenant.sec.ts',
-  'SEC-54': 'tenant.sec.ts',
-  'SEC-55': 'tenant.sec.ts',
+  // Phần socket của SEC-47 (WSD-07) — chưa có test nào ở mọi tầng; nhóm socket của A (F4).
+  'SEC-47b': 'tenant.sec.ts',
 };
 
 export interface OutOfScopeCase {
@@ -54,8 +45,10 @@ export interface OutOfScopeCase {
   readonly file: string;
   /** Nhãn tầng phủ — phải trùng tham số `where` của `outOfScope` (tên ca `[coveredBy] id — …`). */
   readonly coveredBy: string;
-  /** Đường dẫn (từ gốc repo) tới test thật phủ ca này; file phải tồn tại và chứa đúng id. */
+  /** Đường dẫn (từ gốc repo) tới test thật phủ ca này; file phải tồn tại và chứa `marker ?? id`. */
   readonly ref: string;
+  /** Mã test-spec của ca phủ (vd `WSR-05`) khi file đó không nhắc id SEC — mặc định = id. */
+  readonly marker?: string;
 }
 
 /**
@@ -68,6 +61,12 @@ export const OUT_OF_SCOPE: Readonly<Record<string, OutOfScopeCase>> = {
     file: 'auth.sec.ts',
     coveredBy: 'unit: logout-all.use-case.test.ts ALL-05 / ADR-105',
     ref: 'apps/api/src/modules/auth/application/use-cases/logout-all.use-case.test.ts',
+  },
+  'SEC-53': {
+    file: 'tenant.sec.ts',
+    coveredBy: 'integration WSR-05',
+    ref: 'apps/api/test/integration/workspace/workspace-races.int.ts',
+    marker: 'WSR-05',
   },
   'SEC-49': {
     file: 'auth.sec.ts',

@@ -83,9 +83,10 @@ export default class SkipBudgetReporter implements Reporter {
         );
       }
       const ref = resolve(repoRoot, oos.ref);
-      if (!existsSync(ref) || !readFileSync(ref, 'utf8').includes(id)) {
+      const marker = oos.marker ?? id;
+      if (!existsSync(ref) || !readFileSync(ref, 'utf8').includes(marker)) {
         problems.push(
-          `OUT_OF_SCOPE '${id}' trỏ tới '${oos.ref}' nhưng file không có / không chứa '${id}'`,
+          `OUT_OF_SCOPE '${id}' trỏ tới '${oos.ref}' nhưng file không có / không chứa '${marker}'`,
         );
       }
     }

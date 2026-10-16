@@ -287,3 +287,34 @@ export function apiGetWorkspace(
 ): Promise<{ name: string; slug: string }> {
   return call(request, 'GET', `/workspaces/${s.workspaceId}`, s.accessToken, undefined, 200);
 }
+
+export function apiRenameWorkspace(
+  request: APIRequestContext,
+  owner: Seeded,
+  name: string,
+): Promise<unknown> {
+  return call(
+    request,
+    'PATCH',
+    `/workspaces/${owner.workspaceId}`,
+    owner.accessToken,
+    { name },
+    200,
+  );
+}
+
+export function apiCreateProject(
+  request: APIRequestContext,
+  owner: Seeded,
+  name: string,
+  keyPrefix: string,
+): Promise<{ id: string }> {
+  return call<{ id: string }>(
+    request,
+    'POST',
+    `/workspaces/${owner.workspaceId}/projects`,
+    owner.accessToken,
+    { name, keyPrefix },
+    201,
+  );
+}
