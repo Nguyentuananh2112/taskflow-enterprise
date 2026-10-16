@@ -1,6 +1,6 @@
 # Mốc 3 — Chấm công & Nghỉ phép (thiết kế, CHỜ người dùng duyệt)
 
-> Trạng thái: **đề xuất** (Tech Lead, 2026-10-16). Các ADR-119…123 dưới đây chỉ ghi vào `docs/blueprint/DECISIONS.md` sau khi người dùng duyệt. Chưa ai được code trước khi duyệt.
+> Trạng thái: **ĐÃ DUYỆT** (người dùng, 2026-10-16). ADR-119…123 trong `docs/blueprint/DECISIONS.md`; rủi ro R25–R30 trong `threat-model.md` §6; vé T-037…T-042.
 
 ## 0. Người dùng đã chốt
 | Điểm | Chốt |
