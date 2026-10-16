@@ -98,7 +98,7 @@ export function caseRuns(id: string): boolean {
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
-  return tags.some((tag) => tag === id || declared.ticket.includes(tag));
+  return tags.some((tag) => tag === id || tag === declared.ticket);
 }
 
 /**

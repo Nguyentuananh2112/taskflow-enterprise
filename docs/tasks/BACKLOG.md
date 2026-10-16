@@ -40,6 +40,7 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 | F1 | T-026 E2E toàn bộ + cổng T-034, fix bàn phím | đang giao | F |
 | F2 | E2E viewport mobile + Firefox cho luồng chính; săn test chập chờn (chạy lặp 20× bộ E2E, liệt kê flake + nguyên nhân) | | |
 | F3 | Chạy mutation hằng tuần (Stryker) lên toàn bộ module auth/workspace/task hiện tại khi Tech Lead báo "máy rảnh"; findings theo chủ module | | |
+| F4 | Viết thân 36 ca SEC todo trong `apps/api/test/security` (danh sách `TODO_BUDGET` ở `harness/pending.ts`: socket auth SEC-21b/35–39/41, rate limit SEC-28/28b/GATE-T016-401, auth SEC-17/19/20/22–24/24d/26/27/32, tenant SEC-13–16/46/47/51–55, task SEC-09; SEC-48–50 thuộc E2E — chỉ đối chiếu) — viết xong ca nào xóa mục đó cùng PR | nợ ma trận SEC (review B của sec-unpend) | |
 
 ## Chung (ai hết hàng thì lấy)
 | # | Việc | Đang làm |

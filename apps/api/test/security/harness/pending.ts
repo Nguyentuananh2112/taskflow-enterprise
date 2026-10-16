@@ -18,3 +18,48 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {};
 
 /** Tiền tố tên ca skip hợp lệ: `[PENDING <ticket>] <id> — <title>` (reporter đọc id sau `] `). */
 export const PENDING_PREFIX = '[PENDING ';
+
+/**
+ * Ca SEC CHƯA có thân (`secCase` không `fn`, `outOfScope`) — nợ thật của ma trận SEC (BACKLOG F4), id → file.
+ * Reporter đỏ nếu (a) có todo KHÔNG nằm ở đây (một ca vừa bị xóa thân / bọc `it.todo` ⇒ mất kiểm mà suite
+ * vẫn xanh — review B), hoặc (b) id ở đây không còn là todo trong file đã chạy (viết thân xong ⇒ xóa mục
+ * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
+ */
+export const TODO_BUDGET: Readonly<Record<string, string>> = {
+  'SEC-17': 'auth.sec.ts',
+  'SEC-19': 'auth.sec.ts',
+  'SEC-20': 'auth.sec.ts',
+  'SEC-22': 'auth.sec.ts',
+  'SEC-23': 'auth.sec.ts',
+  'SEC-24': 'auth.sec.ts',
+  'SEC-24d': 'auth.sec.ts',
+  'SEC-26': 'auth.sec.ts',
+  'SEC-27': 'auth.sec.ts',
+  'SEC-32': 'auth.sec.ts',
+  'SEC-48': 'auth.sec.ts',
+  'SEC-49': 'auth.sec.ts',
+  'SEC-50': 'auth.sec.ts',
+  'GATE-T016-401': 'rate-limit.sec.ts',
+  'SEC-28': 'rate-limit.sec.ts',
+  'SEC-28b': 'rate-limit.sec.ts',
+  'SEC-35': 'realtime.sec.ts',
+  'SEC-36': 'realtime.sec.ts',
+  'SEC-37': 'realtime.sec.ts',
+  'SEC-37b': 'realtime.sec.ts',
+  'SEC-38': 'realtime.sec.ts',
+  'SEC-39': 'realtime.sec.ts',
+  'SEC-41': 'realtime.sec.ts',
+  'SEC-21b': 'realtime.sec.ts',
+  'SEC-09': 'task.sec.ts',
+  'SEC-16': 'tenant.sec.ts',
+  'SEC-13': 'tenant.sec.ts',
+  'SEC-14': 'tenant.sec.ts',
+  'SEC-15': 'tenant.sec.ts',
+  'SEC-46': 'tenant.sec.ts',
+  'SEC-47': 'tenant.sec.ts',
+  'SEC-51': 'tenant.sec.ts',
+  'SEC-52': 'tenant.sec.ts',
+  'SEC-53': 'tenant.sec.ts',
+  'SEC-54': 'tenant.sec.ts',
+  'SEC-55': 'tenant.sec.ts',
+};
