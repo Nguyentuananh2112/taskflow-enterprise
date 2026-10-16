@@ -17,7 +17,7 @@
 | Số phép (chỉnh điều chỉnh) | ✅ |
 | Lối vào "Nhân sự" (header + thẻ chấm công), chuông `LEAVE_SUBMITTED` ⇒ `?tab=leave` | ✅ |
 | Realtime: hàng đợi HR khi có đơn mới/hủy; phía nhân viên khi đơn được xử lý / HR sửa công | ✅ |
-| Toàn bộ vitest apps/web (lượt TL, trước khi đổi sang contracts thật) | ✅ exit 0 — xem §5 |
+| Toàn bộ vitest apps/web (lượt TL, trên `6b6b811` — contracts thật) | ✅ exit 0 — `web` 75 file / 549 test, `web-server` 1 / 2 — xem §5 |
 | Rà giao diện trình duyệt thật (next dev :3022 + mock, Chromium, 3 cỡ × sáng/tối, axe) | ✅ 42/42 sạch sau khi sửa — xem §5b |
 | `pnpm verify`, E2E-HR (F) | ⏳ chờ chuỗi a→b→c lên main có backend (TL) |
 
@@ -68,7 +68,8 @@ Có thể làm khi rảnh: mock dùng `AttendanceCompanyMonthQuery`, `HolidayLis
 Trong worktree H, `pnpm` qua shim corepack, `--maxWorkers=2`:
 - **Toàn bộ vitest apps/web** (lượt TL, máy rảnh, commit `7edb6d4` — trước khi đổi sang contracts thật): `pnpm exec vitest run --maxWorkers=2` trong `apps/web` ⇒ **exit 0, 74 file / 548 test**; `--config vitest.server.config.ts` ⇒ **exit 0, 1 file / 2 test**.
 - Sau khi đổi contracts + sửa rà trình duyệt: `tsc --noEmit -p apps/web` sạch; `eslint .` toàn bộ apps/web exit 0; `prettier --check apps/web` sạch; vitest từng file: hr-page 11/11, hr-grants 3/3, toàn bộ `src/app/mock-api` (gồm hr-api 8, server-safe-imports 1), timesheet-cache, decide-errors, attendance-page, attendance-card, admin-screens, notification-bell, leave-page — xanh. Mọi commit qua hook lefthook (gitleaks + prettier + eslint) ✔.
-- **CHƯA:** chạy lại TOÀN BỘ vitest sau khi đổi contracts (chỉ chạy các file liên quan), `pnpm verify`, E2E (F).
+- **Toàn bộ vitest apps/web lần 2** (lượt TL, commit `6b6b811` — đã dùng contracts thật, sau mọi sửa của rà trình duyệt): `web` **exit 0, 75 file / 549 test**; `web-server` **exit 0, 1 file / 2 test**.
+- **CHƯA:** `pnpm verify`, E2E (F) — sau khi chuỗi a→b→c lên main có backend.
 
 ## 5b. Rà giao diện trên trình duyệt thật (next dev :3022 + mock, Playwright Chromium)
 
