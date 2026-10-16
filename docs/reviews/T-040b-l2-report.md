@@ -1,7 +1,7 @@
 # T-040b L2 — notifications đọc qua reader do module khác cung cấp (Engineer G)
 
 > Nhánh `feat/T-040b-l2-readers`, dựng trên L3 của B (`fc820bc`). B review **APPROVE** (3898bba).
-> Thứ tự merge TL chốt: T-038 → T-039 → **T-040b**. Đã rebase lên `main` 35e4589 (có T-039); cổng: verify đầy đủ của TL (integration + security).
+> **ĐÃ MERGE**: `main` 3958f3d (merge @ b45b843, trên 35e4589 có T-039). Cổng TL: integration 751/751, security, build exit 0; B approve b45b843.
 
 ## Đã làm
 - **Workspace** cung cấp audience: `IWorkspaceQueries.listMemberAccess(ws)` (Prisma: một `findMany`, select `{userId, role, grants}`; InMemory) + `application/adapters/notification-audience.ts` — `WorkspaceNotificationAudience implements INotificationAudience` (type công khai từ `notifications/index.ts`). `workspacesOf` dùng `listActiveForUser` (đã có `joinedAt` — L3 của B), `membersOf` dùng `listMemberAccess`.
@@ -21,4 +21,4 @@
 | eslint các file đổi · `lint:deps` | exit 0 · 0 vi phạm (469 module) |
 | Unit toàn bộ apps/api (`vitest run --maxWorkers=2`) | exit 0 — 143 file / 1533 test |
 | `grep` đọc bảng chéo module trong `modules/notifications` + `composition` | không còn |
-| Integration / security | KHÔNG chạy riêng (TL): verify đầy đủ của TL |
+| Integration / security | không chạy riêng (TL) — verify của TL: integration 751/751, security, build exit 0 ⇒ merge 3958f3d |
