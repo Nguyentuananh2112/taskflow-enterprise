@@ -11,11 +11,15 @@ log() { echo "[deploy $(date -u +%FT%TZ)] $*"; }
 
 # APP_ENV (admin đặt trong .env, bootstrap.sh ghi) quyết nhãn môi trường của api + web. Web không có kiểm như
 # env.ts của api; compose chỉ báo THIẾU, không kiểm giá trị ⇒ kiểm ở đây TRƯỚC mọi rollout/rollback.
-app_env=$(sed -n 's/^APP_ENV=//p' .env | tail -1)
-case "$app_env" in
-  staging | production) ;;
-  *) echo "APP_ENV trong .env phải là staging|production (nhận: '$app_env')" >&2; exit 2 ;;
-esac
+check_app_env() { # <file .env>
+  local v
+  v=$(sed -n 's/^APP_ENV=//p' "$1" | tail -1)
+  case "$v" in
+    staging | production) ;;
+    *) echo "APP_ENV trong $1 phải là staging|production (nhận: '$v') — VPS cài trước khi có APP_ENV: thêm dòng này vào $1" >&2; exit 2 ;;
+  esac
+}
+check_app_env .env
 
 set_digests() { # sha api web migrate
   sed -i -e "s|^GIT_SHA=.*|GIT_SHA=$1|" -e "s|^API_DIGEST=.*|API_DIGEST=$2|" \
@@ -56,6 +60,7 @@ rollout() {
 
 if [ "${1:-}" = --rollback ]; then
   [ -f .env.previous ] || { echo 'Không có .env.previous' >&2; exit 1; }
+  check_app_env .env.previous # B: .env.previous từ trước khi có APP_ENV ⇒ dừng rõ ràng, không lỗi nội suy giữa chừng
   cp .env.previous .env
   "${COMPOSE[@]}" up -d --no-deps api web && wait_ready && smoke && log 'rollback xong' && exit 0
   log 'ROLLBACK THẤT BẠI — xem docs/runbook/deploy.md §Sự cố'
