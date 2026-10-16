@@ -37,7 +37,7 @@ function* datesBetween(start: CalendarDate, end: CalendarDate): Generator<Calend
  * Luật hình dạng đơn (thiết kế §2 ADR-122, test-spec LD-07/08). Gọi TRƯỚC khi đọc lịch / khóa.
  * - `dayPart` AM/PM chỉ cho đơn một ngày (400 — như Zod ở biên).
  * - `endDate ≥ startDate` (400).
- * - Không vắt qua 2 năm ở v1 (422 `spans_two_years`) — số dư tính theo năm của `startDate`.
+ * - Không vắt qua 2 năm ở v1 (422 `LEAVE_SPANS_YEARS`) — số dư tính theo năm của `startDate`.
  */
 export function assertLeaveRange(span: LeaveSpan): void {
   if (span.endDate < span.startDate) {
@@ -59,7 +59,10 @@ export function assertLeaveRange(span: LeaveSpan): void {
     ]);
   }
   if (span.startDate.slice(0, 4) !== span.endDate.slice(0, 4)) {
-    throw new BusinessRuleViolationError('spans_two_years', 'Đơn nghỉ không được kéo qua hai năm.');
+    throw new BusinessRuleViolationError(
+      'LEAVE_SPANS_YEARS',
+      'Đơn nghỉ không được kéo qua hai năm.',
+    );
   }
 }
 

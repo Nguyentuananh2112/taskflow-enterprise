@@ -129,7 +129,7 @@ describe('assertLeaveRange', () => {
     }
   });
 
-  it('LD-08: vắt 2 năm (30/12/2026 → 02/01/2027) ⇒ 422 rule spans_two_years', () => {
+  it('LD-08: vắt 2 năm (30/12/2026 → 02/01/2027) ⇒ 422 rule LEAVE_SPANS_YEARS', () => {
     expect(() => assertLeaveRange(span('2026-12-30', '2027-01-02'))).toThrow(
       BusinessRuleViolationError,
     );
@@ -137,7 +137,7 @@ describe('assertLeaveRange', () => {
       assertLeaveRange(span('2026-12-30', '2027-01-02'));
     } catch (err) {
       expect((err as BusinessRuleViolationError).details).toMatchObject({
-        rule: 'spans_two_years',
+        rule: 'LEAVE_SPANS_YEARS',
       });
     }
   });

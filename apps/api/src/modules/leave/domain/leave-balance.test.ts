@@ -69,7 +69,7 @@ describe('số dư phép (test-spec §4) — đơn vị nửa ngày', () => {
       expect(consumesAnnualBalance(t)).toBe(false);
   });
 
-  it('LB-08: adjustment âm làm remaining âm ⇒ vẫn trả số âm (hiển thị), đơn ANNUAL mới ⇒ 422 insufficient_balance', () => {
+  it('LB-08: adjustment âm làm remaining âm ⇒ vẫn trả số âm (hiển thị), đơn ANNUAL mới ⇒ 422 INSUFFICIENT_BALANCE', () => {
     const b = summarizeBalance({
       entitled: 24,
       adjustment: -20,
@@ -79,7 +79,7 @@ describe('số dư phép (test-spec §4) — đơn vị nửa ngày', () => {
     expect(() => assertBalanceCovers('ANNUAL', 1, b)).toThrow(BusinessRuleViolationError);
   });
 
-  it('LV-06/12: thiếu ⇒ 422 rule insufficient_balance kèm số còn và số xin (ngày thập phân); vừa đủ ⇒ qua', () => {
+  it('LV-06/12: thiếu ⇒ 422 rule INSUFFICIENT_BALANCE kèm số còn và số xin (ngày thập phân); vừa đủ ⇒ qua', () => {
     const b = summarizeBalance({
       entitled: 24,
       adjustment: 0,
@@ -92,7 +92,7 @@ describe('số dư phép (test-spec §4) — đơn vị nửa ngày', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(BusinessRuleViolationError);
       expect((err as BusinessRuleViolationError).details).toMatchObject({
-        rule: 'insufficient_balance',
+        rule: 'INSUFFICIENT_BALANCE',
         remainingDays: 2,
         requestedDays: 2.5,
       });

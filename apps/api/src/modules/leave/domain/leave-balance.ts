@@ -57,7 +57,7 @@ export function summarizeBalance(input: {
   };
 }
 
-/** 422 `insufficient_balance` khi đơn ANNUAL xin nhiều hơn số còn (kiểm cả lúc GỬI lẫn lúc DUYỆT — D-H2). */
+/** 422 `INSUFFICIENT_BALANCE` khi đơn ANNUAL xin nhiều hơn số còn (kiểm cả lúc GỬI lẫn lúc DUYỆT — D-H2). */
 export function assertBalanceCovers(
   type: LeaveType,
   requested: HalfDays,
@@ -65,7 +65,7 @@ export function assertBalanceCovers(
 ): void {
   if (!consumesAnnualBalance(type) || requested <= balance.remaining) return;
   throw new BusinessRuleViolationError(
-    'insufficient_balance',
+    'INSUFFICIENT_BALANCE',
     'Không đủ số ngày phép năm còn lại.',
     {
       remainingDays: halfDaysToDecimal(balance.remaining),
