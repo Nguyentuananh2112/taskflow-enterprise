@@ -342,6 +342,8 @@ describe('Bearer: /auth/me, /auth/logout-all, /auth/change-password', () => {
       .set(mia.auth)
       .set('Content-Type', 'application/json');
     expect(res.status).toBe(204);
+    // F3 B-5: thiết bị đang dùng cũng phải bỏ cookie refresh (đã chết) — không giữ cookie rác.
+    expect(setCookieOf(res)).toMatch(/tf_rt=;.*Max-Age=0/);
     expect((await request(t.app).get('/api/v1/auth/me').set(mia.auth)).status).toBe(401);
     expect(
       (
@@ -351,6 +353,18 @@ describe('Bearer: /auth/me, /auth/logout-all, /auth/change-password', () => {
           .set('Content-Type', 'application/json')
       ).status,
     ).toBe(401);
+  });
+
+  it('F3 B-6: change-password body có field lạ ⇒ 400 VALIDATION_ERROR (schema strict chạy TRƯỚC use case), mật khẩu không đổi', async () => {
+    const mia = await t.register('Mia');
+    const res = await request(t.app)
+      .post('/api/v1/auth/change-password')
+      .set(mia.auth)
+      .send({ currentPassword: PASSWORD, newPassword: 'brand-new-pass-99', tokenVersion: 0 });
+    expect(res.status).toBe(400);
+    expect(errorOf(res).code).toBe('VALIDATION_ERROR');
+    // Use case không chạy ⇒ token cũ còn sống, mật khẩu cũ vẫn đăng nhập được.
+    expect((await request(t.app).get('/api/v1/auth/me').set(mia.auth)).status).toBe(200);
   });
 
   it('change-password: sai mật khẩu cũ ⇒ 400 INVALID_CURRENT_PASSWORD (không 401); đúng ⇒ token mới, token cũ chết', async () => {

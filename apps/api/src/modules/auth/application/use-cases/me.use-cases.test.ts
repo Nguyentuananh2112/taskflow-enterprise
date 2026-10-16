@@ -85,6 +85,15 @@ describe('UpdateMeUseCase (ADR-083)', () => {
     });
   });
 
+  it('F3 B-4: user bị xóa giữa lúc đọc và updateProfile (trả false) ⇒ 401, không trả view', async () => {
+    const alice = await h.seedUser();
+    h.users.updateProfile = () => Promise.resolve(false);
+    await expect(
+      new UpdateMeUseCase(h).execute({ userId: alice.id, fullName: 'Alice Mới' }),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
+    expect((await h.users.rows())[0]?.fullName).toBe('Alice Nguyen');
+  });
+
   it('user không tồn tại ⇒ 401', async () => {
     await expect(
       new UpdateMeUseCase(h).execute({ userId: GHOST_ID, fullName: 'X' }),

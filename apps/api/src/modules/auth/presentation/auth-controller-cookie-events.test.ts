@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { RefreshTokenInvalidError } from '../../../core/errors';
 import { FakeClock, SpyLogger } from '../../../../test/support';
 import { AuthController, type AuthControllerDeps } from './auth.controller';
-import { RefreshCookie } from './refresh-cookie';
+import { MAX_REFRESH_COOKIES, RefreshCookie } from './refresh-cookie';
 
 function setup() {
   const logger = new SpyLogger();
@@ -41,6 +41,28 @@ describe('auth.refresh_cookie_ambiguous', () => {
       }),
     );
     expect(JSON.stringify(logger.entries)).not.toMatch(/secret-one|secret-two/);
+  });
+
+  it(`F3 B-7: đúng MAX_REFRESH_COOKIES (${MAX_REFRESH_COOKIES}) giá trị ⇒ thu hồi TỪNG giá trị; thêm 1 ⇒ 401 ngay, không thu hồi gì, vẫn log warn`, async () => {
+    const cookies = (n: number) => Array.from({ length: n }, (_, i) => `tf_rt=v${i}`).join('; ');
+    const atMax = setup();
+    await expect(
+      atMax.controller.refresh(atMax.req(cookies(MAX_REFRESH_COOKIES)), atMax.res),
+    ).rejects.toBeInstanceOf(RefreshTokenInvalidError);
+    expect(atMax.logouts).toHaveLength(MAX_REFRESH_COOKIES);
+
+    const over = setup();
+    await expect(
+      over.controller.refresh(over.req(cookies(MAX_REFRESH_COOKIES + 1)), over.res),
+    ).rejects.toBeInstanceOf(RefreshTokenInvalidError);
+    expect(over.logouts).toEqual([]);
+    expect(over.logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        msg: 'auth.refresh_cookie_ambiguous',
+        data: { count: MAX_REFRESH_COOKIES + 1, ip: '203.0.113.9' },
+      }),
+    );
   });
 
   it('1 cookie ⇒ không có sự kiện', async () => {
