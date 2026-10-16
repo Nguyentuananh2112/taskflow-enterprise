@@ -264,71 +264,13 @@ jobs:
         run: pnpm --filter @taskflow/api test:security
 
   # ---------------------------------------------------------------- e2e
-  # Playwright (T-026) trên API thật + web build production, DB riêng `taskflow_e2e` + Valkey db 14 (ADR-106).
-  # Cổng thường trực: rank-tilde (HIGH T-033) chạy mặc định; fixture auto `noCspViolations` làm ĐỎ mọi kịch bản
-  # có vi phạm CSP (mọi spec lấy `test` từ support/fixtures). CI=true ⇒ Chromium + Firefox + mobile (@main).
-  # Khác devops.md §8.5 (compose prodlike + image): harness T-026 chạy `src/main.ts` + web standalone — xem
-  # docs/reviews/ci-parity-report.md.
+  # Playwright (T-026) — workflow tái sử dụng .github/workflows/e2e.yml (cũng chạy hằng đêm theo lịch riêng).
+  # devops.md §8.5: PR chỉ Chromium; push main (và nightly) đủ Chromium + Firefox + mobile.
   e2e:
-    name: e2e (Playwright)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres_ci_only
-          POSTGRES_DB: taskflow_template
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres -d taskflow_template"
-          --health-interval 5s --health-timeout 3s --health-retries 20
-      valkey:
-        image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "valkey-cli ping"
-          --health-interval 5s --health-timeout 3s --health-retries 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - name: Tạo role taskflow_migrator (CREATEDB) / taskflow_app (cùng script với compose)
-        env:
-          PGHOST: 127.0.0.1
-          PGPASSWORD: postgres_ci_only
-          POSTGRES_USER: postgres
-          POSTGRES_DB: taskflow_template
-          TASKFLOW_MIGRATOR_PASSWORD: migrator_ci_only
-          TASKFLOW_APP_PASSWORD: app_ci_only
-        run: bash docker/postgres/init/01-roles.sh
-      # globalSetup đòi .next/standalone (T-026: web chạy đúng kiểu image production).
-      - name: Build web (production, kèm package phụ thuộc)
-        run: pnpm --filter "@taskflow/web..." build
-      - name: Playwright browsers
-        run: pnpm --filter @taskflow/e2e exec playwright install --with-deps chromium firefox
-      - name: Playwright
-        env:
-          SEC_PG_HOST: 127.0.0.1
-          SEC_PG_PORT: '5432'
-          SEC_PG_MIGRATOR_USER: taskflow_migrator
-          SEC_PG_MIGRATOR_PASSWORD: migrator_ci_only
-          SEC_PG_APP_USER: taskflow_app
-          SEC_PG_APP_PASSWORD: app_ci_only
-          E2E_PG_DB: taskflow_e2e
-          E2E_REDIS_URL: redis://127.0.0.1:6379/14
-        run: pnpm --filter @taskflow/e2e test
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: e2e-report
-          path: |
-            e2e/playwright-report
-            e2e/test-results
-          if-no-files-found: ignore
-          retention-days: 7
+    name: e2e
+    uses: ./.github/workflows/e2e.yml
+    with:
+      full: ${{ github.event_name != 'pull_request' }}
 
   # ---------------------------------------------------------------- build
   build:
