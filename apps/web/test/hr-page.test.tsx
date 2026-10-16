@@ -128,6 +128,27 @@ describe('trang Nhân sự — realtime', () => {
   });
 });
 
+describe('nhân viên — realtime', () => {
+  it('đang mở /leave: HR duyệt (LEAVE_APPROVED) ⇒ đơn đổi "Đã duyệt" không tải lại (E2E-HR-02)', async () => {
+    const { f, an, open, submitLeave } = seed();
+    const created = (await submitLeave(an, {
+      type: 'ANNUAL',
+      startDate: '2026-10-26',
+      endDate: '2026-10-26',
+      dayPart: 'FULL',
+    })) as unknown as { id: string; version: number };
+    open(`/w/${f.wsId}/leave`, an);
+    const list = await screen.findByRole('region', { name: 'Đơn của tôi' });
+    expect(await within(list).findByText('Chờ duyệt')).toBeTruthy();
+    await act(() =>
+      f.apiAs(f.owner, 'POST', `/workspaces/${f.wsId}/leave-requests/${created.id}/approve`, {
+        expectedVersion: created.version,
+      }),
+    );
+    expect(await within(list).findByText('Đã duyệt')).toBeTruthy();
+  });
+});
+
 describe('trang Nhân sự — thu quyền', () => {
   it('đang mở /hr mà bị thu grant ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
     const { f, an, open, grantHr } = seed();
