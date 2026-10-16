@@ -108,6 +108,18 @@ Phân loại đọc mã nguồn và test tại 4ba066b. Thêm nhãn **[INT]**: h
 
 Theo nhóm: domain 27 = 12/9/6/0 · application 97 = 71/16/10/0 · infrastructure 10 = 0/2/2/6 · presentation 28 = 12/15/1/0 (GAP/EQ/LOW/INT).
 
+**Chạy lại sau test của B** (`test/F3-ws-gaps` 4ea5f49, main 67d86ab, 2026-10-16 18:52–19:36; presentation chạy concurrency 1 vì người dùng đang test dev server). Cả 4 nhóm exit 0:
+
+| Nhóm | Trước | Sau | Sống |
+|---|---|---|---|
+| workspace-domain | 88.89% | **93.83%** | 15 |
+| workspace-application | 82.52% | **95.32%** | 26 |
+| workspace-infrastructure (jobs) | 9.09% | **72.73%** | 3 |
+| workspace-presentation | 81.08% | **89.86%** | 15 (20 timeout) |
+| **workspace** | 83.07% | **93.83%** | 59 / 957 |
+
+**Mọi [GAP] W-1..W-22 và 6 [INT] của `exclusive-purge-run.ts` đã bị giết.** 59 mutant còn sống đều nằm trong danh sách [EQ]/[LOW] bên dưới: getter không dùng, lớp dư `keyset-cursor`, `trim`/`'0'`/`'false'`, hai lớp dư `add-member:22, 63` + `owner-guard:41`, `restore:30, 38`, `workspace-shared:83`, guard wiring, `'/'` của Express, thông điệp lỗi, khóa/tên lỗi của purge-run.
+
 #### [GAP]
 
 | # | Ưu tiên | Vị trí | Đột biến sống | Vì sao test không bắt | Test đề xuất |
