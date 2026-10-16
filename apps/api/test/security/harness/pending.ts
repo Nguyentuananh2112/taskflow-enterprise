@@ -27,7 +27,6 @@ export const PENDING_PREFIX = '[PENDING ';
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
 export const TODO_BUDGET: Readonly<Record<string, string>> = {
-  'SEC-24d': 'auth.sec.ts',
   'SEC-35': 'realtime.sec.ts',
   'SEC-36': 'realtime.sec.ts',
   'SEC-37': 'realtime.sec.ts',
@@ -65,6 +64,11 @@ export interface OutOfScopeCase {
  * ở đây không còn là ca `outOfScope` trong file đã chạy.
  */
 export const OUT_OF_SCOPE: Readonly<Record<string, OutOfScopeCase>> = {
+  'SEC-24d': {
+    file: 'auth.sec.ts',
+    coveredBy: 'unit: logout-all.use-case.test.ts ALL-05 / ADR-105',
+    ref: 'apps/api/src/modules/auth/application/use-cases/logout-all.use-case.test.ts',
+  },
   'SEC-49': {
     file: 'auth.sec.ts',
     coveredBy: 'E2E Playwright',
