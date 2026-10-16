@@ -9,7 +9,7 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 |---|---|---|---|
 | A1 | T-036 tài liệu repo công khai | đang giao | A |
 | A2 | OpenAPI 3.1 sinh từ Zod contracts (không viết tay), phục vụ ở `/api/docs` CHỈ khi APP_ENV ∈ {local,test}; CI kiểm spec sinh ra khớp route thật (mọi route trong router có trong spec và ngược lại) | tài liệu cho người dùng API của repo public | A — 2026-10-15 (feat/A2-openapi) |
-| A3 | Tối ưu theo kết quả k6 (T-027 của D): index/truy vấn board, pool DB — chỉ làm khi có số đo | chờ T-027 | |
+| A3 | Tối ưu theo kết quả k6 (T-027 của D): index/truy vấn board, pool DB — chỉ làm khi có số đo | chờ T-027 | A — 2026-10-16 (feat/A3-batch-rebalance) |
 
 ## B — Security/Backend (`taskflow-enterprise-87`)
 | # | Việc | Ghi chú | Đang làm |

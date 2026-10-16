@@ -10,16 +10,22 @@ export type DbProvider = () => Db;
  * Tên constraint của lỗi unique (Prisma 7 + adapter-pg: `meta.driverAdapterError.cause.constraint.index`,
  * không có `meta.target`). Bản sao có chủ đích của helper bên workspace/auth — module không import
  * runtime của nhau (ADR-093).
+ *
+ * A3: câu SQL thô (`$executeRaw`, vd `saveRanks`) vi phạm unique ⇒ Prisma trả `P2010` (raw query
+ * failed) chứ không `P2002`, cùng `meta` — nhận diện qua SQLSTATE `23505` (đo trên Postgres 18.6).
  */
 export function uniqueConstraintOf(err: unknown): string | null {
-  if (typeof err !== 'object' || err === null || (err as { code?: unknown }).code !== 'P2002') {
-    return null;
-  }
-  const meta = (
-    err as { meta?: { driverAdapterError?: { cause?: { constraint?: { index?: unknown } } } } }
-  ).meta;
-  const index = meta?.driverAdapterError?.cause?.constraint?.index;
-  return typeof index === 'string' ? index : null;
+  if (typeof err !== 'object' || err === null) return null;
+  const { code, meta } = err as {
+    code?: unknown;
+    meta?: {
+      driverAdapterError?: { cause?: { originalCode?: unknown; constraint?: { index?: unknown } } };
+    };
+  };
+  const cause = meta?.driverAdapterError?.cause;
+  const unique = code === 'P2002' || (code === 'P2010' && cause?.originalCode === '23505');
+  const index = cause?.constraint?.index;
+  return unique && typeof index === 'string' ? index : null;
 }
 
 /** Ngày thuần (D10) ⇄ cột `DATE` (Prisma trả `Date` lúc 00:00 UTC). */

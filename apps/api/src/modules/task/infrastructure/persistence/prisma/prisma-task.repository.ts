@@ -2,6 +2,7 @@ import type { Task as TaskRow } from '../../../../../generated/prisma/client';
 import {
   RankConflictError,
   type ITaskRepository,
+  type RankWrite,
   type SaveOptions,
 } from '../../../application/ports/task-repository.port';
 import { Task, type TaskProps } from '../../../domain/task';
@@ -155,6 +156,34 @@ export class PrismaTaskRepository implements ITaskRepository {
       })
       .catch(mapRankConflict);
     return count === 1;
+  }
+
+  /**
+   * A3: một câu `UPDATE … FROM (VALUES …)` thay cho N lệnh `save` (T-027b: ~0,8 s/500 task là do
+   * ~1500 lượt đi về DB, không phải SQL chậm). Điều kiện từng dòng giống hệt `save`; dòng nào lệch
+   * version / đã xóa / project archive thì không được ghi ⇒ số dòng trả về nhỏ hơn số dòng gửi.
+   */
+  async saveRanks(writes: readonly RankWrite[]): Promise<number> {
+    if (writes.length === 0) return 0;
+    // `unnest` theo cột: 7 tham số mảng cho cả lô (VALUES từng dòng tốn CPU Prisma theo số tham số).
+    const rows = writes.map(({ task, expectedVersion }) => ({
+      p: task.toPrimitives(),
+      expectedVersion,
+    }));
+    return this.db().$executeRaw`
+      UPDATE tasks AS t
+         SET rank = v.rank, version = v.version, updated_at = v.updated_at
+        FROM unnest(${rows.map((r) => r.p.id)}::uuid[], ${rows.map((r) => r.p.workspaceId)}::uuid[],
+                    ${rows.map((r) => r.p.projectId)}::uuid[], ${rows.map((r) => r.p.rank)}::text[],
+                    ${rows.map((r) => r.p.version)}::int[], ${rows.map((r) => r.expectedVersion)}::int[],
+                    ${rows.map((r) => r.p.updatedAt.toISOString())}::timestamptz[])
+             AS v(id, workspace_id, project_id, rank, version, expected_version, updated_at)
+       WHERE t.id = v.id AND t.workspace_id = v.workspace_id AND t.project_id = v.project_id
+         AND t.version = v.expected_version AND t.deleted_at IS NULL
+         AND EXISTS (SELECT 1 FROM projects p JOIN workspaces w ON w.id = p.workspace_id
+                      WHERE p.id = t.project_id AND p.archived_at IS NULL AND w.deleted_at IS NULL)`.catch(
+      mapRankConflict,
+    );
   }
 
   private async edgeRank(

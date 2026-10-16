@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { Rank } from '../../domain/rank';
 import { createTaskHarness, U, type TaskHarness } from '../../testing/task-harness';
+import { RankConflictError } from '../ports/task-repository.port';
 import { RANK_REBALANCE_MAX_TASKS, RANK_REBALANCE_THRESHOLD } from '../task-rank-rebalancer';
 
 // T-033: cân bằng lại rank theo cột khi move sinh rank quá dài (ADR-011 mở rộng). Chạy trên cả
@@ -98,8 +100,12 @@ describe('rebalance rank theo cột (T-033)', () => {
   it('F2 (review B): cột vượt RANK_REBALANCE_MAX_TASKS ⇒ KHÔNG rebalance (giữ khóa dài hợp lệ), log cảnh báo', async () => {
     const h = await createTaskHarness();
     const filler = RANK_REBALANCE_MAX_TASKS - 3; // + A, B, C ⇒ đủ MAX task khác, + X ⇒ vượt
-    for (let i = 0; i < filler; i++)
-      await h.seedTask({ rank: `a${'V'.repeat(RANK_REBALANCE_THRESHOLD + 8)}${i}` });
+    // Một lệnh chèn lô: seed từng task (~1500 lượt đi về DB) từng vượt timeout 30 s khi máy bận (A3).
+    await h.seedTasks(
+      Array.from({ length: filler }, (_, i) => ({
+        rank: `a${'V'.repeat(RANK_REBALANCE_THRESHOLD + 8)}${i}`,
+      })),
+    );
     const t = await crowdedColumn(h);
     const dto = await moveXAfterB(h, t);
     expect(dto.rank.length).toBeGreaterThan(RANK_REBALANCE_THRESHOLD);
@@ -166,6 +172,73 @@ describe('rebalance rank theo cột (T-033)', () => {
     expect(await h.column('TODO')).toEqual([t.a.id, t.b.id, t.x.id, t.c.id]);
     // (Ghi chen trên Postgres commit riêng; trên InMemory nó nằm trong snapshot nên bị rollback
     // cùng lượt thử đầu — chỉ khẳng định phần đúng cho cả hai backend.)
+    for (const r of await h.backend.taskRows()) expect(r.rank.startsWith('~')).toBe(false);
+  });
+
+  // A3: pha 2 ghi theo LÔ — một `saveRanks` chứa MỌI dòng đã stash (kể cả dòng khóa trùng rank cũ),
+  // một `appendMany` chỉ cho task thật sự đổi rank.
+  it('A3: một lệnh ghi lô cho mọi dòng đã stash, một lệnh audit lô chỉ cho task đổi rank', async () => {
+    const h = await createTaskHarness();
+    const t = await crowdedColumn(h);
+    const saveRanks = vi.spyOn(h.deps.tasks, 'saveRanks');
+    const appendMany = vi.spyOn(h.deps.audit, 'appendMany');
+    await moveXAfterB(h, t);
+    expect(saveRanks).toHaveBeenCalledTimes(1);
+    const writes = saveRanks.mock.calls[0]![0];
+    expect(new Set(writes.map((w) => w.task.id))).toEqual(new Set([t.a.id, t.b.id, t.c.id]));
+    // A: khóa trùng rank cũ ⇒ ghi lại với version cũ, KHÔNG bump.
+    const a = writes.find((w) => w.task.id === t.a.id)!;
+    expect([a.expectedVersion, a.task.version]).toEqual([1, 1]);
+    for (const w of writes.filter((w) => w.task.id !== t.a.id)) {
+      expect(w.task.version).toBe(w.expectedVersion + 1);
+    }
+    expect(appendMany).toHaveBeenCalledTimes(1);
+    expect(appendMany.mock.calls[0]![0].map((e) => e.taskId).sort()).toEqual(
+      [t.b.id, t.c.id].sort(),
+    );
+  });
+
+  it('A3: `saveRanks` trùng rank với task sống khác ⇒ RankConflictError (cả câu SQL thô, không 500)', async () => {
+    const h = await createTaskHarness();
+    await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: 'a1' });
+    const task = (await h.deps.tasks.findLive(b.workspaceId, b.projectId, b.id))!;
+    task.moveTo('TODO', Rank.of('a0'), U.Mia, new Date());
+    await expect(h.deps.tasks.saveRanks([{ task, expectedVersion: 1 }])).rejects.toBeInstanceOf(
+      RankConflictError,
+    );
+  });
+
+  it('A3: project bị archive song song giữa lúc rebalance ⇒ 422 PROJECT_ARCHIVED, không còn rank tạm "~"', async () => {
+    const h = await createTaskHarness();
+    const t = await crowdedColumn(h);
+    const stash = h.deps.tasks.stashColumnRanks.bind(h.deps.tasks);
+    h.deps.tasks.stashColumnRanks = async (projectId, status) => {
+      await h.backend.patchProject(projectId, { archivedAt: new Date() });
+      return stash(projectId, status);
+    };
+    await expect(moveXAfterB(h, t)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'PROJECT_ARCHIVED',
+    });
+    for (const r of await h.backend.taskRows()) expect(r.rank.startsWith('~')).toBe(false);
+    expect(h.emitted()).toEqual([]);
+  });
+
+  it('A3: task trong cột bị xóa song song giữa lúc rebalance ⇒ thử lại cả transaction (không 404 cho người move)', async () => {
+    const h = await createTaskHarness();
+    const t = await crowdedColumn(h);
+    const stash = h.deps.tasks.stashColumnRanks.bind(h.deps.tasks);
+    let injected = false;
+    h.deps.tasks.stashColumnRanks = async (projectId, status) => {
+      if (!injected) {
+        injected = true;
+        await h.patchTask(t.c.id, { version: 2, deletedAt: new Date() });
+      }
+      return stash(projectId, status);
+    };
+    await expect(moveXAfterB(h, t)).resolves.toMatchObject({ status: 'TODO' });
+    expect(h.logger.messages('warn')).toContain('task.rank_conflict_retry');
     for (const r of await h.backend.taskRows()) expect(r.rank.startsWith('~')).toBe(false);
   });
 });

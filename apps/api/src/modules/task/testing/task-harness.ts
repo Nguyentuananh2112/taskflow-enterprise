@@ -113,13 +113,15 @@ export async function createTaskHarness(backend: TaskBackend = inMemoryTaskBacke
   const commands = new TaskCommands(deps);
   let seq = 0;
 
-  const seedTask = async (over: Partial<TaskProps> & { rank: string }): Promise<TaskProps> => {
+  type SeedInput = Partial<TaskProps> & { rank: string };
+  const buildTask = (
+    over: SeedInput,
+    project: { workspaceId: string },
+    projectId: string,
+    number: number,
+  ): TaskProps => {
     seq += 1;
-    const projectId = over.projectId ?? P1;
-    const project = (await backend.projectRow(projectId))!;
-    // Số mặc định = bộ đếm của project (như dữ liệu thật) — không trùng số use case đã cấp.
-    const number = over.number ?? project.nextTaskNumber;
-    const props: TaskProps = {
+    return {
       id: id(1000 + seq),
       workspaceId: project.workspaceId,
       projectId,
@@ -137,11 +139,25 @@ export async function createTaskHarness(backend: TaskBackend = inMemoryTaskBacke
       updatedAt: new Date(NOW),
       ...over,
     };
+  };
+  const seedTask = async (over: SeedInput): Promise<TaskProps> => {
+    const projectId = over.projectId ?? P1;
+    const project = (await backend.projectRow(projectId))!;
+    // Số mặc định = bộ đếm của project (như dữ liệu thật) — không trùng số use case đã cấp.
+    const props = buildTask(over, project, projectId, over.number ?? project.nextTaskNumber);
     await backend.insertTask(Task.reconstitute(props).toPrimitives());
     if (project.nextTaskNumber <= props.number) {
       await backend.patchProject(projectId, { nextTaskNumber: props.number + 1 });
     }
     return props;
+  };
+  /** Nhiều task của CÙNG project (P1) trong một lệnh chèn — cột lớn chạy nhanh cả trên Postgres. */
+  const seedTasks = async (overs: readonly Omit<SeedInput, 'projectId' | 'number'>[]) => {
+    const project = (await backend.projectRow(P1))!;
+    const all = overs.map((over, i) => buildTask(over, project, P1, project.nextTaskNumber + i));
+    await backend.insertTasks(all.map((p) => Task.reconstitute(p).toPrimitives()));
+    await backend.patchProject(P1, { nextTaskNumber: project.nextTaskNumber + all.length });
+    return all;
   };
   const row = async (taskId: string) => (await backend.taskRows()).find((t) => t.id === taskId)!;
 
@@ -168,6 +184,7 @@ export async function createTaskHarness(backend: TaskBackend = inMemoryTaskBacke
       ...extra,
     }),
     seedTask,
+    seedTasks,
     row,
     patchTask: (taskId: string, patch: Partial<TaskProps>) => backend.patchTask(taskId, patch),
     taskCount: async () => (await backend.taskRows()).length,

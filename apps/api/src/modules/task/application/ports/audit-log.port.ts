@@ -18,4 +18,6 @@ export interface TaskAuditEntry {
 /** Chỉ có `append` — không update/delete (data-and-api §1.4 ghi chú). Gọi trong transaction. */
 export interface ITaskAuditLogRepository {
   append(entry: TaskAuditEntry): Promise<void>;
+  /** Nhiều dòng trong một câu INSERT (rebalance theo lô — A3). Mảng rỗng ⇒ không làm gì. */
+  appendMany(entries: readonly TaskAuditEntry[]): Promise<void>;
 }

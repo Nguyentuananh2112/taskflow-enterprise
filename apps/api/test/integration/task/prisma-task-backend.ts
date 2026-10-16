@@ -1,6 +1,7 @@
 // Backend Prisma cho harness test của Task (LSP, T-023): cùng hợp đồng `TaskBackend` với bản
 // InMemory ⇒ chạy lại nguyên bộ test use case trên Postgres thật. Port liên module dùng đúng
 // adapter Prisma sẽ wire ở production (Workspace/Auth hiện thực — T-020).
+import type { Prisma } from '../../../src/generated/prisma/client';
 import { PrismaUserRefReader } from '../../../src/modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import type { TaskAuditEntry } from '../../../src/modules/task/application/ports/audit-log.port';
 import type { TaskProps } from '../../../src/modules/task/domain/task';
@@ -69,6 +70,11 @@ export function prismaTaskBackend(): TaskBackend & { uow: RecordingUnitOfWork } 
     async insertTask(t) {
       await prisma.task.create({
         data: taskData(t) as Parameters<typeof prisma.task.create>[0]['data'],
+      });
+    },
+    async insertTasks(ts) {
+      await prisma.task.createMany({
+        data: ts.map((t) => taskData(t)) as Prisma.TaskCreateManyInput[],
       });
     },
 
