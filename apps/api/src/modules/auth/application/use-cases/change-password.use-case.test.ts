@@ -14,6 +14,7 @@ import {
   META,
   PASSWORD,
 } from '../../testing/auth-harness';
+import { User } from '../../domain/user';
 import { ChangePasswordUseCase } from './change-password.use-case';
 
 let h: AuthHarness;
@@ -164,6 +165,36 @@ describe('ChangePasswordUseCase (security.md 1.7)', () => {
         meta: META,
       }),
     ).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it('F3 B-3: user bị xóa mềm SAU khi verify + băm (ngoài transaction) ⇒ 401, hash / tv / token không đổi', async () => {
+    const alice = await h.seedUser();
+    await h.seedSession(alice);
+    const findById = h.users.findById.bind(h.users);
+    let reads = 0;
+    // Lần đọc thứ 2 là lần đọc lại TRONG transaction — lúc đó user đã bị xóa mềm.
+    h.users.findById = async (id) => {
+      const user = await findById(id);
+      reads += 1;
+      return reads === 2 && user
+        ? User.reconstitute({ ...user.toSnapshot(), deletedAt: h.clock.now() })
+        : user;
+    };
+    await expect(
+      change.execute({
+        userId: alice.id,
+        currentPassword: PASSWORD,
+        newPassword: NEW_PASSWORD,
+        meta: META,
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(reads).toBe(2);
+    expect((await h.users.rows())[0]).toMatchObject({
+      passwordHash: `h:${PASSWORD}`,
+      tokenVersion: 0,
+    });
+    expect((await h.refreshTokens.rows()).every((r) => r.revokedAt === null)).toBe(true);
+    expect(h.store.ops).toEqual([]);
   });
 
   it('ADR-105 (fail-closed): Valkey lỗi khi ghi tv mới ⇒ 503 + rollback: mật khẩu cũ vẫn dùng được, token không bị thu hồi', async () => {

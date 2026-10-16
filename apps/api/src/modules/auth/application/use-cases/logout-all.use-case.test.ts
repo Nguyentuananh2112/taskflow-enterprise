@@ -54,6 +54,18 @@ describe('LogoutAllUseCase (security.md 1.6, ADR-025)', () => {
     expect(h.events.published).toEqual([]);
   });
 
+  it('F3 B-2: user bị xóa giữa lúc đọc và bumpTokenVersion (trả null) ⇒ 401 + rollback: không ghi tv, không thu hồi, không phát gì', async () => {
+    const alice = await h.seedUser();
+    await h.seedSession(alice);
+    h.users.bumpTokenVersion = () => Promise.resolve(null);
+    await expect(logoutAll.execute({ userId: alice.id })).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(h.store.ops).toEqual([]);
+    expect((await h.refreshTokens.rows()).every((r) => r.revokedAt === null)).toBe(true);
+    expect(h.uow.rollbacks).toBe(1);
+    expect(h.notifier.calls).toEqual([]);
+    expect(h.events.published).toEqual([]);
+  });
+
   it('user không tồn tại (token hợp lệ nhưng user đã bị xóa cứng) ⇒ 401', async () => {
     await expect(logoutAll.execute({ userId: GHOST_ID })).rejects.toBeInstanceOf(UnauthorizedError);
   });
