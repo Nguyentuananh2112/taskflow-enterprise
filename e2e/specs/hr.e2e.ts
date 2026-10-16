@@ -180,7 +180,8 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
   const hana = await openAs(browser, w.hana.user);
   await hana.page.goto(wsPath(w, 'hr?tab=leave'));
   await expect(hana.page.getByRole('tab', { name: 'Đơn nghỉ', selected: true })).toBeVisible();
-  await expect(bell(hana.page)).toHaveAccessibleName('Thông báo');
+  // Mốc: seed cấp HR_MANAGE cho Hana ⇒ đã có 1 thông báo HR_GRANTED chưa đọc (cổng T-041c).
+  await expect(bell(hana.page)).toHaveAccessibleName('Thông báo, 1 chưa đọc');
 
   // Mia gửi đơn qua form thật (Nghỉ ốm — không phụ thuộc số dư phép năm).
   await page.goto(wsPath(w, 'leave'));
@@ -199,7 +200,7 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
   await expect(mine.getByText('Chờ duyệt')).toBeVisible();
 
   // HR: chuông +1 qua notification:new, hàng đợi tự tải lại — không reload.
-  await expect(bell(hana.page)).toHaveAccessibleName('Thông báo, 1 chưa đọc', REALTIME);
+  await expect(bell(hana.page)).toHaveAccessibleName('Thông báo, 2 chưa đọc', REALTIME);
   const miaName = w.mia.user.fullName;
   await expect(hana.page.getByRole('listitem', { name: `Đơn của ${miaName}` })).toBeVisible(
     REALTIME,
