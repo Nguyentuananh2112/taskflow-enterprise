@@ -15,6 +15,10 @@ import {
 } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-queries';
 import type { HrAuditEntry } from '../../../src/modules/workspace/application/ports/hr-audit.port';
 import { PrismaHrAuditLog } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-hr-audit-log';
+import {
+  PrismaMemberDepartures,
+  PrismaMembershipTenureReader,
+} from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-tenure';
 import { PrismaWorkspacePurger } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-workspace.purger';
 import type { WorkspaceBackend } from '../../../src/modules/workspace/testing/harness';
 import { RecordingUnitOfWork, testPrisma } from './prisma-test-kit';
@@ -93,6 +97,14 @@ class TestProjectRepository extends PrismaProjectRepository {
     return testPrisma().project.findMany({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
   }
 }
+class TestMemberDepartures extends PrismaMemberDepartures {
+  rows() {
+    return testPrisma().workspaceMemberDeparture.findMany({
+      orderBy: [{ leftAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+}
+
 /** Directory thật + `seed()` chèn dòng `users` (FK của workspace_members). */
 class TestUserDirectory extends PrismaUserDirectory {
   async seed(user: UserSummary): Promise<void> {
@@ -113,6 +125,8 @@ export function prismaWorkspaceBackend(): WorkspaceBackend & { uow: RecordingUni
     users: new TestUserDirectory(db),
     queries: new PrismaWorkspaceQueries(db),
     hrAudit: new TestHrAuditLog(db),
+    departures: new TestMemberDepartures(db),
+    tenure: new PrismaMembershipTenureReader(db),
     purger: new PrismaWorkspacePurger(db),
     uow,
   };

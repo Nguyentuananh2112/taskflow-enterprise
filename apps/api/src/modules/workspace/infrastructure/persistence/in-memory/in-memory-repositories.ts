@@ -15,7 +15,7 @@ import { Project, type ProjectSnapshot } from '../../../domain/project';
 import { Workspace, type WorkspaceSnapshot } from '../../../domain/workspace';
 
 /** Bảng InMemory có snapshot/restore để FakeUnitOfWork rollback thật. */
-abstract class Table<Row extends { id: string }> {
+export abstract class Table<Row extends { id: string }> {
   protected byId = new Map<string, Row>();
 
   rows(): Row[] {

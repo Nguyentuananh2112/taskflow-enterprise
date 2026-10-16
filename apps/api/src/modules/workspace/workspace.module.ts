@@ -24,6 +24,7 @@ import { AddMemberUseCase } from './application/use-cases/add-member.use-case';
 import { HrAccess } from './application/adapters/hr-access';
 import { HrAuditWriter } from './application/hr-audit-writer';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
+import type { IMemberDepartureLog, IMembershipTenureReader } from './application/ports/tenure.port';
 import { ChangeMemberRoleUseCase } from './application/use-cases/change-member-role.use-case';
 import { ListHrAuditLogsQuery } from './application/use-cases/list-hr-audit-logs.query';
 import { SetMemberGrantsUseCase } from './application/use-cases/set-member-grants.use-case';
@@ -52,6 +53,10 @@ import {
   InMemoryProjectRepository,
   InMemoryWorkspaceRepository,
 } from './infrastructure/persistence/in-memory/in-memory-repositories';
+import {
+  InMemoryMemberDepartures,
+  InMemoryMembershipTenureReader,
+} from './infrastructure/persistence/in-memory/in-memory-tenure';
 import { requireProject } from './presentation/membership';
 import { HrController } from './presentation/hr.controller';
 import { ProjectController } from './presentation/project.controller';
@@ -65,6 +70,9 @@ export interface WorkspaceRepositories {
   queries: IWorkspaceQueries;
   /** Mốc 3: HrAuditLog — dùng chung với attendance / leave qua `HrAuditWriter` (T-037). */
   hrAudit: IHrAuditLog;
+  /** T-037b: nhiệm kỳ đã kết thúc (ghi khi xóa thành viên) + đọc nhiệm kỳ cho bảng công. */
+  departures: IMemberDepartureLog;
+  tenure: IMembershipTenureReader;
 }
 
 /** Repository InMemory (dev/test); `directory` cần được đồng bộ với user của auth (composition root). */
@@ -75,7 +83,9 @@ export function createInMemoryWorkspaceRepositories() {
   const directory = new InMemoryUserDirectory();
   const queries = new InMemoryWorkspaceQueries(workspaces, memberships, projects, directory);
   const hrAudit = new InMemoryHrAuditLog((id) => directory.users.get(id)?.fullName);
-  return { workspaces, memberships, projects, queries, directory, hrAudit };
+  const departures = new InMemoryMemberDepartures();
+  const tenure = new InMemoryMembershipTenureReader(memberships, departures);
+  return { workspaces, memberships, projects, queries, directory, hrAudit, departures, tenure };
 }
 
 export interface WorkspaceModuleDeps {
@@ -101,6 +111,8 @@ export interface WorkspaceModule {
   hrAccess: HrAccess;
   /** Mốc 3: ghi HrAuditLog trong transaction của bên gọi. */
   hrAudit: HrAuditWriter;
+  /** T-037b: `IMembershipTenurePort` của attendance (khớp cấu trúc). */
+  tenure: IMembershipTenureReader;
   accessChecker: WorkspaceProjectAccessChecker;
   provisioner: DefaultWorkspaceProvisioner;
   membershipReader: WorkspaceMembershipReader;
@@ -148,6 +160,9 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       projects,
       cleaner,
       notifier,
+      departures: d.repos.departures,
+      ids,
+      clock,
       uow,
       logger,
     }),
@@ -190,6 +205,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     access,
     hrAccess: new HrAccess({ workspaces, memberships }),
     hrAudit: audit,
+    tenure: d.repos.tenure,
     accessChecker: new WorkspaceProjectAccessChecker({ workspaces, memberships, projects }),
     provisioner: new DefaultWorkspaceProvisioner({ creator, projects, random, ids, clock }),
     membershipReader: new WorkspaceMembershipReader({ queries }),

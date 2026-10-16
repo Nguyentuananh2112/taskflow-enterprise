@@ -144,3 +144,39 @@ describe('hr_audit_logs (B-L1, quyết định d)', () => {
     await expect(prisma.user.delete({ where: { id: ctx.user.id } })).rejects.toThrow();
   });
 });
+
+describe('migration 4 (T-037b)', () => {
+  const leave = (reason: string | null) =>
+    prisma.$executeRaw`
+      INSERT INTO leave_requests (id, workspace_id, user_id, type, start_date, end_date, reason, updated_at)
+      VALUES (${randomUUID()}::uuid, ${ctx.w1.id}::uuid, ${ctx.user.id}::uuid, 'ANNUAL',
+              DATE '2026-10-20', DATE '2026-10-20', ${reason}, now())`;
+
+  it('leave_requests.reason: NULL hợp lệ; rỗng / chỉ khoảng trắng ⇒ CHECK', async () => {
+    await expect(leave(null)).resolves.toBe(1);
+    await expect(leave('ốm')).resolves.toBe(1);
+    for (const blank of ['', '   ']) {
+      await expect(leave(blank)).rejects.toThrow(/leave_requests_reason_not_blank_chk/);
+    }
+  });
+
+  it('workspace_member_departures: left_at < joined_at ⇒ CHECK; user FK Restrict', async () => {
+    const row = (joinedAt: Date, leftAt: Date) =>
+      prisma.workspaceMemberDeparture.create({
+        data: {
+          id: randomUUID(),
+          workspaceId: ctx.w1.id,
+          userId: ctx.user.id,
+          role: 'MEMBER',
+          joinedAt,
+          leftAt,
+          reason: 'LEFT',
+        },
+      });
+    await expect(row(new Date('2026-10-02'), new Date('2026-10-01'))).rejects.toThrow(
+      /workspace_member_departures_range_chk/,
+    );
+    await expect(row(new Date('2026-10-01'), new Date('2026-10-01'))).resolves.toBeDefined();
+    await expect(prisma.user.delete({ where: { id: ctx.user.id } })).rejects.toThrow();
+  });
+});

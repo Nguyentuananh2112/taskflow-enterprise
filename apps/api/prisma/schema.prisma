@@ -56,6 +56,11 @@ enum MemberGrant {
   HR_MANAGE // ADR-119: quyền "Quản lý nhân sự" cấp thêm theo thành viên
 }
 
+enum MemberDepartureReason {
+  REMOVED // bị OWNER / PM xóa
+  LEFT // tự rời
+}
+
 enum AttendanceKind {
   IN
   OUT
@@ -121,16 +126,17 @@ model User {
 
   // Mốc 3: mọi tham chiếu tới users là Restrict (như actor của TaskAuditLog — D3) — lịch sử công / đơn /
   // số dư không mất khi rời workspace; v1 không xóa cứng user (D2 ẩn danh hóa).
-  attendanceEvents        AttendanceEvent[] @relation("AttendanceUser")
-  attendanceEventsCreated AttendanceEvent[] @relation("AttendanceCreator")
-  attendanceEventsVoided  AttendanceEvent[] @relation("AttendanceVoider")
-  workSchedulesCreated    WorkSchedule[]    @relation("ScheduleCreator")
-  leaveRequests           LeaveRequest[]    @relation("LeaveRequester")
-  leaveRequestsDecided    LeaveRequest[]    @relation("LeaveDecider")
+  attendanceEvents        AttendanceEvent[]          @relation("AttendanceUser")
+  attendanceEventsCreated AttendanceEvent[]          @relation("AttendanceCreator")
+  attendanceEventsVoided  AttendanceEvent[]          @relation("AttendanceVoider")
+  workSchedulesCreated    WorkSchedule[]             @relation("ScheduleCreator")
+  leaveRequests           LeaveRequest[]             @relation("LeaveRequester")
+  leaveRequestsDecided    LeaveRequest[]             @relation("LeaveDecider")
   leaveBalances           LeaveBalance[]
-  notificationsReceived   Notification[]    @relation("NotificationRecipient")
-  notificationsActed      Notification[]    @relation("NotificationActor")
+  notificationsReceived   Notification[]             @relation("NotificationRecipient")
+  notificationsActed      Notification[]             @relation("NotificationActor")
   hrAuditLogs             HrAuditLog[]
+  memberDepartures        WorkspaceMemberDeparture[]
 
   @@map("users")
 }
@@ -170,7 +176,7 @@ model Workspace {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  deletedBy        User?             @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
+  deletedBy        User?                      @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
   members          WorkspaceMember[]
   projects         Project[]
   // Mốc 3 — cascade theo purge workspace (ADR-047)
@@ -181,6 +187,7 @@ model Workspace {
   leaveBalances    LeaveBalance[]
   notifications    Notification[]
   hrAuditLogs      HrAuditLog[]
+  memberDepartures WorkspaceMemberDeparture[]
 
   @@index([purgeAt], map: "workspaces_purge_at_idx", where: raw("purge_at IS NOT NULL")) // partialIndexes (ADR-062)
   @@index([deletedById])
@@ -203,6 +210,27 @@ model WorkspaceMember {
   @@index([userId])
   @@index([workspaceId, role]) // ADR-051: khóa dòng OWNER (ADR-046)
   @@map("workspace_members")
+}
+
+/// T-037b: nhiệm kỳ ĐÃ KẾT THÚC của thành viên (rời = xóa dòng workspace_members ⇒ ghi lại ở đây CÙNG
+/// transaction). Nhiệm kỳ hiện tại = workspace_members.joined_at. Bảng công dùng để không tính "Vắng"
+/// ngoài nhiệm kỳ. Purge workspace ⇒ cascade (không ghi departure).
+model WorkspaceMemberDeparture {
+  id          String                @id @db.Uuid
+  workspaceId String                @map("workspace_id") @db.Uuid
+  userId      String                @map("user_id") @db.Uuid
+  role        WorkspaceRole // role lúc rời — VIEWER không phải nhân viên (bảng công bỏ qua)
+  joinedAt    DateTime              @map("joined_at") @db.Timestamptz(3)
+  leftAt      DateTime              @map("left_at") @db.Timestamptz(3)
+  reason      MemberDepartureReason
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, leftAt])
+  @@index([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_member_departures")
 }
 
 model Project {
@@ -359,7 +387,7 @@ model LeaveRequest {
   startDate    DateTime     @map("start_date") @db.Date
   endDate      DateTime     @map("end_date") @db.Date
   dayPart      LeaveDayPart @default(FULL) @map("day_part")
-  reason       String       @db.VarChar(1000) // có thể là dữ liệu sức khỏe (B-H2): chỉ người gửi + HR đọc
+  reason       String?      @db.VarChar(1000) // có thể là dữ liệu sức khỏe (B-H2): chỉ người gửi + HR đọc
   status       LeaveStatus  @default(PENDING)
   decidedById  String?      @map("decided_by_id") @db.Uuid
   decidedAt    DateTime?    @map("decided_at") @db.Timestamptz(3)
