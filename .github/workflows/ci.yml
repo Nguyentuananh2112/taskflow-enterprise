@@ -131,68 +131,13 @@ jobs:
         run: pnpm --filter @taskflow/contracts test:coverage
 
   # ---------------------------------------------------------------- integration
-  # Postgres 18.6 + Valkey 9.1.2 thật (ADR-003). Tách 2 user DB như compose (ADR-074).
-  # Integration chạy trên DB riêng `taskflow_it`: harness của T-010 xóa + dựng lại schema public ⇒ nếu dùng chung
-  # template sẽ mất grant/default privileges mà suite bảo mật cần (T-022).
+  # Workflow tái sử dụng .github/workflows/integration.yml — PR/push: mỗi ca concurrency 1 lượt; nightly của chính
+  # workflow đó: TASK_CC_REPEAT=20 (task-concurrency.int.ts, T-023).
   integration:
-    name: integration · migrate diff
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres_ci_only
-          POSTGRES_DB: taskflow_template
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres -d taskflow_template"
-          --health-interval 5s --health-timeout 3s --health-retries 20
-      valkey:
-        image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "valkey-cli ping"
-          --health-interval 5s --health-timeout 3s --health-retries 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - name: Tạo role taskflow_migrator / taskflow_app + DB taskflow_it (cùng script với compose)
-        env:
-          PGHOST: 127.0.0.1
-          PGPASSWORD: postgres_ci_only
-          POSTGRES_USER: postgres
-          POSTGRES_DB: taskflow_template
-          TASKFLOW_EXTRA_DBS: taskflow_it
-          TASKFLOW_MIGRATOR_PASSWORD: migrator_ci_only
-          TASKFLOW_APP_PASSWORD: app_ci_only
-        run: bash docker/postgres/init/01-roles.sh
-      # Luôn `pnpm exec prisma` (ADR-061). Migrate template bằng user có DDL; prisma.config.ts chỉ đọc DATABASE_URL.
-      - name: prisma validate + migrate deploy (taskflow_template) + drift rỗng (ADR-062)
-        working-directory: apps/api
-        env:
-          DATABASE_URL: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_template
-        run: |
-          pnpm exec prisma validate
-          # migrate deploy + grant DML cho taskflow_app (docker/migrate/grant-app.sql)
-          pnpm run db:deploy
-          pnpm run db:check-drift
-      # DB MỚI TINH → db:deploy → taskflow_app đọc/ghi được, KHÔNG có DDL; deploy lần 2 idempotent (T-027).
-      - name: Quyền DB sau deploy (db:deploy)
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: '5432'
-          MIGRATOR_PASSWORD: migrator_ci_only
-          APP_PASSWORD: app_ci_only
-        run: bash docker/migrate/verify-grants.sh
-      - name: Integration tests (Postgres thật, DB taskflow_it)
-        env:
-          DATABASE_URL_TEST: postgresql://taskflow_migrator:migrator_ci_only@127.0.0.1:5432/taskflow_it
-          VALKEY_URL_TEST: redis://127.0.0.1:6379/1 # db riêng: globalSetup FLUSHDB, từ chối db 0
-        run: pnpm --filter @taskflow/api test:integration
+    name: integration
+    uses: ./.github/workflows/integration.yml
+    with:
+      repeat: 1
 
   # ---------------------------------------------------------------- security
   # Bộ test bảo mật đen SEC-xx (T-017, Engineer F): spawn `src/main.ts` thật; harness tự tạo DB riêng
