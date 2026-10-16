@@ -50,6 +50,13 @@ lại sau khóa trong `lockOwnersAndReloadActor`); giữ để thất bại sớ
 - `FOR SHARE` thật sự tuần tự hóa thu grant ↔ lệnh HR đang bay (SEC-HR-10 / CC-HR-11) chỉ kiểm được bằng test
   đồng thời trên Postgres: F gác bằng `SEC_RUN_PENDING=T-037`; bản in-memory `findForShare` = `find`.
 
+## SEC-30 (CORS) — sửa theo thay đổi có chủ đích
+
+Lượt verify của TL đỏ ở SEC-30 vì test cũ cấm `PUT`. PUT là route `members/:userId/grants` và `Idempotency-Key` phục vụ check-in/out
+(T-038) — cả hai được thêm có chủ đích. `test/security/transport.sec.ts` giờ so khớp ĐÚNG tập method
+(`GET, POST, PUT, PATCH, DELETE`) và header (`Authorization, Content-Type, Idempotency-Key, X-Client-Id, X-Request-Id`) — chặt hơn
+bản cũ — và thêm ca preflight `TRACE` / `X-Evil` khẳng định method / header lạ (và `*`) không được cho phép. Chạy riêng file: 30/30, exit 0.
+
 ## Lệnh đã chạy (exit code)
 
 `prettier --check .` 0 · `eslint apps/api packages/contracts apps/web/src --max-warnings=0` 0 · `pnpm -r lint:deps` 0 ·
