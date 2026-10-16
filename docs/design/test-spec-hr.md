@@ -298,6 +298,8 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | E2E-HR-08         | XSS (mở rộng SEC-49)                                                                                                    | `reason`, `decisionNote`, ghi chú ADJUSTMENT, tên ngày lễ chứa payload ⇒ hiển thị text ở danh sách đơn, chuông, lịch, `/hr` |
 | E2E-HR-09         | responsive 360 → 1440, Firefox                                                                                          | luồng `@main` xanh                                                                                                          |
 
+Tách theo vé web (cổng T-041a): phần chỉ cần T-041a (thẻ chấm công, `/attendance`, chuông) giữ id gốc; phần cần `/leave` (T-041b) hoặc `/hr` (T-041c) tách thành id hậu tố — **E2E-HR-04b** (VIEWER ở `/leave`), **07b** (axe `/leave`), **07c** (axe mọi tab `/hr`), **08b** (XSS lý do đơn + ghi chú HR ở `/leave`), **08c** (XSS ở `/hr`), **09b** (responsive `/leave`).
+
 ## 10. Mutation
 
 Nhóm Stryker mới (thêm script `mutation:<nhóm>`, workflow hằng tuần tự nhận):

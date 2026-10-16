@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import AxeBuilder from '@axe-core/playwright';
-import type { Locator, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { expect, loginViaUi, test } from '../support/fixtures';
 import {
@@ -24,7 +24,8 @@ import { arm, assertInert } from '../support/xss';
 
 // E2E-HR-* (docs/design/test-spec-hr.md §9, T-042). Thân viết theo UI THẬT của nhánh web (T-041a/b/c @ feat/T-041c-hr-web
 // 6733a06; E soát a/b trên 268c7d4/7817d42, H soát c trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
-// grants T-037). Vẫn `test.fixme` + nhãn vé: vé web tương ứng lên main ⇒ đổi `test.fixme` → `test` trong cùng PR.
+// grants T-037). Ca CHỈ cần T-041a đã bỏ fixme (01, 04, 05, 07, 08, 09); ca cần /leave hoặc /hr tách thành hậu tố b/c, vẫn
+// `test.fixme` + nhãn vé: vé web tương ứng lên main ⇒ đổi `test.fixme` → `test` trong cùng PR.
 //   T-041a: thẻ Chấm công ở /projects, /attendance, chuông thông báo, nút gọn trên header
 //   T-041b: /leave (số dư, form gửi đơn, đơn của tôi)
 //   T-041c: /hr (Hôm nay, Bảng công tháng + Xuất CSV, Đơn nghỉ, Lịch & ngày lễ, Số phép), công tắc grant ở Thành viên
@@ -84,7 +85,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
   // Giờ trên thẻ theo serverNow + múi giờ LỊCH (Asia/Ho_Chi_Minh), không theo máy người dùng.
   test.use({ timezoneId: 'America/New_York' });
 
-  test.fixme(`@main E2E-HR-01 [${T041A}]: thẻ Chấm công ở /projects ⇒ Chấm vào ⇒ Chấm ra; giờ theo serverNow + múi giờ lịch; tab cũ bấm vào lần 2 ⇒ 409 already_checked_in`, async ({
+  test(`@main E2E-HR-01 [${T041A}]: thẻ Chấm công ở /projects ⇒ Chấm vào ⇒ Chấm ra; giờ theo serverNow + múi giờ lịch; tab cũ bấm vào lần 2 ⇒ 409 already_checked_in`, async ({
     page,
     context,
     request,
@@ -312,7 +313,7 @@ test.fixme(`E2E-HR-03 [${T041C}]: OWNER bật "Quản lý nhân sự" cho Mia �
 
 // ---------------------------------------------------------------- E2E-HR-04
 
-test.fixme(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công/nghỉ; gọi API trực tiếp ⇒ 403`, async ({
+test(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công (thẻ, nút header, link); /attendance báo vai trò; gọi API check-in ⇒ 403`, async ({
   page,
   request,
 }) => {
@@ -320,21 +321,32 @@ test.fixme(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công/nghỉ; g
   await loginViaUi(page, w.vic.user);
   await page.goto(projectsPath(w));
   await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeVisible();
+  // Cả trang (E): thẻ không render với VIEWER, nút gọn header cũng ẩn ở mọi độ rộng.
   await expect(attendanceCard(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Chấm (vào|ra)/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Bảng công của tôi' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Nghỉ phép' })).toHaveCount(0);
 
+  await page.goto(wsPath(w, 'attendance'));
+  await expect(
+    page.getByText('Vai trò Người xem không chấm công trong workspace này'),
+  ).toBeVisible();
+  await expect(page.getByRole('table', { name: /^Bảng công tháng/ })).toHaveCount(0);
+
+  await apiCheckIn(request, w.olivia, w.vic.accessToken, 403);
+});
+
+test.fixme(`E2E-HR-04b [${T041B}]: VIEWER mở /leave ⇒ báo vai trò, không có form; gửi đơn qua API ⇒ 403`, async ({
+  page,
+  request,
+}) => {
+  const w = await seedHrWorld(request, 'hr04b');
+  await loginViaUi(page, w.vic.user);
   await page.goto(wsPath(w, 'leave'));
   await expect(
     page.getByText('Vai trò Người xem không xin nghỉ trong workspace này'),
   ).toBeVisible();
   await expect(page.getByRole('form', { name: 'Gửi đơn nghỉ' })).toHaveCount(0);
-  await page.goto(wsPath(w, 'attendance'));
-  await expect(
-    page.getByText('Vai trò Người xem không chấm công trong workspace này'),
-  ).toBeVisible();
-
-  await apiCheckIn(request, w.olivia, w.vic.accessToken, 403);
   await hrCall(request, 'POST', `/workspaces/${w.olivia.workspaceId}/leave-requests`, {
     token: w.vic.accessToken,
     body: { type: 'SICK', startDate: vnWorkday(3), endDate: vnWorkday(3), dayPart: 'FULL' },
@@ -344,7 +356,7 @@ test.fixme(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công/nghỉ; g
 
 // ---------------------------------------------------------------- E2E-HR-05
 
-test.fixme(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; KHÔNG tự chấm khi đăng nhập / reload`, async ({
+test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; KHÔNG tự chấm khi đăng nhập / reload`, async ({
   page,
   browser,
   request,
@@ -422,9 +434,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`E2E-HR-07 a11y (${colorScheme})`, () => {
     test.use({ colorScheme });
 
-    test.fixme(`E2E-HR-07 [${T041A}]: lịch tháng là <table> có caption + tiêu đề hàng/cột, trạng thái chữ + biểu tượng; axe 0 serious/critical ở /attendance, /leave, /hr (${colorScheme})`, async ({
+    test(`E2E-HR-07 [${T041A}]: lịch tháng là <table> có caption + tiêu đề hàng/cột, trạng thái chữ + biểu tượng; axe 0 serious/critical ở /projects (thẻ), /attendance + hộp lượt chấm, chuông (${colorScheme})`, async ({
       page,
-      browser,
       request,
     }) => {
       const w = await seedHrWorld(request, `hr07-${colorScheme}`);
@@ -453,10 +464,31 @@ for (const colorScheme of ['light', 'dark'] as const) {
       );
       await page.keyboard.press('Escape');
 
+      await page.goto(projectsPath(w));
+      await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
+      expect(await seriousViolations(page), `/projects thẻ chấm công (${colorScheme})`).toEqual([]);
+      await bell(page).click();
+      await expect(page.getByRole('dialog', { name: 'Thông báo' })).toBeVisible();
+      expect(await seriousViolations(page), `chuông thông báo (${colorScheme})`).toEqual([]);
+    });
+
+    test.fixme(`E2E-HR-07b [${T041B}]: axe 0 serious/critical ở /leave (${colorScheme})`, async ({
+      page,
+      request,
+    }) => {
+      const w = await seedHrWorld(request, `hr07b-${colorScheme}`);
+      await loginViaUi(page, w.mia.user);
       await page.goto(wsPath(w, 'leave'));
       await expect(page.getByRole('form', { name: 'Gửi đơn nghỉ' })).toBeVisible();
       expect(await seriousViolations(page), `/leave (${colorScheme})`).toEqual([]);
+    });
 
+    test.fixme(`E2E-HR-07c [${T041C}]: axe 0 serious/critical ở mọi tab /hr (${colorScheme})`, async ({
+      browser,
+      request,
+    }) => {
+      const w = await seedHrWorld(request, `hr07c-${colorScheme}`);
+      await apiCheckIn(request, w.olivia, w.mia.accessToken);
       const hana = await openAs(browser, w.hana.user);
       await hana.page.emulateMedia({ colorScheme });
       for (const tab of ['today', 'timesheet', 'leave', 'calendar', 'balances']) {
@@ -482,27 +514,8 @@ const P = {
   pending: '"><iframe srcdoc="<script>parent.__xss(29)</script>"></iframe> chờ',
 } as const;
 
-test.fixme(`E2E-HR-08 [${T041B}]: XSS (mở rộng SEC-49) — lý do đơn, ghi chú HR, lý do ADJUSTMENT, tên ngày lễ chứa payload ⇒ chỉ là text ở /leave, chuông, /attendance, /hr`, async ({
-  page,
-  context,
-  browser,
-  request,
-}) => {
-  const dialogsMia = await arm(context);
-  const w = await seedHrWorld(request, 'hr08');
-  const rejected = await apiSubmitLeave(request, w.olivia, w.mia, {
-    type: 'SICK',
-    startDate: vnWorkday(3),
-    endDate: vnWorkday(3),
-    reason: P.reason,
-  });
-  await apiDecideLeave(request, w.olivia, w.hana, rejected, 'reject', P.note);
-  await apiSubmitLeave(request, w.olivia, w.mia, {
-    type: 'SICK',
-    startDate: vnWorkday(5),
-    endDate: vnWorkday(5),
-    reason: P.pending,
-  });
+/** ADJUSTMENT (lý do) cho Mia hôm nay + ngày lễ tương lai — dữ liệu XSS của phần chấm công (T-038). */
+async function seedXssAttendance(request: APIRequestContext, w: HrWorld): Promise<string> {
   await apiAdjust(request, w.olivia, w.hana, w.mia.userId, {
     kind: 'IN',
     date: vnDate(),
@@ -511,14 +524,22 @@ test.fixme(`E2E-HR-08 [${T041B}]: XSS (mở rộng SEC-49) — lý do đơn, ghi
   });
   const holiday = vnWorkday(10);
   await apiPutHoliday(request, w.olivia, w.hana, holiday, P.holiday);
+  return holiday;
+}
+
+test(`E2E-HR-08 [${T041A}]: XSS (mở rộng SEC-49) — lý do ADJUSTMENT, tên ngày lễ chứa payload ⇒ chỉ là text ở chuông, hộp lượt chấm, bảng công /attendance`, async ({
+  page,
+  context,
+  request,
+}) => {
+  const dialogsMia = await arm(context);
+  const w = await seedHrWorld(request, 'hr08');
+  const holiday = await seedXssAttendance(request, w);
 
   await loginViaUi(page, w.mia.user);
-  await page.goto(wsPath(w, 'leave'));
-  await expect(page.getByText(P.reason)).toBeVisible();
-  await expect(page.getByText(`Ghi chú của HR: ${P.note}`)).toBeVisible();
-  await expect(page.getByText(P.pending)).toBeVisible();
-  await assertInert(page, dialogsMia, 'Mia /leave');
-
+  await page.goto(projectsPath(w));
+  // ATTENDANCE_ADJUSTED ⇒ Mia có 1 thông báo (text không chứa lý do, nhưng vẫn kiểm cả popover).
+  await expect(bell(page)).toHaveAccessibleName('Thông báo, 1 chưa đọc');
   await bell(page).click();
   await expect(
     page.getByRole('dialog', { name: 'Thông báo' }).getByRole('listitem').first(),
@@ -538,6 +559,60 @@ test.fixme(`E2E-HR-08 [${T041B}]: XSS (mở rộng SEC-49) — lý do đơn, ghi
     dayRow(page.getByRole('table', { name: /^Bảng công tháng/ }), holiday),
   ).toContainText(P.holiday);
   await assertInert(page, dialogsMia, 'Mia bảng công (ngày lễ)');
+});
+
+test.fixme(`E2E-HR-08b [${T041B}]: XSS — lý do đơn, ghi chú HR chứa payload ⇒ chỉ là text ở /leave`, async ({
+  page,
+  context,
+  request,
+}) => {
+  const dialogsMia = await arm(context);
+  const w = await seedHrWorld(request, 'hr08b');
+  const rejected = await apiSubmitLeave(request, w.olivia, w.mia, {
+    type: 'SICK',
+    startDate: vnWorkday(3),
+    endDate: vnWorkday(3),
+    reason: P.reason,
+  });
+  await apiDecideLeave(request, w.olivia, w.hana, rejected, 'reject', P.note);
+  await apiSubmitLeave(request, w.olivia, w.mia, {
+    type: 'SICK',
+    startDate: vnWorkday(5),
+    endDate: vnWorkday(5),
+    reason: P.pending,
+  });
+  await loginViaUi(page, w.mia.user);
+  await page.goto(wsPath(w, 'leave'));
+  await expect(page.getByText(P.reason)).toBeVisible();
+  await expect(page.getByText(`Ghi chú của HR: ${P.note}`)).toBeVisible();
+  await expect(page.getByText(P.pending)).toBeVisible();
+  await assertInert(page, dialogsMia, 'Mia /leave');
+  await bell(page).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Thông báo' }).getByRole('listitem').first(),
+  ).toBeVisible();
+  await assertInert(page, dialogsMia, 'Mia chuông (đơn bị từ chối)');
+});
+
+test.fixme(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUSTMENT chứa payload ⇒ chỉ là text ở /hr (Đơn nghỉ, Lịch & ngày lễ, lượt chấm)`, async ({
+  browser,
+  request,
+}) => {
+  const w = await seedHrWorld(request, 'hr08c');
+  const holiday = await seedXssAttendance(request, w);
+  const rejected = await apiSubmitLeave(request, w.olivia, w.mia, {
+    type: 'SICK',
+    startDate: vnWorkday(3),
+    endDate: vnWorkday(3),
+    reason: P.reason,
+  });
+  await apiDecideLeave(request, w.olivia, w.hana, rejected, 'reject', P.note);
+  await apiSubmitLeave(request, w.olivia, w.mia, {
+    type: 'SICK',
+    startDate: vnWorkday(5),
+    endDate: vnWorkday(5),
+    reason: P.pending,
+  });
 
   const hana = await openAs(browser, w.hana.user);
   const dialogsHana = await arm(hana.context);
@@ -563,7 +638,7 @@ test.fixme(`E2E-HR-08 [${T041B}]: XSS (mở rộng SEC-49) — lý do đơn, ghi
 
 // ---------------------------------------------------------------- E2E-HR-09
 
-test.fixme(`@main E2E-HR-09 [${T041A}]: responsive 360 → 1440 — thẻ chấm công, /leave, /attendance không cuộn ngang trang (chạy cả firefox + mobile qua @main)`, async ({
+test(`@main E2E-HR-09 [${T041A}]: responsive 360 → 1440 — thẻ chấm công, /attendance không cuộn ngang trang (chạy cả firefox + mobile qua @main)`, async ({
   page,
   request,
 }) => {
@@ -583,14 +658,24 @@ test.fixme(`@main E2E-HR-09 [${T041A}]: responsive 360 → 1440 — thẻ chấm
     else await expect(headerBtn).toBeVisible();
     await noHorizontalScroll(page, `/projects @${String(width)}`);
 
+    await page.goto(wsPath(w, 'attendance'));
+    await expect(page.getByRole('table', { name: /^Bảng công tháng/ })).toBeVisible();
+    await noHorizontalScroll(page, `/attendance @${String(width)}`);
+  }
+});
+
+test.fixme(`@main E2E-HR-09b [${T041B}]: responsive 360 → 1440 — /leave không cuộn ngang, nút "Gửi đơn" tới được`, async ({
+  page,
+  request,
+}) => {
+  const w = await seedHrWorld(request, 'hr09b');
+  await loginViaUi(page, w.mia.user);
+  for (const width of [360, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
     await page.goto(wsPath(w, 'leave'));
     const send = page.getByRole('button', { name: 'Gửi đơn' });
     await send.scrollIntoViewIfNeeded();
     await expect(send).toBeInViewport();
     await noHorizontalScroll(page, `/leave @${String(width)}`);
-
-    await page.goto(wsPath(w, 'attendance'));
-    await expect(page.getByRole('table', { name: /^Bảng công tháng/ })).toBeVisible();
-    await noHorizontalScroll(page, `/attendance @${String(width)}`);
   }
 });
