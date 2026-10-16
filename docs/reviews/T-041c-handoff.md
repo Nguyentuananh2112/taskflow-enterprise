@@ -42,7 +42,7 @@
 - **Features:** `member-grants` (công tắc), `hr-leave-decide`, `hr-attendance-adjust` (dialog lượt thô + hủy + thêm), `hr-export-csv`, `hr-balance-adjust`, `hr-schedule-edit`, `hr-holiday-edit`.
 - **Shared:** `shared/api/http.ts` (+`put`, `download`, `accept`), `shared/lib/save-blob.ts`.
 - **Mock:** `mock-hr.ts`, `hr-attendance-handlers.ts`, `hr-calendar-handlers.ts`, `hr-leave-handlers.ts` (đăng ký TRƯỚC `leave-handlers` của E: `GET leave-requests?mine=1` trả `undefined` ⇒ MSW chuyển sang handler của E); thêm `grants` vào `mock-workspaces`, `PUT members/:userId/grants`, `forbiddenUnlessGranted`; thêm `adjust/locate/usersWithPunches/serverNow` vào `MockAttendance`, `adjustments` vào `MockLeave`.
-- **Test:** `test/hr-page.test.tsx` (9), `test/hr-grants.test.tsx` (3), `src/app/mock-api/hr-api.test.ts` (8), `src/entities/hr/lib/timesheet-cache.test.ts` (3), `src/features/hr-leave-decide/model/decide-errors.test.ts` (8), thêm ca vào `src/shared/api/http.test.ts`; route `/hr` trong `test/app-harness.tsx`.
+- **Test:** `test/hr-page.test.tsx` (10), `test/hr-grants.test.tsx` (3), `src/app/mock-api/hr-api.test.ts` (8), `src/entities/hr/lib/timesheet-cache.test.ts` (3), `src/features/hr-leave-decide/model/decide-errors.test.ts` (8), thêm ca vào `src/shared/api/http.test.ts`; route `/hr` trong `test/app-harness.tsx`.
 
 ## 4. Thay `m3-provisional` khi T-038 (A) vào main — VIỆC ĐẦU TIÊN
 
@@ -64,7 +64,7 @@ Các bước: đổi import + `HrDayDto` → `AttendanceDayDto`; xóa thư mục
 Trong worktree H, `pnpm` qua shim corepack, `--maxWorkers=2`:
 - `pnpm exec tsc --noEmit -p apps/web` — sạch.
 - `eslint` + `prettier --check` trên mọi file đổi — sạch; mọi commit qua hook lefthook (gitleaks + prettier + eslint) ✔.
-- `vitest run` từng file: hr-page 9/9, hr-grants 3/3, hr-api 8/8, timesheet-cache 3/3, decide-errors 8/8, http 33/33; liên quan: admin-screens, admin-g1, mock-api, admin-api, leave-page, attendance-page, attendance-card, notification-bell, structure — xanh.
+- `vitest run` từng file: hr-page 10/10, hr-grants 3/3, hr-api 8/8, timesheet-cache 3/3, decide-errors 8/8, http 33/33; liên quan: admin-screens, admin-g1, mock-api, admin-api, leave-page, attendance-page, attendance-card, notification-bell, structure — xanh.
 - **CHƯA:** toàn bộ vitest apps/web, `pnpm verify`, E2E (F), xem tay responsive/tối — chờ lượt TL.
 
 ## 6. Quyết định H tự đưa ra (TL/E xem lại được)
@@ -75,7 +75,7 @@ Trong worktree H, `pnpm` qua shim corepack, `--maxWorkers=2`:
 4. Link header ẩn dưới `sm` (header 360 đã chật sau fix của E); màn hẹp dùng link trên thẻ chấm công.
 5. Bảng tháng: dòng tổng mỗi người + bấm tên ⇒ lịch tháng của người đó (không vẽ lưới 50×31). Thêm/hủy lượt ⇒ thay 1 ô từ `{event, day}` + tính lại tổng người đó ở client bằng `totalsOf` (CÙNG quy tắc A gửi) — nếu A đổi quy tắc tổng, sửa `totalsOf` hoặc invalidate dòng.
 6. "Tháng sau" khóa ở tháng hiện tại; Số phép chỉ năm nay ±1 (giới hạn PATCH); "Còn lại" âm tô đỏ.
-7. Mất `hr:manage` ⇒ `removeQueries(['ws', ws, 'hr'])` khi đang ở `/hr`. Nếu muốn xóa cả khi đang ở trang khác: gọi trong handler `member:grants-changed` của `realtime-session` (file của E) — chưa làm.
+7. Mất `hr:manage` ⇒ `removeQueries(['ws', ws, 'hr'])` ở 2 chỗ: `HrPage` (`useForgetHrWhenRevoked`, cả khi hạ role) và handler `member:grants-changed` trong `features/realtime-session/model/use-realtime-session.ts` (file của E — mọi trang). Cùng file: `notification:new` loại `LEAVE_SUBMITTED`/`LEAVE_CANCELLED` ⇒ invalidate `['ws', ws, 'hr']` để hàng đợi đơn cập nhật realtime (E2E-HR-02; test "realtime" trong `hr-page.test.tsx`). Phía nhân viên (`LEAVE_APPROVED`… ⇒ trang `/leave`, lịch tháng) vẫn là phần của E.
 8. Thu hồi / tự xử lý đơn của mình (OWNER) / OWNER tự chỉnh số dư ⇒ ô lý do bắt buộc ở UI (khớp 422 REASON_REQUIRED/400 của D). HR không phải OWNER: ẩn nút với đơn/số dư/chấm công của chính mình (server vẫn 403).
 
 ## 7. Việc còn lại cho E
@@ -83,7 +83,7 @@ Trong worktree H, `pnpm` qua shim corepack, `--maxWorkers=2`:
 1. Rebase chuỗi a → b → c lên main khi T-038/T-039 vào; làm §4; `pnpm install --frozen-lockfile`.
 2. Chạy toàn bộ vitest web + `pnpm verify` (xin lượt TL); viết `docs/reviews/T-041c-report.md` + `DONE T-041c`.
 3. Xem tay `/hr` ở 360 / 1440, sáng / tối (bảng có `overflow-x-auto`, tab cuộn ngang) — H chưa xem được vì không chạy `next dev`.
-4. Mock: ngày lễ / lịch HR lưu chỉ để hiển thị — `MockAttendance` vẫn tính theo lịch mặc định, đếm ngày nghỉ của `MockLeave` chưa trừ ngày lễ. Đủ cho UI; E2E dùng API thật.
+4. Mock: ngày lễ / lịch HR lưu chỉ để hiển thị — `MockAttendance` vẫn tính theo lịch mặc định, đếm ngày nghỉ của `MockLeave` chưa trừ ngày lễ. Gửi / hủy / duyệt đơn trong mock của E chưa ghi thông báo (test realtime tự gọi `mock.notifications.notify`); duyệt / từ chối / thu hồi trong mock của H có ghi. Đủ cho UI; E2E dùng API thật.
 5. Khi rebase lên T-037 bản có `userId` trong payload `member:grants-changed` (B-part2): thêm `userId` vào `grantsChanged()` ở `app/mock-api/workspace-events.ts` (main `0ec3bb4` chưa có trường này).
 6. Tùy chọn: so khớp câu lỗi với mã thật của A/D khi chạy API thật (các hàm `*ErrorMessage` đọc `rule`/`reason` bằng schema cục bộ, không dùng enum đóng `BusinessRule`).
 

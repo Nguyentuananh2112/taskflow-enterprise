@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
+import { hrKeys } from '@/entities/hr';
 import { memberKeys } from '@/entities/member';
 import { notificationKeys } from '@/entities/notification';
 import { sessionKeys } from '@/entities/session';
@@ -75,6 +76,9 @@ export function useRealtimeSession(): void {
         (old) => old && { ...old, myGrants: grants },
       );
       void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
+      // T-041c: mất quyền ⇒ xóa ngay dữ liệu HR đã cache (IP/UA, lý do nghỉ — §9, R27), ở mọi trang.
+      if (!grants.includes('HR_MANAGE'))
+        queryClient.removeQueries({ queryKey: hrKeys.all(workspaceId) });
       toast({
         title: grants.includes('HR_MANAGE')
           ? 'Bạn được cấp quyền Quản lý nhân sự'
@@ -83,8 +87,13 @@ export function useRealtimeSession(): void {
     });
     // ADR-123: thông báo bền đã ghi ở server ⇒ chỉ cần tải lại chuông (số + danh sách).
     const offNotification = client.on('notification:new', (raw) => {
-      if (NotificationNewEvent.safeParse(raw).success) {
-        void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      const event = NotificationNewEvent.safeParse(raw);
+      if (!event.success) return;
+      void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      // T-041c: đơn mới / bị hủy ⇒ hàng đợi + số phép trên /hr cập nhật không cần tải lại (E2E-HR-02).
+      const { type, workspaceId } = event.data.data;
+      if (type === 'LEAVE_SUBMITTED' || type === 'LEAVE_CANCELLED') {
+        void queryClient.invalidateQueries({ queryKey: hrKeys.all(workspaceId) });
       }
     });
     // Rớt socket thì có thể lỡ `notification:new` ⇒ kết nối lại thì tải lại chuông.

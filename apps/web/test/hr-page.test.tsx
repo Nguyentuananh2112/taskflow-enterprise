@@ -101,6 +101,33 @@ describe('trang Nhân sự — XSS (E2E-HR-08)', () => {
   });
 });
 
+describe('trang Nhân sự — realtime', () => {
+  it('đang mở tab Đơn nghỉ: notification:new LEAVE_SUBMITTED ⇒ đơn mới hiện ngay (E2E-HR-02)', async () => {
+    const { f, an, open, submitLeave } = seed();
+    open(`/w/${f.wsId}/hr?tab=leave`);
+    expect(await screen.findByText('Không có đơn nào chờ duyệt.')).toBeTruthy();
+    const created = (await submitLeave(an, {
+      type: 'PERSONAL_PAID',
+      startDate: '2026-10-23',
+      endDate: '2026-10-23',
+      dayPart: 'FULL',
+    })) as unknown as { id: string };
+    // Mock của E chưa phát thông báo khi gửi đơn ⇒ phát như server (ADR-123).
+    await act(async () => {
+      mock.notifications.notify(f.owner.id, {
+        type: 'LEAVE_SUBMITTED',
+        refId: created.id,
+        workspaceId: f.wsId,
+        workspaceName: 'WS',
+        actor: { id: an.id, fullName: an.fullName },
+        leave: { type: 'PERSONAL_PAID', startDate: '2026-10-23', endDate: '2026-10-23' },
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('listitem', { name: 'Đơn của Nguyễn An' })).toBeTruthy();
+  });
+});
+
 describe('trang Nhân sự — thu quyền', () => {
   it('đang mở /hr mà bị thu grant ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
     const { f, an, open, grantHr } = seed();
