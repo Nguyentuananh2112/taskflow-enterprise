@@ -138,6 +138,25 @@ describe('LoginUseCase', () => {
     expect(await h.refreshTokens.rows()).toEqual([]);
   });
 
+  it('F3 B-1: user bị xóa mềm trong cửa sổ verify (recordLogin ⇒ null) ⇒ 401, không cấp phiên, lastLoginAt không đổi', async () => {
+    await h.seedUser();
+    const verify = h.hasher.verify.bind(h.hasher);
+    let deleted = false;
+    h.hasher.verify = async (hashed, password) => {
+      const ok = await verify(hashed, password); // user còn sống lúc đọc + verify
+      deleted = true; // request khác xóa mềm user ngay sau đó
+      return ok;
+    };
+    // Như câu UPDATE có `deleted_at IS NULL` (contract repo kiểm phần này): user đã xóa ⇒ null.
+    const recordLogin = h.users.recordLogin.bind(h.users);
+    h.users.recordLogin = (input) => (deleted ? Promise.resolve(null) : recordLogin(input));
+    await expect(
+      login.execute({ email: 'alice@example.com', password: PASSWORD, meta: META }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+    expect(await h.refreshTokens.rows()).toEqual([]);
+    expect((await h.users.rows())[0]?.lastLoginAt).toBeNull();
+  });
+
   it('G1 auth M1: đổi mật khẩu commit trong cửa sổ verify (không rehash) ⇒ mật khẩu cũ KHÔNG nhận phiên', async () => {
     const alice = await h.seedUser();
     const verify = h.hasher.verify.bind(h.hasher);
