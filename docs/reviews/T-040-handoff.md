@@ -1,0 +1,62 @@
+# T-040 — Bàn giao (Engineer G → Engineer B)
+
+> Nhánh `feat/T-040-notifications` (rebase trên `main` 0ec3bb4 — đã có T-037). Worktree của G:
+> `C:\Users\Padoma1\AppData\Local\Temp\claude\d--TaskFlow-Enterprise\64565369-4a39-4933-8eff-976ec691436d\scratchpad\g040`
+> (scratchpad của phiên G — B nên tự tạo worktree từ nhánh). Mọi commit là `wip(T-040)`, đã qua hook đầy đủ.
+> Trạng thái chi tiết + kết quả lệnh: mục 5. Việc còn lại: mục 6.
+
+## 1. Đã làm
+
+### Module `apps/api/src/modules/notifications/` (mới)
+| File | Vai trò |
+|---|---|
+| `domain/notification.ts` | `NOTIFICATION_TYPES` (parity contracts), `HR_AUDIENCE_TYPES = [LEAVE_SUBMITTED, LEAVE_CANCELLED]` (loại "dành cho HR"), `LEAVE_TYPES`, `VisibilityScope` + hàm thuần `isVisible` |
+| `application/ports.ts` | `INotificationStore`, `INotificationAudience` (membership HIỆN TẠI), `INotificationContextReader` (tên actor + loại/khoảng ngày đơn — không lý do), `INotificationRealtime`, `CanManageHr`, `NotificationKey` (keyset) |
+| `application/notification-publisher.ts` | `notify({ workspaceId, type, refId, actorId, recipient: user \| hr })` — ném `NotifyOutsideTransactionError` nếu ngoài `uow.run`; `hr` ⇒ `membersOf(ws)` lọc bằng `canManageHr` (đọc trong tx của bên gọi); bỏ actor; `createMany` trong tx; **mỗi người nhận một** `uow.afterCommit` phát `notification:new` |
+| `application/notification.queries.ts` | list / unreadCount / markRead / markAllRead. Mỗi request dựng `VisibilityScope` từ `workspacesOf(me)` (ws chưa xóa, đang là thành viên): `full` = có `hr:manage` hiện tại, `basic` = không (ẩn loại HR). DTO join tên ws, actor, đơn (chỉ khi loại LEAVE_*) |
+| `infrastructure/prisma/prisma-notification.store.ts` | `visibleWhere(scope)` — `recipient_id = me` LUÔN có; keyset `(createdAt, id)` giảm dần; markRead idempotent (giữ `readAt` cũ), không thấy ⇒ `false` ⇒ 404 |
+| `infrastructure/prisma/prisma-notification-readers.ts` | `PrismaNotificationAudience` (đọc `workspace_members` ⨝ `workspaces.deleted_at IS NULL`), `PrismaNotificationContextReader` (`users.full_name`; `leave_requests` select tường minh `{id,type,startDate,endDate}` theo cặp (ws, id)) |
+| `infrastructure/in-memory-notification.store.ts` | InMemory, tham gia snapshot/rollback của `InMemoryUnitOfWork` |
+| `presentation/notification.controller.ts` | 4 route dưới `/api/v1/me/notifications`: `GET /` (cursor + limit 1..50, mặc định 20), `GET /unread-count`, `POST /read-all` (204), `POST /:id/read` (204; 404 `notification`). userId luôn từ token |
+| `notifications.module.ts`, `index.ts` (chỉ type) | composition module; public API chỉ type (test chặn giá trị runtime) |
+| `testing/notification-harness.ts` | Fake audience/context/realtime + fixture test-spec-hr §0.2 |
+
+### Ngoài module
+- **contracts**: `ListNotificationsQuery`, `NotificationParams` (`hr/hr.schemas.ts`); 4 route OpenAPI tag mới `notifications` (`openapi/routes.ts`, `document.ts`); `'notification'` trong `NotFoundDetails.resource`. `core/errors/client-errors.ts`: `ResourceKind` thêm `'notification'`.
+- **composition**: `persistence.ts` (repo notifications cho memory + prisma, `modules.notifications`), `container.ts` (module notifications tạo TRƯỚC Workspace; `canManageHr = hasPermission(role, grants, 'hr:manage')` của contracts; mount router), `notification-adapters.ts`:
+  - `leaveNotifierFrom(publisher)` — khớp `ILeaveNotifier` của D (T-039: `notify({ workspaceId, type, requestId, actorId, recipient })`), `requestId ⇒ refId`.
+  - `attendanceNotifierFrom(publisher)` — khớp `AttendanceNotifier` của A (T-038: `attendanceAdjusted({ workspaceId, recipientId, eventId, actorId })`) ⇒ `ATTENDANCE_ADJUSTED`.
+  - `hrGrantNotifierFrom(publisher)` — `IHrGrantNotifier` của Workspace.
+  - `InMemoryNotificationAudience` / `InMemoryNotificationContextReader` cho chế độ bộ nhớ (leave ⇒ `null` vì chưa có module leave InMemory).
+- **workspace (review B — M1, B đồng ý)**: port BẮT BUỘC `IHrGrantNotifier.grantsChanged({ workspaceId, userId, actorId, added, membershipId })` (`collaborators.port.ts`); gọi TRONG tx ở `set-member-grants.use-case.ts` (sau audit; `added = after.length > before.length`) và `change-member-role.use-case.ts` (nhánh `grantsCleared`, sau audit REVOKE). Harness: `hrNotifier = createSpy(...)`. Test riêng `hr-grant-notifications.test.ts`.
+
+## 2. Quyết định tự đưa ra (TL/B xem lại)
+1. **Loại "dành cho HR"** = `LEAVE_SUBMITTED`, `LEAVE_CANCELLED` (theo bảng §9: hai chuyển này báo HR). Bảng `notifications` không có cột "audience" nên phân loại theo `type`.
+2. **Người gây ra không tự nhận** — kể cả `recipient: user` khi user = actor (OWNER tự duyệt đơn của mình ⇒ không dòng nào).
+3. **Ws xóa mềm** ⇒ ẩn thông báo (audience chỉ trả ws `deleted_at IS NULL`); purge ⇒ cascade (FK có sẵn).
+4. **Keyset `(createdAt, id)`** thay vì chỉ id: `UuidV7Generator` ghi rõ cùng mili giây id không có thứ tự. Cursor `{ createdAt, id }` validate Zod trước khi chạm DB. Fan-out cùng `createdAt` ⇒ id phân định.
+5. **read / read-all trả 204** (khớp mock web T-041b). markRead lặp lại giữ `readAt` đầu. `read-all` chỉ đánh dấu thông báo đang thấy được.
+6. `?userId=` ở list bị bỏ qua (query không strict, như các list khác) — luôn của người gọi.
+7. `refId` của HR_GRANTED/HR_REVOKED = id dòng `workspace_members`.
+8. Rate limit: chỉ `authenticated` (300/phút/user) như route đọc khác.
+
+## 3. Ghi chú review B (đưa vào đây theo yêu cầu)
+- **L2** — `PrismaNotificationAudience` đọc thẳng `workspace_members` từ module notifications. B đề xuất Workspace cung cấp reader (như `HrAccess`); B làm nếu TL đồng ý.
+- **L3** — scope chỉ theo membership HIỆN TẠI: bị xóa rồi được mời lại ⇒ thấy lại thông báo nhiệm kỳ cũ. Khi T-037b có `workspace_member_departures`/`joinedAt` (quyết định NOT_EMPLOYED, main 5b18efc) có thể lọc `createdAt ≥ joinedAt`.
+- **L4** — fan-out `hr` đọc `membersOf` không khóa: thu grant đồng thời ⇒ có thể vẫn tạo dòng + event cho HR vừa mất quyền. Lúc đọc bị ẩn (B-H3b); event chỉ chứa id/loại/ws (SEC-HR-20). Chấp nhận.
+
+## 4. Rủi ro / phụ thuộc
+- **Leave/attendance chưa wire**: hai module chưa có trên nhánh này. Khi merge T-038/T-039, composition phải nối `notifier: leaveNotifierFrom(notifications.publisher)` / `attendanceNotifierFrom(...)` (đổi kiểu cấu trúc `LeaveNotifierPort`/`AttendanceNotifierPort` sang `implements` type thật của họ). Lúc đó F gỡ pending **SEC-HR-15, 17, 18, 19, 20** (`test/T-042-hr: harness/pending.ts`, ticket T-040) — các ca đó gửi đơn / chấm công qua route thật. Đã đọc `hr.sec.ts` của F: kỳ vọng khớp API này (list chứa `workspaceId`, loại HR ẩn sau thu grant, 404 khi đánh dấu của người khác, socket chỉ `user:{id}`).
+- Chế độ bộ nhớ: `leave` trong DTO luôn `null` (không có module leave InMemory). Prisma đúng.
+- Leave context đọc `leave_requests` (bảng của D) — cùng loại vấn đề L2.
+
+## 5. Kết quả lệnh (tới thời điểm viết)
+_(cập nhật ở commit cuối — xem mục 7)_
+
+## 6. Việc còn lại cho B
+1. Chạy cổng: `pnpm verify` + integration đầy đủ + security (xin lượt TL) — xem mục 7 cái nào đã chạy.
+2. Wire leave/attendance khi T-038/T-039 merge (mục 4) + E2E-HR-02 (chuông realtime).
+3. L2 / L3 nếu TL đồng ý.
+4. Báo cáo `docs/reviews/T-040-report.md` + `DONE T-040` cho TL.
+
+## 7. Nhật ký chạy
