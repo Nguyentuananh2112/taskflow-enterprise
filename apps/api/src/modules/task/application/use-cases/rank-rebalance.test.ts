@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { Rank } from '../../domain/rank';
 import { createTaskHarness, U, type TaskHarness } from '../../testing/task-harness';
+import { RankConflictError } from '../ports/task-repository.port';
 import { RANK_REBALANCE_MAX_TASKS, RANK_REBALANCE_THRESHOLD } from '../task-rank-rebalancer';
 
 // T-033: cân bằng lại rank theo cột khi move sinh rank quá dài (ADR-011 mở rộng). Chạy trên cả
@@ -193,6 +195,17 @@ describe('rebalance rank theo cột (T-033)', () => {
     expect(appendMany).toHaveBeenCalledTimes(1);
     expect(appendMany.mock.calls[0]![0].map((e) => e.taskId).sort()).toEqual(
       [t.b.id, t.c.id].sort(),
+    );
+  });
+
+  it('A3: `saveRanks` trùng rank với task sống khác ⇒ RankConflictError (cả câu SQL thô, không 500)', async () => {
+    const h = await createTaskHarness();
+    await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: 'a1' });
+    const task = (await h.deps.tasks.findLive(b.workspaceId, b.projectId, b.id))!;
+    task.moveTo('TODO', Rank.of('a0'), U.Mia, new Date());
+    await expect(h.deps.tasks.saveRanks([{ task, expectedVersion: 1 }])).rejects.toBeInstanceOf(
+      RankConflictError,
     );
   });
 

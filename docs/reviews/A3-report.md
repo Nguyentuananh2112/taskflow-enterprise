@@ -125,9 +125,14 @@ replicas + Caddy), không `node:cluster`. Điều kiện trước khi N > 1:
 
 ## 8. Rủi ro / câu hỏi mở
 
-- Lỗi unique từ `$executeRaw` (không phải `updateMany`) có thể không mang `P2002` + tên constraint ⇒
-  `mapRankConflict` không nhận ⇒ 500. Về logic không xảy ra (mọi dòng đã ở `~<id>`, khóa `spread` đôi một
-  khác nhau, không bắt đầu bằng `~`); nếu B muốn phòng thủ thêm, có thể map thêm SQLSTATE `23505`.
+- ~~Lỗi unique từ `$executeRaw` không được map~~ — **đã sửa (Tech Lead yêu cầu, trước review B).** Đo trên
+  Postgres: câu SQL thô vi phạm `tasks_rank_live_key` ⇒ Prisma trả **`P2010`** (không phải `P2002`), `meta`
+  vẫn có `driverAdapterError.cause.originalCode = "23505"` + `constraint.index`. Test mới "A3: `saveRanks`
+  trùng rank … ⇒ RankConflictError" **đỏ trên Postgres trước khi sửa** (lỗi Prisma thô ⇒ sẽ thành 500),
+  xanh sau khi `uniqueConstraintOf` (module task) nhận thêm `P2010` + `23505`. Về logic vẫn không xảy ra
+  trong rebalance (mọi dòng đã ở `~<id>`); đây là lớp phòng thủ. Bản sao `uniqueConstraintOf` của
+  auth/workspace (ADR-093) không đổi — hiện chúng chỉ map lỗi từ API model của Prisma (`P2002`); nếu sau
+  này dùng SQL thô cho ghi có unique thì phải sửa tương tự.
 - N `task:moved` vẫn phát tuần tự trong hook được `await` trước response ⇒ nằm trên đường request; nếu đo
   cho thấy chiếm phần lớn ⇒ cân nhắc `column:rebalanced` (đổi contract, cần E).
 - DB test `taskflow_a3` trên postgres-test (5434) để lại cho lần chạy lại; xóa khi A3 merge.
