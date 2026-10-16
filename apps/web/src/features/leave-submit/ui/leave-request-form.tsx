@@ -18,6 +18,7 @@ import { Textarea } from '@/shared/ui/textarea';
 import { toast } from '@/shared/ui/toast';
 
 import { leaveSubmitError } from '../model/leave-errors';
+import { LeavePreview } from './leave-preview';
 
 const FIELDS = ['type', 'startDate', 'endDate', 'dayPart', 'reason'] as const;
 const TYPES = LeaveType.options.map((v) => ({ value: v, label: LEAVE_TYPE_NAME[v] }));
@@ -43,8 +44,16 @@ export function LeaveRequestForm({ wsId, today }: Props) {
     },
   });
   const { errors, isSubmitting } = formState;
-  const [startDate, endDate] = useWatch({ control, name: ['startDate', 'endDate'] });
+  const [type, startDate, endDate, dayPart] = useWatch({
+    control,
+    name: ['type', 'startDate', 'endDate', 'dayPart'],
+  });
   const oneDay = startDate === endDate;
+  // Chỉ xem trước khi khoảng ngày hợp lệ (cùng luật với schema gửi).
+  const draft =
+    startDate && endDate && endDate >= startDate && (oneDay || dayPart === 'FULL')
+      ? { type, startDate, endDate, dayPart }
+      : null;
   // Nhiều ngày ⇒ chỉ "Cả ngày" (field disabled bị react-hook-form bỏ giá trị ⇒ không dùng disabled).
   useEffect(() => {
     if (!oneDay) setValue('dayPart', 'FULL');
@@ -101,6 +110,7 @@ export function LeaveRequestForm({ wsId, today }: Props) {
           {...register('dayPart')}
         />
       </div>
+      <LeavePreview wsId={wsId} draft={draft} />
       <Textarea
         label="Lý do (không bắt buộc)"
         rows={3}

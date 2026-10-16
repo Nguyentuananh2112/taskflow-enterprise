@@ -1,6 +1,7 @@
 import { createAttendanceHandlers } from './attendance-handlers';
 import { createAuthHandlers } from './auth-handlers';
-import { MockLeave, createLeaveHandlers } from './leave-handlers';
+import { createLeaveHandlers } from './leave-handlers';
+import { MockLeave } from './mock-leave';
 import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';

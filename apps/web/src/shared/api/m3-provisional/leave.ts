@@ -16,7 +16,8 @@ export const LeaveRequestDto = z.object({
   dayPart: LeaveDayPart,
   /** Tính KHI ĐỌC theo lịch + lễ hiện tại (có thể đổi nếu HR thêm ngày lễ) — đừng cache lâu. */
   days: z.number().min(0).multipleOf(0.5),
-  reason: z.string(),
+  /** Tùy chọn (TL chốt): rỗng ⇒ null. */
+  reason: z.string().nullable(),
   status: LeaveStatus,
   decidedBy: UserRefDto.nullable(),
   decidedAt: IsoDateTime.nullable(),
@@ -27,7 +28,7 @@ export const LeaveRequestDto = z.object({
 });
 export type LeaveRequestDto = z.infer<typeof LeaveRequestDto>;
 
-/** Không bắt buộc nội dung (D đề xuất, chờ TL chốt — ít dữ liệu sức khỏe hơn, B-H2), trim, ≤ 1000. */
+/** TÙY CHỌN (TL chốt, main fc0d78e §5 — ít dữ liệu sức khỏe hơn, B-H2): trim, ≤ 1000, rỗng ⇒ null. */
 export const LeaveReason = z.string().trim().max(1000);
 
 export const CreateLeaveRequestBody = z
@@ -36,7 +37,7 @@ export const CreateLeaveRequestBody = z
     startDate: DateOnly,
     endDate: DateOnly,
     dayPart: LeaveDayPart,
-    reason: LeaveReason,
+    reason: LeaveReason.optional(),
   })
   .refine((b) => b.endDate >= b.startDate, {
     path: ['endDate'],
@@ -47,6 +48,20 @@ export const CreateLeaveRequestBody = z
     message: 'Nghỉ nửa ngày chỉ áp dụng cho một ngày',
   });
 export type CreateLeaveRequestBody = z.infer<typeof CreateLeaveRequestBody>;
+
+/** `GET leave-requests/preview` — chỉ đọc, cùng hàm đếm với gửi đơn; lỗi giống khi gửi (TL duyệt). */
+export const LeavePreviewQuery = z.strictObject({
+  type: LeaveType,
+  startDate: DateOnly,
+  endDate: DateOnly,
+  dayPart: LeaveDayPart,
+});
+export const LeavePreviewDto = z.object({
+  days: z.number().min(0).multipleOf(0.5),
+  /** Phép năm còn (trước đơn này); `null` nếu loại khác ANNUAL. */
+  remainingDays: z.number().nullable(),
+});
+export type LeavePreviewDto = z.infer<typeof LeavePreviewDto>;
 
 export const CancelLeaveRequestBody = z.strictObject({ expectedVersion: z.int().min(1) });
 

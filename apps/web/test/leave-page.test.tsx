@@ -127,6 +127,29 @@ describe('trang Nghỉ phép', () => {
     expect(within(list).queryByRole('button', { name: /Hủy đơn/ })).toBeNull();
   });
 
+  // 19/10–07/11: 18 ngày làm (T2–T7) > 12 ⇒ báo ngay, chưa cần gửi.
+  it('xem trước: đổi ngày ⇒ số ngày làm việc + phép còn (server đếm); vượt phép báo ngay trước khi gửi', async () => {
+    open();
+    const form = await screen.findByRole('form', { name: 'Gửi đơn nghỉ' });
+    fireEvent.change(within(form).getByLabelText(/^Từ ngày/), { target: { value: '2026-10-19' } });
+    fireEvent.change(within(form).getByLabelText(/^Đến ngày/), { target: { value: '2026-10-21' } });
+    expect(
+      await within(form).findByText(
+        'Đơn này: 3 ngày làm việc · phép năm còn 12 ngày',
+        {},
+        { timeout: 3000 },
+      ),
+    ).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText(/^Đến ngày/), { target: { value: '2026-11-07' } });
+    expect(
+      await within(form).findByText(
+        /Không đủ ngày phép năm\. Còn 12 ngày, đơn này cần 18 ngày\./,
+        {},
+        { timeout: 3000 },
+      ),
+    ).toBeTruthy();
+  });
+
   it('VIEWER: không có form, chỉ câu giải thích (server vẫn 403)', async () => {
     open('VIEWER');
     expect(

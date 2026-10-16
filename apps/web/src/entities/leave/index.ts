@@ -7,4 +7,9 @@ export {
   daysText,
   leaveRange,
 } from './lib/labels';
-export { leaveKeys, useMyLeaveBalance, useMyLeaveRequests } from './model/use-leave';
+export {
+  leaveKeys,
+  useLeavePreview,
+  useMyLeaveBalance,
+  useMyLeaveRequests,
+} from './model/use-leave';

@@ -3,6 +3,7 @@ import * as z from 'zod';
 import { http } from '@/shared/api';
 import {
   LeaveBalanceDto,
+  LeavePreviewDto,
   LeaveRequestDto,
   type CreateLeaveRequestBody,
 } from '@/shared/api/m3-provisional';
@@ -23,6 +24,11 @@ export const leaveApi = {
       schema: LeaveRequestDto,
       body: { expectedVersion },
     }),
+  /** Xem trước số ngày (chỉ đọc; lỗi giống khi gửi). */
+  preview: (
+    wsId: string,
+    q: Pick<CreateLeaveRequestBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>,
+  ) => http.get(`${base(wsId)}/leave-requests/preview`, { schema: LeavePreviewDto, query: q }),
   myBalance: (wsId: string, year: number) =>
     http.get(`${base(wsId)}/leave-balances/me`, { schema: LeaveBalanceDto, query: { year } }),
 };
