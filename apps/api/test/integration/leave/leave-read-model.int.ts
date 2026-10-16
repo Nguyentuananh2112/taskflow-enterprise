@@ -153,12 +153,18 @@ describe('PrismaLeaveReadModel', () => {
     ]);
   });
 
-  it("reason tùy chọn: null lưu '' (cột NOT NULL), đọc lại null", async () => {
+  it('reason tùy chọn: null lưu NULL (migration 4); chuỗi rỗng / chỉ khoảng trắng ⇒ CHECK DB từ chối', async () => {
     const { uow, repo, read } = setup();
     await uow.run(() => repo.add(record({ id: id(1), reason: null })));
-    expect((await testPrisma().leaveRequest.findFirstOrThrow()).reason).toBe('');
+    expect((await testPrisma().leaveRequest.findFirstOrThrow()).reason).toBeNull();
     expect((await read.listRequests(W1, {}, null, 1))[0]?.reason).toBeNull();
     await expect(repo.find(W1, id(1))).resolves.toMatchObject({ reason: null });
+    for (const [n, blank] of [
+      [2, ''],
+      [3, '   '],
+    ] as const) {
+      await expect(uow.run(() => repo.add(record({ id: id(n), reason: blank })))).rejects.toThrow();
+    }
   });
 });
 

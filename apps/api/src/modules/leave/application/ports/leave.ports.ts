@@ -33,7 +33,7 @@ export interface LeaveRequestRecord {
   readonly dayPart: LeaveDayPart;
   /**
    * Dữ liệu nhạy cảm (B-H2): chỉ người gửi + `hr:manage` đọc; không vào thông báo / log / audit / CSV. TÙY CHỌN
-   * (TL) — `null` khi bỏ trống (cột DB NOT NULL ⇒ repo Prisma lưu `''`, đọc `''` ⇒ `null`).
+   * (TL) — `null` khi bỏ trống; DB (migration 4, T-037b) cho NULL + CHECK không rỗng ⇒ phải chuẩn hóa trước khi ghi.
    */
   readonly reason: string | null;
   readonly status: LeaveStatus;

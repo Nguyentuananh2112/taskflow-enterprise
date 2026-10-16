@@ -19,7 +19,7 @@ Nhánh `feat/T-039-leave`. Nguồn: `docs/design/attendance-leave.md` §2 (ADR-1
 ## 2. Quyết định (đã chốt với TL / đồng đội)
 
 - **Lỗi 409** dùng code `RESOURCE_CONFLICT` + `details.reason` chữ thường (`invalid_transition`, `overlapping_leave` + `requestId`, `requester_not_member`); 422 dùng `BUSINESS_RULE_VIOLATION` + `rule` chữ hoa.
-- **reason tùy chọn** (TL): trim, ≤ 1000, rỗng ⇒ `null`. Cột `reason` của migration 3 vẫn `NOT NULL` ⇒ **tạm thời** adapter Prisma (một chỗ: `toRecord` + `add`) lưu `''` / đọc `''` ⇒ `null`; domain và DTO luôn `null`. TL đã nhờ B thêm `ALTER leave_requests.reason DROP NOT NULL` vào migration 4 (T-037b) — khi có thì bỏ chuyển đổi này. Chỉ người gửi + `hr:manage` thấy; không vào audit/thông báo.
+- **reason tùy chọn** (TL): trim, ≤ 1000, rỗng ⇒ `null`. DB: migration 4 (T-037b, B) cho `reason` NULL + CHECK không rỗng ⇒ lưu `null` trực tiếp; chuẩn hóa ở contracts + domain trước khi ghi. Chỉ người gửi + `hr:manage` thấy; không vào audit/thông báo.
 - **revoke thiếu lý do ⇒ 400** (Zod, TL chốt — spec @7d77e36). `REASON_REQUIRED` 422 chỉ khi OWNER tự xử lý.
 - **PATCH balance**: `adjustmentDays` là giá trị **tuyệt đối**; được phép kể cả `remaining − pending < 0` (TL chọn (a)); approve sau đó vẫn 422. Trả dòng số dư mới (H). **Không** có `expectedVersion` ở v1 — **rủi ro chấp nhận** (TL, cùng loại ADR-117): giá trị tuyệt đối, ghi trong khóa (ws, user), audit before/after mỗi lần; hai HR sửa cùng lúc ⇒ người sau thắng, có dấu vết.
 - **GET không ghi**: đọc số dư năm chưa có dòng ⇒ mặc định 12 ngày, không `INSERT` (dòng chỉ tạo lười trong lệnh ghi — LB-01 / CC-HR-12).
@@ -44,4 +44,3 @@ Nhánh `feat/T-039-leave`. Nguồn: `docs/design/attendance-leave.md` §2 (ADR-1
 1. Nối composition root: membership/audit ← T-037, lịch ← T-038 (A), notifier ← T-040 (G), tên ← auth; `approvedLeaves` → attendance.
 2. Test HTTP + SEC-HR (01/02/03/05/07/15/25), LSP chạy lại file test A trên Prisma, CC-HR-11 thật.
 3. `pnpm verify` + integration + security exit 0 (lượt TL).
-4. Khi migration 4 (T-037b) có `reason DROP NOT NULL`: bỏ chuyển `''` ⇄ `null` ở adapter Prisma.
