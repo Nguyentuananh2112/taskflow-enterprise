@@ -52,17 +52,27 @@ export class LoginUseCase {
     // thay đổi đồng thời (đổi mật khẩu / đăng xuất mọi nơi) xảy ra trong lúc verify argon2.
     return this.d.uow.run(async () => {
       const now = this.d.clock.now();
-      if (rehashed !== null) {
-        // Có điều kiện password_hash = hash đã verify: mật khẩu vừa bị đổi ⇒ bỏ qua, không hồi sinh hash cũ.
-        await this.d.users.rehashPassword({
+      let verifiedHash = user.passwordHash;
+      // Có điều kiện password_hash = hash đã verify: mật khẩu vừa bị đổi ⇒ bỏ qua, không hồi sinh hash cũ.
+      if (
+        rehashed !== null &&
+        (await this.d.users.rehashPassword({
           id: user.id,
           oldHash: user.passwordHash,
           newHash: rehashed,
           at: now,
-        });
+        }))
+      ) {
+        verifiedHash = rehashed;
       }
-      const tokenVersion = await this.d.users.recordLogin(user.id, now);
-      if (tokenVersion === null) throw new InvalidCredentialsError(); // user bị xóa trong lúc verify
+      // G1 auth M1: phiên chỉ cấp khi mật khẩu trong DB VẪN là mật khẩu vừa verify. Đổi mật khẩu commit
+      // trong cửa sổ argon2 ⇒ null ⇒ 401 như sai mật khẩu (không để mật khẩu cũ nhận phiên sống sót).
+      const tokenVersion = await this.d.users.recordLogin({
+        id: user.id,
+        expectedHash: verifiedHash,
+        at: now,
+      });
+      if (tokenVersion === null) throw new InvalidCredentialsError(); // user bị xóa / mật khẩu vừa đổi
       const session = await this.d.issuer.startNew({ id: user.id, tokenVersion }, input.meta);
       return { session, user: toUserView(user) };
     });

@@ -71,8 +71,8 @@ export class MirroringUserRepository implements IUserRepository {
 
   // ADR-104 (T-020): lệnh intent thay cho save(user). Chỉ updateProfile đổi dữ liệu mà bản sao cần.
   // TODO(D2 ẩn danh hóa user): lệnh soft-delete tương lai PHẢI gọi #reflect (bản sao loại user đã xóa).
-  recordLogin(id: string, at: Date) {
-    return this.inner.recordLogin(id, at);
+  recordLogin(input: Parameters<IUserRepository['recordLogin']>[0]) {
+    return this.inner.recordLogin(input);
   }
 
   rehashPassword(input: Parameters<IUserRepository['rehashPassword']>[0]) {

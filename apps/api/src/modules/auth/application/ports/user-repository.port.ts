@@ -23,8 +23,13 @@ export interface IUserRepository {
    */
   lockTokenVersion(userId: string): Promise<number | null>;
 
-  /** Chỉ `last_login_at` (user chưa xóa). Trả `token_version` HIỆN TẠI để ký access token; `null` nếu không có. */
-  recordLogin(id: string, at: Date): Promise<number | null>;
+  /**
+   * Chỉ `last_login_at`, có điều kiện user chưa xóa **và `password_hash = expectedHash`** (hash vừa verify,
+   * hoặc hash mới nếu login vừa băm lại thành công). Trả `token_version` HIỆN TẠI để ký access token.
+   * `null` ⇒ user không còn, hoặc mật khẩu đã bị đổi trong lúc verify (G1 auth M1): login KHÔNG được
+   * nhận phiên — `revokeAllForUser` của lần đổi đã chạy xong, phiên tạo sau đó sẽ sống sót.
+   */
+  recordLogin(input: { id: string; expectedHash: string; at: Date }): Promise<number | null>;
   /** Băm lại khi tham số argon2 đổi: chỉ khi `password_hash = oldHash` (thua race ⇒ `false`, bỏ qua). */
   rehashPassword(input: {
     id: string;
