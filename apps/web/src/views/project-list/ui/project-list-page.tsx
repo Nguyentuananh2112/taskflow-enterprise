@@ -4,6 +4,7 @@ import { Uuid } from '@taskflow/contracts/common';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 
+import { canSelfAttend } from '@/entities/attendance';
 import { ProjectCard, useProjects, type ProjectListFilter } from '@/entities/project';
 import { usePermission } from '@/entities/workspace';
 import { isApiError } from '@/shared/api';
@@ -12,6 +13,7 @@ import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { PageMain } from '@/shared/ui/page';
+import { AttendanceCard } from '@/widgets/attendance-card';
 
 import { ProjectListHeader } from './project-list-header';
 
@@ -27,7 +29,7 @@ export function ProjectListPage() {
     useSearchParams().get('archived') === 'true' ? 'true' : 'false';
   const valid = Uuid.safeParse(wsId).success;
   const projects = useProjects(wsId, archived, valid);
-  const { can } = usePermission(wsId);
+  const { can, role } = usePermission(wsId);
   const list = projects.data?.pages.flatMap((page) => page.data) ?? [];
 
   if (!valid || isApiError(projects.error, 'RESOURCE_NOT_FOUND')) {
@@ -39,6 +41,8 @@ export function ProjectListPage() {
   }
   return (
     <PageMain className="gap-6">
+      {/* Màn hạ cánh sau khi chọn workspace ⇒ thẻ Chấm công ở ĐẦU trang (attendance-leave.md §6). */}
+      <AttendanceCard wsId={wsId} enabled={valid && canSelfAttend(role)} />
       <ProjectListHeader wsId={wsId} canCreate={can('project:create')} />
       <nav aria-label="Lọc dự án" className="flex gap-2">
         {TABS.map((tab) => (

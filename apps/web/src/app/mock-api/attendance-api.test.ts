@@ -101,10 +101,10 @@ describe('mock chấm công', () => {
       'idempotency-key': k,
     });
     expect(reused.status).toBe(422);
-    expect(reused.body.error.details).toEqual({ rule: 'idempotency_key_reused' });
+    expect(reused.body.error.details).toEqual({ rule: 'IDEMPOTENCY_KEY_REUSED' });
   });
 
-  it('IN lần 2 (key mới) ⇒ 409 already_checked_in; OUT khi chưa IN ⇒ 422 not_checked_in', async () => {
+  it('IN lần 2 (key mới) ⇒ 409 already_checked_in; OUT khi chưa IN ⇒ 422 NOT_CHECKED_IN', async () => {
     const { send, register } = setup();
     const lan = await register('lan@example.com');
     const ws = lan.defaultWorkspaceId;
@@ -112,7 +112,7 @@ describe('mock chấm công', () => {
       'idempotency-key': key(),
     });
     expect(out.status).toBe(422);
-    expect(out.body.error.details).toEqual({ rule: 'not_checked_in' });
+    expect(out.body.error.details).toEqual({ rule: 'NOT_CHECKED_IN' });
     await send('POST', path(ws, '/check-in'), lan.accessToken, { 'idempotency-key': key() });
     const twice = await send('POST', path(ws, '/check-in'), lan.accessToken, {
       'idempotency-key': key(),

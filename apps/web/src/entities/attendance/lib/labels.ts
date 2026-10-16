@@ -1,4 +1,4 @@
-import type { DayStatus } from '@/shared/api/m3-provisional';
+import type { DayStatus } from '@taskflow/contracts/attendance';
 
 /**
  * Trạng thái ngày: CHỮ + biểu tượng (không chỉ màu — WCAG 1.4.1, attendance-leave.md §6). Biểu tượng
@@ -17,3 +17,9 @@ export const DAY_STATUS: Readonly<
 };
 
 export const LEAVE_PART_LABEL = { FULL: 'cả ngày', AM: 'buổi sáng', PM: 'buổi chiều' } as const;
+
+/**
+ * ⚠️ TẠM (T-041a): ai được chấm công/xin nghỉ = OWNER, PM, MEMBER (attendance-leave.md §1). Khi T-037
+ * merge: thay bằng `can('attendance:self')` (hasPermission từ contracts), bỏ hàm này.
+ */
+export const canSelfAttend = (role: string | null) => role !== null && role !== 'VIEWER';

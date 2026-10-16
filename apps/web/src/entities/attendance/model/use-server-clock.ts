@@ -13,5 +13,6 @@ export function useServerClock(serverNow: string | undefined, receivedAtMs: numb
     return () => clearInterval(id);
   }, []);
   if (!serverNow) return null;
-  return now + serverOffsetMs(serverNow, receivedAtMs);
+  // `now` có thể lấy TRƯỚC khi response về (state lúc mount) ⇒ không để đồng hồ lùi sau giờ nhận.
+  return Math.max(now, receivedAtMs) + serverOffsetMs(serverNow, receivedAtMs);
 }

@@ -1,15 +1,15 @@
 import type {
   AttendanceDayDto,
   AttendanceTodayDto,
-  ScheduleDto,
-} from '@/shared/api/m3-provisional';
+  WorkShiftDto,
+} from '@taskflow/contracts/attendance';
 
 // Chấm công giả (T-041a) cho dev/test web: lịch mặc định T2–T7 08:00–17:30, nghỉ trưa 12:00–13:30,
 // grace 0, múi giờ Asia/Ho_Chi_Minh (attendance-leave.md §0). `summarize` là bản RÚT GỌN của
 // `summarizeDay` (đủ trạng thái cho UI) — quy tắc đầy đủ + test bảng ví dụ thuộc API thật (T-038).
 
 export const MOCK_TZ = 'Asia/Ho_Chi_Minh';
-export const MOCK_SCHEDULE: ScheduleDto = {
+export const MOCK_SCHEDULE: WorkShiftDto = {
   startMin: 480,
   endMin: 1050,
   breakStartMin: 720,
@@ -106,6 +106,7 @@ export class MockAttendance {
       late: lateMin > 0,
       early: earlyMin > 0,
       absentHalf: false,
+      inProgress: firstIn !== undefined && lastOut === undefined && status === 'PRESENT',
       firstIn: firstIn ? new Date(firstIn.at).toISOString() : null,
       lastOut: lastOut ? new Date(lastOut.at).toISOString() : null,
       workedMin,
@@ -130,7 +131,7 @@ export class MockAttendance {
       late: day.late,
       early: day.early,
       absentHalf: false,
-      inProgress: day.firstIn !== null && day.lastOut === null && day.status === 'PRESENT',
+      inProgress: day.inProgress,
       firstIn: day.firstIn,
       lastOut: day.lastOut,
       leave: null,

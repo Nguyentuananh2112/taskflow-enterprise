@@ -1,5 +1,5 @@
 import { http } from '@/shared/api';
-import { AttendanceMonthDto, AttendanceTodayDto } from '@/shared/api/m3-provisional';
+import { AttendanceMonthDto, AttendanceTodayDto } from '@taskflow/contracts/attendance';
 
 const base = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}/attendance`;
 
