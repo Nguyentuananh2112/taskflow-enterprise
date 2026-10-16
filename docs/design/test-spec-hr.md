@@ -41,7 +41,7 @@ Ký hiệu giờ trong bảng = **giờ địa phương theo múi giờ của l�
 
 - **422** ⇒ `BUSINESS_RULE_VIOLATION`, `details.rule` viết HOA: `NOT_CHECKED_IN`, `IDEMPOTENCY_KEY_REUSED`, `HOLIDAY_IN_PAST`, `SCHEDULE_IN_PAST`, `REASON_REQUIRED`, `NO_WORKING_DAYS`, `INSUFFICIENT_BALANCE`, `LEAVE_SPANS_YEARS`, `GRANT_NOT_ALLOWED`.
 - **409** ⇒ `RESOURCE_CONFLICT`, `details.reason` viết thường: `already_checked_in`, `already_voided`, `invalid_transition`, `overlapping_leave`, `requester_not_member`.
-- `REASON_REQUIRED` (TL chốt): chỉ khi lý do TÙY CHỌN trong schema nhưng bắt buộc theo ngữ cảnh (OWNER tự xử lý — AT-13, LV-10, LB-05; ngày lễ quá khứ của OWNER — AT-18). Route mà lý do luôn bắt buộc (void, revoke, ADJUSTMENT) ⇒ body thiếu/rỗng là **400** Zod.
+- `REASON_REQUIRED` (TL chốt): chỉ khi lý do TÙY CHỌN trong schema nhưng bắt buộc theo ngữ cảnh (OWNER tự xử lý ở route có lý do tùy chọn — LV-10 approve/`decisionNote`, LB-05 PATCH balance; ngày lễ quá khứ của OWNER — AT-18). KHÔNG áp cho AT-13: `AdjustAttendanceBody.reason` luôn bắt buộc ⇒ thiếu là 400 (A chỉ ra). Route mà lý do luôn bắt buộc (void, revoke, ADJUSTMENT) ⇒ body thiếu/rỗng là **400** Zod.
 - `PATCH leave-balances` được phép cả khi làm `remaining − pending` < 0; đơn PENDING vượt số dư bị **approve** trả 422 `INSUFFICIENT_BALANCE` (TL chốt (a), khớp Q4).
 - Xung đột phiên bản giữ `VERSION_CONFLICT` (như task). Test kiểm cả `code` lẫn `details`, không chỉ status.
 
@@ -185,7 +185,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-10 | Vic check-in | 403 |
 | AT-11 | hạn mức 10/phút/user | lần 11 ⇒ 429 (hết hạn mức, có `Retry-After`) |
 | AT-12 | Hana `POST attendance/events` (ADJUSTMENT) cho Mia — body `AdjustAttendanceBody` strict `{ userId, kind, date, time "HH:mm", nextDay?, reason }` (giờ theo LỊCH của `date`, không `occurredAt` ⇒ gửi kèm 400) | 201 + `AttendanceEventChangeDto { event, day }` (id ở `event.id`), `source ADJUSTMENT`, `createdBy Hana`, thông báo ATTENDANCE_ADJUSTED tới Mia, audit EVENT_ADJUST |
-| AT-13 | Hana ADJUSTMENT cho chính mình | 403 (B-H1); Olivia cho chính mình ⇒ 201 + lý do bắt buộc + HrAuditLog |
+| AT-13 | Hana ADJUSTMENT cho chính mình | 403 (B-H1); Olivia cho chính mình ⇒ 201 + HrAuditLog (lý do luôn có vì `reason` bắt buộc trong body — thiếu là **400** Zod, không phải 422) |
 | AT-13b | `GET attendance/events?userId=Mia&date=` (Hana) | 200, `{ events: AttendanceEventDto[] }` theo `workDate`, gồm lượt đã hủy, sắp theo `occurredAt`, có IP/UA; `me/events` cùng DTO nhưng chỉ của mình (f8ddb7b) |
 | AT-14 | void lượt chấm (`VoidAttendanceBody { reason }` ⇒ 200 `{ event, day }`), thiếu lý do / rỗng | **400** (Zod — lý do luôn bắt buộc ở route void; TL chốt); có lý do ⇒ 200, `voidedAt/By/Reason`, dòng không bị xóa (log bất biến) |
 | AT-14b | void lại lượt đã void | 409 `RESOURCE_CONFLICT` (`reason: already_voided`) |
