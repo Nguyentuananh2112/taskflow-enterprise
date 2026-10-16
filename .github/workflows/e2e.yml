@@ -92,6 +92,10 @@ jobs:
         run: |
           # shellcheck disable=SC2086 # PROJECTS cố ý tách thành nhiều tham số
           pnpm --filter @taskflow/e2e test $PROJECTS
+      # Trace/video chứa cookie/JWT/mật khẩu của tài khoản test và repo PUBLIC ⇒ ai đăng nhập cũng tải được 7 ngày.
+      # An toàn CHỈ vì mọi credential ở job này là giá trị test tạm (DB/API/Valkey hủy khi job xong, JWT secret
+      # công khai, Sentry DSN `.invalid`). KHÔNG thêm secret thật (DSN Sentry thật, token…) vào e2e khi còn
+      # upload trace (B, review ci-parity L1).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
