@@ -79,13 +79,13 @@ export class NotificationQueries {
     userId: string,
   ): Promise<{ scope: VisibilityScope; names: ReadonlyMap<string, string> }> {
     const memberships = await this.d.audience.workspacesOf(userId);
-    const full: string[] = [];
-    const basic: string[] = [];
-    for (const m of memberships) {
-      (this.d.canManageHr(m.role, m.grants) ? full : basic).push(m.workspaceId);
-    }
+    const workspaces = memberships.map((m) => ({
+      workspaceId: m.workspaceId,
+      since: m.joinedAt,
+      hr: this.d.canManageHr(m.role, m.grants),
+    }));
     const names = new Map(memberships.map((m) => [m.workspaceId, m.workspaceName]));
-    return { scope: { recipientId: userId, full, basic }, names };
+    return { scope: { recipientId: userId, workspaces }, names };
   }
 
   async #views(

@@ -10,10 +10,11 @@ import {
   NotificationPublisher,
 } from '../../../src/modules/notifications/application/notification-publisher';
 import { NotificationQueries } from '../../../src/modules/notifications/application/notification.queries';
-import {
-  PrismaNotificationAudience,
-  PrismaNotificationContextReader,
-} from '../../../src/modules/notifications/infrastructure/prisma/prisma-notification-readers';
+import { notificationContextFrom } from '../../../src/composition/notification-adapters';
+import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
+import { PrismaUserRefReader } from '../../../src/modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
+import { WorkspaceNotificationAudience } from '../../../src/modules/workspace/application/adapters/notification-audience';
+import { PrismaWorkspaceQueries } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-queries';
 import { PrismaNotificationStore } from '../../../src/modules/notifications/infrastructure/prisma/prisma-notification.store';
 import { SpyRealtime } from '../../../src/modules/notifications/testing/notification-harness';
 import { FakeClock } from '../../support';
@@ -97,7 +98,7 @@ beforeEach(async () => {
   realtime = new SpyRealtime();
   const db = () => uow.db();
   const store = new PrismaNotificationStore(db);
-  const audience = new PrismaNotificationAudience(db);
+  const audience = new WorkspaceNotificationAudience({ queries: new PrismaWorkspaceQueries(db) });
   const canManageHr = (role: Parameters<typeof hasPermission>[0], grants: readonly 'HR_MANAGE'[]) =>
     hasPermission(role, grants, 'hr:manage');
   publisher = new NotificationPublisher({
@@ -112,7 +113,10 @@ beforeEach(async () => {
   queries = new NotificationQueries({
     store,
     audience,
-    context: new PrismaNotificationContextReader(db),
+    context: notificationContextFrom({
+      users: new PrismaUserRefReader(db),
+      leaves: new PrismaLeaveReadModel(db), // = `leave.summaries` nối ở persistence.ts (production)
+    }),
     canManageHr,
     clock,
   });
@@ -226,6 +230,32 @@ describe('đọc — recipient_id = me, ws còn là thành viên, loại HR theo
       data: { deletedAt: clock.now(), purgeAt: clock.now() },
     });
     expect(await queries.unreadCount(ids.olivia)).toBe(0);
+  });
+
+  it('T-040b: xóa rồi mời lại (joined_at mới) ⇒ thông báo nhiệm kỳ cũ ẩn ở list / unread / markRead / read-all', async () => {
+    await miaSubmits();
+    const [old] = (await queries.list(ids.hana, { limit: 20 })).items;
+    clock.advance(60_000);
+    await testPrisma().workspaceMember.deleteMany({ where: { userId: ids.hana } });
+    await testPrisma().workspaceMember.create({
+      data: {
+        workspaceId: ids.w1,
+        userId: ids.hana,
+        role: 'MEMBER',
+        grants: ['HR_MANAGE'],
+        joinedAt: clock.now(),
+      },
+    });
+    expect((await queries.list(ids.hana, { limit: 20 })).items).toEqual([]);
+    expect(await queries.unreadCount(ids.hana)).toBe(0);
+    await expect(queries.markRead(ids.hana, old?.id ?? '')).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await queries.markAllRead(ids.hana);
+    expect((await rows()).find((r) => r.id === old?.id)?.readAt).toBeNull(); // read-all không chạm dòng cũ
+
+    await miaSubmits(); // cùng mili giây với joined_at ⇒ thuộc nhiệm kỳ mới
+    expect(await queries.unreadCount(ids.hana)).toBe(1);
   });
 
   it('SEC-HR-17: đánh dấu id của người khác ⇒ 404 và dòng không đổi; của mình ⇒ readAt, lặp lại giữ readAt cũ', async () => {

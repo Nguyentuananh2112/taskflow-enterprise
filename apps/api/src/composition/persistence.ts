@@ -26,10 +26,6 @@ import {
   createInMemoryNotificationStore,
   type NotificationRepositories,
 } from '../modules/notifications/notifications.module';
-import {
-  PrismaNotificationAudience,
-  PrismaNotificationContextReader,
-} from '../modules/notifications/infrastructure/prisma/prisma-notification-readers';
 import { PrismaNotificationStore } from '../modules/notifications/infrastructure/prisma/prisma-notification.store';
 import { createInMemoryTaskRepositories, type TaskRepositories } from '../modules/task/task.module';
 import {
@@ -55,11 +51,9 @@ import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persi
 import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
+import { WorkspaceNotificationAudience } from '../modules/workspace/application/adapters/notification-audience';
 import { memoryLeaveRepositories, prismaLeaveRepositories } from './leave-adapters';
-import {
-  InMemoryNotificationAudience,
-  InMemoryNotificationContextReader,
-} from './notification-adapters';
+import { notificationContextFrom } from './notification-adapters';
 import {
   TaskMirroredMemberships,
   TaskMirroredProjects,
@@ -147,6 +141,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     ],
     logger,
   );
+  const leave = memoryLeaveRepositories(leaveStore, ws.queries);
   return {
     kind: 'memory',
     modules: allModules('memory'),
@@ -155,14 +150,12 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     task,
     notifications: {
       store: notificationStore,
-      audience: new InMemoryNotificationAudience({
-        queries: ws.queries,
-        memberships: ws.memberships,
-      }),
-      context: new InMemoryNotificationContextReader(users, leaveStore),
+      // T-040b L2: membership qua phía đọc của Workspace; tên qua bản sao user của Task; đơn: readModel của leave.
+      audience: new WorkspaceNotificationAudience({ queries: ws.queries }),
+      context: notificationContextFrom({ users: task.users, leaves: leave.readModel }),
     },
     attendance,
-    leave: memoryLeaveRepositories(leaveStore, ws.queries),
+    leave,
     uow,
   };
 }
@@ -188,6 +181,9 @@ export function createPrismaPersistence(d: {
     timeout: TRANSACTION_TIMEOUT_MS,
   });
   const db = () => uow.db();
+  const workspaceQueries = new PrismaWorkspaceQueries(db);
+  const userRefs = new PrismaUserRefReader(db);
+  const leave = prismaLeaveRepositories(db);
   return {
     kind: 'prisma',
     modules: allModules('prisma'),
@@ -200,7 +196,7 @@ export function createPrismaPersistence(d: {
       workspaces: new PrismaWorkspaceRepository(db),
       memberships: new PrismaMembershipRepository(db),
       projects: new PrismaProjectRepository(db),
-      queries: new PrismaWorkspaceQueries(db),
+      queries: workspaceQueries,
       hrAudit: new PrismaHrAuditLog(db),
       departures: new PrismaMemberDepartures(db),
       tenure: new PrismaMembershipTenureReader(db),
@@ -211,17 +207,21 @@ export function createPrismaPersistence(d: {
       readModel: new PrismaTaskReadModel(db),
       projects: new PrismaTaskProjectStore(db),
       assignees: new PrismaAssigneeDirectory(db),
-      users: new PrismaUserRefReader(db),
+      users: userRefs,
       audit: new PrismaTaskAuditLogRepository(db),
     },
     // Cùng `db` ⇒ thông báo ghi trong transaction của leave / attendance / workspace (ADR-123).
     notifications: {
       store: new PrismaNotificationStore(db),
-      audience: new PrismaNotificationAudience(db),
-      context: new PrismaNotificationContextReader(db),
+      // T-040b L2: không đọc thẳng bảng của module khác — audience = phía đọc Workspace, đơn = leave (T-039).
+      audience: new WorkspaceNotificationAudience({ queries: workspaceQueries }),
+      context: notificationContextFrom({
+        users: userRefs,
+        leaves: leave.readModel, // = `leave.summaries` (T-039)
+      }),
     },
     attendance: createPrismaAttendanceRepositories(db),
-    leave: prismaLeaveRepositories(db),
+    leave,
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),
     uow,

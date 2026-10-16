@@ -52,14 +52,21 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
 
   async listActiveForUser(
     userId: string,
-  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[] }[]> {
+  ): Promise<
+    { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
+  > {
     const rows = await this.db().workspaceMember.findMany({
       where: { userId, workspace: { deletedAt: null } },
       orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
       take: MAX_MY_WORKSPACES,
-      select: { role: true, grants: true, workspace: { select: WS } },
+      select: { role: true, grants: true, joinedAt: true, workspace: { select: WS } },
     });
-    return rows.map((r) => ({ workspace: r.workspace, role: r.role, grants: r.grants }));
+    return rows.map((r) => ({
+      workspace: r.workspace,
+      role: r.role,
+      grants: r.grants,
+      joinedAt: r.joinedAt,
+    }));
   }
 
   async listDeletedOwnedBy(userId: string, now: Date): Promise<WorkspaceSnapshot[]> {
@@ -67,6 +74,15 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
       where: { purgeAt: { gt: now }, members: { some: { userId, role: 'OWNER' } } },
       orderBy: { deletedAt: 'desc' },
       select: WS,
+    });
+  }
+
+  listMemberAccess(
+    workspaceId: string,
+  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]> {
+    return this.db().workspaceMember.findMany({
+      where: { workspaceId },
+      select: { userId: true, role: true, grants: true },
     });
   }
 

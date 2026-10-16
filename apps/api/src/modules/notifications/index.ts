@@ -7,3 +7,11 @@ export type {
   NotifyInput,
 } from './application/notification-publisher';
 export type { NotificationType } from './domain/notification';
+// T-040b L2: port do module khác hiện thực (bên dùng sở hữu — workspace: audience, leave: tóm tắt đơn).
+export type {
+  AudienceWorkspace,
+  ILeaveSummaryReader,
+  INotificationAudience,
+  LeaveSummary,
+  MemberAccess,
+} from './application/ports';

@@ -43,20 +43,28 @@ export interface NotificationRecord {
   createdAt: Date;
 }
 
+/** Một workspace người nhận ĐANG là thành viên (membership hiện tại, đọc mỗi request). */
+export interface VisibleWorkspace {
+  workspaceId: string;
+  /** Đầu nhiệm kỳ hiện tại (`joinedAt`) — thông báo tạo trước đó thuộc nhiệm kỳ cũ ⇒ ẩn (T-040b). */
+  since: Date;
+  /** Có `hr:manage` HIỆN TẠI ⇒ thấy cả `HR_AUDIENCE_TYPES` (B-H3b). */
+  hr: boolean;
+}
+
 /**
- * Phạm vi người nhận được thấy, dựng từ membership HIỆN TẠI mỗi request (không cache, không tin token):
- * `full` = ws còn là thành viên VÀ có `hr:manage` (thấy mọi loại); `basic` = còn là thành viên nhưng
- * không có `hr:manage` (ẩn `HR_AUDIENCE_TYPES`). Ws không có trong hai danh sách ⇒ ẩn hết (SEC-HR-18).
+ * Phạm vi người nhận được thấy, dựng từ membership HIỆN TẠI mỗi request (không cache, không tin token).
+ * Ws không có trong danh sách ⇒ ẩn hết (SEC-HR-18); thông báo trước `since` ⇒ ẩn; không `hr` ⇒ ẩn loại HR.
  */
 export interface VisibilityScope {
   recipientId: string;
-  full: readonly string[];
-  basic: readonly string[];
+  workspaces: readonly VisibleWorkspace[];
 }
 
 /** Hàm thuần — bản InMemory dùng trực tiếp; bản Prisma dịch cùng điều kiện sang WHERE. */
 export function isVisible(n: NotificationRecord, scope: VisibilityScope): boolean {
   if (n.recipientId !== scope.recipientId) return false;
-  if (scope.full.includes(n.workspaceId)) return true;
-  return scope.basic.includes(n.workspaceId) && !HR_AUDIENCE_TYPES.includes(n.type);
+  const ws = scope.workspaces.find((w) => w.workspaceId === n.workspaceId);
+  if (!ws || n.createdAt < ws.since) return false;
+  return ws.hr || !HR_AUDIENCE_TYPES.includes(n.type);
 }
