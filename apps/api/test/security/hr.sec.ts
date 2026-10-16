@@ -5,11 +5,14 @@ import { describe, expect } from 'vitest';
 import { Actors } from './harness/actors';
 import {
   HR,
+  adjust,
+  eventsOf,
   leaveOf,
   seedHr,
   setGrants,
   submitLeave,
   thisMonth,
+  todayVn,
   withKey,
   workday,
   type HrTenant,
@@ -117,9 +120,10 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
           endDate: workday(40),
         }),
       );
-      const inW2 = (await withKey(api, 'POST', HR.checkIn(t.wsB), t.otto.accessToken)).json as {
-        data: { id: string };
-      };
+      // Id lượt chấm THẬT của W2: Otto (OWNER W2) thêm ADJUSTMENT ⇒ 201 AttendanceEventDto (f8ddb7b).
+      const adj = await adjust(actors, t.otto, t.wsB, t.otto.userId, 'IN');
+      expect(adj.status, 'đối chứng: ADJUSTMENT trong W2').toBe(201);
+      const inW2 = adj.json as { data: { id: string } };
       expect(
         (
           await actors.json(
@@ -335,14 +339,63 @@ describe('CSV xuất bảng công (OWASP, B-L2..L4)', () => {
 });
 
 describe('Dữ liệu cá nhân / nhạy cảm', () => {
-  secCase('SEC-HR-14', 'IP/UA: Mia thấy của mình; Max không thấy của Mia', AREA, async () => {
-    const t = await hr();
-    await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
-    const mine = await actors.json('GET', HR.meToday(t.ws), t.mia.accessToken);
-    expect(mine.status).toBe(200);
-    const other = await actors.json('GET', HR.me(t.ws, thisMonth()), t.max.accessToken);
-    expect(other.text).not.toContain(t.mia.userId);
-  });
+  secCase(
+    'SEC-HR-14',
+    'IP/UA: Mia thấy của mình (me/events); HR thấy qua attendance/events; Max không thấy của Mia',
+    AREA,
+    async () => {
+      const t = await hr();
+      await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
+      const mine = eventsOf(
+        await actors.json('GET', HR.myEvents(t.ws, todayVn()), t.mia.accessToken),
+      );
+      expect(mine.length).toBeGreaterThan(0);
+      expect(mine.every((e) => e.userId === t.mia.userId && e.ip !== null)).toBe(true);
+      const byHr = eventsOf(
+        await actors.json('GET', HR.eventsOf(t.ws, t.mia.userId, todayVn()), t.hana.accessToken),
+      );
+      expect(byHr.map((e) => e.id)).toEqual(
+        expect.arrayContaining(mine.map((e) => e.id)) as unknown,
+      );
+      const maxView = await actors.json('GET', HR.myEvents(t.ws, todayVn()), t.max.accessToken);
+      expect(maxView.text).not.toContain(t.mia.userId);
+    },
+  );
+
+  secCase(
+    'SEC-HR-28',
+    'me/events không lộ lượt của người khác: Max gửi ?userId=Mia vẫn chỉ thấy của mình',
+    AREA,
+    async () => {
+      const t = await hr();
+      await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
+      const res = await actors.json(
+        'GET',
+        `${HR.myEvents(t.ws, todayVn())}&userId=${t.mia.userId}`,
+        t.max.accessToken,
+      );
+      expect([200, 400]).toContain(res.status);
+      if (res.status === 200)
+        expect(eventsOf(res).every((e) => e.userId === t.max.userId)).toBe(true);
+    },
+  );
+
+  secCase(
+    'SEC-HR-29',
+    'Thành viên thường gọi attendance/events (lượt thô có IP/UA) ⇒ 403; userId chưa từng có dữ liệu ⇒ 404 (HR)',
+    AREA,
+    async () => {
+      const t = await hr();
+      expect(
+        (await actors.json('GET', HR.eventsOf(t.ws, t.max.userId, todayVn()), t.mia.accessToken))
+          .status,
+      ).toBe(403);
+      expect(
+        (await actors.json('GET', HR.eventsOf(t.ws, randomUUID(), todayVn()), t.hana.accessToken))
+          .status,
+      ).toBe(404);
+    },
+  );
 
   secCase(
     'SEC-HR-15',
@@ -571,7 +624,7 @@ describe('Biên HTTP', () => {
 
   secCase(
     'SEC-HR-26',
-    'Idempotency-Key giống hệt của user khác ⇒ không trả kết quả của người kia',
+    'Idempotency-Key giống hệt của user khác ⇒ người thứ hai nhận 201 (lượt của chính họ), không phải 200 replay',
     AREA,
     async () => {
       const t = await hr();
@@ -579,8 +632,9 @@ describe('Biên HTTP', () => {
       const a = await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken, key);
       const b = await withKey(api, 'POST', HR.checkIn(t.ws), t.olivia.accessToken, key);
       expect([a.status, b.status]).toEqual([201, 201]);
-      const idOf = (r: typeof a) => (r.json as { data: { id: string } }).data.id;
-      expect(idOf(a)).not.toBe(idOf(b));
+      const firstIn = (r: typeof a) =>
+        (r.json as { data: { firstIn: string | null } }).data.firstIn;
+      expect(firstIn(b)).not.toBeNull();
     },
   );
 });

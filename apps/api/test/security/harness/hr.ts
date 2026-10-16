@@ -19,6 +19,11 @@ export const HR = {
   exportCsv: (ws: string, month: string) =>
     `/workspaces/${ws}/attendance/export.csv?month=${encodeURIComponent(month)}`,
   events: (ws: string) => `/workspaces/${ws}/attendance/events`,
+  /** f8ddb7b: lượt thô của một nhân viên trong 1 ngày công (hr:manage, có IP/UA, gồm lượt đã hủy). */
+  eventsOf: (ws: string, userId: string, date: string) =>
+    `/workspaces/${ws}/attendance/events?userId=${userId}&date=${date}`,
+  /** f8ddb7b: lượt thô của chính mình (attendance:self). */
+  myEvents: (ws: string, date: string) => `/workspaces/${ws}/attendance/me/events?date=${date}`,
   voidEvent: (ws: string, id: string) => `/workspaces/${ws}/attendance/events/${id}/void`,
   schedules: (ws: string) => `/workspaces/${ws}/attendance/schedules`,
   holiday: (ws: string, date: string) => `/workspaces/${ws}/attendance/holidays/${date}`,
@@ -128,3 +133,29 @@ export const submitLeave = (
   ws: string,
   body: { type: string; startDate: string; endDate: string; dayPart?: string; reason?: string },
 ) => actors.json('POST', HR.leaveRequests(ws), who.accessToken, { dayPart: 'FULL', ...body });
+
+export interface AttendanceEventDto {
+  id: string;
+  userId: string;
+  kind: 'IN' | 'OUT';
+  source: string;
+  workDate: string;
+  ip: string | null;
+  userAgent: string | null;
+  voidedAt: string | null;
+}
+
+/** HR thêm lượt ADJUSTMENT (201 ⇒ AttendanceEventDto có id). */
+export const adjust = (actors: Actors, by: Actor, ws: string, userId: string, kind: 'IN' | 'OUT') =>
+  actors.json('POST', HR.events(ws), by.accessToken, {
+    userId,
+    kind,
+    occurredAt: new Date().toISOString(),
+    reason: 'F test',
+  });
+
+export const eventsOf = (res: RawResponse): AttendanceEventDto[] =>
+  (res.json as { data: { events: AttendanceEventDto[] } }).data.events;
+
+/** Ngày công hôm nay theo lịch seed (Asia/Ho_Chi_Minh, UTC+7). */
+export const todayVn = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);

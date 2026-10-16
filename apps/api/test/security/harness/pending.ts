@@ -95,6 +95,14 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
     ticket: 'T-037',
     reason: 'Mốc 3 chưa có route GET hr-audit-logs (T-037, B chốt đường dẫn + quyền hr:grant)',
   },
+  'SEC-HR-28': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (route me/events — f8ddb7b)',
+  },
+  'SEC-HR-29': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (route attendance/events — f8ddb7b)',
+  },
   'SEC-HR-17': {
     ticket: 'T-040',
     reason:

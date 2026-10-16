@@ -64,7 +64,7 @@ describe('Chấm công song song', () => {
 
   secCase(
     'CC-HR-02',
-    '2 check-in song song CÙNG Idempotency-Key ⇒ cùng id, DB 1 dòng',
+    '2 check-in song song CÙNG Idempotency-Key ⇒ một 201 + một 200 (replay), cùng firstIn',
     AREA,
     async () => {
       for (let i = 0; i < RUNS; i += 1) {
@@ -74,12 +74,13 @@ describe('Chấm công song song', () => {
           withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken, key),
           withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken, key),
         ]);
-        expect(
-          rs.every((r) => r.status === 201 || r.status === 200),
-          `#${i}: ${statuses(rs).join('/')}`,
-        ).toBe(true);
-        const ids = rs.map((r) => (r.json as { data: { id: string } }).data.id);
-        expect(ids[0]).toBe(ids[1]);
+        expect(statuses(rs), `#${i}`).toEqual([200, 201]);
+        // Body = AttendanceTodayDto (không có id lượt chấm — A/E) ⇒ so firstIn: replay không tạo lượt mới.
+        const firstIn = rs.map(
+          (r) => (r.json as { data: { firstIn: string | null } }).data.firstIn,
+        );
+        expect(firstIn[0], `#${i}`).not.toBeNull();
+        expect(firstIn[0], `#${i}`).toBe(firstIn[1]);
       }
     },
     TIMEOUT,

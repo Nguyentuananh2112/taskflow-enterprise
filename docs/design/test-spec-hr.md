@@ -171,19 +171,20 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 
 | ID | Ca | Kỳ vọng |
 |---|---|---|
-| AT-01 | Mia check-in lần đầu trong ngày | 201, `source WEB`, `occurredAt` = giờ server (client không gửi giờ), lưu IP + UA (≤ 256) |
+| AT-01 | Mia check-in lần đầu trong ngày | **201**, body = thẻ hôm nay (`AttendanceTodayDto`); `source WEB`, `occurredAt` = giờ server (client không gửi giờ), lưu IP + UA (≤ 256) |
 | AT-02 | check-in lần 2 cùng ngày, key khác | 409 `RESOURCE_CONFLICT` (`reason: already_checked_in`) |
-| AT-03 | lặp check-in, cùng `Idempotency-Key` | trả **kết quả cũ** (cùng id), không thêm dòng |
+| AT-03 | lặp check-in, cùng `Idempotency-Key` | **200** (lượt mới là 201), body = thẻ hôm nay, **không thêm dòng**, `firstIn` không đổi (body không có id lượt chấm — chốt A/E) |
 | AT-04 | cùng key nhưng `kind` khác (IN rồi OUT) | 422 `BUSINESS_RULE_VIOLATION` (`rule: IDEMPOTENCY_KEY_REUSED`) |
 | AT-05 | key của Mia dùng lại bởi Max | không va (key gắn theo user — A#1); Max được 201 |
 | AT-06 | replay key sau khi Mia bị xóa khỏi ws | 404 (vẫn kiểm membership TRƯỚC replay — B-M6) |
 | AT-07 | check-out chưa IN | 422 `BUSINESS_RULE_VIOLATION` (`rule: NOT_CHECKED_IN`) (Q5) |
-| AT-08 | check-out 2 lần | 201 cả hai, `lastOut` = lượt sau |
+| AT-08 | check-out 2 lần | 201 cả hai (key khác nhau), `lastOut` = lượt sau |
 | AT-09 | `Idempotency-Key` không phải UUID | 400 |
 | AT-10 | Vic check-in | 403 |
 | AT-11 | hạn mức 10/phút/user | lần 11 ⇒ 429 (hết hạn mức, có `Retry-After`) |
-| AT-12 | Hana `POST attendance/events` (ADJUSTMENT) cho Mia, có lý do | 201, `source ADJUSTMENT`, `createdBy Hana`, thông báo ATTENDANCE_ADJUSTED tới Mia, audit EVENT_ADJUST |
+| AT-12 | Hana `POST attendance/events` (ADJUSTMENT) cho Mia, có lý do | 201 + `AttendanceEventDto` (có `id`), `source ADJUSTMENT`, `createdBy Hana`, thông báo ATTENDANCE_ADJUSTED tới Mia, audit EVENT_ADJUST |
 | AT-13 | Hana ADJUSTMENT cho chính mình | 403 (B-H1); Olivia cho chính mình ⇒ 201 + lý do bắt buộc + HrAuditLog |
+| AT-13b | `GET attendance/events?userId=Mia&date=` (Hana) | 200, `{ events: AttendanceEventDto[] }` theo `workDate`, gồm lượt đã hủy, sắp theo `occurredAt`, có IP/UA; `me/events` cùng DTO nhưng chỉ của mình (f8ddb7b) |
 | AT-14 | void lượt chấm, thiếu lý do | 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`); có lý do ⇒ 200, `voidedAt/By/Reason`, dòng không bị xóa (log bất biến) |
 | AT-14b | void lại lượt đã void | 409 `RESOURCE_CONFLICT` (`reason: already_voided`) |
 | AT-15 | void lượt của ws khác | 404 |
@@ -192,7 +193,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-18 | ngày lễ ngày quá khứ, Hana | 422 `BUSINESS_RULE_VIOLATION` (`rule: HOLIDAY_IN_PAST`); Olivia thiếu lý do ⇒ 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`); Olivia + lý do ⇒ 200 + HrAuditLog (A#4) |
 | AT-19 | `timezone` không hợp lệ (`Mars/Base`) | 400 (`Intl.supportedValuesOf('timeZone')`) |
 | AT-20 | HR xem công của Rex (đã rời) | 200, gắn "đã rời" (R30); `userId` chưa từng có dữ liệu ⇒ 404 |
-| AT-21 | `GET attendance/me/today` | đủ trường §5 (`serverNow`, `timezone`, `isWorkday`, `isHoliday`, ca, `status`, `firstIn`, `lastOut`, `leaveToday`) — contract test với Zod |
+| AT-21 | `GET attendance/me/today` | đủ trường §5 — `AttendanceTodayDto` (`@taskflow/contracts/attendance`, chốt A/E cho T-041a): `serverNow, timezone, date, isWorkday, isHoliday, holidayName, schedule, status, late, early, absentHalf, inProgress, firstIn, lastOut, leave` — contract test với Zod |
 
 ## 6. Grants (`hr:manage`, ADR-119)
 
@@ -231,7 +232,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | SEC-HR-11 | CSV injection: họ tên / tên ws / ghi chú chấm công bắt đầu bằng `=`, `+`, `-`, `@`, `\t`, `\r` | ô CHỮ có tiền tố `'`, mọi ô bọc `"`, `"` nhân đôi; ô số/ngày do server sinh giữ nguyên (B-L3) |
 | SEC-HR-12 | CSV: header | `Content-Disposition` dựng từ `month` đã validate (`month=../../x` ⇒ 400), `Cache-Control: no-store`, UTF-8 BOM, KHÔNG có cột IP/UA, KHÔNG có `reason` đơn nghỉ |
 | SEC-HR-13 | CSV: hạn mức theo user + ws | quá ⇒ 429; mỗi lần xuất ⇒ audit EXPORT (tháng + số dòng) |
-| SEC-HR-14 | IP/UA: Mia xem lượt chấm của mình | có IP/UA (NĐ 13 Đ.14); Max không xem được của Mia; chỉ HR xem của người khác |
+| SEC-HR-14 | IP/UA: Mia xem lượt chấm của mình | `me/events` có IP/UA (NĐ 13 Đ.14); HR thấy cùng lượt qua `attendance/events?userId=&date=`; Max không xem được của Mia |
 | SEC-HR-15 | `reason` đơn nghỉ | chỉ người gửi + `hr:manage` đọc; không xuất hiện trong thông báo, `HrAuditLog.before/after`, log process (quét log API như SEC-33) |
 | SEC-HR-16 | `HrAuditLog` | chỉ OWNER đọc; Hana ⇒ 403 (B-L1) |
 | SEC-HR-17 | notifications: `POST /me/notifications/:id/read` với id của người khác | 404 (`recipientId = me` trong WHERE — B-M3) |
@@ -243,7 +244,9 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | SEC-HR-23 | `X-Forwarded-For` giả khi `TRUST_PROXY_HOPS=0` | IP lưu = IP socket, không phải giá trị giả |
 | SEC-HR-24 | `userAgent` 10 KB | bị cắt ≤ 256, không 500 |
 | SEC-HR-25 | `PATCH leave-balances/:userId/:year` với `userId` của W2 | 404 |
-| SEC-HR-26 | idempotency replay của user khác (key giống hệt) | không trả kết quả của người kia (AT-05) |
+| SEC-HR-26 | idempotency replay của user khác (key giống hệt) | người thứ hai nhận **201** (lượt mới của chính họ), không phải 200 replay; `firstIn` của mỗi người độc lập (AT-05) |
+| SEC-HR-28 | Max gọi `attendance/me/events?date=&userId=Mia` | chỉ trả lượt của Max (tham số bị bỏ qua hoặc 400) — route mới f8ddb7b |
+| SEC-HR-29 | Mia (thành viên thường) gọi `attendance/events?userId=Max&date=` (lượt thô có IP/UA) | 403; HR với `userId` chưa từng có dữ liệu ⇒ 404 |
 | SEC-HR-27 | route grants: cấp/thu `HR_MANAGE` cho OWNER | 422 `BUSINESS_RULE_VIOLATION` (`rule: GRANT_NOT_ALLOWED`) (OWNER không có grant tường minh) |
 
 ## 8. Đồng thời — `CC-HR-*` (tầng C, ×20 mỗi ca)
@@ -251,7 +254,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | ID | Ca | Kỳ vọng |
 |---|---|---|
 | CC-HR-01 | 2 check-in song song của Mia (key khác) | đúng 1 × 201, 1 × 409 `RESOURCE_CONFLICT` (`reason: already_checked_in`); DB đúng 1 IN WEB chưa hủy (unique index một phần) |
-| CC-HR-02 | 2 check-in song song, CÙNG `Idempotency-Key` | cả hai trả cùng id; DB 1 dòng |
+| CC-HR-02 | 2 check-in song song, CÙNG `Idempotency-Key` | một 201 + một 200 (replay), cùng `firstIn`; DB 1 dòng |
 | CC-HR-03 | approve ‖ cancel cùng đơn | đúng 1 thắng; bên thua 409; trạng thái cuối nhất quán với bên thắng; số dư đúng |
 | CC-HR-04 | 2 đơn ANNUAL song song, tổng vượt số dư | 1 × 201, 1 × 422 `BUSINESS_RULE_VIOLATION` (`rule: INSUFFICIENT_BALANCE`) (khóa advisory) |
 | CC-HR-05 | 2 đơn chồng ngày song song | 1 × 201, 1 × 409 `RESOURCE_CONFLICT` (`reason: overlapping_leave`) |
