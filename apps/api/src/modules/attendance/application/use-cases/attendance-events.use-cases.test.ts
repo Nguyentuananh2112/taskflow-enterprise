@@ -5,6 +5,7 @@ import {
   createAttendanceHarness,
   HANA,
   key,
+  MAX,
   MIA,
   OLIVIA,
   VIC,
@@ -113,6 +114,7 @@ describe('AttendanceEventsUseCases', () => {
     expect(t.notified).toEqual([{ recipientId: MIA, eventId: id, actorId: HANA }]);
     await expect(t.eventUseCases.void(W1, hana, { id, reason: 'lần 2' })).rejects.toMatchObject({
       statusCode: 409,
+      code: 'RESOURCE_CONFLICT',
       details: { reason: 'already_voided' },
     });
   });
@@ -175,6 +177,22 @@ describe('AttendanceEventsUseCases', () => {
       ['OUT', 'Nhầm'],
     ]);
     expect(r.events[0]).toMatchObject({ ip: '203.0.113.7', userAgent: 'Mozilla/5.0' });
+  });
+
+  it('lượt thêm KHÔNG theo thứ tự giờ (OUT trước, IN sau) ⇒ trả theo giờ; me/events không lẫn lượt của Max cùng ngày', async () => {
+    const t = await createAttendanceHarness('2026-11-17 20:00');
+    await t.eventUseCases.adjust(W1, hana, adjustBody({ kind: 'OUT', time: '17:30' }));
+    await t.eventUseCases.adjust(W1, hana, adjustBody({ kind: 'IN', time: '08:00' }));
+    await t.eventUseCases.adjust(W1, hana, adjustBody({ userId: MAX, time: '07:00' }));
+    for (const r of [
+      await t.eventUseCases.listMine({ workspaceId: W1, userId: MIA, date: '2026-11-17' }),
+      await t.eventUseCases.listForHr({ workspaceId: W1, userId: MIA, date: '2026-11-17' }),
+    ]) {
+      expect(r.events.map((e) => [e.userId, e.kind])).toEqual([
+        [MIA, 'IN'],
+        [MIA, 'OUT'],
+      ]);
+    }
   });
 
   it('me/events: nhân viên xem lượt của chính mình kèm IP/UA (NĐ 13 Đ.14); chưa có lượt ⇒ danh sách rỗng, không 404', async () => {

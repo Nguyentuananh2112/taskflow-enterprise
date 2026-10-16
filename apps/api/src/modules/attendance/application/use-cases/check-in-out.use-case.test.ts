@@ -56,18 +56,30 @@ describe('CheckInOutUseCase', () => {
     await t.punch('IN', key(1));
     await expect(t.punch('IN', key(2))).rejects.toMatchObject({
       statusCode: 409,
+      code: 'RESOURCE_CONFLICT',
       details: { reason: 'already_checked_in' },
     });
     expect(await t.backend.eventRows()).toHaveLength(1);
   });
 
-  it('AT-03 lặp check-in cùng Idempotency-Key ⇒ trả thẻ hiện tại, không thêm dòng (cùng firstIn)', async () => {
+  it('AT-03 lặp check-in cùng Idempotency-Key ⇒ trả thẻ hiện tại, replayed (route 200 thay vì 201), không thêm dòng', async () => {
     const t = await setup();
-    const first = await t.punch('IN', key(1));
+    const input = {
+      workspaceId: W1,
+      userId: MIA,
+      kind: 'IN' as const,
+      idempotencyKey: key(1),
+      ip: null,
+      userAgent: null,
+    };
+    const first = await t.checkInOut.execute(input);
+    expect(first.replayed).toBe(false);
     t.clock.advance(60_000);
-    const again = await t.punch('IN', key(1));
+    const again = await t.checkInOut.execute(input);
+    expect(again.replayed).toBe(true);
     expect(await t.backend.eventRows()).toHaveLength(1);
-    expect(again.firstIn).toBe(first.firstIn);
+    expect(again.card.firstIn).toBe(first.card.firstIn);
+    expect(again.card.serverNow).not.toBe(first.card.serverNow);
   });
 
   it('AT-04 cùng key nhưng khác loại (IN rồi OUT) ⇒ 422 IDEMPOTENCY_KEY_REUSED', async () => {
@@ -75,6 +87,7 @@ describe('CheckInOutUseCase', () => {
     await t.punch('IN', key(1));
     await expect(t.punch('OUT', key(1))).rejects.toMatchObject({
       statusCode: 422,
+      code: 'BUSINESS_RULE_VIOLATION',
       details: { rule: 'IDEMPOTENCY_KEY_REUSED' },
     });
   });
@@ -90,6 +103,7 @@ describe('CheckInOutUseCase', () => {
     const t = await setup('2026-11-17 17:30');
     await expect(t.punch('OUT', key(1))).rejects.toMatchObject({
       statusCode: 422,
+      code: 'BUSINESS_RULE_VIOLATION',
       details: { rule: 'NOT_CHECKED_IN' },
     });
     expect(await t.backend.eventRows()).toHaveLength(0);
@@ -117,6 +131,48 @@ describe('CheckInOutUseCase', () => {
       status: 'PRESENT',
       workedMin: 480,
     });
+  });
+});
+
+describe('CheckInOutUseCase — qua nửa đêm (SD-11b, SD-12e) qua luồng chấm thật', () => {
+  it('SD-11b OUT 00:30 gắn 16/11, sáng 17/11 IN mở ngày mới ⇒ cả hai ngày PRESENT 480', async () => {
+    const t = await setup('2026-11-16 08:00');
+    await t.punch('IN', key(1));
+    t.at('2026-11-17 00:30');
+    await t.punch('OUT', key(2));
+    t.at('2026-11-17 08:00');
+    await t.punch('IN', key(3));
+    t.at('2026-11-17 17:30');
+    await t.punch('OUT', key(4));
+    expect((await t.backend.eventRows()).map((e) => e.workDate)).toEqual([
+      '2026-11-16',
+      '2026-11-16',
+      '2026-11-17',
+      '2026-11-17',
+    ]);
+    t.at('2026-11-17 20:00');
+    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    for (const date of ['2026-11-16', '2026-11-17']) {
+      expect(month.days.find((x) => x.date === date)).toMatchObject({
+        status: 'PRESENT',
+        workedMin: 480,
+      });
+    }
+  });
+
+  it('SD-12e qua web: IN đã đóng lúc 17:30 ⇒ OUT 00:30 không có IN mở ⇒ 422 NOT_CHECKED_IN (mồ côi chỉ có qua ADJUSTMENT); 16/11 lastOut vẫn 17:30', async () => {
+    const t = await setup('2026-11-16 08:00');
+    await t.punch('IN', key(1));
+    t.at('2026-11-16 17:30');
+    await t.punch('OUT', key(2));
+    t.at('2026-11-17 00:30');
+    await expect(t.punch('OUT', key(3))).rejects.toMatchObject({
+      details: { rule: 'NOT_CHECKED_IN' },
+    });
+    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    expect(month.days.find((x) => x.date === '2026-11-16')!.lastOut).toBe(
+      instantOf('2026-11-16', hm('17:30'), VN).toISOString(),
+    );
   });
 });
 

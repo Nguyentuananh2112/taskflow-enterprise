@@ -157,14 +157,16 @@ export async function createAttendanceHarness(
     audit,
     /** Đặt đồng hồ theo giờ VN. */
     at: (local: string) => clock.set(vnTime(local)),
-    punch: (kind: 'IN' | 'OUT', idempotencyKey: string, userId = MIA) =>
-      checkInOut.execute({
-        workspaceId: W1,
-        userId,
-        kind,
-        idempotencyKey,
-        ip: '203.0.113.7',
-        userAgent: 'Mozilla/5.0',
-      }),
+    punch: async (kind: 'IN' | 'OUT', idempotencyKey: string, userId = MIA) =>
+      (
+        await checkInOut.execute({
+          workspaceId: W1,
+          userId,
+          kind,
+          idempotencyKey,
+          ip: '203.0.113.7',
+          userAgent: 'Mozilla/5.0',
+        })
+      ).card,
   };
 }

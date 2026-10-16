@@ -46,14 +46,19 @@ describe('workDateFor — ngày công của một lượt mới', () => {
     );
   });
 
-  it('giờ chốt 06:00: OUT 05:59 hôm sau ⇒ ngày của IN; 06:00 ⇒ ngày mới (mồ côi)', () => {
+  it('SD-12b/12c giờ chốt 06:00: OUT 05:59 hôm sau ⇒ ngày của IN; 06:00 ⇒ ngày mới (mồ côi)', () => {
     expect(DAY_ROLLOVER_MIN).toBe(360);
     const prev = [placed('IN', MON, '08:00')];
     expect(workDateFor('OUT', at(TUE, '05:59'), VN, prev)).toBe(MON);
     expect(workDateFor('OUT', at(TUE, '06:00'), VN, prev)).toBe(TUE);
   });
 
-  it('IN đã đóng (OUT 17:30 cùng ngày) ⇒ OUT 00:30 hôm sau KHÔNG gắn vào (không còn IN mở) ⇒ mồ côi', () => {
+  it('SD-12d giờ chốt theo múi giờ LỊCH: OUT 16/11 23:30Z (= 17/11 06:30 VN) ⇒ mồ côi, thuộc 17/11 (so UTC sẽ gắn nhầm 16/11)', () => {
+    const out = new Date('2026-11-16T23:30:00Z');
+    expect(workDateFor('OUT', out, VN, [placed('IN', MON, '08:00')])).toBe(TUE);
+  });
+
+  it('SD-12e IN đã đóng (OUT 17:30 cùng ngày) ⇒ OUT 00:30 hôm sau KHÔNG gắn vào (không còn IN mở) ⇒ mồ côi', () => {
     const prev = [placed('IN', MON, '08:00'), placed('OUT', MON, '17:30')];
     expect(workDateFor('OUT', at(TUE, '00:30'), VN, prev)).toBe(TUE);
   });

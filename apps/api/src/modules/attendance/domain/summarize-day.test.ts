@@ -128,6 +128,18 @@ describe('summarizeDay — qua nửa đêm (SD-11, SD-11b, SD-12 phần tính c�
     expect(r).toMatchObject({ status: 'PRESENT', workedMin: 480, earlyMin: 0 });
   });
 
+  it('SD-11b cả hai ngày PRESENT 480: 16/11 IN 08:00 + OUT 00:30 (17/11, đã gắn 16/11); 17/11 IN 08:00 + OUT 17:30', () => {
+    const tue = addDays(MON, 1);
+    expect(day(MON, [ev('IN', MON, '08:00'), ev('OUT', tue, '00:30')])).toMatchObject({
+      status: 'PRESENT',
+      workedMin: 480,
+    });
+    expect(day(tue, [ev('IN', tue, '08:00'), ev('OUT', tue, '17:30')])).toMatchObject({
+      status: 'PRESENT',
+      workedMin: 480,
+    });
+  });
+
   it('SD-12 OUT mồ côi (không IN) ⇒ ngày đó ABSENT, lastOut là giờ thô', () => {
     const tue = addDays(MON, 1);
     const r = day(tue, [ev('OUT', tue, '01:00')]);
@@ -312,16 +324,17 @@ describe('summarizeDay — hủy lượt, OUT trước IN, đổi lịch, múi g
   });
 });
 
-describe('summarizeDay — chặn muộn/sớm trong ca (A, ngoài bảng SD)', () => {
-  it('vào sau giờ kết thúc ⇒ lateMin = cả ca (570), không hơn', () => {
+describe('summarizeDay — chặn muộn/sớm trong ca (SD-35, SD-36)', () => {
+  it('SD-35 vào sau giờ kết thúc ⇒ late, lateMin = cả ca (570), không hơn; worked 0', () => {
     const r = day(MON, [ev('IN', MON, '18:00'), ev('OUT', MON, '19:00')]);
     expect(r).toMatchObject({ workedMin: 0, lateMin: 570, earlyMin: 0 });
+    expect(r.flags).toMatchObject({ late: true, early: false });
   });
 
-  it('IN/OUT đều trước giờ bắt đầu ⇒ earlyMin = cả ca (570), không phải end − OUT', () => {
+  it('SD-36 IN/OUT đều trước giờ bắt đầu ⇒ early, earlyMin = cả ca (570), không phải end − OUT (990)', () => {
     const r = day(MON, [ev('IN', MON, '00:30'), ev('OUT', MON, '01:00')]);
     expect(r).toMatchObject({ workedMin: 0, lateMin: 0, earlyMin: 570 });
-    expect(r.flags.early).toBe(true);
+    expect(r.flags).toMatchObject({ late: false, early: true });
   });
 });
 
@@ -340,22 +353,35 @@ describe('summarizeDay — đặc tính chung (vòng ngẫu nhiên có seed, tha
   // chứa giờ nghỉ trưa (chính SD-05: 240 + 270 = 510 > 480) ⇒ bất biến đúng là `≤ end − start`.
   const span = S0.endMin - S0.startMin;
 
-  it('0 ≤ workedMin ≤ giờ ca; worked + late + early ≤ end − start khi có IN/OUT; không phụ thuộc thứ tự events', () => {
+  it('0 ≤ workedMin ≤ giờ ca; late, early ≤ end − start; worked + late + early ≤ end − start; không phụ thuộc thứ tự events', () => {
     const rand = rng(20261117);
+    const pick = <T>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)]!;
     for (let i = 0; i < 500; i += 1) {
       const n = 1 + Math.floor(rand() * 5);
-      const events: DayEvent[] = Array.from({ length: n }, () => ({
-        kind: rand() < 0.5 ? 'IN' : 'OUT',
-        occurredAt: instantOf(MON, Math.floor(rand() * 1440), VN),
-        voidedAt: rand() < 0.1 ? new Date(0) : null,
-      }));
-      const r = day(MON, events);
+      // Phút 0..1799: tới 05:59 hôm sau (OUT sau nửa đêm đã gắn vào ngày này — giờ chốt 06:00).
+      const events: DayEvent[] = Array.from({ length: n }, () => {
+        const m = Math.floor(rand() * 1800);
+        return {
+          kind: rand() < 0.5 ? 'IN' : 'OUT',
+          occurredAt: m < 1440 ? instantOf(MON, m, VN) : instantOf(addDays(MON, 1), m - 1440, VN),
+          voidedAt: rand() < 0.1 ? new Date(0) : null,
+        };
+      });
+      const over = {
+        schedule: g(pick([0, 5, 15])),
+        leave: pick([null, null, 'AM', 'PM'] as const),
+      };
+      const r = day(MON, events, over);
       expect(r.workedMin).toBeGreaterThanOrEqual(0);
       expect(r.workedMin).toBeLessThanOrEqual(max);
-      if (r.status === 'PRESENT') {
-        expect(r.workedMin + r.lateMin + r.earlyMin).toBeLessThanOrEqual(span);
-      }
-      expect(day(MON, [...events].reverse())).toEqual(r);
+      expect(r.lateMin).toBeLessThanOrEqual(span);
+      expect(r.earlyMin).toBeLessThanOrEqual(span);
+      expect(r.lateMin).toBeGreaterThanOrEqual(0);
+      expect(r.earlyMin).toBeGreaterThanOrEqual(0);
+      expect(r.workedMin + r.lateMin + r.earlyMin).toBeLessThanOrEqual(span);
+      expect(r.flags.late).toBe(r.lateMin > 0);
+      expect(r.flags.early).toBe(r.earlyMin > 0);
+      expect(day(MON, [...events].reverse(), over)).toEqual(r);
     }
   });
 });

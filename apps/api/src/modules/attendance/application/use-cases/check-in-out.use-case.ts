@@ -20,6 +20,12 @@ export interface CheckInOutInput {
   userAgent: string | null;
 }
 
+/** `replayed`: lặp lại cùng Idempotency-Key ⇒ route trả 200 thay vì 201 (AT-03). */
+export interface CheckInOutResult {
+  card: AttendanceTodayDto;
+  replayed: boolean;
+}
+
 /** Thiết kế §3: `userAgent ≤ 256` — cắt chứ không từ chối (UA dài không phải lỗi của người dùng). */
 const USER_AGENT_MAX = 256;
 
@@ -40,9 +46,10 @@ const keyReused = () =>
 export class CheckInOutUseCase {
   constructor(private readonly d: AttendanceDeps) {}
 
-  async execute(input: CheckInOutInput, retried = false): Promise<AttendanceTodayDto> {
+  async execute(input: CheckInOutInput, retried = false): Promise<CheckInOutResult> {
+    let replayed: boolean;
     try {
-      await this.d.uow.run(() => this.#record(input));
+      replayed = await this.d.uow.run(() => this.#record(input));
     } catch (err) {
       if (err instanceof AlreadyCheckedInError) throw alreadyCheckedIn();
       // Hai request cùng key chạy song song: bên thua bị unique chặn (Postgres đã hủy tx) ⇒ đọc lại bằng
@@ -50,10 +57,11 @@ export class CheckInOutUseCase {
       if (err instanceof IdempotencyKeyTakenError && !retried) return this.execute(input, true);
       throw err;
     }
-    return todayCard(this.d, input);
+    return { card: await todayCard(this.d, input), replayed };
   }
 
-  async #record(input: CheckInOutInput): Promise<void> {
+  /** `true` khi key đã có (lặp lại) — không ghi gì. */
+  async #record(input: CheckInOutInput): Promise<boolean> {
     const { d } = this;
     const { workspaceId, userId, kind } = input;
     const prior = await d.events.findByIdempotencyKey({
@@ -64,7 +72,7 @@ export class CheckInOutUseCase {
     });
     if (prior) {
       if (prior.kind !== kind) throw keyReused();
-      return;
+      return true;
     }
     const now = d.clock.now();
     const { date: today, timezone } = localToday(
@@ -107,5 +115,6 @@ export class CheckInOutUseCase {
       voidedBy: null,
       voidReason: null,
     });
+    return false;
   }
 }
