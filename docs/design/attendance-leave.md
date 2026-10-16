@@ -79,9 +79,9 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 - Chữ ký (góp ý A#5): `summarizeDay({ date, events, schedule /*có timezone*/, holiday, leave /*FULL|AM|PM|null*/, now })` — nhận `now` để `PENDING`/`MISSING_OUT` vẫn thuần, test được.
 - Lượt hợp lệ = chưa bị hủy. `firstIn` = IN sớm nhất, `lastOut` = OUT muộn nhất sau `firstIn`.
 - Web: IN chỉ 1 lần/ngày (lần 2 ⇒ 409 `already_checked_in`, lặp request trùng `Idempotency-Key` của chính mình ⇒ trả kết quả cũ); OUT cần đã IN, bấm OUT lại ⇒ lượt mới, lấy lượt muộn nhất.
-- **Ra sau 00:00** (góp ý A#7): OUT gắn vào `workDate` của lượt IN còn mở trong vòng 16 h; không có IN mở ⇒ OUT thuộc ngày hiện tại (mồ côi, hiển thị thô).
+- **Ra sau 00:00** (góp ý A#7): OUT gắn vào `workDate` của lượt IN còn mở nếu OUT xảy ra **trước 06:00 (giờ của lịch) ngày kế tiếp** `workDate` đó — giờ chốt ngày công, hằng số v1 trong domain (TL chốt phương án b của A, thay "16 h"); không có IN mở ⇒ OUT thuộc ngày hiện tại (mồ côi, hiển thị thô).
 - Giờ làm = phần giao của `[firstIn, lastOut]` với `[start, end]` trừ phần giao với giờ nghỉ trưa (đơn vị phút). Ngoài giờ chỉ hiển thị thô, không tính OT.
-- Muộn = `firstIn − start` nếu `> graceMin`; về sớm = `end − lastOut` nếu > 0. Nghỉ nửa ngày AM ⇒ mốc bắt đầu = `breakEnd`; PM ⇒ mốc kết thúc = `breakStart`.
+- Muộn = `firstIn − start` nếu `> graceMin` (không vượt grace ⇒ `lateMin = 0`, không cờ `late`); giờ làm khi chưa OUT (`inProgress`/`MISSING_OUT`) = 0; về sớm = `end − lastOut` nếu > 0. Nghỉ nửa ngày AM ⇒ mốc bắt đầu = `breakEnd`; PM ⇒ mốc kết thúc = `breakStart`.
 - Trạng thái ngày, **theo thứ tự ưu tiên** (góp ý A#6): `HOLIDAY` > `OFF` (không phải ngày làm) > `ON_LEAVE` (nghỉ cả ngày) > `PRESENT` (+ cờ `late`/`early`; `inProgress` khi `now < end` và chưa OUT) / `MISSING_OUT` (đã qua giờ kết thúc mà chưa OUT) > `ABSENT` (ngày làm đã qua, không IN, không nghỉ) > `PENDING` (hôm nay chưa tới giờ / tương lai).
   - Nghỉ nửa ngày mà nửa kia không đi làm ⇒ `ABSENT` + cờ `absentHalf` (đếm 0,5 ngày vắng, không phải 1).
   - Chấm công vào ngày `OFF`/`HOLIDAY` ⇒ vẫn ghi nhận, trạng thái giữ nguyên + giờ thô (không tính OT ở v1).
