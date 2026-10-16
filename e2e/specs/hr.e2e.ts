@@ -25,8 +25,8 @@ import { arm, assertInert } from '../support/xss';
 
 // E2E-HR-* (docs/design/test-spec-hr.md §9, T-042). Thân viết theo UI THẬT của nhánh web (T-041a/b/c @ feat/T-041c-hr-web
 // 6733a06; E soát a/b trên 268c7d4/7817d42, H soát c trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
-// grants T-037). Đã bỏ fixme: ca chỉ cần T-041a (01, 04, 05, 07, 08, 09) và ca chỉ cần /leave của T-041b (02b, 04b, 07b, 08b, 09b); ca cần /leave hoặc /hr tách thành hậu tố b/c, vẫn
-// `test.fixme` + nhãn vé: vé web tương ứng lên main ⇒ đổi `test.fixme` → `test` trong cùng PR.
+// grants T-037). Đã bỏ fixme mọi ca: T-041a (01, 04, 05, 07, 08, 09), T-041b (02b, 04b, 07b, 08b, 09b), T-041c (02, 03, 06, 07c, 08c). Hậu tố b/c = phần cần /leave (T-041b) hoặc /hr (T-041c); nhãn vé
+// trong tên ca giữ lại để biết ca thuộc màn nào.
 //   T-041a: thẻ Chấm công ở /projects, /attendance, chuông thông báo, nút gọn trên header
 //   T-041b: /leave (số dư, form gửi đơn, đơn của tôi)
 //   T-041c: /hr (Hôm nay, Bảng công tháng + Xuất CSV, Đơn nghỉ, Lịch & ngày lễ, Số phép), công tắc grant ở Thành viên
@@ -169,7 +169,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
 
 // ---------------------------------------------------------------- E2E-HR-02
 
-test.fixme(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒ duyệt ⇒ nhân viên thấy chuông + bảng công "Nghỉ phép"`, async ({
+test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒ duyệt ⇒ nhân viên thấy chuông + bảng công "Nghỉ phép"`, async ({
   page,
   browser,
   request,
@@ -295,7 +295,7 @@ test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online 
 
 // ---------------------------------------------------------------- E2E-HR-03
 
-test.fixme(`E2E-HR-03 [${T041C}]: OWNER bật "Quản lý nhân sự" cho Mia ⇒ tab của Mia hiện mục "Nhân sự" ngay (member:grants-changed); tắt ⇒ mất ngay`, async ({
+test(`E2E-HR-03 [${T041C}]: OWNER bật "Quản lý nhân sự" cho Mia ⇒ tab của Mia hiện mục "Nhân sự" ngay (member:grants-changed); tắt ⇒ mất ngay`, async ({
   page,
   browser,
   request,
@@ -421,7 +421,7 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
 
 // ---------------------------------------------------------------- E2E-HR-06
 
-test.fixme(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên file theo tháng, có BOM`, async ({
+test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên file theo tháng, có BOM`, async ({
   page,
   request,
 }) => {
@@ -512,7 +512,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect(await seriousViolations(page), `/leave (${colorScheme})`).toEqual([]);
     });
 
-    test.fixme(`E2E-HR-07c [${T041C}]: axe 0 serious/critical ở mọi tab /hr (${colorScheme})`, async ({
+    test(`E2E-HR-07c [${T041C}]: axe 0 serious/critical ở mọi tab /hr (${colorScheme})`, async ({
       browser,
       request,
     }) => {
@@ -623,7 +623,7 @@ test(`E2E-HR-08b [${T041B}]: XSS — lý do đơn, ghi chú HR chứa payload �
   await assertInert(page, dialogsMia, 'Mia chuông (đơn bị từ chối)');
 });
 
-test.fixme(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUSTMENT chứa payload ⇒ chỉ là text ở /hr (Đơn nghỉ, Lịch & ngày lễ, lượt chấm)`, async ({
+test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUSTMENT chứa payload ⇒ chỉ là text ở /hr (Đơn nghỉ, Lịch & ngày lễ, lượt chấm)`, async ({
   browser,
   request,
 }) => {
