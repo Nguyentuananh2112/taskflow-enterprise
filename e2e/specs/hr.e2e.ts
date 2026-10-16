@@ -96,9 +96,10 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     const card = attendanceCard(page);
     await expect(card.getByRole('heading', { name: 'Chấm công' })).toBeVisible();
 
-    const clock = card.getByLabel('Giờ hiện tại theo máy chủ');
-    await expect(clock).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
-    const shown = (await clock.textContent()) ?? '';
+    // 31d7e86: <p> có tiền tố sr-only "Giờ hiện tại theo máy chủ: " (trước đó là aria-label) ⇒ khớp theo text.
+    const clock = card.getByRole('paragraph').filter({ hasText: 'Giờ hiện tại theo máy chủ' });
+    await expect(clock).toHaveText(/: \d{2}:\d{2}:\d{2}$/);
+    const shown = ((await clock.textContent()) ?? '').slice(-8);
     expect(
       withinAMinute(shown, vnHm()),
       `đồng hồ ${shown} ≠ giờ VN ${vnHm()} (máy: New York)`,
