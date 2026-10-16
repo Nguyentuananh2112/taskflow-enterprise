@@ -51,7 +51,7 @@ export function MemberTable({ wsId, permission, onLeft }: Props) {
       )}
       {rows.length > 0 && (
         // Màn hẹp: email dài + ô vai trò ⇒ cuộn ngang TRONG bảng, không đẩy cả trang (E3).
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-text-muted">
               <tr>
@@ -61,6 +61,11 @@ export function MemberTable({ wsId, permission, onLeft }: Props) {
                 <th scope="col" className="py-2 pr-3 font-medium">
                   Vai trò
                 </th>
+                {permission.can('hr:grant') && (
+                  <th scope="col" className="py-2 pr-3 font-medium">
+                    Quản lý nhân sự
+                  </th>
+                )}
                 <th scope="col" className="hidden py-2 pr-3 font-medium sm:table-cell">
                   Tham gia
                 </th>

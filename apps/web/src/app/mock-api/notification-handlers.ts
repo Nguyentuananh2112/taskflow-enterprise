@@ -1,5 +1,5 @@
 import { NotificationDto, UnreadNotificationCountDto } from '@taskflow/contracts/hr';
-import { roleHasPermission } from '@taskflow/contracts/rbac';
+import { hasPermission } from '@taskflow/contracts/rbac';
 import { NotificationNewEvent } from '@taskflow/contracts/realtime';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
@@ -62,7 +62,9 @@ export class MockNotifications {
     return this.#items.filter((n) => {
       const m = n.recipientId === userId && db.membershipIn(userId, n.workspaceId);
       if (!m) return false;
-      return !HR_ONLY.has(n.type) || roleHasPermission(m.role, 'hr:manage');
+      // Quyền HIỆN TẠI = role ∪ grants (ADR-119, B-H3): bị thu HR_MANAGE ⇒ thông báo dành cho HR biến mất.
+      const grants = db.workspaces.member(n.workspaceId, userId)?.grants ?? [];
+      return !HR_ONLY.has(n.type) || hasPermission(m.role, grants, 'hr:manage');
     });
   }
 }

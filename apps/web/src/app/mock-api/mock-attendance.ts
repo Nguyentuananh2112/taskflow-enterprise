@@ -28,6 +28,9 @@ type Punch = {
   ip: string | null;
   userAgent: string | null;
   voided?: { at: number; by: UserRef; reason: string };
+  /** T-041c: lượt HR thêm (`ADJUSTMENT`, `by` = HR, `note` = lý do); mặc định WEB. */
+  source?: 'WEB' | 'ADJUSTMENT';
+  note?: string;
 };
 
 const parts = (ms: number) => {
@@ -59,6 +62,7 @@ export class MockAttendance {
 
   #key = (wsId: string, userId: string, date: string) => `${wsId}|${userId}|${date}`;
   today = () => parts(this.now()).date;
+  serverNow = () => new Date(this.now()).toISOString();
 
   punches(wsId: string, userId: string, date: string): readonly Punch[] {
     return this.#punches.get(this.#key(wsId, userId, date)) ?? [];
@@ -93,15 +97,40 @@ export class MockAttendance {
     if (hit) hit.voided = { at: this.now(), by, reason };
   }
 
+  /** HR thêm lượt (T-041c): giữ thứ tự theo giờ để `summarize` lấy đúng IN sớm nhất / OUT muộn nhất. */
+  adjust(
+    wsId: string,
+    userId: string,
+    date: string,
+    p: { kind: Punch['kind']; at: number; by: UserRef; note: string },
+  ): string {
+    const k = this.#key(wsId, userId, date);
+    const id = crypto.randomUUID();
+    const punch: Punch = { id, key: id, ip: null, userAgent: null, source: 'ADJUSTMENT', ...p };
+    this.#punches.set(
+      k,
+      [...(this.#punches.get(k) ?? []), punch].sort((a, b) => a.at - b.at),
+    );
+    return id;
+  }
+
+  /** Mọi (user, ngày, lượt) của workspace — phía HR (`MockHr`) tự lọc: tìm lượt theo id, người đã rời. */
+  *entries(wsId: string): Generator<{ userId: string; date: string; punches: readonly Punch[] }> {
+    for (const [k, punches] of this.#punches) {
+      const [w, userId = '', date = ''] = k.split('|');
+      if (w === wsId) yield { userId, date, punches };
+    }
+  }
+
   events(wsId: string, userId: string, date: string): AttendanceEventDto[] {
     return this.punches(wsId, userId, date).map((p) => ({
       id: p.id,
       userId,
       kind: p.kind,
-      source: 'WEB',
+      source: p.source ?? 'WEB',
       occurredAt: new Date(p.at).toISOString(),
       workDate: date,
-      note: null,
+      note: p.note ?? null,
       createdBy: p.by,
       voidedAt: p.voided ? new Date(p.voided.at).toISOString() : null,
       voidedBy: p.voided?.by ?? null,

@@ -10,6 +10,7 @@ import { Avatar } from '@/shared/ui/avatar';
 import { PAGE_CONTAINER } from '@/shared/ui/page';
 
 import { HeaderAttendance } from './header-attendance';
+import { HeaderHr } from './header-hr';
 
 type Props = Readonly<{
   /** Ô do tầng app ráp vào (vd chuông thông báo) — widget không import widget khác (FSD). */
@@ -26,6 +27,7 @@ export function AppHeader({ actions }: Props) {
           TaskFlow
         </Link>
         <nav aria-label="Tài khoản" className="ml-auto flex items-center gap-1 sm:gap-2">
+          <HeaderHr />
           <HeaderAttendance />
           {actions}
           {user && (

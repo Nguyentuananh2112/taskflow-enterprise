@@ -354,3 +354,63 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     expect(call(2).headers.get('Authorization')).toBe('Bearer new');
   });
 });
+
+describe('http — PUT và download (T-041c)', () => {
+  it('put gửi body JSON + X-Client-Id như POST', async () => {
+    const { http, call } = setup([ok({ id: 'a' })]);
+    await http.put('/x', { schema: Item, body: { grants: [] } });
+    expect(call(0).init.method).toBe('PUT');
+    expect(call(0).headers.get('Content-Type')).toBe('application/json');
+    expect(call(0).headers.get('X-Client-Id')).toBe(CLIENT_ID);
+  });
+
+  it('download ⇒ Blob + tên từ Content-Disposition, Bearer, Accept theo kiểu file', async () => {
+    const csv = new Response('﻿a,b\n', {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="cham-cong-2026-10.csv"',
+      },
+    });
+    const { http, call } = setup([csv], fakeAuth());
+    const file = await http.download('/export.csv', {
+      query: { month: '2026-10' },
+      accept: 'text/csv',
+    });
+    expect(file.filename).toBe('cham-cong-2026-10.csv');
+    expect(await file.blob.text()).toContain('a,b');
+    expect(call(0).url).toBe(`${BASE}/export.csv?month=2026-10`);
+    expect(call(0).headers.get('Accept')).toBe('text/csv');
+    expect(call(0).headers.get('Authorization')).toBe('Bearer old');
+  });
+
+  it('download lỗi ⇒ ApiError từ envelope; TOKEN_EXPIRED ⇒ refresh rồi tải lại', async () => {
+    const { http: h1 } = setup([fail(429, 'RATE_LIMITED')]);
+    await expect(h1.download('/f', { accept: 'text/csv' })).rejects.toMatchObject({
+      code: 'RATE_LIMITED',
+    });
+    const auth = fakeAuth();
+    const { http: h2, call } = setup(
+      [fail(401, 'TOKEN_EXPIRED'), new Response('x', { status: 200 })],
+      auth,
+    );
+    const file = await h2.download('/f', { accept: 'text/csv' });
+    expect(file.filename).toBeNull();
+    expect(call(1).headers.get('Authorization')).toBe('Bearer new');
+  });
+
+  it('filename*=UTF-8 (RFC 6266, tên có dấu) ưu tiên hơn filename=', async () => {
+    const encoded = encodeURIComponent('Bảng công 10.csv');
+    const file = new Response('x', {
+      headers: {
+        'Content-Disposition': `attachment; filename="bang-cong.csv"; filename*=UTF-8''${encoded}`,
+      },
+    });
+    const broken = new Response('x', {
+      headers: { 'Content-Disposition': `attachment; filename="a.csv"; filename*=UTF-8''%E0%A4%A` },
+    });
+    const { http } = setup([file, broken]);
+    expect((await http.download('/f', { accept: 'text/csv' })).filename).toBe('Bảng công 10.csv');
+    expect((await http.download('/f', { accept: 'text/csv' })).filename).toBe('a.csv');
+  });
+});

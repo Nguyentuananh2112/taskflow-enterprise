@@ -4,6 +4,7 @@ export {
   createHttpClient,
   type ApiResult,
   type AuthHooks,
+  type DownloadResult,
   type HttpClient,
   type RequestOptions,
 } from './http';

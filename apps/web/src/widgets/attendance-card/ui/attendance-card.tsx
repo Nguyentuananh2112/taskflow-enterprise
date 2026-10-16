@@ -10,6 +10,7 @@ import {
   useAttendanceToday,
   useServerClock,
 } from '@/entities/attendance';
+import { usePermission } from '@/entities/workspace';
 import { CheckButtons } from '@/features/attendance-check';
 import { cn } from '@/shared/lib/cn';
 import type { AttendanceTodayDto } from '@taskflow/contracts/attendance';
@@ -44,6 +45,7 @@ const needsReminder = (t: AttendanceTodayDto) =>
 export function AttendanceCard({ wsId, enabled }: Props) {
   const today = useAttendanceToday(wsId, enabled);
   const clock = useServerClock(today.data?.serverNow, today.dataUpdatedAt);
+  const canManageHr = usePermission(wsId).can('hr:manage');
   if (!enabled) return null;
   if (!today.data) {
     return today.isError ? (
@@ -116,6 +118,12 @@ export function AttendanceCard({ wsId, enabled }: Props) {
           <Link href={`/w/${wsId}/leave`} className="text-sm text-primary hover:underline">
             Nghỉ phép
           </Link>
+          {/* T-041c: lối vào /hr hiện NGAY khi được cấp (myGrants đổi realtime — E2E-HR-03). */}
+          {canManageHr && (
+            <Link href={`/w/${wsId}/hr`} className="text-sm text-primary hover:underline">
+              Nhân sự
+            </Link>
+          )}
         </div>
       </div>
     </section>

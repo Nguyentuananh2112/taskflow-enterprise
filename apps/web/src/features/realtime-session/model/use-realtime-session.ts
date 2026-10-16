@@ -4,11 +4,15 @@ import {
   NotificationNewEvent,
   WorkspaceAccessRevokedEvent,
 } from '@taskflow/contracts/realtime';
+import type { NotificationType } from '@taskflow/contracts/hr';
 import type { WorkspaceDto } from '@taskflow/contracts/workspace';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
+import { attendanceKeys } from '@/entities/attendance';
+import { hrKeys } from '@/entities/hr';
+import { leaveKeys } from '@/entities/leave';
 import { memberKeys } from '@/entities/member';
 import { notificationKeys } from '@/entities/notification';
 import { sessionKeys } from '@/entities/session';
@@ -20,6 +24,17 @@ import {
 } from '@/entities/workspace';
 import { useRealtimeClient } from '@/shared/socket';
 import { toast } from '@/shared/ui/toast';
+
+/** Thông báo gửi HR (đơn mới / người gửi hủy) ⇒ hàng đợi + số phép trên /hr. */
+const HR_SIDE: ReadonlySet<NotificationType> = new Set(['LEAVE_SUBMITTED', 'LEAVE_CANCELLED']);
+/** Thông báo gửi nhân viên (đơn của mình được xử lý, HR sửa chấm công) ⇒ /leave, thẻ, lịch tháng. */
+const EMPLOYEE_SIDE: ReadonlySet<NotificationType> = new Set([
+  'LEAVE_APPROVED',
+  'LEAVE_REJECTED',
+  'LEAVE_REVOKED',
+  'LEAVE_CANCELLED',
+  'ATTENDANCE_ADJUSTED',
+]);
 
 /**
  * Sự kiện cấp ứng dụng (frontend.md §3.5): đổi role ⇒ usePermission cập nhật tức thì; mất quyền
@@ -75,6 +90,9 @@ export function useRealtimeSession(): void {
         (old) => old && { ...old, myGrants: grants },
       );
       void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
+      // T-041c: mất quyền ⇒ xóa ngay dữ liệu HR đã cache (IP/UA, lý do nghỉ — §9, R27), ở mọi trang.
+      if (!grants.includes('HR_MANAGE'))
+        queryClient.removeQueries({ queryKey: hrKeys.all(workspaceId) });
       toast({
         title: grants.includes('HR_MANAGE')
           ? 'Bạn được cấp quyền Quản lý nhân sự'
@@ -83,8 +101,18 @@ export function useRealtimeSession(): void {
     });
     // ADR-123: thông báo bền đã ghi ở server ⇒ chỉ cần tải lại chuông (số + danh sách).
     const offNotification = client.on('notification:new', (raw) => {
-      if (NotificationNewEvent.safeParse(raw).success) {
-        void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      const event = NotificationNewEvent.safeParse(raw);
+      if (!event.success) return;
+      void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      // T-041c: dữ liệu liên quan đổi theo thông báo, không cần tải lại trang (E2E-HR-02). Các key nằm
+      // dưới ['ws', ws] ⇒ chỉ query đang mở mới refetch.
+      const { type, workspaceId } = event.data.data;
+      if (HR_SIDE.has(type)) {
+        void queryClient.invalidateQueries({ queryKey: hrKeys.all(workspaceId) });
+      }
+      if (EMPLOYEE_SIDE.has(type)) {
+        void queryClient.invalidateQueries({ queryKey: leaveKeys.all(workspaceId) });
+        void queryClient.invalidateQueries({ queryKey: attendanceKeys.all(workspaceId) });
       }
     });
     // Rớt socket thì có thể lỡ `notification:new` ⇒ kết nối lại thì tải lại chuông.

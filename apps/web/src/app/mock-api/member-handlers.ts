@@ -6,16 +6,23 @@ import {
   ListMembersQuery,
   MemberDto,
   RemoveMemberResponse,
+  SetMemberGrantsBody,
 } from '@taskflow/contracts/workspace';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
 import type { MockBoard } from './mock-board';
 import type { MockDb } from './mock-db';
-import { forbiddenUnless, originClientId, requireMember, type MemberContext } from './mock-guard';
+import {
+  forbiddenUnless,
+  forbiddenUnlessGranted,
+  originClientId,
+  requireMember,
+  type MemberContext,
+} from './mock-guard';
 import type { RateLimiter } from './request-guards';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
-import { accessRevoked, roleChanged, unassignAll } from './workspace-events';
+import { accessRevoked, grantsChanged, roleChanged, unassignAll } from './workspace-events';
 
 // Thành viên (data-and-api §2.5, security.md §3.2, ADR-044/046). Hành vi theo use case của API:
 // add-member / change-member-role / remove-member (thứ tự lỗi ghi ở từng handler).
@@ -43,7 +50,7 @@ export function createMemberHandlers(
       email: row.user.email,
       fullName: row.user.fullName,
       role: row.membership.role,
-      grants: [], // T-041c nối grants thật (ADR-119)
+      grants: ws.member(wsId, userId)?.grants ?? [], // ADR-119
       joinedAt: row.joinedAt,
     };
   };
@@ -111,8 +118,11 @@ export function createMemberHandlers(
         });
       }
       if (target.role === 'OWNER' && ownersOf(wsId).length === 1) return lastOwner();
+      const hadGrants = target.grants.length > 0;
       ws.setMember(wsId, target.userId, body.data.role);
       const o = origin(ctx.ok, request);
+      // ADR-119 / B-M2: sang OWNER / VIEWER ⇒ grants về [] trong cùng thao tác + báo người đó.
+      if (hadGrants && target.grants.length === 0) grantsChanged(board, o, wsId, target.userId, []);
       const unassignedTaskCount =
         body.data.role === 'VIEWER'
           ? unassignAll(board, o, actorRef(ctx.ok), wsId, target.userId)
@@ -122,6 +132,25 @@ export function createMemberHandlers(
         member: toDto(wsId, target.userId),
         unassignedTaskCount,
       });
+    }),
+
+    // ADR-119: `hr:grant` (chỉ OWNER) 403 → 400 body → 404 user → 422 GRANT_NOT_ALLOWED (OWNER / VIEWER).
+    http.put(`${base}/:userId/grants`, async ({ request, params }) => {
+      const ctx = requireMember(request, db, params);
+      if (ctx.response) return ctx.response;
+      const denied = forbiddenUnlessGranted(ctx.ok, db, 'hr:grant');
+      if (denied) return denied;
+      const body = await parseBody(request, SetMemberGrantsBody);
+      if (body.response) return body.response;
+      const wsId = String(params.wsId);
+      const target = ws.member(wsId, String(params.userId));
+      if (!target) return notFoundUser();
+      if (body.data.grants.length > 0 && (target.role === 'OWNER' || target.role === 'VIEWER')) {
+        return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'GRANT_NOT_ALLOWED' });
+      }
+      ws.setGrants(wsId, target.userId, body.data.grants);
+      grantsChanged(board, origin(ctx.ok, request), wsId, target.userId, target.grants);
+      return ok(MemberDto, toDto(wsId, target.userId));
     }),
 
     // Tự rời: `member:leave` (mọi role); người khác: `member:remove`. 403 → 404 → 403 theo role mục tiêu → 422.

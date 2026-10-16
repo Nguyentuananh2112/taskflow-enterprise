@@ -19,7 +19,7 @@ type Props = Readonly<{
 export function MonthTable({ month, caption, onSelectDay }: Props) {
   const { timezone: tz } = month;
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-[36rem] border-collapse text-sm">
         <caption className="mb-2 text-left text-base font-semibold">{caption}</caption>
         <thead>
