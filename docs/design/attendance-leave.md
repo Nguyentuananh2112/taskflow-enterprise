@@ -100,10 +100,18 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 | `PUT members/:userId/grants` | `hr:grant` (OWNER) | |
 | `GET /api/v1/me/notifications?cursor=` · `GET …/unread-count` · `POST …/:id/read` · `POST …/read-all` | đăng nhập | chỉ của mình; chỉ workspace còn là thành viên |
 
+**Hợp đồng cho web (góp ý E):**
+
+- CORS `allowedHeaders` (`core/http/middleware.ts`) thêm `Idempotency-Key` (T-038), có ca SEC preflight.
+- `GET attendance/me/today` trả đủ cho thẻ + banner trong 1 lần gọi: `serverNow`, `timezone`, `isWorkday`, `isHoliday`, ca (`start/end/breakStart/breakEnd`), trạng thái ngày (`summarizeDay`), `firstIn`, `lastOut`, nghỉ hôm nay (`FULL|AM|PM|null`). Web chạy đồng hồ theo độ lệch `serverNow`, không tin giờ máy.
+- Quyền: `WorkspaceDto`/membership thêm `myGrants`; event `member:grants-changed { workspaceId, grants }` cập nhật tức thì như `member:role-changed` (T-037/T-040).
+- DTO danh sách thông báo join sẵn ngữ cảnh tối thiểu lúc đọc: `workspaceId` + tên workspace, tên actor, với đơn nghỉ: loại + khoảng ngày (KHÔNG lý do) — không để web gọi N request.
+- Xuất CSV: web `fetch` (Bearer) → Blob → tải; không thêm URL ký.
+
 **Thứ tự lỗi** (góp ý A#11, để F viết SEC khớp): không phải thành viên workspace ⇒ 404 `workspace` (ADR-020); thành viên gọi route `hr:manage` ⇒ **403** (route tồn tại với mọi thành viên, không lộ gì thêm); HR hỏi `userId` chưa từng có dữ liệu trong workspace ⇒ 404; id đơn/lượt chấm của workspace khác hoặc không tồn tại ⇒ 404; thành viên thường hủy đơn của người khác ⇒ 404 (không lộ id đơn tồn tại).
 
 ## 6. Web
-- Trang chủ workspace `/w/[wsId]`: thẻ **Chấm công** (giờ server hiện tại, trạng thái hôm nay, nút Vào/Ra). Header: nút gọn khi đang ở route có `wsId` (`useParams`), và **chuông thông báo** (số chưa đọc, danh sách, đánh dấu đã đọc).
+- `/w/[wsId]` vẫn chuyển sang `/projects` (frontend.md §1.1); thẻ **Chấm công** đặt ở **đầu trang danh sách dự án** — màn hạ cánh sau khi chọn workspace, không thêm màn mới. VIEWER: ẩn toàn bộ UI chấm công/nghỉ (server vẫn 403). Lịch tháng là `<table>` có tiêu đề hàng/cột, trạng thái bằng chữ + biểu tượng (không chỉ màu). Thẻ gồm (giờ server hiện tại, trạng thái hôm nay, nút Vào/Ra). Header: nút gọn khi đang ở route có `wsId` (`useParams`), và **chuông thông báo** (số chưa đọc, danh sách, đánh dấu đã đọc).
 - Sau đăng nhập, ngày làm việc mà chưa chấm vào ⇒ banner nhắc (KHÔNG tự chấm — phiên đăng nhập kéo dài nhiều ngày, mở ở nhà vẫn còn phiên).
 - `/w/[wsId]/attendance`: lịch tháng của tôi. `/w/[wsId]/leave`: đơn của tôi + số phép còn + form gửi.
 - `/w/[wsId]/hr` (ẩn nếu không có `hr:manage`; server vẫn kiểm): Hôm nay (ai vào/muộn/vắng/nghỉ) · Bảng công tháng + xuất CSV · Đơn chờ duyệt · Lịch làm việc & ngày lễ · Số ngày phép. Cài đặt thành viên: công tắc "Quản lý nhân sự" (chỉ OWNER thấy).
@@ -127,7 +135,7 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 | T-038 | A | Module `attendance`: lịch/ngày lễ, check-in/out, `summarizeDay`, bảng công, điều chỉnh/hủy, xuất CSV; cổng `WorkCalendarPort` cho leave | T-037 |
 | T-039 | D | Module `leave`: đơn, khóa chồng ngày, duyệt/từ chối/hủy/thu hồi, số dư; dùng `WorkCalendarPort` | T-037 (+ hợp đồng port của T-038) |
 | T-040 | B | Module `notifications` + `notification:new` + `member:grants-changed`; leave/attendance gọi qua port | T-037 |
-| T-041 | E | Web §6 (bắt đầu từ contracts + mock, nối API khi từng vé xong) | T-037 |
+| T-041a/b/c | E | Web §6 chia 3 để nối API theo từng vé backend: (a) thẻ chấm công + `/attendance` + chuông/header, (b) `/leave`, (c) `/hr` + công tắc grant; bắt đầu từ contracts + mock | T-037 |
 | T-042 | F | test-spec-hr, SEC/CC, E2E, Stryker cho `summarizeDay` + đếm ngày nghỉ | song song |
 
-Ước tính: 3–5 ngày làm việc của cả đội, tùy tải máy.
+Ước tính: 4–5 ngày làm việc của cả đội (đường găng là web ~4 ngày — E), tùy tải máy.
