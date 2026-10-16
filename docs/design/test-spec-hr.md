@@ -57,7 +57,7 @@ Ký hiệu giờ trong bảng = **giờ địa phương theo múi giờ của l�
 
 ## 1. `summarizeDay` (tầng U, M ≥ 90 %)
 
-Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `{ status, firstIn, lastOut, workedMin, lateMin, earlyMin, flags: { late, early, absentHalf, inProgress } }`. Mặc định `schedule = S0`, `leave = null`, `holiday = null`, `now` = sau ngày đang xét (ngày đã qua) trừ khi ghi khác.
+Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now, employed })` (`employed` = ngày nằm trong một nhiệm kỳ — `joinedAt` của membership/departures của B T-037b; tên tham số do A chốt) ⇒ `{ status, firstIn, lastOut, workedMin, lateMin, earlyMin, flags: { late, early, absentHalf, inProgress } }`. Mặc định `schedule = S0`, `leave = null`, `holiday = null`, `now` = sau ngày đang xét (ngày đã qua) trừ khi ghi khác.
 
 | ID | Ngày / bối cảnh | Lượt chấm (giờ địa phương) | Kỳ vọng |
 |---|---|---|---|
@@ -103,6 +103,13 @@ Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `
 | SD-34 | ưu tiên OFF > ON_LEAVE | CN + leave FULL | `OFF` (đơn không tính CN là ngày nghỉ — §2) |
 | SD-35 | vào sau giờ kết thúc (A, chặn trong ca) | IN 18:00 · OUT 19:00 | `late`, **lateMin 570** (`min(IN, end) − start`), worked 0 |
 | SD-36 | IN và OUT đều trước giờ bắt đầu (A) | IN 00:30 · OUT 01:00 | `early`, **earlyMin 570** (`end − max(OUT, start)`), worked 0 — không phải 990 |
+| SD-37 | trước khi gia nhập (`NOT_EMPLOYED`, TL) | nhiệm kỳ từ `joinedAt` 18/11; ngày 16/11 (T2), không lượt nào | **`NOT_EMPLOYED`** (ưu tiên cao nhất), tính 0 ở mọi tổng |
+| SD-38 | chính ngày gia nhập | `joinedAt` 18/11 10:00; ngày 18/11 đã qua, không lượt nào | tính **bình thường** ⇒ `ABSENT` (không phải `NOT_EMPLOYED`) |
+| SD-39 | sau khi rời | nhiệm kỳ 01/11 → `leftAt` 20/11 (`workspace_member_departures`); ngày 23/11, không lượt nào | `NOT_EMPLOYED`; ngày 20/11 (ngày rời) **xem Q9** |
+| SD-40 | rời rồi vào lại | nhiệm kỳ 01/11–10/11 và từ 20/11 | 15/11 `NOT_EMPLOYED`; 20/11 tính bình thường; 05/11 tính bình thường |
+| SD-41 | có lượt chấm ngoài nhiệm kỳ | trước `joinedAt`: IN 08:00 · OUT 17:30 ngày 16/11 | tính **như thường** ⇒ `PRESENT`, worked 480 (dữ liệu thật thắng nhiệm kỳ) |
+| SD-42 | ngoài nhiệm kỳ, chỉ có lượt đã hủy | ngày 16/11 trước `joinedAt`: IN 08:00 (`voidedAt`) | `NOT_EMPLOYED` (lượt đã hủy không tính là "có lượt chấm") |
+| SD-43 | ưu tiên cao nhất | ngoài nhiệm kỳ + `holiday` / + `OFF` (CN) / + leave FULL, không lượt nào | `NOT_EMPLOYED` (trên cả `HOLIDAY` > `OFF` > `ON_LEAVE`) |
 
 **Chặn muộn/sớm trong ca** (A, T-038): `lateMin = min(IN, end) − start` khi `late`; `earlyMin = end − max(OUT, start)` khi `early` — mọi dòng SD-01..34 không đổi kết quả.
 
@@ -198,6 +205,8 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-19 | `timezone` không hợp lệ (`Mars/Base`) | 400 (`Intl.supportedValuesOf('timeZone')`) |
 | AT-20 | HR xem công của Rex (đã rời) | 200, gắn "đã rời" (R30); `userId` chưa từng có dữ liệu ⇒ 404 |
 | AT-21 | `GET attendance/me/today` | đủ trường §5 — `AttendanceTodayDto` (`@taskflow/contracts/attendance`, chốt A/E cho T-041a): `serverNow, timezone, date, isWorkday, isHoliday, holidayName, schedule, status, late, early, absentHalf, inProgress, firstIn, lastOut, leave` — contract test với Zod |
+| AT-22 | tổng tháng (me / HR month) có ngày `NOT_EMPLOYED` | ngày `NOT_EMPLOYED` tính **0** ở mọi tổng: không vào ngày công, ngày vắng (`ABSENT`), ngày muộn/sớm, giờ làm; người vào giữa tháng không bị đếm vắng các ngày trước `joinedAt` |
+| AT-23 | CSV xuất tháng có người vào giữa tháng / đã rời | ô trạng thái ngày ngoài nhiệm kỳ = `NOT_EMPLOYED`, cột số = 0; tổng cuối dòng khớp AT-22; ngày gia nhập hiện bình thường |
 
 ## 6. Grants (`hr:manage`, ADR-119)
 
@@ -271,6 +280,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | CC-HR-12 | tạo lười `LeaveBalance` song song (2 request đọc lần đầu) | đúng 1 dòng, không 500 (`ON CONFLICT DO NOTHING`) |
 | CC-HR-13 | thêm ngày lễ ‖ approve đơn chứa ngày đó | số ngày đọc lại nhất quán với lịch sau cùng (tính khi đọc) |
 | CC-HR-14 | đổi role Hana → VIEWER ‖ cấp grant cho Hana | không bao giờ VIEWER còn grant |
+| CC-HR-15 | xóa thành viên bị rollback không để lại departure (B, T-037b) | (I) lỗi sau khi ghi `workspace_member_departures` nhưng trước commit (fake lỗi trong transaction) ⇒ 0 dòng departure, membership còn; lệnh xóa bị từ chối (LAST_OWNER 422) ⇒ 0 departure; (C) 2 lệnh xóa cùng thành viên song song ×20 ⇒ đúng 1 × 200 và đúng 1 dòng departure |
 
 ## 9. E2E — `E2E-HR-*` (tầng E)
 
@@ -308,3 +318,4 @@ Repo Prisma vẫn loại khỏi mutation (chỉ integration phủ — F3).
 | Q6 | Route nhân viên có nhận `userId` không, hay luôn là `me`? | **ĐÃ CHỐT (TL):** chỉ `me`, không tham số `userId` — giảm bề mặt IDOR (SEC-HR-03) |
 | Q7 | `grace` áp cho về sớm không? | **ĐÃ CHỐT (TL):** không, `grace` chỉ áp cho muộn (SD-06) |
 | Q8 | Ra sau 00:00 khi ngày hôm sau là ngày làm và người đó lại IN lúc 08:00 | **ĐÃ CHỐT (TL):** OUT 00:30 gắn ngày trước; IN 08:00 mở ngày mới (SD-11b). Cập nhật 3a6c7fe: thay "16 h" bằng giờ chốt ngày công **06:00** (giờ của lịch) — biên SD-12b/12c/12d |
+| Q9 | Ngày của `leftAt` (chính ngày rời, không có lượt chấm) | **CHỜ TL**: đề xuất của F — tính bình thường (đối xứng với ngày gia nhập); `NOT_EMPLOYED` từ ngày kế tiếp (SD-39) |
