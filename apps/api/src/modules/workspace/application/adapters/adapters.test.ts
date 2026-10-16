@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeRandom } from '../../../../../test/support';
 import { ResourceConflictError, ResourceNotFoundError } from '../../../../core/errors';
@@ -149,5 +149,21 @@ describe('WorkspaceAccess (lõi của middleware loadMembership) + ProjectAccess
     expect(
       await checker.canAccessProject({ userId: uid('vic'), workspaceId: A, projectId: web }),
     ).toBe(false);
+  });
+});
+
+describe('GR-11: loadMembership đọc grants từ CÙNG dòng membership (ADR-119)', () => {
+  it('resolveActor của HR: đúng 1 lần đọc membership, không lời gọi repo nào khác, có grants', async () => {
+    const { A } = await givenWorkspaceA(h, { Hana: 'MEMBER' });
+    const m = (await h.memberships.find(A, uid('hana')))!;
+    m.setGrants(['HR_MANAGE'], h.clock.now());
+    await h.memberships.save(m);
+
+    const spies = (['find', 'findForShare', 'lockOwners', 'listUserIds'] as const).map((k) =>
+      vi.spyOn(h.memberships, k),
+    );
+    const actor = await new WorkspaceAccess(h).resolveActor(A, uid('hana'));
+    expect(actor).toMatchObject({ role: 'MEMBER', grants: ['HR_MANAGE'] });
+    expect(spies.map((s) => s.mock.calls.length)).toEqual([1, 0, 0, 0]);
   });
 });

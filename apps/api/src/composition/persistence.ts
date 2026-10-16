@@ -21,6 +21,10 @@ import {
   type WorkspaceRepositories,
 } from '../modules/workspace/workspace.module';
 import { PrismaHrAuditLog } from '../modules/workspace/infrastructure/persistence/prisma/prisma-hr-audit-log';
+import {
+  PrismaMemberDepartures,
+  PrismaMembershipTenureReader,
+} from '../modules/workspace/infrastructure/persistence/prisma/prisma-tenure';
 import { PrismaWorkspaceQueries } from '../modules/workspace/infrastructure/persistence/prisma/prisma-queries';
 import {
   PrismaMembershipRepository,
@@ -79,6 +83,8 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     projects: new TaskMirroredProjects(ws.projects, task.db),
     queries: ws.queries,
     hrAudit: ws.hrAudit,
+    departures: ws.departures,
+    tenure: ws.tenure,
   };
 
   const uow = new InMemoryUnitOfWork(
@@ -89,6 +95,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       ws.memberships,
       ws.projects,
       ws.hrAudit,
+      ws.departures,
       task.db,
     ],
     logger,
@@ -138,6 +145,8 @@ export function createPrismaPersistence(d: {
       projects: new PrismaProjectRepository(db),
       queries: new PrismaWorkspaceQueries(db),
       hrAudit: new PrismaHrAuditLog(db),
+      departures: new PrismaMemberDepartures(db),
+      tenure: new PrismaMembershipTenureReader(db),
     },
     // Cùng `db` (một transaction) với Workspace/Auth: cấp số, khóa membership FOR SHARE, audit.
     task: {

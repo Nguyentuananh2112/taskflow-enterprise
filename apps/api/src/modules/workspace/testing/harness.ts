@@ -9,7 +9,6 @@ import {
 } from '../../../../test/support';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type {
-  ITaskAssignmentCleaner,
   IUserDirectory,
   IWorkspacePurger,
   IWorkspaceRealtimeNotifier,
@@ -17,6 +16,15 @@ import type {
 } from '../application/ports/collaborators.port';
 import { HrAuditWriter } from '../application/hr-audit-writer';
 import type { HrAuditEntry, IHrAuditLog } from '../application/ports/hr-audit.port';
+import type {
+  IMemberDepartureLog,
+  IMembershipTenureReader,
+  MemberDeparture,
+} from '../application/ports/tenure.port';
+import {
+  InMemoryMemberDepartures,
+  InMemoryMembershipTenureReader,
+} from '../infrastructure/persistence/in-memory/in-memory-tenure';
 import type { IWorkspaceQueries } from '../application/ports/queries.port';
 import type {
   IMembershipRepository,
@@ -41,31 +49,11 @@ import {
   InMemoryWorkspaceQueries,
 } from '../infrastructure/persistence/in-memory/in-memory-queries';
 import { fixtureId } from './fixture-ids';
+import { SpyTaskAssignmentCleaner } from './spies';
 
 export { GHOST_ID, pid, uid, wsid } from './fixture-ids';
+export { SpyTaskAssignmentCleaner } from './spies';
 export const NOW = '2026-11-01T00:00:00.000Z';
-
-/** Module Task giả (ADR-093): ghi lời gọi + có trong transaction không; trả số task cấu hình được. */
-export class SpyTaskAssignmentCleaner implements ITaskAssignmentCleaner {
-  readonly calls: {
-    input: { workspaceId: string; userId: string; actorId: string };
-    inTransaction: boolean;
-  }[] = [];
-  readonly assigned = new Map<string, number>();
-
-  constructor(private readonly uow: { readonly inTransaction: boolean }) {}
-
-  unassignAllForUser(input: {
-    workspaceId: string;
-    userId: string;
-    actorId: string;
-  }): Promise<{ unassignedTaskCount: number }> {
-    this.calls.push({ input, inTransaction: this.uow.inTransaction });
-    const count = this.assigned.get(input.userId) ?? 0;
-    this.assigned.set(input.userId, 0);
-    return Promise.resolve({ unassignedTaskCount: count });
-  }
-}
 
 type Rows<T> = { rows(): T[] | Promise<T[]> };
 
@@ -80,6 +68,8 @@ export interface WorkspaceBackend {
   users: IUserDirectory & { seed(user: UserSummary): void | Promise<void> };
   queries: IWorkspaceQueries;
   hrAudit: IHrAuditLog & Rows<HrAuditEntry>;
+  departures: IMemberDepartureLog & Rows<MemberDeparture>;
+  tenure: IMembershipTenureReader;
   purger: IWorkspacePurger;
   uow: IUnitOfWork & {
     readonly steps: UowStep[];
@@ -94,6 +84,7 @@ export function inMemoryWorkspaceBackend(): WorkspaceBackend {
   const projects = new InMemoryProjectRepository();
   const users = new InMemoryUserDirectory();
   const hrAudit = new InMemoryHrAuditLog((id) => users.users.get(id)?.fullName);
+  const departures = new InMemoryMemberDepartures();
   return {
     workspaces,
     memberships,
@@ -101,8 +92,10 @@ export function inMemoryWorkspaceBackend(): WorkspaceBackend {
     users,
     queries: new InMemoryWorkspaceQueries(workspaces, memberships, projects, users),
     hrAudit,
+    departures,
+    tenure: new InMemoryMembershipTenureReader(memberships, departures),
     purger: new InMemoryWorkspacePurger(workspaces, memberships, projects),
-    uow: new FakeUnitOfWork(workspaces, memberships, projects, hrAudit),
+    uow: new FakeUnitOfWork(workspaces, memberships, projects, hrAudit, departures),
   };
 }
 
