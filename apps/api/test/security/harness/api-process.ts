@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+
+import { availablePort } from '../../support/ports';
 
 /**
  * Thư mục `apps/api` — process API chạy từ đây như `pnpm dev`. `SEC_API_DIR` trỏ sang worktree
@@ -17,18 +18,12 @@ export interface RunningApi {
   stop(): Promise<void>;
 }
 
-export async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(() => {
-        if (address && typeof address === 'object') resolve(address.port);
-        else reject(new Error('không lấy được cổng trống'));
-      });
-    });
-  });
+/**
+ * Cổng cho process API / container Valkey tạm. F5: KHÔNG dùng `listen(0)` — cổng ephemeral có thể bị
+ * kết nối đi ra chiếm trước khi API listen trên `::` (EADDRINUSE). Xem `test/support/ports.ts`.
+ */
+export function freePort(): Promise<number> {
+  return availablePort();
 }
 
 /**

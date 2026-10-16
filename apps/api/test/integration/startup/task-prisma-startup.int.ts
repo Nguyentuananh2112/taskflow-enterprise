@@ -7,11 +7,13 @@ import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { productionEnvVars } from '../../support';
+import { availablePort } from '../../support/ports';
 import { testDatabaseUrl } from '../db';
 import { stopChildren } from '../support/child-process';
 
 const API_DIR = resolve(import.meta.dirname, '../../..');
-const PORT = 4900 + Math.floor(Math.random() * 90);
+// F5: ngoài dải ephemeral + kiểm trống (trước: 4900+random không kiểm).
+const PORT = await availablePort();
 const STARTUP_TIMEOUT_MS = 120_000;
 const children: ChildProcess[] = [];
 afterAll(() => stopChildren(children));

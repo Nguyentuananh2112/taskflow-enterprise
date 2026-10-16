@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { productionEnvVars, testEnvVars } from '../../support';
+import { availablePort } from '../../support/ports';
 import { testDatabaseUrl } from '../db';
 import {
   disconnectTestPrisma,
@@ -17,7 +18,9 @@ import {
 import { stopChildren } from '../support/child-process';
 
 const API_DIR = resolve(import.meta.dirname, '../../..');
-const PORT = 4600 + Math.floor(Math.random() * 300);
+// F5: ngoài dải ephemeral + kiểm trống (trước: 4600+random không kiểm).
+const PORT = await availablePort();
+const PORT_GUARD = await availablePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 const STARTUP_TIMEOUT_MS = 120_000;
 
@@ -120,7 +123,7 @@ describe('Khởi động main.ts với Prisma + Valkey thật (T-020)', () => {
     async () => {
       const api = startApi(
         productionEnvVars({
-          PORT: String(PORT + 1),
+          PORT: String(PORT_GUARD),
           DATABASE_URL: testDatabaseUrl(),
           APP_ENV: 'staging',
           PERSISTENCE: 'memory',
