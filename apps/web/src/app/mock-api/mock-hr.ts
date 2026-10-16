@@ -7,7 +7,7 @@ import type {
 } from '@taskflow/contracts/attendance';
 import type { UserRefDto } from '@taskflow/contracts/auth';
 
-import { MOCK_TZ, type MockAttendance } from './mock-attendance';
+import { localDate, type MockAttendance } from './mock-attendance';
 import type { MockDb } from './mock-db';
 import type { MockLeave } from './mock-leave';
 import { fail } from './respond';
@@ -33,7 +33,7 @@ export class MockHr {
   day(wsId: string, userId: string, date: string): AttendanceDayDto {
     // Ngày trước khi gia nhập (theo lịch) ⇒ NOT_EMPLOYED (E, TL chốt) — không đè bằng lễ/nghỉ.
     const joined = this.db.workspaces.member(wsId, userId)?.joinedAt;
-    const day = this.attendance.summarize(wsId, userId, date, joined && dateInTz(joined));
+    const day = this.attendance.summarize(wsId, userId, date, joined && localDate(joined));
     if (day.status === 'NOT_EMPLOYED') return day;
     const holiday = this.holidayOn(wsId, date);
     const leave = this.leave.items.find(
@@ -99,16 +99,6 @@ export class MockHr {
     );
   }
 }
-
-/** 'YYYY-MM-DD' theo múi giờ lịch mock. KHÔNG import `@/entities/*` vào mock: route handler chạy phía
- * server — barrel của entity kéo theo hook React ⇒ next dev báo lỗi RSC, mọi route mock 500. */
-const dateInTz = (iso: string) =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: MOCK_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(iso));
 
 /** Nhãn trạng thái trong CSV (server sinh chữ — như API thật). */
 export const CSV_STATUS: Readonly<Record<DayStatus, string>> = {
