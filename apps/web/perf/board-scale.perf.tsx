@@ -1,54 +1,34 @@
-import type { TaskDto, TaskStatus } from '@taskflow/contracts/task';
+import type { TaskDto } from '@taskflow/contracts/task';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { Profiler, type ProfilerOnRenderCallback } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { PROJECT_ID, USER_B, WS_ID, makeTask } from '@test/task-fixture';
+import { PROJECT_ID, WS_ID } from '@test/task-fixture';
 
 import { boardFromTasks, taskKeys, updateBoard, useBoard } from '@/entities/task';
-import { applyRealtimeEvent, parseTaskEvent } from '@/features/board-realtime';
+import {
+  applyRealtimeEvent,
+  createBoardEventSink,
+  parseTaskEvent,
+} from '@/features/board-realtime';
 import { LruSet } from '@/shared/lib/lru-set';
 import { createQueryClient } from '@/shared/query';
 import { KanbanBoard } from '@/widgets/kanban-board';
 
+import { movedEvent, ms, rank, seed, stats } from './scale-fixture';
+
 // Quy mô T-027 (perf/board-500): 1 cột × 500 và 4 cột × 500. Đo theo đường đi THẬT của
 // use-board-realtime: parse Zod → updateBoard(applyRealtimeEvent) → React commit. Rebalance (T-033,
 // tối đa 500 task/cột) phát N `task:moved` liên tiếp; socket giao mỗi event trong một macrotask riêng
-// ⇒ mỗi event một lần commit. jsdom không có layout ⇒ số là CẬN TRÊN cho phần JS/React.
+// ⇒ không gom thì mỗi event một commit (đối chứng `deliver`); sau P1 hook gom theo frame
+// (`deliverViaSink`). jsdom không có layout ⇒ số là CẬN TRÊN cho phần JS/React.
 // Chạy: `pnpm --filter @taskflow/web test:perf` (không nằm trong `pnpm test`).
 
-const STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const scope = { wsId: WS_ID, projectId: PROJECT_ID };
 const noop = () => undefined;
-const OTHER_TAB = crypto.randomUUID(); // X-Client-Id của tab khác (envelope đòi Uuid)
-const ms = (n: number) => Math.round(n * 10) / 10;
-const rank = (prefix: string, i: number) => `${prefix}${String(i).padStart(4, '0')}`;
 
 afterEach(() => cleanup());
-
-function seed(columns: number, perColumn: number): TaskDto[] {
-  return Array.from({ length: columns * perColumn }, (_, i) =>
-    makeTask({
-      status: STATUSES[i % columns] ?? 'TODO',
-      rank: rank('a', Math.floor(i / columns)),
-      title: `Task số ${i}`,
-    }),
-  );
-}
-
-/** Event thô như trên dây (để parse Zod như hook thật), do tab KHÁC gây ra. */
-function movedEvent(task: TaskDto, to: { status: TaskStatus; rank: string }): unknown {
-  const moved = { ...task, status: to.status, rank: to.rank, version: task.version + 1 };
-  return {
-    eventId: crypto.randomUUID(),
-    type: 'task:moved',
-    occurredAt: '2026-10-16T08:00:00.000Z',
-    actorId: USER_B.id,
-    originClientId: OTHER_TAB,
-    data: { task: moved, from: { status: task.status, rank: task.rank }, to },
-  };
-}
 
 function mountBoard(tasks: TaskDto[]) {
   const client = createQueryClient();
@@ -81,29 +61,32 @@ function mountBoard(tasks: TaskDto[]) {
       await new Promise((r) => setTimeout(r, 0));
     });
   };
-  /** Gom N event vào MỘT lần cập nhật (mô phỏng batch theo frame) — để so sánh. */
-  const deliverBatch = async (raws: unknown[]) => {
+  /**
+   * Đường đi THẬT sau P1: mỗi event đến trong một macrotask riêng (như socket) và vào
+   * `createBoardEventSink` (gom theo frame, rAF/timeout thật) — chờ tới khi mọi event đã áp.
+   */
+  let applied = 0;
+  const sink = createBoardEventSink({
+    queryClient: client,
+    scope,
+    ctx,
+    onApplied: (events) => (applied += events.length),
+  });
+  const deliverViaSink = async (raws: unknown[]) => {
+    const target = applied + raws.length;
     await act(async () => {
-      const events = raws.map((raw) => parseTaskEvent(raw)).filter((e) => e !== null);
-      updateBoard(client, scope, (b) =>
-        events.reduce((acc, e) => applyRealtimeEvent(acc, e, ctx), b),
-      );
+      for (const raw of raws) {
+        const event = parseTaskEvent(raw);
+        if (!event) throw new Error('event không hợp lệ');
+        sink.push(event);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      while (applied < target) await new Promise((r) => setTimeout(r, 5));
       await new Promise((r) => setTimeout(r, 0));
     });
   };
-  return { commits, mountWall: wall, mount: commits[0] ?? NaN, deliver, deliverBatch };
+  return { commits, mountWall: wall, mount: commits[0] ?? NaN, deliver, deliverViaSink };
 }
-
-const stats = (xs: number[]) => {
-  const sorted = [...xs].sort((a, b) => a - b);
-  const sum = xs.reduce((s, x) => s + x, 0);
-  return {
-    sum,
-    avg: sum / Math.max(1, xs.length),
-    p95: sorted[Math.floor(sorted.length * 0.95)] ?? NaN,
-    max: sorted.at(-1) ?? NaN,
-  };
-};
 
 async function scenario(label: string, columns: number, perColumn: number) {
   const tasks = seed(columns, perColumn);
@@ -136,16 +119,16 @@ async function scenario(label: string, columns: number, perColumn: number) {
     `rebalance ${seq.n} event lần lượt: wall ${ms(seq.wall)}ms (${ms(seq.wall / seq.n)}ms/event) · commit avg ${ms(seq.avg)} p95 ${ms(seq.p95)} max ${ms(seq.max)}ms`,
   );
 
-  // Cùng N event nhưng gom một lần (rank 'c…') — cận dưới nếu batch theo frame.
+  // Cùng N event qua sink gom theo frame (P1) — rank 'c…'.
   const raws2 = rest.map((t, i) =>
     movedEvent({ ...t, version: t.version + 1 }, { status: 'TODO', rank: rank('c', i) }),
   );
   b.commits.length = 0;
   t0 = performance.now();
-  await b.deliverBatch(raws2);
-  const batch = { commit: stats(b.commits).sum, wall: performance.now() - t0 };
+  await b.deliverViaSink(raws2);
+  const batch = { ...stats(b.commits), wall: performance.now() - t0, commits: b.commits.length };
   report.push(
-    `gom ${raws2.length} event 1 lần: commit ${ms(batch.commit)}ms, wall ${ms(batch.wall)}ms`,
+    `qua sink ${raws2.length} event: ${batch.commits} commit, tổng ${ms(batch.sum)} max ${ms(batch.max)}ms, wall ${ms(batch.wall)}ms`,
   );
 
   console.info(report.join(' · '));
