@@ -118,7 +118,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     );
     await card.getByRole('button', { name: 'Chấm vào' }).click();
     expect((await punched).status()).toBe(201);
-    await expect(page.getByText('Đã chấm vào')).toBeVisible();
+    await expect(page.getByText('Đã chấm vào', { exact: true })).toBeVisible();
     await expect(cardValue(card, 'Trạng thái')).toContainText('Đang làm');
     const inOut = cardValue(card, 'Vào / Ra');
     await expect(inOut).toHaveText(/^\d{2}:\d{2} \/ —$/);
@@ -132,7 +132,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     );
     await attendanceCard(stale).getByRole('button', { name: 'Chấm vào' }).click();
     expect((await again).status()).toBe(409);
-    await expect(stale.getByText('Hôm nay bạn đã chấm vào rồi.')).toBeVisible();
+    await expect(stale.getByText('Hôm nay bạn đã chấm vào rồi.', { exact: true })).toBeVisible();
     await expect(attendanceCard(stale).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
 
     // OUT CÙNG PHÚT với IN bị summarizeDay bỏ qua (so theo phút: `at(OUT) > at(IN)`) ⇒ thẻ vẫn "— " dù toast
@@ -149,7 +149,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     );
     await card.getByRole('button', { name: 'Chấm ra' }).click();
     expect((await out).status(), 'chấm ra lần đầu').toBe(201);
-    await expect(page.getByText('Đã chấm ra')).toBeVisible();
+    await expect(page.getByText('Đã chấm ra', { exact: true })).toBeVisible();
     await expect(inOut).toHaveText(/^\d{2}:\d{2} \/ \d{2}:\d{2}$/);
     await expect(cardValue(card, 'Trạng thái')).not.toContainText('Đang làm');
     await expect(card.getByRole('button', { name: 'Chấm ra lại' })).toBeVisible();
@@ -218,7 +218,7 @@ test.fixme(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realti
   const dialog = hana.page.getByRole('dialog', { name: `Duyệt đơn của ${miaName}?` });
   await dialog.getByLabel(/^Ghi chú/).fill('Chúc mau khỏe');
   await dialog.getByRole('button', { name: 'Duyệt', exact: true }).click();
-  await expect(hana.page.getByText(`Đã duyệt đơn của ${miaName}`)).toBeVisible();
+  await expect(hana.page.getByText(`Đã duyệt đơn của ${miaName}`, { exact: true })).toBeVisible();
 
   // Mia: chuông +1, đơn "Đã duyệt" + ghi chú HR, bảng công ngày đó "Nghỉ phép".
   await expect(bell(page)).toHaveAccessibleName('Thông báo, 1 chưa đọc', REALTIME);
@@ -320,7 +320,9 @@ test.fixme(`E2E-HR-03 [${T041C}]: OWNER bật "Quản lý nhân sự" cho Mia �
   await toggle.click();
   const confirm = page.getByRole('dialog', { name: `Cấp quyền Quản lý nhân sự cho ${miaName}?` });
   await confirm.getByRole('button', { name: 'Cấp quyền' }).click();
-  await expect(page.getByText(`${miaName} đã có quyền Quản lý nhân sự`)).toBeVisible();
+  await expect(
+    page.getByText(`${miaName} đã có quyền Quản lý nhân sự`, { exact: true }),
+  ).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
   await expect(miaCard.getByRole('link', { name: 'Nhân sự' })).toBeVisible(REALTIME);
@@ -331,7 +333,9 @@ test.fixme(`E2E-HR-03 [${T041C}]: OWNER bật "Quản lý nhân sự" cho Mia �
 
   // Thu quyền (tắt ngay, không hỏi) ⇒ trang /hr của Mia đổi sang "không có quyền" không reload.
   await toggle.click();
-  await expect(page.getByText(`Đã thu quyền Quản lý nhân sự của ${miaName}`)).toBeVisible();
+  await expect(
+    page.getByText(`Đã thu quyền Quản lý nhân sự của ${miaName}`, { exact: true }),
+  ).toBeVisible();
   await expect(mia.page.getByText('Bạn không có quyền Quản lý nhân sự')).toBeVisible(REALTIME);
   await mia.close();
 });
@@ -450,7 +454,7 @@ test.fixme(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) �
   const bytes = await readFile(await file.path());
   expect([...bytes.subarray(0, 3)], 'BOM UTF-8 (U+FEFF)').toEqual([0xef, 0xbb, 0xbf]);
   expect(bytes.toString('utf8')).toContain(w.mia.user.fullName);
-  await expect(page.getByText('Đã xuất bảng công')).toBeVisible();
+  await expect(page.getByText('Đã xuất bảng công', { exact: true })).toBeVisible();
 });
 
 // ---------------------------------------------------------------- E2E-HR-07
