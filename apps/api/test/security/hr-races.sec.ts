@@ -6,6 +6,7 @@ import { Actors, type Actor } from './harness/actors';
 import { HR, leaveOf, seedHr, setGrants, submitLeave, withKey, workday } from './harness/hr';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
 import { secCase, useApi } from './harness/suite';
+import { flushRateLimitCounters } from './harness/valkey';
 
 // CC-HR-* (test-spec-hr §8, T-042) — đua HỘP ĐEN qua HTTP + Postgres thật, ×20 mỗi ca. Đặt ở suite bảo
 // mật thay vì `test/integration` vì module chưa có (không import được use case); kiểm cùng bất biến:
@@ -16,6 +17,12 @@ const actors = new Actors(api);
 const RUNS = 20;
 const AREA = 'Mốc 3 HR races';
 const TIMEOUT = 180_000;
+/**
+ * CC-HR-04: hai đơn phải CÙNG năm số dư (mỗi năm 12 ngày riêng). `workday(60..100)` từng vắt sang năm sau khi chạy
+ * từ tháng 10 ⇒ hai đơn khác năm, cả hai 201 đúng luật (T-039 gate). Hai khoảng 12 ngày lịch cố định của năm sau
+ * (12 ngày lịch có ≤ 2 Chủ nhật ⇒ 10–12 ngày làm việc S0, ws mới không có ngày lễ) ⇒ tổng ≥ 20 > 12, mỗi đơn ≤ 12.
+ */
+const NEXT_YEAR = String(new Date().getUTCFullYear() + 1);
 const statuses = (rs: RawResponse[]) => rs.map((r) => r.status).sort((a, b) => a - b);
 /** Mã lỗi (test-spec-hr §0.2b): 409 RESOURCE_CONFLICT + reason (thường); 422 BUSINESS_RULE_VIOLATION + rule (HOA). */
 function expectLoser(rs: RawResponse[], status: 409 | 422, detail: string, tag: string) {
@@ -35,6 +42,9 @@ function expectLoser(rs: RawResponse[], status: 409 | 422, detail: string, tag: 
 }
 
 async function freshPair() {
+  // Mỗi vòng đăng ký 7 user + 5 lời mời từ cùng IP ⇒ ×20 vượt limiter (T-039 gate: 429 từ vòng #5) — xóa bộ đếm
+  // trước mỗi vòng như workspace-races.sec.ts. Không ảnh hưởng bất biến của ca: bộ đếm không phải dữ liệu nghiệp vụ.
+  await flushRateLimitCounters();
   const t = await seedHr(actors);
   return t;
 }
@@ -135,13 +145,13 @@ describe('Đơn nghỉ song song', () => {
         const rs = await Promise.all([
           submitLeave(actors, t.mia, t.ws, {
             type: 'ANNUAL',
-            startDate: workday(60),
-            endDate: workday(70),
+            startDate: `${NEXT_YEAR}-03-02`,
+            endDate: `${NEXT_YEAR}-03-13`,
           }),
           submitLeave(actors, t.mia, t.ws, {
             type: 'ANNUAL',
-            startDate: workday(90),
-            endDate: workday(100),
+            startDate: `${NEXT_YEAR}-04-06`,
+            endDate: `${NEXT_YEAR}-04-17`,
           }),
         ]);
         expect(statuses(rs), `#${i}`).toEqual([201, 422]);
@@ -356,13 +366,14 @@ describe('Đơn nghỉ song song', () => {
       const t = await freshPair();
       await setGrants(actors, t.olivia, t.ws, t.hana.userId, []);
       for (let i = 0; i < RUNS; i += 1) {
-        const l = leaveOf(
-          await submitLeave(actors, t.mia, t.ws, {
-            type: 'UNPAID',
-            startDate: workday(100 + i),
-            endDate: workday(100 + i),
-          }),
-        );
+        const res = await submitLeave(actors, t.mia, t.ws, {
+          type: 'UNPAID',
+          // Bước 2: workday() dời Chủ nhật sang thứ Hai ⇒ bước 1 có thể trùng ngày vòng trước (409 overlap).
+          startDate: workday(100 + 2 * i),
+          endDate: workday(100 + 2 * i),
+        });
+        expect(res.status, `#${i} submit: ${res.text.slice(0, 200)}`).toBe(201);
+        const l = leaveOf(res);
         expect((await decide(t.hana, t.ws, l.id, 'approve', l.version)).status, `#${i}`).toBe(403);
       }
     },
@@ -386,7 +397,9 @@ describe('Đơn nghỉ song song', () => {
           rs.map((r) => r.status),
           `#${i}`,
         ).toEqual([200, 200, 200, 200, 200]);
-        expect(new Set(rs.map((r) => r.text)).size).toBe(1);
+        // So `data` (số dư) — envelope có meta.timestamp/requestId khác nhau mỗi request.
+        const balances = rs.map((r) => JSON.stringify((r.json as { data: unknown }).data));
+        expect(new Set(balances).size, `#${i}: ${balances.join(' | ')}`).toBe(1);
       }
     },
     TIMEOUT,

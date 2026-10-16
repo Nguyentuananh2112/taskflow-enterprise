@@ -15,36 +15,7 @@ export interface DeclaredPending {
 }
 
 export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
-  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 đã merge (e0b0fc9), T-038 gate xanh (0fb023f) — mục của hai vé đã gỡ.
-  'SEC-HR-02b': {
-    ticket: 'T-039',
-    reason:
-      'Vế leave-balances của SEC-HR-02 — route PATCH leave-balances thuộc T-039 (gate T-038: 404)',
-  },
-  'SEC-HR-04': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-05': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-06': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-07': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-10': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-12': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
+  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 đã merge (e0b0fc9), T-038 gate xanh (0fb023f), T-039 gate xanh (87255e8) — mục của ba vé đã gỡ.
   'SEC-HR-15': {
     ticket: 'T-040',
     reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
@@ -64,50 +35,6 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
   'SEC-HR-20': {
     ticket: 'T-040',
     reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-25': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-03': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-04': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-05': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-06': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-07': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-08': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-09': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-10': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-11': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'CC-HR-12': {
-    ticket: 'T-039',
-    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
 };
 
