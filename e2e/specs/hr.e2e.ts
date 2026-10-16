@@ -25,7 +25,7 @@ import { arm, assertInert } from '../support/xss';
 
 // E2E-HR-* (docs/design/test-spec-hr.md §9, T-042). Thân viết theo UI THẬT của nhánh web (T-041a/b/c @ feat/T-041c-hr-web
 // 6733a06; E soát a/b trên 268c7d4/7817d42, H soát c trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
-// grants T-037). Ca CHỈ cần T-041a đã bỏ fixme (01, 04, 05, 07, 08, 09); ca cần /leave hoặc /hr tách thành hậu tố b/c, vẫn
+// grants T-037). Đã bỏ fixme: ca chỉ cần T-041a (01, 04, 05, 07, 08, 09) và ca chỉ cần /leave của T-041b (02b, 04b, 07b, 08b, 09b); ca cần /leave hoặc /hr tách thành hậu tố b/c, vẫn
 // `test.fixme` + nhãn vé: vé web tương ứng lên main ⇒ đổi `test.fixme` → `test` trong cùng PR.
 //   T-041a: thẻ Chấm công ở /projects, /attendance, chuông thông báo, nút gọn trên header
 //   T-041b: /leave (số dư, form gửi đơn, đơn của tôi)
@@ -237,7 +237,7 @@ test.fixme(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realti
   await hana.close();
 });
 
-test.fixme(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online lại ⇒ chuông + danh sách đơn tải lại (thông báo bền)`, async ({
+test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online lại ⇒ chuông + danh sách đơn tải lại (thông báo bền)`, async ({
   page,
   request,
 }) => {
@@ -259,7 +259,9 @@ test.fixme(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ o
   });
   await loginViaUi(page, w.mia.user);
   await page.goto(wsPath(w, 'leave'));
-  await expect(page.getByText('Chờ duyệt')).toBeVisible();
+  // Khoanh trong 'Đơn của tôi': dòng số dư cũng có 'đang chờ duyệt' (getByText không phân biệt hoa thường).
+  const mine = page.getByRole('region', { name: 'Đơn của tôi' });
+  await expect(mine.getByText('Chờ duyệt')).toBeVisible();
   expect(sockets.length, 'socket của Mia đi qua route').toBeGreaterThan(0);
 
   offline = true;
@@ -287,8 +289,8 @@ test.fixme(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ o
   ).toBeVisible();
   await page.keyboard.press('Escape');
   await page.reload();
-  await expect(page.getByText('Bị từ chối')).toBeVisible();
-  await expect(page.getByText('Ghi chú của HR: Thiếu giấy tờ')).toBeVisible();
+  await expect(mine.getByText('Bị từ chối')).toBeVisible();
+  await expect(mine.getByText('Ghi chú của HR: Thiếu giấy tờ')).toBeVisible();
 });
 
 // ---------------------------------------------------------------- E2E-HR-03
@@ -363,7 +365,7 @@ test(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công (thẻ, nút he
   await apiCheckIn(request, w.olivia, (await refreshed(request, w.vic)).accessToken, 403);
 });
 
-test.fixme(`E2E-HR-04b [${T041B}]: VIEWER mở /leave ⇒ báo vai trò, không có form; gửi đơn qua API ⇒ 403`, async ({
+test(`E2E-HR-04b [${T041B}]: VIEWER mở /leave ⇒ báo vai trò, không có form; gửi đơn qua API ⇒ 403`, async ({
   page,
   request,
 }) => {
@@ -499,7 +501,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect(await seriousViolations(page), `chuông thông báo (${colorScheme})`).toEqual([]);
     });
 
-    test.fixme(`E2E-HR-07b [${T041B}]: axe 0 serious/critical ở /leave (${colorScheme})`, async ({
+    test(`E2E-HR-07b [${T041B}]: axe 0 serious/critical ở /leave (${colorScheme})`, async ({
       page,
       request,
     }) => {
@@ -588,7 +590,7 @@ test(`E2E-HR-08 [${T041A}]: XSS (mở rộng SEC-49) — lý do ADJUSTMENT, tên
   await assertInert(page, dialogsMia, 'Mia bảng công (ngày lễ)');
 });
 
-test.fixme(`E2E-HR-08b [${T041B}]: XSS — lý do đơn, ghi chú HR chứa payload ⇒ chỉ là text ở /leave`, async ({
+test(`E2E-HR-08b [${T041B}]: XSS — lý do đơn, ghi chú HR chứa payload ⇒ chỉ là text ở /leave`, async ({
   page,
   context,
   request,
@@ -691,7 +693,7 @@ test(`@main E2E-HR-09 [${T041A}]: responsive 360 → 1440 — thẻ chấm công
   }
 });
 
-test.fixme(`@main E2E-HR-09b [${T041B}]: responsive 360 → 1440 — /leave không cuộn ngang, nút "Gửi đơn" tới được`, async ({
+test(`@main E2E-HR-09b [${T041B}]: responsive 360 → 1440 — /leave không cuộn ngang, nút "Gửi đơn" tới được`, async ({
   page,
   request,
 }) => {
