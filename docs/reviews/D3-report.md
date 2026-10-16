@@ -71,6 +71,8 @@ Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted
 5. **Backup:** App Platform job SCHEDULED / VPS systemd timer chạy script B2; cảnh báo độc lập bằng **heartbeat** uptime monitor (không ping > 26 h ⇒ email) — tương đương "không có `.ok` mới trong 26 h" của B, không cần quyền đọc bucket.
 
 ## Việc mở / phụ thuộc
+- **Sau merge (2026-10-16, Info I2 của G1-auth):** runbook deploy §A.1/§B.2 + go-live devops.md §9 mục 15a — kiểm Valkey `maxmemory-policy noeviction` (branch `docs/valkey-noeviction`). Bảng sự cố thêm dòng Valkey đầy bộ nhớ (`OOM command not allowed`).
+- **3 volume Docker của lát cắt VPS còn trên máy dev — NGƯỜI DÙNG tự quyết** (luật không xóa dữ liệu ⇒ D không xóa): `taskflow-d3-slice_pgdata` (Postgres lát cắt: chỉ schema + dữ liệu thử, không có dữ liệu thật), `taskflow-d3-slice_caddy_data`, `taskflow-d3-slice_caddy_config` (chứng chỉ nội bộ `localhost`). Không container nào dùng. Xóa nếu muốn: `docker volume rm taskflow-d3-slice_pgdata taskflow-d3-slice_caddy_data taskflow-d3-slice_caddy_config`; giữ nếu còn định chạy lại lát cắt VPS (mục dưới).
 - B APPROVE M1 + M2 vòng 2 (@8155ea0). Không chặn merge: lần deploy staging đầu tiên phải kiểm bước "Ghi nhận staging xanh" xanh + `deployments?task=deploy:smoke-ok` có bản ghi — GitHub có thể từ chối deployment REST `ref`=SHA khi Deployment branches = `main`; phương án dự phòng (environment `staging-smoke`) ghi ở runbook deploy §1.
 - B2 (`docker/backup/`) đã vào main ⇒ release build image backup (bước `hashFiles` không còn bỏ qua).
 - Lát cắt VPS: chạy lại api/web với image build từ main hiện tại (migrate đã xanh) — làm khi máy rảnh.

@@ -25,6 +25,13 @@ Thiếu biến/secret ⇒ `deploy.yml` dừng ngay ở bước đầu, in tên t
 ### A.1 Tạo hạ tầng (khi người dùng chốt — tốn tiền, devops.md §1.2)
 1. Managed PostgreSQL 18, region **sgp1**, tên cụm `taskflow-pg`; Managed Valkey `taskflow-valkey`. Bật **Trusted sources** chỉ cho app (sau khi app tạo).
 2. Trong cụm PG: tạo database `taskflow`, user `taskflow_migrator` (App Platform bind user này cho job migrate qua `${pg.DATABASE_URL}`).
+3. **Valkey: eviction policy = `noeviction`** (mặc định của DO, nhưng phải **kiểm**, không giả định). Valkey giữ khóa thu hồi phiên (`auth:sid-revoked:*`, `auth:tv:*`) và bộ đếm rate limit. Authenticator tin `tv` trong cache mà không hỏi DB về `sid` (G1-auth I2) ⇒ nếu Valkey **evict** khóa `sid-revoked` thì access token của phiên đã đăng xuất lại được chấp nhận tới khi hết hạn; evict bộ đếm ⇒ rate limit mất tác dụng mà không ai thấy. Mọi khóa đều có TTL nên bộ nhớ có giới hạn; đầy bộ nhớ với `noeviction` ⇒ lệnh ghi lỗi ⇒ thu hồi/login **fail-closed 503** (an toàn), không âm thầm mở cửa.
+   ```bash
+   # API DO (token chỉ đọc là đủ để kiểm); đặt lại nếu khác: PUT cùng đường dẫn, body {"eviction_policy":"noeviction"}
+   curl -fsS -H "Authorization: Bearer $DO_TOKEN" https://api.digitalocean.com/v2/databases/<uuid taskflow-valkey>/eviction_policy
+   # ⇒ {"eviction_policy":"noeviction"}   — giá trị khác (allkeys_lru, volatile_*, …) ⇒ KHÔNG go-live
+   ```
+   Cảnh báo bộ nhớ Valkey ≥ 80 % (devops.md §6.5): đầy bộ nhớ là sự cố (bảng §C), không phải lý do đổi sang policy có evict.
 ### A.2 User app (chỉ DML) — bắt buộc trước lần deploy đầu
 Kết nối bằng user quản trị (`doadmin`) — **không** dùng cho app:
 ```sql
@@ -84,6 +91,15 @@ Lần đầu, tiếp:
 cd /opt/taskflow && APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=<email> GHCR_OWNER=<owner> bash bootstrap.sh
 ```
 Sinh `.env` + `.env.api` (mật khẩu/secret ngẫu nhiên, quyền 600) và CA/cert TLS cho Valkey (env.ts bắt buộc `rediss://` ở production). Điền `SENTRY_DSN` vào `.env.api` nếu dùng.
+
+Sau lần `up` đầu (và sau mỗi lần admin cài lại `compose.prod.yml`) — **kiểm Valkey không evict** (`compose.prod.yml` đặt `--maxmemory 256mb --maxmemory-policy noeviction`). Valkey giữ khóa thu hồi phiên (`auth:sid-revoked:*`, `auth:tv:*`) và bộ đếm rate limit. Authenticator tin `tv` trong cache mà không hỏi DB về `sid` (G1-auth I2) ⇒ nếu Valkey **evict** khóa `sid-revoked` thì access token của phiên đã đăng xuất lại được chấp nhận tới khi hết hạn; evict bộ đếm ⇒ rate limit mất tác dụng mà không ai thấy. Mọi khóa đều có TTL nên bộ nhớ có giới hạn; đầy bộ nhớ với `noeviction` ⇒ lệnh ghi lỗi ⇒ thu hồi/login **fail-closed 503** (an toàn), không âm thầm mở cửa.
+```bash
+cd /opt/taskflow
+# Mật khẩu qua biến môi trường của valkey-cli (VALKEYCLI_AUTH) — không nằm trên dòng lệnh / trong `ps`.
+sudo docker compose -f compose.prod.yml exec -T -e VALKEYCLI_AUTH="$(sudo sed -n 's/^VALKEY_PASSWORD=//p' .env)" valkey \
+  valkey-cli --tls --cacert /tls/ca.crt -h localhost INFO memory | grep -E 'maxmemory_policy|maxmemory_human|used_memory_human'
+# ⇒ maxmemory_policy:noeviction · maxmemory_human:256.00M
+```
 ### B.3 Deploy
 Actions → **Deploy** → `target = vps`. Hoặc trên máy: `bash deploy.sh <git_sha> <api_digest> <web_digest> <migrate_digest>` — ghi digest → pull → **migrate** → rollout api/web → chờ `/readyz` → smoke qua Caddy/HTTPS → lỗi ⇒ tự rollback. Quay về bản trước bằng tay: `bash deploy.sh --rollback`.
 ### B.4 Sao lưu
@@ -106,6 +122,7 @@ Diễn tập khôi phục: workflow **Backup restore drill (weekly)** (B2) + di�
 | Rollback cũng lỗi | App Platform: Console → Deployments → redeploy bản ACTIVE trước. VPS: sửa `.env` về digest cũ (`.env.previous`) rồi `docker compose -f compose.prod.yml up -d --no-deps api web` |
 | Hỏng dữ liệu do migration | PITR (App Platform, 7 ngày) hoặc restore bản dump (VPS) — `backup-restore.md`; deploy SHA cũ |
 | `permission denied for table …` | Bước grant chưa chạy ⇒ chạy lại job migrate. **Không** đổi app sang user migrator |
+| Log/Sentry `OOM command not allowed when used memory > 'maxmemory'`; login/refresh/logout 503 | Valkey đầy với `noeviction` (đúng thiết kế: fail-closed). Xem `INFO memory` + `INFO keyspace` (khóa nào tăng bất thường — mọi khóa đều có TTL); tăng `maxmemory` / gói Valkey. **Không** đổi sang `allkeys-*`/`volatile-*`: evict `auth:sid-revoked:*` làm phiên đã đăng xuất sống lại |
 
 ## D. Bằng chứng dry-run (không tài nguyên thật)
 Xem `docs/reviews/D3-report.md`: spec render bằng yq, `docker compose config`, `caddy validate`, shellcheck/actionlint, và **lát cắt VPS chạy thật trên máy dev** (domain `localhost`, image build từ repo, NODE_ENV=production).

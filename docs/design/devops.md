@@ -630,6 +630,7 @@ Mỗi mục phải có người ký xác nhận và bằng chứng (link log/ả
 13. ☐ Secret prod sinh mới, khác staging/local. **gitleaks quét toàn bộ lịch sử xanh**. Secret scanning + push protection của GitHub đang bật.
 14. ☐ Đã diễn tập xoay `JWT_ACCESS_SECRET` trên staging, không rớt phiên.
 15. ☐ DB/Valkey chỉ nhận kết nối từ app (trusted sources/VPC). Valkey dùng TLS (`rediss://`) + mật khẩu.
+15a. ☐ Valkey `maxmemory-policy` = **`noeviction`** trên staging **và** prod — đã **kiểm** (App Platform: API `GET /v2/databases/{uuid}/eviction_policy`; VPS: `valkey-cli INFO memory`), lệnh ở `docs/runbook/deploy.md` §A.1 / §B.2. Khóa thu hồi phiên (`auth:sid-revoked:*`, `auth:tv:*`) và bộ đếm rate limit không được bị evict; cảnh báo bộ nhớ Valkey ≥ 80 % đã bật.
 16. ☐ App kết nối DB bằng `taskflow_app`; migrate bằng `taskflow_migrator`.
 17. ☐ Tài khoản hosting, GitHub, GHCR, Sentry, uptime monitor đều bật 2FA. Environment `production` có required reviewers; branch protection bật trên `main`.
 18. ☐ Image public trên GHCR không chứa secret (`docker history` + Trivy secret scan).
