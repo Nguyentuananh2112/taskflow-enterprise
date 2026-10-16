@@ -8,6 +8,8 @@ import { cn } from '@/shared/lib/cn';
 import { Avatar } from '@/shared/ui/avatar';
 import { PAGE_CONTAINER } from '@/shared/ui/page';
 
+import { HeaderAttendance } from './header-attendance';
+
 /** Thanh trên của khu đã đăng nhập: logo, người dùng, Tài khoản, Đăng xuất. */
 export function AppHeader() {
   const { user } = useSession();
@@ -18,6 +20,7 @@ export function AppHeader() {
           TaskFlow
         </Link>
         <nav aria-label="Tài khoản" className="ml-auto flex items-center gap-2">
+          <HeaderAttendance />
           {user && (
             <span className="flex items-center gap-2 text-sm">
               <Avatar name={user.fullName} colorKey={user.id} size="sm" decorative />

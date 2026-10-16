@@ -9,5 +9,7 @@ export function useWorkspace(wsId: string) {
     queryKey: workspaceKeys.detail(wsId),
     queryFn: () => workspaceApi.get(wsId),
     staleTime: 60_000,
+    // Header gọi `usePermission('')` ở trang không có workspace (/w, /account) ⇒ không gửi request rỗng.
+    enabled: wsId !== '',
   });
 }
