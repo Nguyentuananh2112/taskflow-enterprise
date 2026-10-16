@@ -1,10 +1,14 @@
 import { createAttendanceHandlers } from './attendance-handlers';
 import { createAuthHandlers } from './auth-handlers';
+import { createHrAttendanceHandlers } from './hr-attendance-handlers';
+import { createHrCalendarHandlers } from './hr-calendar-handlers';
+import { createHrLeaveHandlers } from './hr-leave-handlers';
 import { createLeaveHandlers } from './leave-handlers';
 import { MockLeave } from './mock-leave';
 import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
+import { MockHr } from './mock-hr';
 import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
 import { createProjectHandlers } from './project-handlers';
@@ -42,12 +46,14 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const attendance = new MockAttendance(options.now ?? Date.now);
   const notifications = new MockNotifications(board, options.now ?? Date.now);
   const leave = new MockLeave(attendance, options.now ?? Date.now);
+  const hr = new MockHr(db, attendance, leave);
   return {
     db,
     board,
     attendance,
     notifications,
     leave,
+    hr,
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins),
@@ -57,6 +63,10 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createTaskHandlers(baseUrl, db, board),
       ...createAttendanceHandlers(baseUrl, db, attendance),
       ...createNotificationHandlers(baseUrl, db, notifications),
+      // HR trước leave của E: `GET leave-requests` không có `mine` thuộc HR (T-041c).
+      ...createHrLeaveHandlers(baseUrl, hr, notifications),
+      ...createHrAttendanceHandlers(baseUrl, hr),
+      ...createHrCalendarHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
     ],
   };

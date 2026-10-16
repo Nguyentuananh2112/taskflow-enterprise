@@ -28,6 +28,8 @@ const halves = (l: Pick<Leave, 'dayPart'>) => (l.dayPart === 'FULL' ? ['AM', 'PM
 
 export class MockLeave {
   items: Leave[] = [];
+  /** HR chỉnh số dư (T-041c): `adjustmentDays` tuyệt đối theo `${ws}|${user}|${year}`. */
+  adjustments = new Map<string, number>();
   constructor(
     private readonly attendance: MockAttendance,
     private readonly now: () => number,
@@ -44,13 +46,14 @@ export class MockLeave {
     const sum = (s: string) => mine.filter((l) => l.status === s).reduce((n, l) => n + l.days, 0);
     const usedDays = sum('APPROVED');
     const pendingDays = sum('PENDING');
+    const adjustmentDays = this.adjustments.get(`${wsId}|${userId}|${year}`) ?? 0;
     return {
       year,
       entitledDays: ENTITLED,
-      adjustmentDays: 0,
+      adjustmentDays,
       usedDays,
       pendingDays,
-      remainingDays: ENTITLED - usedDays,
+      remainingDays: ENTITLED + adjustmentDays - usedDays,
     };
   }
 

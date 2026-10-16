@@ -28,6 +28,9 @@ type Punch = {
   ip: string | null;
   userAgent: string | null;
   voided?: { at: number; by: UserRef; reason: string };
+  /** T-041c: lượt HR thêm (`ADJUSTMENT`, `by` = HR, `note` = lý do); mặc định WEB. */
+  source?: 'WEB' | 'ADJUSTMENT';
+  note?: string;
 };
 
 const parts = (ms: number) => {
@@ -59,6 +62,7 @@ export class MockAttendance {
 
   #key = (wsId: string, userId: string, date: string) => `${wsId}|${userId}|${date}`;
   today = () => parts(this.now()).date;
+  serverNow = () => new Date(this.now()).toISOString();
 
   punches(wsId: string, userId: string, date: string): readonly Punch[] {
     return this.#punches.get(this.#key(wsId, userId, date)) ?? [];
@@ -93,15 +97,52 @@ export class MockAttendance {
     if (hit) hit.voided = { at: this.now(), by, reason };
   }
 
+  /** HR thêm lượt (T-041c): giữ thứ tự theo giờ để `summarize` lấy đúng IN sớm nhất / OUT muộn nhất. */
+  adjust(
+    wsId: string,
+    userId: string,
+    date: string,
+    p: { kind: Punch['kind']; at: number; by: UserRef; note: string },
+  ): string {
+    const k = this.#key(wsId, userId, date);
+    const id = crypto.randomUUID();
+    const punch: Punch = { id, key: id, ip: null, userAgent: null, source: 'ADJUSTMENT', ...p };
+    this.#punches.set(
+      k,
+      [...(this.#punches.get(k) ?? []), punch].sort((a, b) => a.at - b.at),
+    );
+    return id;
+  }
+
+  /** Lượt theo id trong workspace (HR hủy lượt — id của workspace khác ⇒ không thấy). */
+  locate(wsId: string, id: string): { userId: string; date: string; punch: Punch } | undefined {
+    for (const [k, list] of this.#punches) {
+      const [w, userId = '', date = ''] = k.split('|');
+      const punch = w === wsId ? list.find((p) => p.id === id) : undefined;
+      if (punch) return { userId, date, punch };
+    }
+    return undefined;
+  }
+
+  /** Mọi (user, ngày) có lượt chấm trong workspace — HR xem cả người đã rời. */
+  usersWithPunches(wsId: string, from: string, to: string): Set<string> {
+    const out = new Set<string>();
+    for (const k of this.#punches.keys()) {
+      const [w, userId = '', date = ''] = k.split('|');
+      if (w === wsId && date >= from && date <= to) out.add(userId);
+    }
+    return out;
+  }
+
   events(wsId: string, userId: string, date: string): AttendanceEventDto[] {
     return this.punches(wsId, userId, date).map((p) => ({
       id: p.id,
       userId,
       kind: p.kind,
-      source: 'WEB',
+      source: p.source ?? 'WEB',
       occurredAt: new Date(p.at).toISOString(),
       workDate: date,
-      note: null,
+      note: p.note ?? null,
       createdBy: p.by,
       voidedAt: p.voided ? new Date(p.voided.at).toISOString() : null,
       voidedBy: p.voided?.by ?? null,

@@ -55,11 +55,29 @@ export const WorkScheduleDto = WorkShiftDto.extend({
 });
 export type WorkScheduleDto = z.infer<typeof WorkScheduleDto>;
 
+const IANA_SHAPE = /^(UTC|[A-Z][A-Za-z_-]*(\/[A-Za-z0-9_+-]+){1,2})$/;
+/**
+ * Như `isSupportedTimeZone` của A (feat/T-038-attendance d25b8cf): KHÔNG dùng `Intl.supportedValuesOf` —
+ * Node 24 thiếu `Asia/Ho_Chi_Minh` (chỉ có `Asia/Saigon`). Kiểm dạng IANA rồi thử `Intl.DateTimeFormat`.
+ */
+export const TimeZoneName = z
+  .string()
+  .max(64)
+  .refine((tz) => {
+    if (!IANA_SHAPE.test(tz)) return false;
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'Múi giờ không hợp lệ (IANA, vd Asia/Ho_Chi_Minh).');
+
 /** `POST attendance/schedules` — trùng `effectiveFrom` (hôm nay/tương lai) ⇒ thay phiên bản đó. */
 export const CreateWorkScheduleBody = z
   .strictObject({
     effectiveFrom: DateOnly,
-    timezone: z.string().min(1),
+    timezone: TimeZoneName,
     workdays: z.int().min(1).max(127),
     startMin: z.int().min(0).max(1440),
     endMin: z.int().min(0).max(1440),
