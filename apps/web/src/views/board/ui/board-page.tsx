@@ -13,6 +13,7 @@ import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { toast } from '@/shared/ui/toast';
+import { PageMain } from '@/shared/ui/page';
 import { BoardToolbar } from '@/widgets/board-toolbar';
 import { KanbanBoard } from '@/widgets/kanban-board';
 import { TaskDetailDrawer } from '@/widgets/task-detail-drawer';
@@ -84,7 +85,7 @@ function BoardScreen({ route }: Readonly<{ route: Route }>) {
   const archived = project.data?.isArchived ?? false;
   const empty = board.data && Object.keys(board.data.byId).length === 0;
   return (
-    <main className="flex flex-col gap-4 px-4 py-6">
+    <PageMain className="gap-4">
       {project.data ? (
         <BoardToolbar
           scope={scope}
@@ -123,6 +124,6 @@ function BoardScreen({ route }: Readonly<{ route: Route }>) {
         onClose={closeTask}
         onCloseAutoFocus={returnFocus}
       />
-    </main>
+    </PageMain>
   );
 }

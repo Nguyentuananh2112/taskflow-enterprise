@@ -9,6 +9,7 @@ import { Badge } from '@/shared/ui/badge';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { PageMain } from '@/shared/ui/page';
 
 /**
  * `/w` — workspace của tôi (từ `/auth/me`) dẫn tới danh sách project (T-025); nút Tạo workspace và khu
@@ -17,7 +18,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 export function WorkspacePickerPage() {
   const me = useMe();
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
+    <PageMain className="gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">Workspace của bạn</h1>
         <Button asChild variant="secondary" className="ml-auto">
@@ -55,6 +56,6 @@ export function WorkspacePickerPage() {
         </ul>
       )}
       <DeletedWorkspaces />
-    </main>
+    </PageMain>
   );
 }

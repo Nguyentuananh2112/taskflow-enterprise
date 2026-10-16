@@ -7,6 +7,7 @@ import { usePermission, useWorkspace } from '@/entities/workspace';
 import { AddMemberForm } from '@/features/member-add';
 import { isApiError } from '@/shared/api';
 import { EmptyState } from '@/shared/ui/empty-state';
+import { PageMain } from '@/shared/ui/page';
 import { MemberTable } from '@/widgets/member-table';
 import { SettingsTabs } from '@/widgets/settings-tabs';
 
@@ -29,7 +30,7 @@ export function MembersPage() {
     );
   }
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
+    <PageMain className="gap-6">
       <h1 className="text-xl font-semibold">
         Thành viên{workspace.data ? ` · ${workspace.data.name}` : ''}
       </h1>
@@ -43,6 +44,6 @@ export function MembersPage() {
         </section>
       )}
       <MemberTable wsId={wsId} permission={permission} onLeft={() => router.replace('/w')} />
-    </main>
+    </PageMain>
   );
 }
