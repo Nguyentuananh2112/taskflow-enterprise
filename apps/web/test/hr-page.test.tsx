@@ -62,6 +62,20 @@ describe('trang Nhân sự — quyền', () => {
   });
 });
 
+describe('trang Nhân sự — thu quyền', () => {
+  it('đang mở /hr mà bị thu grant ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
+    const { f, an, open, grantHr } = seed();
+    await grantHr(an);
+    open(`/w/${f.wsId}/hr`, an);
+    await screen.findByRole('table', { name: 'Chấm công từng người hôm nay' });
+    await act(() =>
+      f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/members/${an.id}/grants`, { grants: [] }),
+    );
+    expect(await screen.findByText('Bạn không có quyền Quản lý nhân sự')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+});
+
 describe('trang Nhân sự — các tab', () => {
   it('Hôm nay: tổng + từng người (chữ + biểu tượng), tab bằng bàn phím; a11y', async () => {
     const { f, an, open } = seed();

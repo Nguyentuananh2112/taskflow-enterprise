@@ -3,7 +3,7 @@
 import { Uuid } from '@taskflow/contracts/common';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 
-import { useCompanyToday } from '@/entities/hr';
+import { useCompanyToday, useForgetHrWhenRevoked } from '@/entities/hr';
 import { usePermission } from '@/entities/workspace';
 import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
@@ -30,6 +30,7 @@ export function HrPage() {
   const { role, can, viewerId } = usePermission(wsId);
   const allowed = valid && can('hr:manage');
   const today = useCompanyToday(wsId, allowed);
+  useForgetHrWhenRevoked(wsId, role !== null && !allowed);
   const router = useRouter();
   const pathname = usePathname();
   const tab = useSearchParams().get('tab') ?? 'today';

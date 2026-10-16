@@ -1,7 +1,7 @@
 import type { LeaveStatus } from '@taskflow/contracts/hr';
 
 // Dưới gốc ['ws', wsId] (frontend.md §3.2) ⇒ mất quyền workspace (`forgetWorkspace`) dọn luôn; mất
-// `hr:manage` ⇒ `forgetHr` xóa nhánh 'hr' (không để lại dữ liệu nhạy cảm trong cache).
+// `hr:manage` ⇒ `useForgetHrWhenRevoked` xóa nhánh 'hr' (không để lại dữ liệu nhạy cảm trong cache).
 export const hrKeys = {
   all: (wsId: string) => ['ws', wsId, 'hr'] as const,
   today: (wsId: string) => ['ws', wsId, 'hr', 'today'] as const,
