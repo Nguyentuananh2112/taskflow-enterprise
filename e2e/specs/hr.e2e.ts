@@ -23,7 +23,7 @@ import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
 // E2E-HR-* (docs/design/test-spec-hr.md §9, T-042). Thân viết theo UI THẬT của nhánh web (T-041a/b/c @ feat/T-041c-hr-web
-// 6733a06 — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
+// 6733a06, H soát lại trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
 // grants T-037). Vẫn `test.fixme` + nhãn vé: vé web tương ứng lên main ⇒ đổi `test.fixme` → `test` trong cùng PR.
 //   T-041a: thẻ Chấm công ở /projects, /attendance, chuông thông báo, nút gọn trên header
 //   T-041b: /leave (số dư, form gửi đơn, đơn của tôi)
@@ -198,7 +198,7 @@ test.fixme(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realti
 
   await hana.page.getByRole('button', { name: `Duyệt đơn của ${miaName}` }).click();
   const dialog = hana.page.getByRole('dialog', { name: `Duyệt đơn của ${miaName}?` });
-  await dialog.getByLabel('Ghi chú (tùy chọn)').fill('Chúc mau khỏe');
+  await dialog.getByLabel(/^Ghi chú/).fill('Chúc mau khỏe');
   await dialog.getByRole('button', { name: 'Duyệt', exact: true }).click();
   await expect(hana.page.getByText(`Đã duyệt đơn của ${miaName}`)).toBeVisible();
 
@@ -463,6 +463,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       for (const tab of ['today', 'timesheet', 'leave', 'calendar', 'balances']) {
         await hana.page.goto(wsPath(w, `hr?tab=${tab}`));
         await expect(hana.page.getByRole('tabpanel')).toBeVisible();
+        // Không exact: chờ CẢ status của trang ("Đang tải") lẫn của tab ("Đang tải đơn"…) xong rồi mới chạy axe (H).
         await expect(hana.page.getByRole('status', { name: 'Đang tải' })).toHaveCount(0);
         expect(await seriousViolations(hana.page), `/hr?tab=${tab} (${colorScheme})`).toEqual([]);
       }
