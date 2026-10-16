@@ -53,8 +53,20 @@ B review 3fe6e8e (5 điểm đạt, không HIGH) rồi 8c84d93 **APPROVE**. Đã
 - Chế độ bộ nhớ: `leave` trong DTO luôn `null` (không có module leave InMemory). Prisma đúng.
 - Leave context đọc `leave_requests` (bảng của D) — cùng loại vấn đề L2.
 
-## 5. Kết quả lệnh (tới thời điểm viết)
-_(cập nhật ở commit cuối — xem mục 7)_
+## 5. Kết quả lệnh (G, máy dev, head f316db6 trên main f78acf6)
+Mọi bước đọc **exit code**, không grep "passed".
+
+| Bước | Lệnh | Kết quả |
+|---|---|---|
+| Cài | `pnpm install --frozen-lockfile` | OK |
+| Typecheck | `pnpm --filter @taskflow/api typecheck` | exit 0 |
+| Lint | `eslint` các file đổi · `pnpm --filter @taskflow/api lint:deps` | exit 0 · 0 vi phạm depcruise |
+| Unit API | `vitest run --maxWorkers=2` (apps/api) | exit 0 — 123 file / 1292 test |
+| Integration 1 | `test/integration/notifications` — DB `taskflow_t040` tạo mới, Valkey `6380/12`, `REQUIRE_INTEGRATION=1`, KHÔNG `VITEST_MAX_WORKERS` | exit 0 — 11/11 (lần đầu đỏ do fixture email chữ hoa — sửa ở f316db6) |
+| Integration 2 | `test/integration/lsp/workspace.*` + `test/integration/workspace` | exit 0 — 14 file / 146 test |
+| Chưa chạy | `pnpm verify`, integration đầy đủ, `test:security` | TL chạy sau lượt của G (đã hẹn) |
+
+Script G dùng: `scratchpad/run-int.sh` (DROP/CREATE `taskflow_t040` bằng `taskflow_migrator` trên postgres-test rồi `pnpm test:integration <đường dẫn>`).
 
 ## 6. Việc còn lại cho B
 1. Chạy cổng: `pnpm verify` + integration đầy đủ + security (xin lượt TL) — xem mục 7 cái nào đã chạy.
@@ -63,3 +75,5 @@ _(cập nhật ở commit cuối — xem mục 7)_
 4. Báo cáo `docs/reviews/T-040-report.md` + `DONE T-040` cho TL.
 
 ## 7. Nhật ký chạy
+- 22:38 nhận vé; 22:50 WIP đầu (B review: không HIGH) · 22:58 HR_GRANTED/REVOKED (M1) · 23:00 rebase main 0ec3bb4 · 23:06 LOW (a) (B APPROVE) · rebase main f78acf6 (sau T-037b) · integration 2 phần xanh (mục 5).
+- `harness.ts` của Workspace 215 dòng sau rebase nhưng `max-lines` không đếm dòng trống/comment ⇒ eslint exit 0, không tách.
