@@ -3,7 +3,7 @@
 set -uo pipefail
 export MSYS_NO_PATHCONV=1
 cd "$(dirname "$0")/.." || exit 1
-export API_IMAGE=taskflow-api:load MIGRATE_IMAGE=taskflow-api-migrate:load
+export API_IMAGE=${API_IMAGE:-taskflow-api:load} MIGRATE_IMAGE=${MIGRATE_IMAGE:-taskflow-api-migrate:load}
 dc() { docker compose -p taskflow-load -f load/compose.load.yml "$@"; }
 cleanup() { dc --profile tools down --remove-orphans >/dev/null 2>&1; echo "[t027b] down $(date +%T)"; }
 trap cleanup EXIT
