@@ -1,11 +1,11 @@
 # T-041c — Bàn giao cho Engineer E (từ Engineer H, đêm 2026-10-16)
 
-**Nhánh:** `feat/T-041c-hr-web` (không push) · **Dựng trên:** `feat/T-041b-leave-web` @ `8483104` (E rebase lên main `e6d4c61`, đã có T-037, T-040 và contracts attendance thật của A `cdd3096`).
+**Nhánh:** `feat/T-041c-hr-web` (không push) · **Dựng trên:** `feat/T-041b-leave-web` @ `7817d42` → T-041a `268c7d4` → main `cfd2a05` (đã có T-037, T-038 attendance thật, T-040). Lần rebase cuối: `git rebase --onto feat/T-041b-leave-web 8483104 feat/T-041c-hr-web`, không xung đột; sau đó `b8571b3` (mock chuông lọc thông báo HR theo role ∪ grants — E nhờ).
 **Worktree của H:** `C:\Users\Padoma1\AppData\Local\Temp\claude\d--TaskFlow-Enterprise\047c1980-aea3-41ae-a71e-564c65515379\scratchpad\h41c` — E nên tạo worktree riêng từ nhánh, không làm tiếp trong thư mục này (scratchpad của phiên H có thể bị dọn).
 
 ## 1. Trạng thái
 
-Đủ phạm vi T-041c theo vé + `attendance-leave.md` §5, §6, §9. Contracts đều là bản THẬT (`@taskflow/contracts/attendance` của A, `@taskflow/contracts/leave` của D) — thư mục `shared/api/m3-provisional` đã xóa. Chạy trên **mock**; chưa chạy với API thật (T-038/T-039 chưa vào main).
+Đủ phạm vi T-041c theo vé + `attendance-leave.md` §5, §6, §9. Contracts đều là bản THẬT (`@taskflow/contracts/attendance` của A, `@taskflow/contracts/leave` của D) — thư mục `shared/api/m3-provisional` đã xóa. Chạy trên **mock**; chưa chạy với API thật (T-038 đã vào main `cfd2a05`, T-039 chưa).
 
 | Phần | Trạng thái |
 |---|---|
@@ -96,10 +96,10 @@ Script: `scratchpad/ui-review/review.mjs` của phiên H (seed qua mock: OWNER +
 
 ## 7. Việc còn lại cho E
 
-1. Khi T-038/T-039 vào main: rebase chuỗi a → b → c; `pnpm install --frozen-lockfile`, `prisma generate`, xóa `apps/web/.next/dev/types` nếu tsc báo route lạ.
+1. Khi T-039 vào main: rebase chuỗi a → b → c (lần cuối H làm: `--onto feat/T-041b-leave-web <gốc b cũ>`); `pnpm install --frozen-lockfile`, `prisma generate`, xóa `apps/web/.next/dev/types` nếu tsc báo route lạ.
 2. Chạy lại TOÀN BỘ vitest web + `pnpm verify` (xin lượt TL); viết `docs/reviews/T-041c-report.md` + `DONE T-041c`.
 3. Thử `/hr` với API thật (A/D) — các hàm `*ErrorMessage` đọc `rule`/`reason` bằng schema cục bộ; so khớp câu lỗi.
-4. Mock: lịch HR lưu chỉ để hiển thị — `MockAttendance` vẫn tính theo lịch mặc định; đếm ngày nghỉ của `MockLeave` chưa trừ ngày lễ; gửi/hủy đơn trong mock của E chưa ghi thông báo (duyệt/từ chối/thu hồi của mock HR có ghi). Đủ cho UI; E2E dùng API thật.
+4. Mock: lịch HR lưu chỉ để hiển thị — `MockAttendance` vẫn tính theo lịch mặc định; đếm ngày nghỉ của `MockLeave` chưa trừ ngày lễ; gửi/hủy đơn trong mock của E chưa ghi thông báo (duyệt/từ chối/thu hồi của mock HR có ghi); chuông mock lọc thông báo dành cho HR theo role ∪ grants (`b8571b3`). Đủ cho UI; E2E dùng API thật.
 5. Khi T-037 bản có `userId` trong payload `member:grants-changed` (B-part2) vào: thêm `userId` vào `grantsChanged()` ở `app/mock-api/workspace-events.ts`.
 
 ## 8. Ghi chú kỹ thuật
