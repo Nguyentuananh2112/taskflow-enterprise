@@ -41,6 +41,8 @@ Ký hiệu giờ trong bảng = **giờ địa phương theo múi giờ của l�
 
 - **422** ⇒ `BUSINESS_RULE_VIOLATION`, `details.rule` viết HOA: `NOT_CHECKED_IN`, `IDEMPOTENCY_KEY_REUSED`, `HOLIDAY_IN_PAST`, `SCHEDULE_IN_PAST`, `REASON_REQUIRED`, `NO_WORKING_DAYS`, `INSUFFICIENT_BALANCE`, `LEAVE_SPANS_YEARS`, `GRANT_NOT_ALLOWED`.
 - **409** ⇒ `RESOURCE_CONFLICT`, `details.reason` viết thường: `already_checked_in`, `already_voided`, `invalid_transition`, `overlapping_leave`, `requester_not_member`.
+- `REASON_REQUIRED` (TL chốt): chỉ khi lý do TÙY CHỌN trong schema nhưng bắt buộc theo ngữ cảnh (OWNER tự xử lý — AT-13, LV-10, LB-05; ngày lễ quá khứ của OWNER — AT-18). Route mà lý do luôn bắt buộc (void, revoke, ADJUSTMENT) ⇒ body thiếu/rỗng là **400** Zod.
+- `PATCH leave-balances` được phép cả khi làm `remaining − pending` < 0; đơn PENDING vượt số dư bị **approve** trả 422 `INSUFFICIENT_BALANCE` (TL chốt (a), khớp Q4).
 - Xung đột phiên bản giữ `VERSION_CONFLICT` (như task). Test kiểm cả `code` lẫn `details`, không chỉ status.
 
 ### 0.3. Thứ tự kiểm tra (thiết kế §5 + §9, dùng cho mọi ca S)
@@ -146,7 +148,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | LV-17 | APPROVED → CANCELLED | Mia | `startDate` > hôm nay | 200, trả số dư |
 | LV-18 | APPROVED → CANCELLED | Mia | `startDate` ≤ hôm nay (hôm nay theo múi giờ lịch — D-M5) | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) |
 | LV-19 | APPROVED → REVOKED | Hana | `startDate` > hôm nay, có lý do | 200, thông báo LEAVE_REVOKED tới Mia, audit LEAVE_REVOKE |
-| LV-20 | APPROVED → REVOKED | Hana | thiếu lý do | 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`) |
+| LV-20 | APPROVED → REVOKED | Hana | thiếu lý do / rỗng | **400** (Zod — lý do luôn bắt buộc ở route revoke; TL chốt) |
 | LV-21 | APPROVED → REVOKED | Hana | đã bắt đầu | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) |
 | LV-22 | REJECTED/CANCELLED/REVOKED → bất kỳ | ai cũng vậy | — | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) (ma trận đủ 5×5 trạng thái, giống TE-M01..16) |
 | LV-23 | APPROVED → APPROVED | Hana | duyệt lại | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) |
@@ -185,7 +187,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-12 | Hana `POST attendance/events` (ADJUSTMENT) cho Mia — body `AdjustAttendanceBody` strict `{ userId, kind, date, time "HH:mm", nextDay?, reason }` (giờ theo LỊCH của `date`, không `occurredAt` ⇒ gửi kèm 400) | 201 + `AttendanceEventChangeDto { event, day }` (id ở `event.id`), `source ADJUSTMENT`, `createdBy Hana`, thông báo ATTENDANCE_ADJUSTED tới Mia, audit EVENT_ADJUST |
 | AT-13 | Hana ADJUSTMENT cho chính mình | 403 (B-H1); Olivia cho chính mình ⇒ 201 + lý do bắt buộc + HrAuditLog |
 | AT-13b | `GET attendance/events?userId=Mia&date=` (Hana) | 200, `{ events: AttendanceEventDto[] }` theo `workDate`, gồm lượt đã hủy, sắp theo `occurredAt`, có IP/UA; `me/events` cùng DTO nhưng chỉ của mình (f8ddb7b) |
-| AT-14 | void lượt chấm (`VoidAttendanceBody { reason }` ⇒ 200 `{ event, day }`), thiếu lý do | 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`); có lý do ⇒ 200, `voidedAt/By/Reason`, dòng không bị xóa (log bất biến) |
+| AT-14 | void lượt chấm (`VoidAttendanceBody { reason }` ⇒ 200 `{ event, day }`), thiếu lý do / rỗng | **400** (Zod — lý do luôn bắt buộc ở route void; TL chốt); có lý do ⇒ 200, `voidedAt/By/Reason`, dòng không bị xóa (log bất biến) |
 | AT-14b | void lại lượt đã void | 409 `RESOURCE_CONFLICT` (`reason: already_voided`) |
 | AT-15 | void lượt của ws khác | 404 |
 | AT-16 | sau void IN WEB, check-in lại cùng ngày | 201 (unique index một phần loại `voidedAt IS NOT NULL`) |
@@ -261,8 +263,8 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | CC-HR-04 | 2 đơn ANNUAL song song, tổng vượt số dư | 1 × 201, 1 × 422 `BUSINESS_RULE_VIOLATION` (`rule: INSUFFICIENT_BALANCE`) (khóa advisory) |
 | CC-HR-05 | 2 đơn chồng ngày song song | 1 × 201, 1 × 409 `RESOURCE_CONFLICT` (`reason: overlapping_leave`) |
 | CC-HR-06 | 2 đơn AM ‖ PM cùng ngày | cả hai 201 (D-L3) |
-| CC-HR-07 | submit ‖ `PATCH balance` giảm | không bao giờ có trạng thái số dư âm do PENDING (cùng khóa — D) |
-| CC-HR-08 | approve ‖ HR giảm số dư | approve 422 hoặc PATCH thấy giữ chỗ; không âm |
+| CC-HR-07 | submit ANNUAL ‖ `PATCH balance` giảm | tuần tự hóa dưới cùng khóa, chứng minh bằng thứ tự audit: [`BALANCE_ADJUST`] trước ⇒ submit 422 `INSUFFICIENT_BALANCE` + 0 dòng; [`LEAVE_SUBMIT`, `BALANCE_ADJUST`] ⇒ submit 201 và PATCH **vẫn 200** dù `remaining − pending` < 0 (TL chốt (a)); số dư cuối khớp thứ tự |
+| CC-HR-08 | approve ‖ HR giảm số dư | thứ tự audit [`LEAVE_DECIDE`, `BALANCE_ADJUST`] ⇒ APPROVED (PATCH 200, số dư có thể âm — Q4); [`BALANCE_ADJUST`] trước ⇒ approve **bắt buộc** 422 `INSUFFICIENT_BALANCE`, đơn vẫn PENDING; số dư cuối khớp thứ tự |
 | CC-HR-09 | 2 HR approve ‖ reject cùng đơn | 1 thắng, 1 409 |
 | CC-HR-10 | revoke ‖ người gửi cancel (APPROVED, chưa bắt đầu) | 1 thắng; số dư trả đúng 1 lần |
 | CC-HR-11 | thu grant ‖ HR approve (= SEC-HR-10 ở tầng C) | không approve nào commit sau commit thu grant |
