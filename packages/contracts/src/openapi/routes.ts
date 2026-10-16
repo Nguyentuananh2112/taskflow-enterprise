@@ -1,5 +1,28 @@
 import * as z from 'zod';
 
+import {
+  AdjustAttendanceBody,
+  AttendanceCompanyMonthQuery,
+  AttendanceCompanyTodayDto,
+  AttendanceEventChangeDto,
+  AttendanceEventParams,
+  AttendanceEventsDto,
+  AttendanceEventsQuery,
+  AttendanceMemberMonthDto,
+  AttendanceMonthDto,
+  AttendanceMonthQuery,
+  AttendanceTodayDto,
+  CreateWorkScheduleBody,
+  DeleteHolidayBody,
+  HolidayDateParams,
+  HolidayDto,
+  HolidayListQuery,
+  IdempotencyKeyHeaders,
+  MyAttendanceEventsQuery,
+  PutHolidayBody,
+  VoidAttendanceBody,
+  WorkScheduleDto,
+} from '../attendance/attendance.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
   HrAuditLogDto,
@@ -76,8 +99,19 @@ export interface ApiRoute {
   params?: z.ZodObject;
   query?: z.ZodType;
   body?: z.ZodType;
-  /** 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`. */
-  response: { status: 200 | 201 | 204; data?: z.ZodType; paged?: boolean };
+  /** Header bắt buộc (vd `Idempotency-Key`) ⇒ `parameter` `in: header`. */
+  headers?: z.ZodObject;
+  /**
+   * 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`; `csv` ⇒ thân `text/csv` (không
+   * envelope); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
+   */
+  response: {
+    status: 200 | 201 | 204;
+    data?: z.ZodType;
+    paged?: boolean;
+    csv?: boolean;
+    alsoOk?: boolean;
+  };
   /** Mã lỗi đặc thù của route (ngoài lỗi chung 400/401/403/404/429). */
   errors?: readonly ErrorCode[];
 }
@@ -324,6 +358,174 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     params: NotificationParams,
     response: { status: 204 },
+  },
+
+  // ---------- attendance (T-038) ----------
+  {
+    method: 'get',
+    path: `${WS}/attendance/me/today`,
+    summary: 'Thẻ chấm công hôm nay của tôi (giờ server, lịch, trạng thái, nghỉ hôm nay)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    response: { status: 200, data: AttendanceTodayDto },
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/me`,
+    summary: 'Bảng công tháng của tôi (đủ mọi ngày)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: AttendanceMonthQuery,
+    response: { status: 200, data: AttendanceMonthDto },
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/me/events`,
+    summary: 'Lượt chấm thô của tôi trong ngày (kèm IP / User-Agent — NĐ 13 Đ.14)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: MyAttendanceEventsQuery,
+    response: { status: 200, data: AttendanceEventsDto },
+  },
+  {
+    method: 'post',
+    path: `${WS}/attendance/check-in`,
+    summary:
+      'Chấm vào (giờ server). 201 lượt mới; lặp cùng Idempotency-Key ⇒ 200 thẻ hiện tại. 10/phút/user',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    headers: IdempotencyKeyHeaders,
+    response: { status: 201, data: AttendanceTodayDto, alsoOk: true },
+    errors: ['RESOURCE_CONFLICT', 'BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'post',
+    path: `${WS}/attendance/check-out`,
+    summary:
+      'Chấm ra (giờ server; sau 00:00, trước 06:00 gắn ngày của IN còn mở). Idempotency-Key như check-in',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    headers: IdempotencyKeyHeaders,
+    response: { status: 201, data: AttendanceTodayDto, alsoOk: true },
+    errors: ['BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/today`,
+    summary: 'Hôm nay cả công ty (hr:manage) — không phân trang, sắp theo tên',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    response: { status: 200, data: AttendanceCompanyTodayDto },
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance`,
+    summary: 'Bảng công tháng cả công ty (hr:manage) — mỗi dòng một người + tổng, cursor ≤ 50',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: AttendanceCompanyMonthQuery,
+    response: { status: 200, data: z.array(AttendanceMemberMonthDto), paged: true },
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/export.csv`,
+    summary:
+      'Xuất CSV bảng công tháng (hr:manage) — UTF-8 BOM, không IP/UA, chống CSV injection, audit EXPORT, 20/giờ/user',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: AttendanceMonthQuery,
+    response: { status: 200, csv: true },
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/events`,
+    summary: 'Lượt chấm thô của một nhân viên trong ngày, gồm lượt đã hủy (hr:manage)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: AttendanceEventsQuery,
+    response: { status: 200, data: AttendanceEventsDto },
+  },
+  {
+    method: 'post',
+    path: `${WS}/attendance/events`,
+    summary: 'Thêm lượt ADJUSTMENT (hr:manage, bắt buộc lý do; không tự điều chỉnh trừ OWNER)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    body: AdjustAttendanceBody,
+    response: { status: 201, data: AttendanceEventChangeDto },
+  },
+  {
+    method: 'post',
+    path: `${WS}/attendance/events/{eventId}/void`,
+    summary: 'Hủy một lượt chấm (đánh dấu, không xóa — hr:manage, bắt buộc lý do)',
+    tag: 'hr',
+    security: 'bearer',
+    params: AttendanceEventParams,
+    body: VoidAttendanceBody,
+    response: { status: 200, data: AttendanceEventChangeDto },
+    errors: ['RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/schedules`,
+    summary: 'Các phiên bản lịch làm việc (rỗng ⇒ lịch mặc định)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    response: { status: 200, data: z.array(WorkScheduleDto) },
+  },
+  {
+    method: 'post',
+    path: `${WS}/attendance/schedules`,
+    summary: 'Lưu phiên bản lịch từ hôm nay trở đi (hr:manage; trùng ngày hiệu lực ⇒ thay)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    body: CreateWorkScheduleBody,
+    response: { status: 201, data: WorkScheduleDto },
+    errors: ['BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'get',
+    path: `${WS}/attendance/holidays`,
+    summary: 'Ngày lễ trong năm',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: HolidayListQuery,
+    response: { status: 200, data: z.array(HolidayDto) },
+  },
+  {
+    method: 'put',
+    path: `${WS}/attendance/holidays/{date}`,
+    summary: 'Tạo / đổi tên ngày lễ (hr:manage; ngày đã qua: chỉ OWNER + lý do)',
+    tag: 'hr',
+    security: 'bearer',
+    params: HolidayDateParams,
+    body: PutHolidayBody,
+    response: { status: 200, data: HolidayDto },
+    errors: ['BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'delete',
+    path: `${WS}/attendance/holidays/{date}`,
+    summary: 'Xóa ngày lễ — idempotent (hr:manage; ngày đã qua: chỉ OWNER + lý do)',
+    tag: 'hr',
+    security: 'bearer',
+    params: HolidayDateParams,
+    body: DeleteHolidayBody,
+    response: { status: 204 },
+    errors: ['BUSINESS_RULE_VIOLATION'],
   },
 
   // ---------- projects ----------

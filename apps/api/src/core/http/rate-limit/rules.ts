@@ -99,6 +99,26 @@ export const RATE_LIMIT_RULES = {
       failMode: 'open',
     }),
   ],
+  /** Check-in / check-out (thiết kế §5): 10/phút/user — chống bấm liên tục, không chặn thử lại vì mạng. */
+  attendancePunch: [
+    rule({
+      id: 'attendance-punch-user',
+      windowMs: MINUTE,
+      limit: 10,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
+  /** Xuất CSV bảng công (SEC-HR-13): truy vấn nặng cả công ty — 20/giờ/user. */
+  attendanceExport: [
+    rule({
+      id: 'attendance-export-user',
+      windowMs: HOUR,
+      limit: 20,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
   /** Mặc định cho API đã xác thực / chưa xác thực (gắn toàn cục). */
   authenticated: [
     rule({ id: 'api-user', windowMs: MINUTE, limit: 300, key: 'user', failMode: 'open' }),

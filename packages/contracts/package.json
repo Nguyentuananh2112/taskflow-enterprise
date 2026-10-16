@@ -10,6 +10,7 @@
     "./workspace": "./src/workspace/index.ts",
     "./project": "./src/project/project.schemas.ts",
     "./task": "./src/task/index.ts",
+    "./attendance": "./src/attendance/index.ts",
     "./audit": "./src/audit/audit.schemas.ts",
     "./openapi": "./src/openapi/index.ts",
     "./realtime": "./src/realtime/events.ts",

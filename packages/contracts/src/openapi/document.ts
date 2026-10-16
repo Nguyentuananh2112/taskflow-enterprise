@@ -21,7 +21,10 @@ const toSchema = (schema: z.ZodType, io: 'input' | 'output'): Json => {
 };
 
 /** Mỗi thuộc tính của object params/query ⇒ một `parameter`. */
-function parametersOf(schema: z.ZodType | undefined, location: 'path' | 'query'): Json[] {
+function parametersOf(
+  schema: z.ZodType | undefined,
+  location: 'path' | 'query' | 'header',
+): Json[] {
   if (!schema) return [];
   const json = toSchema(schema, 'input');
   const properties = (json['properties'] ?? {}) as Record<string, Json>;
@@ -37,7 +40,13 @@ function parametersOf(schema: z.ZodType | undefined, location: 'path' | 'query')
 const STATUS_TEXT: Record<number, string> = { 200: 'OK', 201: 'Đã tạo', 204: 'Không có nội dung' };
 
 function successResponse(route: ApiRoute): Json {
-  const { status, data, paged } = route.response;
+  const { status, data, paged, csv } = route.response;
+  if (csv) {
+    return {
+      description: 'CSV UTF-8 có BOM (`Content-Disposition: attachment`)',
+      content: { 'text/csv': { schema: { type: 'string' } } },
+    };
+  }
   if (status === 204 || !data) return { description: STATUS_TEXT[status] };
   const meta = paged ? ApiMeta.extend({ page: PageMeta }) : ApiMeta;
   const envelope = z.object({ success: z.literal(true), data, meta });
@@ -48,7 +57,11 @@ function successResponse(route: ApiRoute): Json {
 }
 
 function operationOf(route: ApiRoute): Json {
-  const parameters = [...parametersOf(route.params, 'path'), ...parametersOf(route.query, 'query')];
+  const parameters = [
+    ...parametersOf(route.params, 'path'),
+    ...parametersOf(route.query, 'query'),
+    ...parametersOf(route.headers, 'header'),
+  ];
   const specific = route.errors?.length ? ` Mã lỗi đặc thù: ${route.errors.join(', ')}.` : '';
   return {
     operationId: `${route.method}_${route.path.replace(/[{}]/g, '').replace(/[^A-Za-z0-9]+/g, '_')}`,
@@ -71,6 +84,9 @@ function operationOf(route: ApiRoute): Json {
       : {}),
     responses: {
       [String(route.response.status)]: successResponse(route),
+      ...(route.response.alsoOk
+        ? { 200: { ...successResponse(route), description: 'Lặp lại idempotent — thẻ hiện tại' } }
+        : {}),
       default: {
         description: `Lỗi theo envelope chung (thứ tự 401 → 400 → 404 → 403 → 400 body → 422 → 409).${specific}`,
         content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },

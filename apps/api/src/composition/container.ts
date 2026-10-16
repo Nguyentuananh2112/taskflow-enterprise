@@ -15,6 +15,11 @@ import {
   type RateLimitDeps,
 } from '../core/http/rate-limit/rate-limit';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
+import {
+  createAttendanceModule,
+  type AttendanceModule,
+} from '../modules/attendance/attendance.module';
+import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { createAuthModule, type AuthModule } from '../modules/auth/auth.module';
 import type { IAccessTokenService } from '../modules/auth/application/ports/access-token-service.port';
 import type { IPasswordHasher } from '../modules/auth/application/ports/password-hasher.port';
@@ -30,9 +35,10 @@ import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
+import { attendanceMembership, noApprovedLeaves } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
-import { hrGrantNotifierFrom } from './notification-adapters';
+import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
 
 export interface ContainerConfig extends AppConfig {
@@ -69,6 +75,7 @@ export interface Container {
   task: TaskModule;
   /** Thông báo bền (ADR-123): `publisher` nối vào port của leave / attendance / workspace. */
   notifications: NotificationsModule;
+  attendance: AttendanceModule;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
   /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
@@ -143,6 +150,21 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
   });
   workspaceRef.current = workspace;
+  const attendance = createAttendanceModule({
+    repos: persistence.attendance,
+    leaves: noApprovedLeaves, // TODO(T-039): leave.approvedLeaves (D nối, tham chiếu trễ)
+    tenures: workspace.tenure,
+    users: persistence.task.users,
+    hrAccess: workspace.hrAccess,
+    audit: workspace.hrAudit,
+    notifier: attendanceNotifierFrom(notifications.publisher),
+    membership: attendanceMembership(() => workspace),
+    uow: persistence.uow,
+    clock,
+    ids,
+    responder,
+    limit,
+  });
   const auth = createAuthModule({
     repos: persistence.auth,
     hasher: d.hasher,
@@ -173,6 +195,8 @@ export function createContainer(d: ContainerDeps): Container {
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
+    // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
+    { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
   ];
@@ -188,5 +212,5 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
     routers,
   });
-  return { app, auth, workspace, task, notifications, realtime, routers };
+  return { app, auth, workspace, task, notifications, attendance, realtime, routers };
 }
