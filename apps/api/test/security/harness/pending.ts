@@ -15,27 +15,7 @@ export interface DeclaredPending {
 }
 
 export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
-  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 đã merge (e0b0fc9), T-038 gate xanh (0fb023f), T-039 gate xanh (87255e8) — mục của ba vé đã gỡ.
-  'SEC-HR-15': {
-    ticket: 'T-040',
-    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-17': {
-    ticket: 'T-040',
-    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-18': {
-    ticket: 'T-040',
-    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-19': {
-    ticket: 'T-040',
-    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
-  },
-  'SEC-HR-20': {
-    ticket: 'T-040',
-    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
-  },
+  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 (e0b0fc9), T-038 (0fb023f), T-039 (87255e8), T-040/T-040b (e330783) đã merge — mục của các vé đó đã gỡ, hiện không còn ca HR pending.
 };
 
 /** Tiền tố tên ca skip hợp lệ: `[PENDING <ticket>] <id> — <title>` (reporter đọc id sau `] `). */
