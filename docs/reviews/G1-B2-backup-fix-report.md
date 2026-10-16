@@ -3,7 +3,7 @@
 **Người làm:** Engineer B · **Branch:** `fix/B2-backup-review` · **Ngày:** 2026-10-15
 **Nguồn:** `docs/reviews/G1-B2-backup-crossread.md` (A, `review/G1-backup-crossread` @ `6c11b4a`)
 
-> **Diễn tập chưa chạy lại — chờ người dùng duyệt.** Lệnh `docker compose … drill.compose.yml up` bị cấu hình quyền chặn. Fix này **chưa merge** cho tới khi diễn tập xanh (người dùng duyệt lần chạy local, hoặc CI `backup-drill.yml` trên PR).
+> **Diễn tập end-to-end: XANH** (2026-10-16, người dùng duyệt chạy local, rebase trên `main` @ `d647383`) — xem "Đã kiểm".
 
 ## Đã sửa
 
@@ -21,7 +21,14 @@
 - Mẫu chặn URL (`*://*:*@*`): `postgresql://u:pw@h:5432/db` ⇒ từ chối; `postgresql://u@h:5432/db?sslmode=require` và `postgresql://u@h/db` ⇒ cho qua.
 - Hai biểu thức `sed` tách mật khẩu / URL của drill chạy trên `DRILL_SOURCE_URL` thật của compose ⇒ `drill` và `postgresql://taskflow_migrator@source-pg:5432/taskflow`.
 - Hook pre-commit đầy đủ (prettier, gitleaks): xanh.
-- **Chưa:** diễn tập end-to-end (xem ghi chú đầu trang).
+- Diễn tập end-to-end: `docker compose -p taskflow-drill -f docker/backup/drill.compose.yml up --build --abort-on-container-exit --exit-code-from drill` ⇒ **exit 0** (244 s gồm build image). Các bước:
+  - backup.sh **từ chối** URL có mật khẩu (exit 2, drill kiểm);
+  - backup qua `PGPASSWORD` ⇒ `taskflow/daily/taskflow-20261016T012807Z.dump.age` + `.ok`;
+  - không có bản rõ trên storage, sai khóa ⇒ từ chối, sửa 1 byte ⇒ từ chối;
+  - `pg_restore` 1 s; đối chiếu 7 bảng / 2195 dòng, index / constraint / collation / quyền / enum khớp;
+  - `pg_amcheck` OK; `taskflow_app` DML được, DDL bị chặn.
+
+  Dọn bằng `docker compose -p taskflow-drill … down` (exit 0, không `-v`). Mọi dữ liệu nằm trên tmpfs ⇒ không còn container / volume / network `taskflow-drill*`. Chỉ còn image build `taskflow-drill-drill` (bộ nhớ đệm). Compose `taskflow` dùng chung không bị đụng.
 
 ## Việc của người khác
 
