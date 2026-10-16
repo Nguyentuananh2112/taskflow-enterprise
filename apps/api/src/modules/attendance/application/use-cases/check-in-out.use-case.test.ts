@@ -120,6 +120,15 @@ describe('CheckInOutUseCase', () => {
     expect(card.status).toBe('PRESENT');
   });
 
+  it('chấm ra trong CÙNG phút với chấm vào (E2E-HR-01) ⇒ thẻ có lastOut, hết "đang làm"', async () => {
+    const t = await setup('2026-11-17 00:38');
+    await t.punch('IN', key(1));
+    t.clock.advance(20_000);
+    const card = await t.punch('OUT', key(2));
+    expect(card.lastOut).toBe(t.clock.now().toISOString());
+    expect(card.inProgress).toBe(false);
+  });
+
   it('OUT sau 00:00 (trước 06:00) gắn vào ngày của IN còn mở; ngày đó PRESENT, 480 phút', async () => {
     const t = await setup('2026-11-16 08:00');
     await t.punch('IN', key(1));

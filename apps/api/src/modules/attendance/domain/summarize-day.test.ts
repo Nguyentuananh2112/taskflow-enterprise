@@ -324,6 +324,67 @@ describe('summarizeDay — hủy lượt, OUT trước IN, đổi lịch, múi g
   });
 });
 
+describe('summarizeDay — lượt cùng phút (E2E-HR-01, F)', () => {
+  const sec = (date: LocalDate, time: string, s: number) =>
+    new Date(at(date, time).getTime() + s * 1000);
+
+  it('IN 08:00:10 và OUT 08:00:40 (cùng phút) ⇒ OUT được tính: lastOut có, không còn "đang làm"', () => {
+    const r = day(
+      MON,
+      [
+        { kind: 'IN', occurredAt: sec(MON, '08:00', 10), voidedAt: null },
+        { kind: 'OUT', occurredAt: sec(MON, '08:00', 40), voidedAt: null },
+      ],
+      { nowLocal: '08:01' },
+    );
+    expect(r.lastOut).toEqual(sec(MON, '08:00', 40));
+    expect(r).toMatchObject({ status: 'PRESENT', workedMin: 0, earlyMin: 570 });
+    expect(r.flags.inProgress).toBe(false);
+  });
+
+  it('OUT cùng phút nhưng TRƯỚC IN (theo giây) vẫn là OUT mồ côi, không đóng IN', () => {
+    const r = day(
+      MON,
+      [
+        { kind: 'OUT', occurredAt: sec(MON, '08:00', 5), voidedAt: null },
+        { kind: 'IN', occurredAt: sec(MON, '08:00', 30), voidedAt: null },
+      ],
+      { nowLocal: '09:00' },
+    );
+    expect(r.lastOut).toBeNull();
+    expect(r.flags.inProgress).toBe(true);
+  });
+
+  it('hai OUT cùng phút ⇒ lastOut là lượt MUỘN HƠN theo giây, bất kể thứ tự mảng', () => {
+    const inn = { kind: 'IN' as const, occurredAt: sec(MON, '08:00', 0), voidedAt: null };
+    const o1 = { kind: 'OUT' as const, occurredAt: sec(MON, '17:30', 5), voidedAt: null };
+    const o2 = { kind: 'OUT' as const, occurredAt: sec(MON, '17:30', 45), voidedAt: null };
+    expect(day(MON, [inn, o1, o2]).lastOut).toEqual(o2.occurredAt);
+    expect(day(MON, [inn, o2, o1]).lastOut).toEqual(o2.occurredAt);
+  });
+
+  it('OUT trùng ĐÚNG thời điểm với IN ⇒ không phải "sau IN" (lọc chặt `>`), IN vẫn mở', () => {
+    const t0 = sec(MON, '08:00', 15);
+    const r = day(
+      MON,
+      [
+        { kind: 'IN', occurredAt: t0, voidedAt: null },
+        { kind: 'OUT', occurredAt: new Date(t0), voidedAt: null },
+      ],
+      { nowLocal: '09:00' },
+    );
+    expect(r.lastOut).toBeNull();
+    expect(r.flags.inProgress).toBe(true);
+  });
+
+  it('hai IN cùng phút ⇒ firstIn là lượt SỚM HƠN theo giây, bất kể thứ tự mảng', () => {
+    const a = { kind: 'IN' as const, occurredAt: sec(MON, '07:59', 50), voidedAt: null };
+    const b = { kind: 'IN' as const, occurredAt: sec(MON, '07:59', 10), voidedAt: null };
+    expect(day(MON, [a, b]).firstIn).toEqual(b.occurredAt);
+    expect(day(MON, [b, a]).firstIn).toEqual(b.occurredAt);
+  });
+});
+
 describe('summarizeDay — chặn muộn/sớm trong ca (SD-35, SD-36)', () => {
   it('SD-35 vào sau giờ kết thúc ⇒ late, lateMin = cả ca (570), không hơn; worked 0', () => {
     const r = day(MON, [ev('IN', MON, '18:00'), ev('OUT', MON, '19:00')]);

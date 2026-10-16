@@ -63,14 +63,17 @@ export function summarizeDay(input: DayInput): DaySummary {
   const tz = schedule.timezone;
   const live = input.events.filter((e) => e.voidedAt === null);
   const at = (e: DayEvent) => minutesFrom(date, e.occurredAt, tz);
+  // Chọn / so thứ tự lượt theo THỜI ĐIỂM (ms), không theo phút: OUT cùng phút với IN vẫn là "sau IN" (E2E-HR-01,
+  // F) và hai lượt cùng phút không phụ thuộc thứ tự mảng. Phút chỉ dùng để tính giờ làm / muộn / sớm.
+  const ms = (e: DayEvent) => e.occurredAt.getTime();
   const earliest = (list: DayEvent[]) =>
-    list.reduce<DayEvent | null>((a, e) => (!a || at(e) < at(a) ? e : a), null);
+    list.reduce<DayEvent | null>((a, e) => (!a || ms(e) < ms(a) ? e : a), null);
   const latest = (list: DayEvent[]) =>
-    list.reduce<DayEvent | null>((a, e) => (!a || at(e) > at(a) ? e : a), null);
+    list.reduce<DayEvent | null>((a, e) => (!a || ms(e) > ms(a) ? e : a), null);
 
   const firstIn = earliest(live.filter((e) => e.kind === 'IN'));
   const outs = live.filter((e) => e.kind === 'OUT');
-  const lastOut = firstIn ? latest(outs.filter((e) => at(e) > at(firstIn))) : latest(outs);
+  const lastOut = firstIn ? latest(outs.filter((e) => ms(e) > ms(firstIn))) : latest(outs);
   const base: DaySummary = {
     status: 'PENDING',
     firstIn: firstIn?.occurredAt ?? null,
