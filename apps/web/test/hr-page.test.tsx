@@ -52,8 +52,21 @@ describe('trang Nhân sự — quyền', () => {
     await screen.findByRole('region', { name: 'Chấm công' });
     expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull();
     await act(() => grantHr(an));
-    const link = await screen.findByRole('link', { name: 'Nhân sự' });
-    expect(link.getAttribute('href')).toBe(`/w/${f.wsId}/hr`);
+    // Header (mọi route có wsId) + thẻ Chấm công (màn hẹp).
+    const links = await screen.findAllByRole('link', { name: 'Nhân sự' });
+    expect(links.map((l) => l.getAttribute('href'))).toEqual([
+      `/w/${f.wsId}/hr`,
+      `/w/${f.wsId}/hr`,
+    ]);
+    cleanupApp();
+
+    // E2E-HR-03: đang ở trang khác (không có thẻ) ⇒ header vẫn hiện/ẩn theo quyền ngay.
+    open(`/w/${f.wsId}/leave`, an);
+    expect(await screen.findByRole('link', { name: 'Nhân sự' })).toBeTruthy();
+    await act(() =>
+      f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/members/${an.id}/grants`, { grants: [] }),
+    );
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull());
     cleanupApp();
 
     const vy = f.addUser('Khách Vy', `vy-${crypto.randomUUID()}@example.com`, 'VIEWER');
