@@ -4,7 +4,11 @@ import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { MemberGrant } from '../../domain/roles';
 import type { HrAuditWriter } from '../hr-audit-writer';
-import type { IUserDirectory, IWorkspaceRealtimeNotifier } from '../ports/collaborators.port';
+import type {
+  IHrGrantNotifier,
+  IUserDirectory,
+  IWorkspaceRealtimeNotifier,
+} from '../ports/collaborators.port';
 import type { IMembershipRepository, IWorkspaceRepository } from '../ports/repositories.port';
 import { assertWorkspaceLive } from '../workspace-guard';
 import { requirePermission, toMemberView, type Actor, type MemberView } from '../workspace-shared';
@@ -16,6 +20,8 @@ export interface SetMemberGrantsDeps {
   users: IUserDirectory;
   audit: HrAuditWriter;
   notifier: Pick<IWorkspaceRealtimeNotifier, 'notifyGrantsChanged'>;
+  /** Bắt buộc (review B — M1): thông báo bền trong cùng transaction. */
+  hrNotifier: IHrGrantNotifier;
   uow: IUnitOfWork;
   clock: IClock;
   logger: ILogger;
@@ -62,6 +68,17 @@ export class SetMemberGrantsUseCase {
         before: { grants: before },
         after: { grants: after },
       });
+      // Theo ĐÚNG grant HR_MANAGE (không so độ dài — review B (a)): chỉ báo khi nó được thêm / bị bỏ.
+      const hrAfter = after.includes('HR_MANAGE');
+      if (before.includes('HR_MANAGE') !== hrAfter) {
+        await this.d.hrNotifier.grantsChanged({
+          workspaceId: actor.workspaceId,
+          userId: target.userId,
+          actorId: fresh.userId,
+          added: hrAfter,
+          membershipId: target.id,
+        });
+      }
 
       const meta = { actorId: fresh.userId, originClientId: input.originClientId ?? null };
       this.d.uow.afterCommit(() => {

@@ -15,6 +15,15 @@ import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence
 import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
 import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
 import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
+import {
+  createInMemoryNotificationStore,
+  type NotificationRepositories,
+} from '../modules/notifications/notifications.module';
+import {
+  PrismaNotificationAudience,
+  PrismaNotificationContextReader,
+} from '../modules/notifications/infrastructure/prisma/prisma-notification-readers';
+import { PrismaNotificationStore } from '../modules/notifications/infrastructure/prisma/prisma-notification.store';
 import { createInMemoryTaskRepositories, type TaskRepositories } from '../modules/task/task.module';
 import {
   createInMemoryWorkspaceRepositories,
@@ -40,6 +49,10 @@ import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/excl
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import {
+  InMemoryNotificationAudience,
+  InMemoryNotificationContextReader,
+} from './notification-adapters';
+import {
   TaskMirroredMemberships,
   TaskMirroredProjects,
   TaskMirroredWorkspaces,
@@ -56,6 +69,8 @@ export interface Persistence {
   workspace: WorkspaceRepositories;
   /** Module Task: Prisma (T-023) hoặc bộ nhớ có bản sao dữ liệu Workspace/Auth (T-024). */
   task: TaskRepositories;
+  /** Thông báo bền (ADR-123, T-040) — store ghi trong cùng UoW; audience/context chỉ đọc. */
+  notifications: NotificationRepositories;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
   workspacePurger?: IWorkspacePurger;
   /** Dọn refresh token hết hạn (G2 S2) — chỉ có ở Prisma, như `workspacePurger`. */
@@ -87,6 +102,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     tenure: ws.tenure,
   };
 
+  const notificationStore = createInMemoryNotificationStore();
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -97,15 +113,24 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       ws.hrAudit,
       ws.departures,
       task.db,
+      notificationStore,
     ],
     logger,
   );
   return {
     kind: 'memory',
-    modules: { auth: 'memory', workspace: 'memory', task: 'memory' },
+    modules: { auth: 'memory', workspace: 'memory', task: 'memory', notifications: 'memory' },
     auth: { users, refreshTokens: auth.refreshTokens, sessions: auth.sessions },
     workspace,
     task,
+    notifications: {
+      store: notificationStore,
+      audience: new InMemoryNotificationAudience({
+        queries: ws.queries,
+        memberships: ws.memberships,
+      }),
+      context: new InMemoryNotificationContextReader(users),
+    },
     uow,
   };
 }
@@ -133,7 +158,7 @@ export function createPrismaPersistence(d: {
   const db = () => uow.db();
   return {
     kind: 'prisma',
-    modules: { auth: 'prisma', workspace: 'prisma', task: 'prisma' },
+    modules: { auth: 'prisma', workspace: 'prisma', task: 'prisma', notifications: 'prisma' },
     auth: {
       users: new PrismaUserRepository(db),
       refreshTokens: new PrismaRefreshTokenRepository(db),
@@ -156,6 +181,12 @@ export function createPrismaPersistence(d: {
       assignees: new PrismaAssigneeDirectory(db),
       users: new PrismaUserRefReader(db),
       audit: new PrismaTaskAuditLogRepository(db),
+    },
+    // Cùng `db` ⇒ thông báo ghi trong transaction của leave / attendance / workspace (ADR-123).
+    notifications: {
+      store: new PrismaNotificationStore(db),
+      audience: new PrismaNotificationAudience(db),
+      context: new PrismaNotificationContextReader(db),
     },
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),
