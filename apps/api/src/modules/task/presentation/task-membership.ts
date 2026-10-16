@@ -46,8 +46,9 @@ export function requireTaskScope(
     projects: Pick<ITaskProjectStore, 'findInWorkspace'>;
     tasks: Pick<ITaskRepository, 'findLive'>;
   },
-  /** `false`: chỉ kiểm project — audit-logs vẫn đọc được sau khi task bị xóa mềm. */
-  checkTask = true,
+  /** `false`: chỉ kiểm project — audit-logs vẫn đọc được sau khi task bị xóa mềm. Bắt buộc (F3: mặc định
+   *  không bao giờ được dùng — nơi gọi duy nhất luôn truyền). */
+  checkTask: boolean,
 ): RequestHandler {
   return async (req, _res, next) => {
     const { wsId, projectId, taskId } = req.params as {

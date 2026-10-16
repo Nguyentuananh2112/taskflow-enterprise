@@ -252,6 +252,57 @@ describe.each(rounds)('rebalance rank đồng thời (T-033) — lượt %i', ()
   });
 });
 
+describe.each(rounds)('create ‖ rebalance cùng cột TODO (F3 T-2, ADR-116) — lượt %i', () => {
+  // Thứ tự xen được ÉP tất định: rebalance dừng ngay sau pha stash (khóa tạm `~<id>` chưa commit) tới khi
+  // create xong hoặc hết 500 ms. Có khóa cột ⇒ create bị chặn ở `lockColumn`, chỉ xong SAU move, không
+  // ai phải thử lại, task mới ở cuối cột. Bỏ khóa (mutant `lockColumn(projectId, '')`) ⇒ create đọc rank
+  // cũ, xong TRƯỚC move, rebalance đụng rank của nó ⇒ chạy lại cả transaction (`task.rank_conflict_retry`).
+  it('CC-RB02: create chen giữa rebalance ⇒ chờ khóa cột, xong sau move, không retry, vào cuối cột, không `~`', async () => {
+    const LONG = `a0${'V'.repeat(70)}`;
+    const a = await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: LONG });
+    const c = await h.seedTask({ rank: `${LONG}V` });
+    const x = await h.seedTask({ rank: 'a0', status: 'IN_PROGRESS' });
+
+    let atStash!: () => void;
+    const stashed = new Promise<void>((resolve) => (atStash = resolve));
+    let createDone!: () => void;
+    const created = new Promise<void>((resolve) => (createDone = resolve));
+    const saveRanks = h.deps.tasks.saveRanks.bind(h.deps.tasks);
+    let first = true;
+    h.deps.tasks.saveRanks = async (writes) => {
+      if (first) {
+        first = false;
+        atStash();
+        await Promise.race([created, new Promise((resolve) => setTimeout(resolve, 500))]);
+      }
+      return saveRanks(writes);
+    };
+
+    const done: string[] = [];
+    const move = h.move
+      .execute({
+        ...h.scope('Mia'),
+        taskId: x.id,
+        input: { expectedVersion: 1, status: 'TODO', afterId: b.id },
+      })
+      .then((dto) => (done.push('move'), dto));
+    await stashed;
+    // Gọi từ ngữ cảnh của test (không phải bên trong transaction của move — AsyncLocalStorage).
+    const create = h.create
+      .execute({ ...h.scope('Pam'), input: { title: 'Chen giữa rebalance' } })
+      .then((dto) => (done.push('create'), createDone(), dto));
+    const [moved, task] = await Promise.all([move, create]);
+
+    expect(done).toEqual(['move', 'create']);
+    expect(h.logger.messages('warn')).not.toContain('task.rank_conflict_retry');
+    expect(await h.column('TODO')).toEqual([a.id, b.id, moved.id, c.id, task.id]);
+    const rows = (await h.backend.taskRows()).filter((t) => t.status === 'TODO');
+    expect(new Set(rows.map((r) => r.rank)).size).toBe(rows.length);
+    for (const r of rows) expect(r.rank.startsWith('~')).toBe(false);
+  });
+});
+
 describe.each(rounds)('bỏ gán khi hạ quyền đồng thời — lượt %i', () => {
   /** Mô phỏng ChangeMemberRole của Workspace: khóa ghi dòng membership, hạ VIEWER, gọi cleaner — cùng 1 tx. */
   const demoteMax = () =>

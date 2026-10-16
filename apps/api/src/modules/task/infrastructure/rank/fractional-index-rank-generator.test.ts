@@ -18,3 +18,14 @@ describe('FractionalIndexRankGenerator', () => {
     expect(() => ranks.between('a1', 'a1')).toThrow();
   });
 });
+
+describe('spread (F3 T-28)', () => {
+  const ranks = new FractionalIndexRankGenerator();
+  it('0 ⇒ []; n ⇒ n khóa tăng dần theo byte, không trùng', () => {
+    expect(ranks.spread(0)).toEqual([]);
+    const keys = ranks.spread(3);
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(3);
+    expect([...keys].sort()).toEqual(keys);
+  });
+});

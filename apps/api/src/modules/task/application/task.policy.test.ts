@@ -82,3 +82,10 @@ describe('canUpdate / canMove / canCreate (§2.4)', () => {
     expect(policy.can(actor('Vic'), 'audit:read')).toBe(true);
   });
 });
+
+describe('canAssignOnCreate — biên (F3 T-11)', () => {
+  it('không gán (`null` hoặc bỏ trống) ⇒ mọi role tạo được, kể cả MEMBER', () => {
+    expect(policy.canAssignOnCreate(actor('Mia'), null)).toBe(true);
+    expect(policy.canAssignOnCreate(actor('Mia'), undefined)).toBe(true);
+  });
+});

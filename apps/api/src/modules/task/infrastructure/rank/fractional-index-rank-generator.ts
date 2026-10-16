@@ -14,6 +14,7 @@ export class FractionalIndexRankGenerator implements IRankGenerator {
   }
 
   spread(n: number): string[] {
-    return n === 0 ? [] : generateNKeysBetween(null, null, n);
+    // `generateNKeysBetween(null, null, 0)` đã trả `[]` (F3: nhánh n === 0 riêng là thừa).
+    return generateNKeysBetween(null, null, n);
   }
 }

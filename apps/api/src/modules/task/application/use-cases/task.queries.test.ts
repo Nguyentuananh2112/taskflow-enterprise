@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { ResourceNotFoundError, ValidationError } from '../../../../core/errors';
 import { createTaskHarness, P1, P2, P3, Q1, U } from '../../testing/task-harness';
+import { TaskPolicy } from '../task.policy';
+import { TaskQueries } from './task.queries';
 
 // test-spec-task.md §3.6/§3.7 — phần kiểm được ở tầng A (InMemory cùng luật lọc/sắp với SQL).
 // Tầng I (Postgres, EXPLAIN, collation) để ticket Prisma repository.
@@ -235,5 +237,69 @@ describe('phạm vi & validate đầu vào của truy vấn (T-028 L3/L4)', () =
     expect(await h.backend.readModel.listAuditLogs(dto.workspaceId, P3, dto.id, null, 10)).toEqual(
       [],
     );
+  });
+});
+
+// F3 (mutation, report §4.2): trang đúng bằng limit (T-12), RBAC lớp 2 của đọc (T-13), loại tài nguyên
+// trong 404 (T-23).
+describe('TaskQueries — biên (F3 mutation)', () => {
+  it('T-12: đúng `limit` phần tử ⇒ trang cuối (hasMore false, nextCursor null) — cả task lẫn audit-logs', async () => {
+    const h = await createTaskHarness();
+    for (const r of ['a0', 'a1', 'a2', 'a3', 'a4']) await h.seedTask({ rank: r });
+    const res = await h.queries.listTasks({ ...h.scope('Mia'), query: { limit: 5 } });
+    expect(res.items).toHaveLength(5);
+    expect(res.page).toEqual({ nextCursor: null, hasMore: false, limit: 5 });
+
+    const t = await h.create.execute({ ...h.scope('Mia'), input: { title: 'Có lịch sử' } });
+    for (const title of ['Lần 1', 'Lần 2']) {
+      const cur = await h.queries.getTask({ ...h.scope('Mia'), taskId: t.id });
+      await h.update.execute({
+        ...h.scope('Mia'),
+        taskId: t.id,
+        input: { expectedVersion: cur.version, title },
+      });
+    }
+    const audit = await h.queries.listAuditLogs({
+      ...h.scope('Mia'),
+      taskId: t.id,
+      query: { limit: 3 },
+    });
+    expect(audit.items).toHaveLength(3);
+    expect(audit.page).toEqual({ nextCursor: null, hasMore: false, limit: 3 });
+  });
+
+  it('T-13: policy từ chối ⇒ cả 3 đường đọc đều 403 với đúng quyền thiếu (lớp 2 — GET /:taskId không có cổng ở route)', async () => {
+    const h = await createTaskHarness();
+    const t = await h.seedTask({ rank: 'a0' });
+    const queries = new TaskQueries({
+      readModel: h.backend.readModel,
+      projects: h.backend.projects,
+      policy: new TaskPolicy({ allows: () => false }),
+    });
+    const scope = h.scope('Olivia');
+    await expect(queries.getTask({ ...scope, taskId: t.id })).rejects.toMatchObject({
+      statusCode: 403,
+      details: { required: 'task:read' },
+    });
+    await expect(queries.listTasks({ ...scope, query: { limit: 5 } })).rejects.toMatchObject({
+      statusCode: 403,
+      details: { required: 'task:read' },
+    });
+    await expect(
+      queries.listAuditLogs({ ...scope, taskId: t.id, query: { limit: 5 } }),
+    ).rejects.toMatchObject({ statusCode: 403, details: { required: 'audit:read' } });
+  });
+
+  it('T-23: 404 mang loại tài nguyên đúng (project ws khác ⇒ project; task không có ⇒ task)', async () => {
+    const h = await createTaskHarness();
+    await expect(
+      h.queries.listTasks({ ...h.scope('Mia', Q1), query: { limit: 5 } }),
+    ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'project' } });
+    await expect(
+      h.queries.getTask({ ...h.scope('Mia'), taskId: h.randomId() }),
+    ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'task' } });
+    await expect(
+      h.queries.listAuditLogs({ ...h.scope('Mia'), taskId: h.randomId(), query: { limit: 5 } }),
+    ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'task' } });
   });
 });
