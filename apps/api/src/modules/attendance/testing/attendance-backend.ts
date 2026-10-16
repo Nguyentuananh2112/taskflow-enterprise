@@ -39,10 +39,8 @@ export function inMemoryAttendanceBackend(workspaceId: string): AttendanceBacken
     uow: new FakeUnitOfWork(),
     seed: () => Promise.resolve(),
     eventRows: () => Promise.resolve(events.rows.map((e) => ({ ...e })).sort(byTime)),
-    addScheduleVersion: (ws, schedule) => {
-      if (ws === workspaceId) calendar.versions.push(schedule);
-      return Promise.resolve();
-    },
+    addScheduleVersion: (ws, schedule, createdBy) =>
+      calendar.saveScheduleVersion(ws, { ...schedule, createdBy, createdAt: new Date(0) }),
     addHoliday: (ws, date, name) => {
       calendar.holidayRows.push({ workspaceId: ws, date, name });
       return Promise.resolve();

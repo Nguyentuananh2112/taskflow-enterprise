@@ -4,7 +4,7 @@ import type { AttendanceEventRecord } from './ports/attendance-event-store.port'
 import type { IUserRefReader } from './ports/collaborators.port';
 
 /** Tên thay thế khi không đọc được user (đã xóa cứng — FK `Restrict` nên thực tế không xảy ra). */
-const UNKNOWN_USER = 'Người dùng đã xóa';
+export const UNKNOWN_USER = 'Người dùng đã xóa';
 
 /** Lượt chấm ⇒ `AttendanceEventDto` (đọc tên người tạo / người hủy MỘT lần cho cả danh sách). */
 export async function toEventDtos(

@@ -9,6 +9,7 @@ import type { HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
 import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-case';
 import { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
+import { WorkCalendarUseCases } from '../application/use-cases/work-calendar.use-cases';
 import { instantOf } from '../domain/local-time';
 import type { WorkSchedule } from '../domain/work-schedule';
 import {
@@ -80,10 +81,10 @@ export async function createAttendanceHarness(
     actorId: string;
     targetUserId: string | null;
     refId: string | null;
+    before: unknown;
     after: unknown;
   }[] = [];
-  const eventUseCases = new AttendanceEventsUseCases({
-    ...deps,
+  const collaborators = {
     users: {
       findRefs: (ids) =>
         Promise.resolve(
@@ -126,12 +127,15 @@ export async function createAttendanceHarness(
           actorId: e.actorId,
           targetUserId: e.targetUserId ?? null,
           refId: e.refId ?? null,
+          before: e.before ?? null,
           after: e.after ?? null,
         });
         return Promise.resolve();
       },
     },
-  });
+  } satisfies Omit<ConstructorParameters<typeof AttendanceEventsUseCases>[0], keyof AttendanceDeps>;
+  const eventUseCases = new AttendanceEventsUseCases({ ...deps, ...collaborators });
+  const calendarUseCases = new WorkCalendarUseCases({ ...deps, ...collaborators });
   const checkInOut = new CheckInOutUseCase(deps);
   return {
     backend,
@@ -142,6 +146,7 @@ export async function createAttendanceHarness(
     checkInOut,
     queries: new MyAttendanceQueries(deps),
     eventUseCases,
+    calendarUseCases,
     members,
     notified,
     audit,
