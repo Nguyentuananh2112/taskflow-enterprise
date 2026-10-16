@@ -6,6 +6,7 @@ import { Actors } from './harness/actors';
 import {
   HR,
   adjust,
+  eventIdOf,
   eventsOf,
   leaveOf,
   seedHr,
@@ -123,7 +124,7 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
       // Id lượt chấm THẬT của W2: Otto (OWNER W2) thêm ADJUSTMENT ⇒ 201 AttendanceEventDto (f8ddb7b).
       const adj = await adjust(actors, t.otto, t.wsB, t.otto.userId, 'IN');
       expect(adj.status, 'đối chứng: ADJUSTMENT trong W2').toBe(201);
-      const inW2 = adj.json as { data: { id: string } };
+      const inW2Id = eventIdOf(adj);
       expect(
         (
           await actors.json(
@@ -136,7 +137,7 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
       ).toBe(404);
       expect(
         (
-          await actors.json('POST', HR.voidEvent(t.ws, inW2.data.id), t.hana.accessToken, {
+          await actors.json('POST', HR.voidEvent(t.ws, inW2Id), t.hana.accessToken, {
             reason: 'idor',
           })
         ).status,
@@ -203,14 +204,7 @@ describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
       ).status,
     ).toBe(403);
     expect(
-      (
-        await actors.json('POST', HR.events(t.ws), t.hana.accessToken, {
-          userId: t.hana.userId,
-          kind: 'IN',
-          occurredAt: new Date().toISOString(),
-          reason: 'tự sửa',
-        })
-      ).status,
+      (await adjust(actors, t.hana, t.ws, t.hana.userId, 'IN', '08:00', 'tự sửa')).status,
     ).toBe(403);
     expect(
       (
@@ -496,12 +490,7 @@ describe('Thông báo (ADR-123, B-M3)', () => {
     async () => {
       const t = await seedHr(actors);
       await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
-      await actors.json('POST', HR.events(t.ws), t.hana.accessToken, {
-        userId: t.mia.userId,
-        kind: 'OUT',
-        occurredAt: new Date().toISOString(),
-        reason: 'quên chấm ra',
-      });
+      await adjust(actors, t.hana, t.ws, t.mia.userId, 'OUT', '17:30', 'quên chấm ra');
       expect((await actors.json('GET', HR.notifications, t.mia.accessToken)).text).toContain(t.ws);
       await actors.json(
         'DELETE',
@@ -596,6 +585,16 @@ describe('Biên HTTP', () => {
         workDate: '2000-01-01',
       });
       expect(res.status).toBe(400);
+      // HR cũng không gửi được thời điểm UTC: ADJUSTMENT nhận date + time theo lịch, `occurredAt` ⇒ 400 (aac6aaa).
+      const adj = await actors.json('POST', HR.events(t.ws), t.hana.accessToken, {
+        userId: t.max.userId,
+        kind: 'IN',
+        date: todayVn(),
+        time: '08:00',
+        reason: 'strict',
+        occurredAt: '2000-01-01T00:00:00Z',
+      });
+      expect(adj.status).toBe(400);
     },
   );
 

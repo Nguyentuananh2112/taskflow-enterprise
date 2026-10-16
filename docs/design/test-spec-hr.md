@@ -182,10 +182,10 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-09 | `Idempotency-Key` không phải UUID | 400 |
 | AT-10 | Vic check-in | 403 |
 | AT-11 | hạn mức 10/phút/user | lần 11 ⇒ 429 (hết hạn mức, có `Retry-After`) |
-| AT-12 | Hana `POST attendance/events` (ADJUSTMENT) cho Mia, có lý do | 201 + `AttendanceEventDto` (có `id`), `source ADJUSTMENT`, `createdBy Hana`, thông báo ATTENDANCE_ADJUSTED tới Mia, audit EVENT_ADJUST |
+| AT-12 | Hana `POST attendance/events` (ADJUSTMENT) cho Mia — body `AdjustAttendanceBody` strict `{ userId, kind, date, time "HH:mm", nextDay?, reason }` (giờ theo LỊCH của `date`, không `occurredAt` ⇒ gửi kèm 400) | 201 + `AttendanceEventChangeDto { event, day }` (id ở `event.id`), `source ADJUSTMENT`, `createdBy Hana`, thông báo ATTENDANCE_ADJUSTED tới Mia, audit EVENT_ADJUST |
 | AT-13 | Hana ADJUSTMENT cho chính mình | 403 (B-H1); Olivia cho chính mình ⇒ 201 + lý do bắt buộc + HrAuditLog |
 | AT-13b | `GET attendance/events?userId=Mia&date=` (Hana) | 200, `{ events: AttendanceEventDto[] }` theo `workDate`, gồm lượt đã hủy, sắp theo `occurredAt`, có IP/UA; `me/events` cùng DTO nhưng chỉ của mình (f8ddb7b) |
-| AT-14 | void lượt chấm, thiếu lý do | 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`); có lý do ⇒ 200, `voidedAt/By/Reason`, dòng không bị xóa (log bất biến) |
+| AT-14 | void lượt chấm (`VoidAttendanceBody { reason }` ⇒ 200 `{ event, day }`), thiếu lý do | 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`); có lý do ⇒ 200, `voidedAt/By/Reason`, dòng không bị xóa (log bất biến) |
 | AT-14b | void lại lượt đã void | 409 `RESOURCE_CONFLICT` (`reason: already_voided`) |
 | AT-15 | void lượt của ws khác | 404 |
 | AT-16 | sau void IN WEB, check-in lại cùng ngày | 201 (unique index một phần loại `voidedAt IS NOT NULL`) |

@@ -145,14 +145,30 @@ export interface AttendanceEventDto {
   voidedAt: string | null;
 }
 
-/** HR thêm lượt ADJUSTMENT (201 ⇒ AttendanceEventDto có id). */
-export const adjust = (actors: Actors, by: Actor, ws: string, userId: string, kind: 'IN' | 'OUT') =>
+/**
+ * HR thêm lượt ADJUSTMENT — `AdjustAttendanceBody` strict (aac6aaa): giờ nhập theo LỊCH của `date`
+ * (`time` HH:mm, `nextDay` cho OUT sau nửa đêm), KHÔNG có `occurredAt`. 201 ⇒ `{ event, day }`.
+ */
+export const adjust = (
+  actors: Actors,
+  by: Actor,
+  ws: string,
+  userId: string,
+  kind: 'IN' | 'OUT',
+  time = '08:00',
+  reason = 'F test',
+) =>
   actors.json('POST', HR.events(ws), by.accessToken, {
     userId,
     kind,
-    occurredAt: new Date().toISOString(),
-    reason: 'F test',
+    date: todayVn(),
+    time,
+    reason,
   });
+
+/** Id lượt chấm từ response ADJUSTMENT / void (`AttendanceEventChangeDto { event, day }`). */
+export const eventIdOf = (res: RawResponse): string =>
+  (res.json as { data: { event: { id: string } } }).data.event.id;
 
 export const eventsOf = (res: RawResponse): AttendanceEventDto[] =>
   (res.json as { data: { events: AttendanceEventDto[] } }).data.events;
