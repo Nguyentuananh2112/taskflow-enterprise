@@ -5,6 +5,7 @@ import type {
   ILeaveReadModel,
   LeaveListFilter,
   LeaveListKey,
+  LeaveSummary,
 } from '../../../application/ports/leave-read-model.port';
 import type {
   ILeaveRepository,
@@ -167,6 +168,17 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
         )
         .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
     );
+  }
+
+  async leaveSummaries(
+    refs: readonly { workspaceId: string; refId: string }[],
+  ): Promise<ReadonlyMap<string, LeaveSummary>> {
+    const out = new Map<string, LeaveSummary>();
+    for (const { workspaceId, refId } of refs) {
+      const r = await this.find(workspaceId, refId);
+      if (r) out.set(r.id, { type: r.type, startDate: r.startDate, endDate: r.endDate });
+    }
+    return out;
   }
 
   async findBalances(

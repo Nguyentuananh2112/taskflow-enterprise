@@ -1,8 +1,6 @@
 import type { IUserRepository } from '../modules/auth/application/ports/user-repository.port';
-import type {
-  ILeaveNotifier,
-  ILeaveRepository,
-} from '../modules/leave/application/ports/leave.ports';
+import type { ILeaveReadModel } from '../modules/leave/application/ports/leave-read-model.port';
+import type { ILeaveNotifier } from '../modules/leave/application/ports/leave.ports';
 import type { NotificationPublisher } from '../modules/notifications';
 import type {
   INotificationAudience,
@@ -44,13 +42,13 @@ export class InMemoryNotificationAudience implements INotificationAudience {
 }
 
 /**
- * Chế độ bộ nhớ: tên actor từ repository user của auth; tóm tắt đơn nghỉ từ repo leave InMemory (T-039) — chỉ
- * loại + ngày, KHÔNG `reason` (B-H2); tra theo (ws, id) nên đơn của ws khác không khớp.
+ * Chế độ bộ nhớ: tên actor từ repository user của auth; tóm tắt đơn nghỉ qua reader của leave (T-039 —
+ * `leaveSummaries`, chỉ loại + ngày, không `reason`). T-040b (G) sẽ thay cả lớp này bằng reader của module.
  */
 export class InMemoryNotificationContextReader implements INotificationContextReader {
   constructor(
     private readonly users: IUserRepository,
-    private readonly leaves: Pick<ILeaveRepository, 'find'>,
+    private readonly leaves: Pick<ILeaveReadModel, 'leaveSummaries'>,
   ) {}
 
   async actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
@@ -62,15 +60,10 @@ export class InMemoryNotificationContextReader implements INotificationContextRe
     return out;
   }
 
-  async leaveSummaries(
+  leaveSummaries(
     refs: readonly { workspaceId: string; refId: string }[],
   ): Promise<ReadonlyMap<string, LeaveSummary>> {
-    const out = new Map<string, LeaveSummary>();
-    for (const { workspaceId, refId } of refs) {
-      const r = await this.leaves.find(workspaceId, refId);
-      if (r) out.set(r.id, { type: r.type, startDate: r.startDate, endDate: r.endDate });
-    }
-    return out;
+    return this.leaves.leaveSummaries(refs);
   }
 }
 

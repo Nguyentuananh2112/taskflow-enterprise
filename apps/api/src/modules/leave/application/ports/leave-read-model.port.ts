@@ -1,6 +1,7 @@
 import type { UserRefDto } from '@taskflow/contracts';
 
 import type { CalendarDate } from '../../domain/leave-days';
+import type { LeaveType } from '../../domain/leave-balance';
 import type { LeaveStatus } from '../../domain/leave-status';
 import type { LeaveBalanceRecord, LeaveRequestRecord } from './leave.ports';
 
@@ -43,6 +44,13 @@ export interface ILeaveReadModel {
     userIds: readonly string[],
     year: number,
   ): Promise<LeaveRequestRecord[]>;
+  /**
+   * Tóm tắt đơn cho module thông báo (T-040b — notifications không đọc bảng của leave): tra theo CẶP (ws, id), đơn
+   * của ws khác không bao giờ khớp. CHỈ loại + ngày — KHÔNG `reason` (B-H2). Một truy vấn cho cả danh sách.
+   */
+  leaveSummaries(
+    refs: readonly { workspaceId: string; refId: string }[],
+  ): Promise<ReadonlyMap<string, LeaveSummary>>;
   /** Số dư đã lưu — KHÔNG tạo (GET không ghi); chưa có ⇒ `null` (bên gọi dùng mặc định 12 ngày). */
   findBalance(
     workspaceId: string,
@@ -54,6 +62,12 @@ export interface ILeaveReadModel {
 /** Tên hiển thị (`user`, `decidedBy`) — adapter của auth nối ở composition root, như `IUserRefReader` của attendance. */
 export interface ILeaveUserRefs {
   findRefs(ids: readonly string[]): Promise<ReadonlyMap<string, UserRefDto>>;
+}
+
+export interface LeaveSummary {
+  readonly type: LeaveType;
+  readonly startDate: CalendarDate;
+  readonly endDate: CalendarDate;
 }
 
 /** Khóa keyset danh sách nhân viên: (fullName, id) tăng dần. */

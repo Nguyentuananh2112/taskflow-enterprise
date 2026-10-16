@@ -136,6 +136,7 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
   return {
     leave,
     queries,
+    readModel: backend.readModel,
     users,
     employees,
     requests,

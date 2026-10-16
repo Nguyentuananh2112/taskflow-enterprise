@@ -36,10 +36,12 @@ export function createLeaveModule(d: LeaveModuleDeps): {
   commands: LeaveCommands;
   queries: LeaveQueries;
   approvedLeaves: Pick<LeaveQueries, 'approvedLeaves'>;
+  /** `ILeaveSummaryReader` của notifications (T-040b) — chỉ loại + ngày, không reason. */
+  summaries: Pick<ILeaveReadModel, 'leaveSummaries'>;
 } {
   const commands = new LeaveCommands(d);
   const queries = new LeaveQueries(d);
   const controller = new LeaveController({ commands, queries, responder: d.responder });
   const router = leaveRoutes({ controller, membership: d.membership, ...d.http });
-  return { router, commands, queries, approvedLeaves: queries };
+  return { router, commands, queries, approvedLeaves: queries, summaries: d.readModel };
 }

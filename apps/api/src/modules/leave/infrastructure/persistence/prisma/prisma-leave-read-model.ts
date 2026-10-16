@@ -2,6 +2,7 @@ import type {
   ILeaveReadModel,
   LeaveListFilter,
   LeaveListKey,
+  LeaveSummary,
 } from '../../../application/ports/leave-read-model.port';
 import type {
   LeaveBalanceRecord,
@@ -9,7 +10,7 @@ import type {
 } from '../../../application/ports/leave.ports';
 import { halfDaysFromDecimal } from '../../../domain/leave-balance';
 import type { CalendarDate } from '../../../domain/leave-days';
-import { fromDateOnly, type DbProvider } from './db';
+import { fromDateOnly, toDateOnly, type DbProvider } from './db';
 import { toRecord } from './prisma-leave.repository';
 
 /** Phía đọc leave trên Postgres (CQRS-lite, ADR-015). Mọi truy vấn có `workspaceId` (tenant); không ghi. */
@@ -56,6 +57,22 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
       orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
     });
     return rows.map(toRecord);
+  }
+
+  async leaveSummaries(
+    refs: readonly { workspaceId: string; refId: string }[],
+  ): Promise<ReadonlyMap<string, LeaveSummary>> {
+    if (refs.length === 0) return new Map();
+    const rows = await this.db().leaveRequest.findMany({
+      where: { OR: refs.map((r) => ({ id: r.refId, workspaceId: r.workspaceId })) },
+      select: { id: true, type: true, startDate: true, endDate: true }, // KHÔNG reason (B-H2)
+    });
+    return new Map(
+      rows.map((r) => [
+        r.id,
+        { type: r.type, startDate: toDateOnly(r.startDate), endDate: toDateOnly(r.endDate) },
+      ]),
+    );
   }
 
   async findBalances(

@@ -322,3 +322,19 @@ describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=
     });
   });
 });
+
+describe('leaveSummaries — reader cho notifications (T-040b)', () => {
+  it('tra theo cặp (ws, id): ws khác / id lạ không khớp; chỉ loại + ngày, không reason', async () => {
+    const h = await createLeaveHarness();
+    await h.seed({ id: id(1), reason: 'sốt cao' });
+    await h.seed({ id: id(2), workspaceId: W2, userId: U.Otto });
+    const map = await h.readModel.leaveSummaries([
+      { workspaceId: W1, refId: id(1) },
+      { workspaceId: W1, refId: id(2) },
+      { workspaceId: W1, refId: id(9) },
+    ]);
+    expect([...map.entries()]).toEqual([
+      [id(1), { type: 'ANNUAL', startDate: '2026-11-23', endDate: '2026-11-23' }],
+    ]);
+  });
+});

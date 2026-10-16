@@ -168,6 +168,24 @@ describe('PrismaLeaveReadModel', () => {
   });
 });
 
+describe('PrismaLeaveReadModel.leaveSummaries (reader cho notifications — T-040b)', () => {
+  it('một truy vấn theo cặp (ws, id); ws khác không khớp; không có reason', async () => {
+    const { uow, repo, read } = setup();
+    await uow.run(async () => {
+      await repo.add(record({ id: id(1), reason: 'sốt cao' }));
+      await repo.add(record({ id: id(2), workspaceId: W2 }));
+    });
+    const map = await read.leaveSummaries([
+      { workspaceId: W1, refId: id(1) },
+      { workspaceId: W1, refId: id(2) },
+    ]);
+    expect([...map.entries()]).toEqual([
+      [id(1), { type: 'ANNUAL', startDate: '2026-11-23', endDate: '2026-11-23' }],
+    ]);
+    expect(await read.leaveSummaries([])).toEqual(new Map());
+  });
+});
+
 describe('PrismaLeaveEmployeeDirectory', () => {
   it('nhân viên hiện tại (không VIEWER), sắp (tên, id), keyset qua tên trùng; ws khác tách biệt', async () => {
     const { directory } = setup();
