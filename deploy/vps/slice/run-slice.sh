@@ -82,8 +82,13 @@ for env in ${ENVS-production staging}; do # ENVS="" ⇒ không lượt nào (ch�
   gate "postgres + valkey"
   dc up -d --wait postgres valkey >/dev/null || { rc_all=1; break; }
   gate "migrate"
-  dc --profile migrate run --rm migrate 2>&1 | tail -2
-  [ "${PIPESTATUS[0]}" -eq 0 ] || { rc_all=1; break; }
+  # Toàn bộ output vào file; in dòng cuối + MỌI cảnh báo/lỗi (tail đơn thuần từng che `prisma:warn` libssl).
+  dc --profile migrate run --rm migrate > "migrate-$env.log" 2>&1
+  mrc=$?
+  tail -1 "migrate-$env.log"
+  echo "[slice] migrate rc=$mrc · cảnh báo/lỗi: $(grep -c -i -E 'warn|error' "migrate-$env.log")"
+  grep -i -E 'warn|error' "migrate-$env.log" | head -5
+  [ "$mrc" -eq 0 ] || { rc_all=1; break; }
   gate "api + web + caddy"
   dc up -d --wait api web caddy >/dev/null || { dc logs --tail 30 api web; rc_all=1; break; }
   echo "[slice] appEnv trong log api:"
