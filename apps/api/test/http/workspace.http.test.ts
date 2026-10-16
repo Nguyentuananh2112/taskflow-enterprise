@@ -172,10 +172,16 @@ describe('members', () => {
     expect(envelopeOf<{ userId: string }[]>(page2).data?.map((m) => m.userId)).toEqual([bob.id]);
     expect(envelopeOf(page2).meta.page).toMatchObject({ nextCursor: null, hasMore: false });
 
+    // F3 W-10: KHÔNG có cursor dự phòng hardcode — trước đây nó che việc GET /projects?limit=1 hỏng.
+    // Workspace mặc định có 1 project ⇒ tạo thêm 1 để trang đầu có nextCursor thật.
+    expect(
+      (await as(alice).post(ws(`/${id}/projects`), { name: 'Hai', keyPrefix: 'HAI' })).status,
+    ).toBe(201);
     const projectsPage = await as(alice).get(ws(`/${id}/projects?limit=1`));
-    const projectCursor =
-      envelopeOf(projectsPage).meta.page?.nextCursor ??
-      'eyJrIjoicHJvamVjdHMiLCJ2Ijp7ImFmdGVyIjoieCJ9fQ';
+    expect(projectsPage.status).toBe(200);
+    expect(envelopeOf(projectsPage).meta.page).toMatchObject({ hasMore: true, limit: 1 });
+    const projectCursor = envelopeOf(projectsPage).meta.page?.nextCursor;
+    expect(projectCursor).toEqual(expect.any(String));
     const misuse = await as(alice).get(ws(`/${id}/members?cursor=${projectCursor}`));
     expect(misuse.status).toBe(400);
     expect(errorOf(misuse).details?.issues?.[0]?.path).toEqual(['cursor']);
@@ -204,5 +210,82 @@ describe('members', () => {
     const left = await as(bob).delete(ws(`/${id}/members/${bob.id}`));
     expect(envelopeOf(left).data).toEqual({ userId: bob.id, unassignedTaskCount: 0 });
     expect((await as(bob).get(ws(`/${id}`))).status).toBe(404);
+  });
+});
+
+// F3 W-10 / W-11 (mutation, report §4.1): validate ở route chạy với người CÓ quyền (để không bị chặn
+// 403/404 trước), và route GET project có ca thành công.
+describe('F3: validate ở route với người có quyền + GET project thành công', () => {
+  it('W-10: body / params / query sai từ OWNER ⇒ 400 VALIDATION_ERROR (schema strict ở route)', async () => {
+    const id = alice.workspaceId;
+    const projects = await as(alice).get(ws(`/${id}/projects`));
+    const projectId = envelopeOf<{ id: string }[]>(projects).data?.[0]?.id ?? '';
+    expect(projectId).not.toBe('');
+    const bad: [string, () => ReturnType<ReturnType<typeof as>['get']>][] = [
+      ['PATCH ws name số', () => as(alice).patch(ws(`/${id}`), { name: 123 })],
+      ['PATCH ws field lạ', () => as(alice).patch(ws(`/${id}`), { name: 'x', deletedAt: null })],
+      ['restore wsId không phải uuid', () => as(alice).post(ws('/not-a-uuid/restore'))],
+      [
+        'thêm member email sai',
+        () => as(alice).post(ws(`/${id}/members`), { email: 'abc', role: 'VIEWER' }),
+      ],
+      [
+        'tạo project kèm workspaceId (mass assignment)',
+        () =>
+          as(alice).post(ws(`/${id}/projects`), {
+            name: 'Ba',
+            keyPrefix: 'BAA',
+            workspaceId: RANDOM_WS,
+          }),
+      ],
+      [
+        'sửa project kèm keyPrefix (bất biến)',
+        () => as(alice).patch(ws(`/${id}/projects/${projectId}`), { name: 'Ok', keyPrefix: 'NEW' }),
+      ],
+    ];
+    for (const [label, send] of bad) {
+      const res = await send();
+      expect(res.status, `${label}: ${res.text.slice(0, 200)}`).toBe(400);
+      expect(errorOf(res).code, label).toBe('VALIDATION_ERROR');
+    }
+  });
+
+  it('W-19: query / body strict — ?deleted=yes, DELETE thiếu confirmSlug / có field lạ, PATCH member có field lạ ⇒ 400', async () => {
+    const id = alice.workspaceId;
+    await addMember(alice, id, bob, 'MEMBER');
+    const list = await as(alice).get(ws('?deleted=yes'));
+    expect(list.status, list.text.slice(0, 200)).toBe(400);
+    const del = await as(alice).delete(ws(`/${id}`), {});
+    expect(del.status).toBe(400);
+    expect(errorOf(del).details?.issues?.map((i) => i.path.join('.'))).toContain('confirmSlug');
+    // confirmSlug ĐÚNG + field lạ: chỉ schema strict chặn được (use case sẽ xóa thật).
+    const slug = envelopeOf<{ slug: string }>(await as(alice).get(ws(`/${id}`))).data?.slug;
+    const extra = await as(alice).delete(ws(`/${id}`), { confirmSlug: slug, force: true });
+    expect(extra.status, extra.text.slice(0, 200)).toBe(400);
+    const role = await as(alice).patch(ws(`/${id}/members/${bob.id}`), { role: 'PM', x: 1 });
+    expect(role.status, role.text.slice(0, 200)).toBe(400);
+    expect(errorOf(role).code).toBe('VALIDATION_ERROR');
+    // Đối chứng: workspace chưa bị xóa, bob vẫn MEMBER (các request trên không làm gì).
+    expect((await as(alice).get(ws(`/${id}`))).status).toBe(200);
+  });
+
+  it('W-11: VIEWER / MEMBER của chính ws GET /projects/:id ⇒ 200, đúng ProjectDto của project đó', async () => {
+    const id = alice.workspaceId;
+    const carol = await t.register('Carol');
+    await addMember(alice, id, bob, 'VIEWER');
+    await addMember(alice, id, carol, 'MEMBER');
+    const list = await as(alice).get(ws(`/${id}/projects`));
+    const project = envelopeOf<{ id: string; keyPrefix: string; name: string }[]>(list).data?.[0];
+    expect(project).toBeDefined();
+    for (const who of [bob, carol]) {
+      const res = await as(who).get(ws(`/${id}/projects/${project!.id}`));
+      expect(res.status, res.text.slice(0, 200)).toBe(200);
+      expect(envelopeOf(res).data).toMatchObject({
+        id: project!.id,
+        workspaceId: id,
+        keyPrefix: project!.keyPrefix,
+        name: project!.name,
+      });
+    }
   });
 });
