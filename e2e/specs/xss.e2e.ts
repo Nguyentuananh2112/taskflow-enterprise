@@ -1,11 +1,20 @@
 import type { BrowserContext, Page } from '@playwright/test';
 
-import { apiAddMember, apiAssign, apiCreateTask, apiRegister, boardPath } from '../support/api';
+import {
+  apiAddMember,
+  apiAssign,
+  apiCreateProject,
+  apiCreateTask,
+  apiDeleteWorkspace,
+  apiRegister,
+  apiRenameWorkspace,
+  boardPath,
+} from '../support/api';
 import { card, column, waitBoardReady } from '../support/board';
 import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 import { openAs } from '../support/users';
 
-// SEC-49 (security.md): nội dung người dùng nhập — tiêu đề/mô tả task, họ tên — luôn hiển thị dạng TEXT,
+// SEC-49 (security.md): nội dung người dùng nhập — tiêu đề/mô tả task, họ tên, tên workspace/project — luôn hiển thị dạng TEXT,
 // không bao giờ thành HTML/JS ở board, drawer (sửa + chỉ đọc), realtime client khác, toast, danh sách
 // thành viên. Dữ liệu đi qua API THẬT (không chèn DOM giả). Bắt XSS theo 4 lớp độc lập:
 //   1. hàm bẫy `__xss(n)` được gọi (payload chạy được);
@@ -173,4 +182,53 @@ test('SEC-49: họ tên chứa payload ⇒ toast "Đã thêm …", danh sách th
   await assigned.getByRole('button', { name: 'Giao cho người tên lạ' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await assertInert(page, dialogs, 'drawer có bộ chọn người phụ trách');
+});
+
+/** ≤ 100 ký tự (WorkspaceName / ProjectName, một dòng). */
+const EVIL_WS = '<img src=x onerror=__xss(12)>"><svg onload=alert(13)> WS';
+const EVIL_PROJECT = '<script>__xss(14)</script><a href="javascript:__xss(15)">p</a> PJ';
+
+test('SEC-49: tên workspace + project chứa payload ⇒ picker /w, danh sách project, board, cài đặt project/ws, thành viên, khu Đã xóa chỉ hiển thị text', async ({
+  page,
+  context,
+  request,
+}) => {
+  const dialogs = await arm(context);
+  const a = newUser('xss-names');
+  const sa = await apiRegister(request, a);
+  await apiRenameWorkspace(request, sa, EVIL_WS);
+  const project = await apiCreateProject(request, sa, EVIL_PROJECT, 'XSSP');
+  const sp = { ...sa, projectId: project.id };
+  await loginViaUi(page, a);
+
+  const visits: [string, string, string][] = [
+    ['picker /w', '/w', EVIL_WS],
+    ['danh sách project', `/w/${sa.workspaceId}/projects`, EVIL_PROJECT],
+    ['board', boardPath(sp), EVIL_PROJECT],
+    ['cài đặt project', `${boardPath(sp)}/settings`, EVIL_PROJECT],
+    ['thành viên', `/w/${sa.workspaceId}/settings/members`, EVIL_WS],
+  ];
+  for (const [where, path, text] of visits) {
+    await page.goto(path);
+    await expect(
+      page.getByText(text, { exact: false }).filter({ visible: true }).first(),
+      where,
+    ).toBeVisible();
+    await assertInert(page, dialogs, where);
+  }
+
+  // Cài đặt workspace: tên nằm trong ô nhập (value) — nguyên văn, DOM vẫn trơ.
+  await page.goto(`/w/${sa.workspaceId}/settings`);
+  await expect(page.getByLabel('Tên workspace')).toHaveValue(EVIL_WS);
+  await assertInert(page, dialogs, 'cài đặt workspace');
+
+  // Khu "Đã xóa" ở /w liệt kê ws đã xóa mềm theo tên (đường render riêng).
+  await apiDeleteWorkspace(request, sa);
+  await page.goto('/w');
+  await page.getByText(/Đã xóa — khôi phục được/).click();
+  await expect(page.getByRole('button', { name: `Khôi phục ${EVIL_WS}` })).toBeVisible();
+  await expect(
+    page.getByText(EVIL_WS, { exact: false }).filter({ visible: true }).first(),
+  ).toBeVisible();
+  await assertInert(page, dialogs, 'khu Đã xóa');
 });
