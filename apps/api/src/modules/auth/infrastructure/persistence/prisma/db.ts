@@ -9,17 +9,5 @@ export type Db = Prisma.TransactionClient;
  */
 export type DbProvider = () => Db;
 
-/**
- * Tên constraint của lỗi unique. Prisma 7 + `@prisma/adapter-pg` KHÔNG có `meta.target`; tên nằm ở
- * `meta.driverAdapterError.cause.constraint.index` (đã kiểm trên Postgres 18.6 — T-020 report).
- */
-export function uniqueConstraintOf(err: unknown): string | null {
-  if (typeof err !== 'object' || err === null || (err as { code?: unknown }).code !== 'P2002') {
-    return null;
-  }
-  const meta = (
-    err as { meta?: { driverAdapterError?: { cause?: { constraint?: { index?: unknown } } } } }
-  ).meta;
-  const index = meta?.driverAdapterError?.cause?.constraint?.index;
-  return typeof index === 'string' ? index : null;
-}
+/** Lỗi unique ⇒ tên constraint (P2002 lẫn SQL thô P2010/23505) — helper dùng chung ở `core`. */
+export { uniqueConstraintOf } from '../../../../../core/persistence/unique-constraint';
