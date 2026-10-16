@@ -243,17 +243,31 @@ describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
 
   secCase(
     'SEC-HR-27',
-    'OWNER không có grant tường minh: cấp/thu HR_MANAGE cho OWNER ⇒ 422',
+    'Grant cho OWNER (kể cả [] — thu) và cho VIEWER ⇒ 422 GRANT_NOT_ALLOWED (SetMemberGrantsBody, T-037 f3523e3)',
     AREA,
     async () => {
       const t = await hr();
-      const res = await setGrants(actors, t.olivia, t.ws, t.olivia.userId, ['HR_MANAGE']);
-      expect(res.status).toBe(422);
-      const { code, details } = errorEnvelope(res).error as {
-        code: string;
-        details?: { rule?: string };
-      };
-      expect([code, details?.rule]).toEqual(['BUSINESS_RULE_VIOLATION', 'GRANT_NOT_ALLOWED']);
+      const cases: [string, string, string[]][] = [
+        ['OWNER cấp', t.olivia.userId, ['HR_MANAGE']],
+        ['OWNER thu', t.olivia.userId, []],
+        ['VIEWER cấp', t.vic.userId, ['HR_MANAGE']],
+      ];
+      for (const [tag, userId, grants] of cases) {
+        const res = await setGrants(actors, t.olivia, t.ws, userId, grants);
+        expect(res.status, tag).toBe(422);
+        const { code, details } = errorEnvelope(res).error as {
+          code: string;
+          details?: { rule?: string };
+        };
+        expect([code, details?.rule], tag).toEqual([
+          'BUSINESS_RULE_VIOLATION',
+          'GRANT_NOT_ALLOWED',
+        ]);
+      }
+      // Đối chứng: đặt [] cho MEMBER (Max) là hợp lệ ⇒ 200 + MemberDto có grants [].
+      const ok = await setGrants(actors, t.olivia, t.ws, t.max.userId, []);
+      expect(ok.status).toBe(200);
+      expect((ok.json as { data: { grants: string[] } }).data.grants).toEqual([]);
     },
   );
 });
