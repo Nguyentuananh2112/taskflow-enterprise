@@ -43,6 +43,7 @@ export function createMemberHandlers(
       email: row.user.email,
       fullName: row.user.fullName,
       role: row.membership.role,
+      grants: [], // T-041c nối grants thật (ADR-119)
       joinedAt: row.joinedAt,
     };
   };

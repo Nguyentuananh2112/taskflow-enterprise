@@ -1,6 +1,18 @@
 import { readFileSync } from 'node:fs';
 
-import { TaskAuditAction, TaskPriority, TaskStatus, WorkspaceRole } from '@taskflow/contracts';
+import {
+  AttendanceKind,
+  AttendanceSource,
+  LeaveDayPart,
+  LeaveStatus,
+  LeaveType,
+  MemberGrant,
+  NotificationType,
+  TaskAuditAction,
+  TaskPriority,
+  TaskStatus,
+  WorkspaceRole,
+} from '@taskflow/contracts';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -25,6 +37,13 @@ describe('Prisma enum ↔ @taskflow/contracts', () => {
     ['TaskStatus', TaskStatus.options],
     ['TaskPriority', TaskPriority.options],
     ['TaskAuditAction', TaskAuditAction.options],
+    ['MemberGrant', MemberGrant.options],
+    ['AttendanceKind', AttendanceKind.options],
+    ['AttendanceSource', AttendanceSource.options],
+    ['LeaveType', LeaveType.options],
+    ['LeaveDayPart', LeaveDayPart.options],
+    ['LeaveStatus', LeaveStatus.options],
+    ['NotificationType', NotificationType.options],
   ] as const)('%s khớp cả giá trị lẫn thứ tự', (name, options) => {
     expect(prismaEnum(name)).toEqual([...options]);
   });

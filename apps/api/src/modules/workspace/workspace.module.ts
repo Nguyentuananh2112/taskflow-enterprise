@@ -21,7 +21,12 @@ import type {
   IWorkspaceRepository,
 } from './application/ports/repositories.port';
 import { AddMemberUseCase } from './application/use-cases/add-member.use-case';
+import { HrAccess } from './application/adapters/hr-access';
+import { HrAuditWriter } from './application/hr-audit-writer';
+import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { ChangeMemberRoleUseCase } from './application/use-cases/change-member-role.use-case';
+import { ListHrAuditLogsQuery } from './application/use-cases/list-hr-audit-logs.query';
+import { SetMemberGrantsUseCase } from './application/use-cases/set-member-grants.use-case';
 import { CreateProjectUseCase } from './application/use-cases/create-project.use-case';
 import { CreateWorkspaceUseCase } from './application/use-cases/create-workspace.use-case';
 import { DeleteWorkspaceUseCase } from './application/use-cases/delete-workspace.use-case';
@@ -42,11 +47,13 @@ import {
   InMemoryWorkspaceQueries,
 } from './infrastructure/persistence/in-memory/in-memory-queries';
 import {
+  InMemoryHrAuditLog,
   InMemoryMembershipRepository,
   InMemoryProjectRepository,
   InMemoryWorkspaceRepository,
 } from './infrastructure/persistence/in-memory/in-memory-repositories';
 import { requireProject } from './presentation/membership';
+import { HrController } from './presentation/hr.controller';
 import { ProjectController } from './presentation/project.controller';
 import { WorkspaceController } from './presentation/workspace.controller';
 import { workspaceRoutes } from './presentation/workspace.routes';
@@ -56,6 +63,8 @@ export interface WorkspaceRepositories {
   memberships: IMembershipRepository;
   projects: IProjectRepository;
   queries: IWorkspaceQueries;
+  /** Mốc 3: HrAuditLog — dùng chung với attendance / leave qua `HrAuditWriter` (T-037). */
+  hrAudit: IHrAuditLog;
 }
 
 /** Repository InMemory (dev/test); `directory` cần được đồng bộ với user của auth (composition root). */
@@ -65,7 +74,8 @@ export function createInMemoryWorkspaceRepositories() {
   const projects = new InMemoryProjectRepository();
   const directory = new InMemoryUserDirectory();
   const queries = new InMemoryWorkspaceQueries(workspaces, memberships, projects, directory);
-  return { workspaces, memberships, projects, queries, directory };
+  const hrAudit = new InMemoryHrAuditLog((id) => directory.users.get(id)?.fullName);
+  return { workspaces, memberships, projects, queries, directory, hrAudit };
 }
 
 export interface WorkspaceModuleDeps {
@@ -87,6 +97,10 @@ export interface WorkspaceModule {
   /** Router cần `authenticate` của auth — tạo sau khi có module auth. */
   routes(authenticate: RequestHandler): Router;
   access: WorkspaceAccess;
+  /** Mốc 3 (T-037): chốt mọi lệnh ghi `hr:manage` — attendance (T-038) / leave (T-039) gọi trong tx. */
+  hrAccess: HrAccess;
+  /** Mốc 3: ghi HrAuditLog trong transaction của bên gọi. */
+  hrAudit: HrAuditWriter;
   accessChecker: WorkspaceProjectAccessChecker;
   provisioner: DefaultWorkspaceProvisioner;
   membershipReader: WorkspaceMembershipReader;
@@ -94,10 +108,11 @@ export interface WorkspaceModule {
 
 /** Composition của module Workspace/Member/Project (ADR-016). */
 export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
-  const { workspaces, memberships, projects, queries } = d.repos;
+  const { workspaces, memberships, projects, queries, hrAudit } = d.repos;
   const { uow, ids, clock, random, logger, notifier, cleaner, users } = d;
   const creator = new WorkspaceCreator({ workspaces, memberships, ids, clock });
   const access = new WorkspaceAccess({ workspaces, memberships });
+  const audit = new HrAuditWriter({ hrAudit, ids, clock });
 
   const workspaceController = new WorkspaceController({
     listMine: new ListMyWorkspacesQuery({ queries, clock }),
@@ -122,6 +137,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       users,
       cleaner,
       notifier,
+      audit,
       uow,
       clock,
       logger,
@@ -152,12 +168,28 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       workspaceRoutes({
         workspaces: workspaceController,
         projects: projectController,
+        hr: new HrController({
+          setGrants: new SetMemberGrantsUseCase({
+            memberships,
+            workspaces,
+            users,
+            audit,
+            notifier,
+            uow,
+            clock,
+            logger,
+          }),
+          listAuditLogs: new ListHrAuditLogsQuery({ hrAudit }),
+          responder: d.responder,
+        }),
         access,
         projectExists: requireProject(getProject),
         authenticate,
         limit: d.limit,
       }),
     access,
+    hrAccess: new HrAccess({ workspaces, memberships }),
+    hrAudit: audit,
     accessChecker: new WorkspaceProjectAccessChecker({ workspaces, memberships, projects }),
     provisioner: new DefaultWorkspaceProvisioner({ creator, projects, random, ids, clock }),
     membershipReader: new WorkspaceMembershipReader({ queries }),

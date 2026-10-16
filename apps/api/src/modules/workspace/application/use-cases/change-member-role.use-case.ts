@@ -2,6 +2,7 @@ import type { IClock } from '../../../../core/domain';
 import { ResourceNotFoundError } from '../../../../core/errors';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
+import type { HrAuditWriter } from '../hr-audit-writer';
 import { assertWorkspaceLive } from '../workspace-guard';
 import type {
   ITaskAssignmentCleaner,
@@ -19,6 +20,8 @@ export interface ChangeMemberRoleDeps {
   users: IUserDirectory;
   cleaner: ITaskAssignmentCleaner;
   notifier: IWorkspaceRealtimeNotifier;
+  /** ADR-119: đổi role xóa grants (sang OWNER / VIEWER) ⇒ HrAuditLog REVOKE cùng transaction (GR-09). */
+  audit: HrAuditWriter;
   uow: IUnitOfWork;
   clock: IClock;
   logger: ILogger;
@@ -48,6 +51,7 @@ export class ChangeMemberRoleUseCase {
       if (!user) throw new ResourceNotFoundError('user');
 
       const previousRole = target.role;
+      const grantsBefore = [...target.grants];
       if (!target.changeRole(role, this.d.clock.now())) {
         return { member: toMemberView(target.toSnapshot(), user), unassignedTaskCount: 0 }; // ROL-08
       }
@@ -63,7 +67,29 @@ export class ChangeMemberRoleUseCase {
             ).unassignedTaskCount
           : 0;
 
+      // Hạ / nâng sang role không giữ được grant ⇒ grants vừa bị xóa trong CÙNG câu UPDATE (save ở trên).
+      const grantsAfter = [...target.grants];
+      const grantsCleared = grantsBefore.length > 0 && grantsAfter.length === 0;
+      if (grantsCleared) {
+        await this.d.audit.record({
+          workspaceId: actor.workspaceId,
+          actorId: actor.userId,
+          action: 'REVOKE',
+          targetUserId: target.userId,
+          before: { grants: grantsBefore, role: previousRole },
+          after: { grants: grantsAfter, role },
+        });
+      }
+
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };
+      if (grantsCleared) {
+        this.d.uow.afterCommit(() =>
+          this.d.notifier.notifyGrantsChanged(
+            { userId: target.userId, workspaceId: actor.workspaceId, grants: grantsAfter },
+            meta,
+          ),
+        );
+      }
       this.d.uow.afterCommit(() => {
         // Sự kiện bảo mật (ASVS V16, T-028): thay đổi quyền.
         this.d.logger.info(
@@ -73,6 +99,7 @@ export class ChangeMemberRoleUseCase {
             actorId: actor.userId,
             from: previousRole,
             to: role,
+            grants: grantsAfter, // GR-10: grants còn lại sau khi đổi role
           },
           'member.role_changed',
         );

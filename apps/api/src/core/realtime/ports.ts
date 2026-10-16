@@ -55,3 +55,5 @@ export interface RealtimeEventMeta {
 }
 
 export type WorkspaceRole = 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER';
+/** ADR-119 — bản sao kiểu của grant (core không import module). */
+export type MemberGrant = 'HR_MANAGE';

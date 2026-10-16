@@ -25,6 +25,7 @@ const toDto = (w: WorkspaceRow, myRole: WorkspaceDto['myRole']): WorkspaceDto =>
   name: w.name,
   slug: w.slug,
   myRole,
+  myGrants: [], // T-041 nối grants thật (ADR-119)
   createdAt: w.createdAt,
   updatedAt: w.updatedAt,
 });

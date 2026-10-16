@@ -4,11 +4,13 @@ import {
   CreateProjectBody,
   CreateWorkspaceBody,
   DeleteWorkspaceBody,
+  ListHrAuditLogsQuery,
   ListMembersQuery,
   ListProjectsQuery,
   ListWorkspacesQuery,
   MemberParams,
   ProjectParams,
+  SetMemberGrantsBody,
   UpdateProjectBody,
   UpdateWorkspaceBody,
   WorkspaceParams,
@@ -21,12 +23,14 @@ import { validate } from '../../../core/http/validate';
 import type { WorkspaceAccess } from '../application/adapters/workspace-access';
 import type { ParentPermission, Permission } from '../domain/roles';
 import { loadMembership, permit } from './membership';
+import type { HrController } from './hr.controller';
 import type { ProjectController } from './project.controller';
 import type { WorkspaceController } from './workspace.controller';
 
 export interface WorkspaceRouteDeps {
   workspaces: WorkspaceController;
   projects: ProjectController;
+  hr: HrController;
   access: Pick<WorkspaceAccess, 'resolveActor'>;
   /** `requireProject(getProject)` — 404 project trước 403 cho route `/projects/:projectId`. */
   projectExists: RequestHandler;
@@ -100,6 +104,18 @@ export function workspaceRoutes(d: WorkspaceRouteDeps): Router {
     '/:wsId/members/:userId',
     ...scoped(MemberParams, 'member:update-role', { body: ChangeMemberRoleBody }),
     ws.changeRole,
+  );
+  // ADR-119: chỉ OWNER (`hr:grant`); body validate SAU khi biết có quyền.
+  router.put(
+    '/:wsId/members/:userId/grants',
+    ...scoped(MemberParams, 'hr:grant', { body: SetMemberGrantsBody }),
+    d.hr.setGrants,
+  );
+  // B-L1: nhật ký nhân sự — chỉ OWNER.
+  router.get(
+    '/:wsId/hr-audit-logs',
+    ...scoped(WorkspaceParams, 'hr:grant', { query: ListHrAuditLogsQuery }),
+    d.hr.listAuditLogs,
   );
   // Min role `member:leave`; xóa người khác cần thêm `member:remove` — Policy trong use case.
   router.delete('/:wsId/members/:userId', ...scoped(MemberParams, 'member:leave'), ws.removeMember);

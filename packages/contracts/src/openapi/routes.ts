@@ -1,6 +1,7 @@
 import * as z from 'zod';
 
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
+import { HrAuditLogDto, ListHrAuditLogsQuery } from '../hr/hr.schemas';
 import {
   AuthTokenDto,
   ChangePasswordBody,
@@ -43,6 +44,7 @@ import {
   MemberDto,
   MemberParams,
   RemoveMemberResponse,
+  SetMemberGrantsBody,
   UpdateWorkspaceBody,
   WorkspaceDto,
   WorkspaceParams,
@@ -53,9 +55,9 @@ import {
  * parity ở apps/api so khớp danh mục này với router Express thật (thiếu/thừa route ⇒ đỏ). Bảng mô tả
  * nghiệp vụ: docs/design/data-and-api.md §2.
  */
-export type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
+export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type Security = 'bearer' | 'refreshCookie' | 'none';
-export type Tag = 'auth' | 'workspaces' | 'members' | 'projects' | 'tasks';
+export type Tag = 'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr';
 
 export interface ApiRoute {
   method: HttpMethod;
@@ -255,6 +257,30 @@ export const API_ROUTES: readonly ApiRoute[] = [
     params: MemberParams,
     response: { status: 200, data: RemoveMemberResponse },
     errors: ['BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'put',
+    path: `${WS}/members/{userId}/grants`,
+    summary:
+      'Đặt quyền cấp thêm (Quản lý nhân sự) — chỉ OWNER; OWNER / VIEWER ⇒ 422 GRANT_NOT_ALLOWED',
+    tag: 'members',
+    security: 'bearer',
+    params: MemberParams,
+    body: SetMemberGrantsBody,
+    response: { status: 200, data: MemberDto },
+    errors: ['BUSINESS_RULE_VIOLATION'],
+  },
+
+  // ---------- hr (Mốc 3) ----------
+  {
+    method: 'get',
+    path: `${WS}/hr-audit-logs`,
+    summary: 'Nhật ký thao tác nhân sự — chỉ OWNER (không chứa lý do đơn nghỉ)',
+    tag: 'hr',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: ListHrAuditLogsQuery,
+    response: { status: 200, data: z.array(HrAuditLogDto), paged: true },
   },
 
   // ---------- projects ----------

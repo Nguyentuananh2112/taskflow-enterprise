@@ -3,7 +3,8 @@ import * as z from 'zod';
 import { ErrorCode } from '../common/error-codes';
 import { IsoDateTime, Uuid } from '../common/primitives';
 import { ProjectDto } from '../project/project.schemas';
-import { WorkspaceRole } from '../rbac/permissions';
+import { NotificationType } from '../hr/hr.schemas';
+import { MemberGrant, WorkspaceRole } from '../rbac/permissions';
 import { TaskStatus } from '../task/task.constants';
 import { TaskDto, TaskKey } from '../task/task.schemas';
 
@@ -20,6 +21,8 @@ export const REALTIME_EVENTS = Object.freeze({
   workspaceAccessRevoked: 'workspace:access-revoked',
   authExpired: 'auth:expired',
   memberRoleChanged: 'member:role-changed',
+  memberGrantsChanged: 'member:grants-changed',
+  notificationNew: 'notification:new',
 } as const);
 
 // ---------- Client → Server ----------
@@ -97,6 +100,20 @@ export const MemberRoleChangedEvent = realtimeEnvelope(
 );
 export type MemberRoleChangedEvent = z.infer<typeof MemberRoleChangedEvent>;
 
+/** ADR-119: tới `user:{id}` — web làm mới quyền ngay (REST vẫn kiểm mỗi request). Chỉ grants (SEC-HR-20). */
+export const MemberGrantsChangedEvent = realtimeEnvelope(
+  'member:grants-changed',
+  z.object({ workspaceId: Uuid, grants: z.array(MemberGrant) }),
+);
+export type MemberGrantsChangedEvent = z.infer<typeof MemberGrantsChangedEvent>;
+
+/** ADR-123: tới `user:{id}` sau commit — CHỈ id + loại (web tải lại danh sách / tăng badge). */
+export const NotificationNewEvent = realtimeEnvelope(
+  'notification:new',
+  z.object({ notificationId: Uuid, type: NotificationType, workspaceId: Uuid }),
+);
+export type NotificationNewEvent = z.infer<typeof NotificationNewEvent>;
+
 /** Generic event map cho `Server<C2S, S2C>` / `Socket<S2C, C2S>` — chỉ là type, không import socket.io. */
 export type ClientToServerEvents = {
   'project:join': (payload: ProjectJoinPayload, ack: (res: SocketAck) => void) => void;
@@ -113,4 +130,6 @@ export type ServerToClientEvents = {
   'workspace:access-revoked': (event: WorkspaceAccessRevokedEvent) => void;
   'auth:expired': (event: AuthExpiredEvent) => void;
   'member:role-changed': (event: MemberRoleChangedEvent) => void;
+  'member:grants-changed': (event: MemberGrantsChangedEvent) => void;
+  'notification:new': (event: NotificationNewEvent) => void;
 };

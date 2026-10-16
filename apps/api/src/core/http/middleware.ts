@@ -102,8 +102,15 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
       // So khớp chính xác — không regex, không phản chiếu Origin lạ.
       origin: (origin, callback) => callback(null, origin !== undefined && allowed.has(origin)),
       credentials: true,
-      methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Client-Id'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], // PUT: members/:userId/grants (T-037)
+      // Idempotency-Key: check-in / check-out (T-038, attendance-leave.md §5)
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Request-Id',
+        'X-Client-Id',
+        'Idempotency-Key',
+      ],
       exposedHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Policy', 'RateLimit'],
       maxAge: 600,
     }),

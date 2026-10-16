@@ -41,8 +41,16 @@ export const Permission = z.enum([
   'task:delete:own',
   'audit:read',
   'comment:create',
+  'attendance:self',
+  'leave:self',
+  'hr:manage',
+  'hr:grant',
 ]);
 export type Permission = z.infer<typeof Permission>;
+
+/** ADR-119: quyền cấp thêm theo thành viên. OWNER luôn `[]` (HR ngầm qua role — B-M2). */
+export const MemberGrant = z.enum(['HR_MANAGE']);
+export type MemberGrant = z.infer<typeof MemberGrant>;
 
 const READ: readonly Permission[] = [
   'workspace:read',
@@ -58,6 +66,7 @@ const CONTRIBUTE: readonly Permission[] = [
   'task:move',
   'comment:create',
 ];
+const EMPLOYEE: readonly Permission[] = ['attendance:self', 'leave:self'];
 const MANAGE: readonly Permission[] = [
   'member:add',
   'member:remove',
@@ -78,11 +87,44 @@ export const ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly Permissio
       'workspace:delete',
       'workspace:restore',
       'member:update-role',
+      ...EMPLOYEE,
+      'hr:manage',
+      'hr:grant',
     ] as const satisfies readonly Permission[]),
-    PM: Object.freeze([...READ, ...CONTRIBUTE, ...MANAGE]),
-    MEMBER: Object.freeze([...READ, ...CONTRIBUTE, 'task:assign:own', 'task:delete:own'] as const),
+    PM: Object.freeze([...READ, ...CONTRIBUTE, ...MANAGE, ...EMPLOYEE]),
+    MEMBER: Object.freeze([
+      ...READ,
+      ...CONTRIBUTE,
+      'task:assign:own',
+      'task:delete:own',
+      ...EMPLOYEE,
+    ] as const),
     VIEWER: Object.freeze([...READ]),
   });
+
+/** ADR-119: quyền mỗi grant mở thêm — parity với domain của API. */
+export const GRANT_PERMISSIONS: Readonly<Record<MemberGrant, readonly Permission[]>> =
+  Object.freeze({
+    HR_MANAGE: Object.freeze(['hr:manage'] as const satisfies readonly Permission[]),
+  });
+
+/** Quyền hiệu lực = role ∪ grants (ADR-119). Web dùng thay `roleHasPermission` khi có grants. */
+export function effectivePermissions(
+  role: WorkspaceRole,
+  grants: readonly MemberGrant[] = [],
+): ReadonlySet<Permission> {
+  const out = new Set<Permission>(ROLE_PERMISSIONS[role]);
+  for (const grant of grants) for (const p of GRANT_PERMISSIONS[grant]) out.add(p);
+  return out;
+}
+
+export function hasPermission(
+  role: WorkspaceRole,
+  grants: readonly MemberGrant[],
+  permission: Permission,
+): boolean {
+  return effectivePermissions(role, grants).has(permission);
+}
 
 /** Tiện ích thuần cho FE: role có permission không. */
 export function roleHasPermission(role: WorkspaceRole, permission: Permission): boolean {

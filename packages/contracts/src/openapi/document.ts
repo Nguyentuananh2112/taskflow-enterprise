@@ -128,7 +128,7 @@ export function buildOpenApiDocument(options: OpenApiOptions): Json {
         'Sinh tự động từ Zod contracts (`packages/contracts`). Envelope: `{ success, data, meta }` / `{ success: false, error, meta }`. Chi tiết: docs/design/data-and-api.md.',
     },
     servers: [{ url: '/api/v1' }],
-    tags: ['auth', 'workspaces', 'members', 'projects', 'tasks', 'system'].map((name) => ({
+    tags: ['auth', 'workspaces', 'members', 'projects', 'tasks', 'hr', 'system'].map((name) => ({
       name,
     })),
     paths,

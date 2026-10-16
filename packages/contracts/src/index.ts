@@ -10,4 +10,5 @@ export * from './project/project.schemas';
 export * from './task';
 export * from './audit/audit.schemas';
 export * from './realtime/events';
+export * from './hr/hr.schemas';
 export * from './system/healthz.schemas';

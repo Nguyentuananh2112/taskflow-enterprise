@@ -49,22 +49,46 @@ describe('SEC-30 — CORS whitelist chính xác', () => {
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('preflight hợp lệ: chỉ cho các method/header đã khai báo', async () => {
-    const res = await api.request({
+  // T-037: PUT (members/:userId/grants) + Idempotency-Key (check-in/out T-038) là thay đổi có chủ đích —
+  // khẳng định ĐÚNG tập khai báo (không thừa, không thiếu), method / header lạ vẫn bị từ chối.
+  const listOf = (h: string | undefined) =>
+    (h ?? '')
+      .split(',')
+      .map((v) => v.trim().toLowerCase())
+      .filter(Boolean)
+      .sort();
+  const preflight = (method: string, headers: string) =>
+    api.request({
       method: 'OPTIONS',
       path: PROBE,
       headers: {
         origin: api.webOrigin,
-        'access-control-request-method': 'PATCH',
-        'access-control-request-headers': 'authorization,content-type',
+        'access-control-request-method': method,
+        'access-control-request-headers': headers,
       },
     });
+
+  it('preflight hợp lệ: chỉ cho các method/header đã khai báo', async () => {
+    const res = await preflight('PUT', 'authorization,content-type,idempotency-key');
     expect(res.headers['access-control-allow-origin']).toBe(api.webOrigin);
-    const methods = (res.headers['access-control-allow-methods'] ?? '')
-      .split(',')
-      .map((m) => m.trim());
-    expect(methods).not.toContain('PUT');
-    expect(methods).not.toContain('*');
+    expect(listOf(res.headers['access-control-allow-methods'])).toEqual(
+      ['DELETE', 'GET', 'PATCH', 'POST', 'PUT'].map((m) => m.toLowerCase()),
+    );
+    expect(listOf(res.headers['access-control-allow-headers'])).toEqual([
+      'authorization',
+      'content-type',
+      'idempotency-key',
+      'x-client-id',
+      'x-request-id',
+    ]);
+  });
+
+  it('preflight method / header lạ (TRACE, X-Evil): không nằm trong tập cho phép, không có *', async () => {
+    const res = await preflight('TRACE', 'x-evil');
+    const methods = listOf(res.headers['access-control-allow-methods']);
+    const headers = listOf(res.headers['access-control-allow-headers']);
+    for (const bad of ['trace', 'connect', '*']) expect(methods).not.toContain(bad);
+    for (const bad of ['x-evil', '*']) expect(headers).not.toContain(bad);
   });
 });
 

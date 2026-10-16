@@ -1,5 +1,5 @@
 // Port do module Workspace ĐỊNH NGHĨA; bên khác hiện thực, wire ở composition root (ADR-093).
-import type { WorkspaceRole } from '../../domain/roles';
+import type { MemberGrant, WorkspaceRole } from '../../domain/roles';
 
 export interface UserSummary {
   id: string;
@@ -50,6 +50,11 @@ export interface IWorkspaceRealtimeNotifier {
   ): Promise<void>;
   notifyRoleChanged(
     input: { userId: string; workspaceId: string; role: WorkspaceRole },
+    meta: RealtimeEventMeta,
+  ): Promise<void>;
+  /** ADR-119: `member:grants-changed` tới `user:{id}` — chỉ grants (SEC-HR-20). */
+  notifyGrantsChanged(
+    input: { userId: string; workspaceId: string; grants: readonly MemberGrant[] },
     meta: RealtimeEventMeta,
   ): Promise<void>;
   closeWorkspace(

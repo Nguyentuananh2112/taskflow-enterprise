@@ -6,7 +6,7 @@ import type {
   PageRequest,
 } from '../../../application/ports/queries.port';
 import type { ProjectSnapshot } from '../../../domain/project';
-import type { WorkspaceRole } from '../../../domain/roles';
+import type { MemberGrant, WorkspaceRole } from '../../../domain/roles';
 import type { WorkspaceSnapshot } from '../../../domain/workspace';
 import type { DbProvider } from './db';
 
@@ -52,14 +52,14 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
 
   async listActiveForUser(
     userId: string,
-  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole }[]> {
+  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[] }[]> {
     const rows = await this.db().workspaceMember.findMany({
       where: { userId, workspace: { deletedAt: null } },
       orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
       take: MAX_MY_WORKSPACES,
-      select: { role: true, workspace: { select: WS } },
+      select: { role: true, grants: true, workspace: { select: WS } },
     });
-    return rows.map((r) => ({ workspace: r.workspace, role: r.role }));
+    return rows.map((r) => ({ workspace: r.workspace, role: r.role, grants: r.grants }));
   }
 
   async listDeletedOwnedBy(userId: string, now: Date): Promise<WorkspaceSnapshot[]> {
@@ -83,13 +83,15 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
         workspace_id: string;
         user_id: string;
         role: WorkspaceRole;
+        grants: MemberGrant[];
         joined_at: Date;
         updated_at: Date;
         email: string;
         full_name: string;
       }[]
     >`
-      SELECT m.id, m.workspace_id, m.user_id, m.role, m.joined_at, m.updated_at, u.email, u.full_name
+      SELECT m.id, m.workspace_id, m.user_id, m.role, m.grants::text[] AS grants, m.joined_at, m.updated_at,
+             u.email, u.full_name
         FROM workspace_members m JOIN users u ON u.id = m.user_id
        WHERE m.workspace_id = ${workspaceId}::uuid
          AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id = m.workspace_id AND w.deleted_at IS NULL)
@@ -105,6 +107,7 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
         workspaceId: r.workspace_id,
         userId: r.user_id,
         role: r.role,
+        grants: r.grants,
         joinedAt: r.joined_at,
         updatedAt: r.updated_at,
         email: r.email,

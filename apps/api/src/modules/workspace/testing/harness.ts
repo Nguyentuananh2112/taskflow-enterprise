@@ -15,6 +15,8 @@ import type {
   IWorkspaceRealtimeNotifier,
   UserSummary,
 } from '../application/ports/collaborators.port';
+import { HrAuditWriter } from '../application/hr-audit-writer';
+import type { HrAuditEntry, IHrAuditLog } from '../application/ports/hr-audit.port';
 import type { IWorkspaceQueries } from '../application/ports/queries.port';
 import type {
   IMembershipRepository,
@@ -28,6 +30,7 @@ import { Project, type ProjectSnapshot } from '../domain/project';
 import type { WorkspaceRole } from '../domain/roles';
 import { Workspace, type WorkspaceSnapshot } from '../domain/workspace';
 import {
+  InMemoryHrAuditLog,
   InMemoryMembershipRepository,
   InMemoryProjectRepository,
   InMemoryWorkspaceRepository,
@@ -76,6 +79,7 @@ export interface WorkspaceBackend {
   projects: IProjectRepository & Rows<ProjectSnapshot>;
   users: IUserDirectory & { seed(user: UserSummary): void | Promise<void> };
   queries: IWorkspaceQueries;
+  hrAudit: IHrAuditLog & Rows<HrAuditEntry>;
   purger: IWorkspacePurger;
   uow: IUnitOfWork & {
     readonly steps: UowStep[];
@@ -89,14 +93,16 @@ export function inMemoryWorkspaceBackend(): WorkspaceBackend {
   const memberships = new InMemoryMembershipRepository();
   const projects = new InMemoryProjectRepository();
   const users = new InMemoryUserDirectory();
+  const hrAudit = new InMemoryHrAuditLog((id) => users.users.get(id)?.fullName);
   return {
     workspaces,
     memberships,
     projects,
     users,
     queries: new InMemoryWorkspaceQueries(workspaces, memberships, projects, users),
+    hrAudit,
     purger: new InMemoryWorkspacePurger(workspaces, memberships, projects),
-    uow: new FakeUnitOfWork(workspaces, memberships, projects),
+    uow: new FakeUnitOfWork(workspaces, memberships, projects, hrAudit),
   };
 }
 
@@ -111,6 +117,7 @@ export function createWorkspaceHarness(
   const cleaner = new SpyTaskAssignmentCleaner(uow);
   const logger = new SpyLogger();
   const creator = new WorkspaceCreator({ workspaces, memberships, ids, clock });
+  const audit = new HrAuditWriter({ hrAudit: backend.hrAudit, ids, clock });
   const seeded = new Set<string>();
 
   const h = {
@@ -122,6 +129,7 @@ export function createWorkspaceHarness(
     cleaner,
     logger,
     creator,
+    audit,
 
     /** Seed user (một lần mỗi tên); id cố định theo tên — `uid(name)`. */
     async user(name: string) {

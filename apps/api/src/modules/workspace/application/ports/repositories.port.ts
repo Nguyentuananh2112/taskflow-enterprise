@@ -38,6 +38,11 @@ export interface IMembershipRepository {
    */
   lockOwners(workspaceId: string): Promise<string[]>;
   listUserIds(workspaceId: string): Promise<string[]>;
+  /**
+   * Mốc 3 (B-H3a): đọc membership + khóa dòng `FOR SHARE` — gọi TRONG transaction. UPDATE dòng đó
+   * (thu grant, đổi role) song song phải chờ ta commit và ngược lại. InMemory: như `find`.
+   */
+  findForShare(workspaceId: string, userId: string): Promise<Membership | null>;
 }
 
 export interface IProjectRepository {
