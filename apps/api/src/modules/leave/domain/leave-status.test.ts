@@ -102,6 +102,14 @@ describe('máy trạng thái đơn nghỉ (thiết kế §9, test-spec §3)', ()
       conflictOf(() => nextLeaveStatus('PENDING', 'archive' as LeaveAction, FUTURE)),
     ).toBeInstanceOf(LeaveConflictError);
   });
+
+  it('409 mang code RESOURCE_CONFLICT + reason invalid_transition (web rẽ nhánh theo code + reason — mutation L3)', () => {
+    expect(conflictOf(() => nextLeaveStatus('REJECTED', 'approve', FUTURE))).toMatchObject({
+      statusCode: 409,
+      code: 'RESOURCE_CONFLICT',
+      details: { reason: 'invalid_transition', from: 'REJECTED', action: 'approve' },
+    });
+  });
 });
 
 describe('localDate — "hôm nay" theo múi giờ của lịch (D-M5, ADR-120)', () => {
