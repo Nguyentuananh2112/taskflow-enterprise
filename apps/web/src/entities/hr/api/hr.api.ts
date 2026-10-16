@@ -53,10 +53,11 @@ export const hrAttendanceApi = {
     http.get(`${att(wsId)}/holidays`, { schema: z.array(HolidayDto), query: { year } }),
   putHoliday: (wsId: string, date: string, body: { name: string; reason?: string }) =>
     http.put(`${att(wsId)}/holidays/${enc(date)}`, { schema: HolidayDto, body }),
+  /** 204 idempotent; không body (A) — chỉ ngày đã qua (OWNER) mới gửi JSON `{ reason }`. */
   deleteHoliday: (wsId: string, date: string, reason?: string) =>
     http.delete(`${att(wsId)}/holidays/${enc(date)}`, {
       schema: z.undefined(),
-      body: reason ? { reason } : {},
+      ...(reason ? { body: { reason } } : {}),
     }),
 };
 
