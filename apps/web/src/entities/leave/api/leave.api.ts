@@ -1,0 +1,28 @@
+import * as z from 'zod';
+
+import { http } from '@/shared/api';
+import {
+  LeaveBalanceDto,
+  LeaveRequestDto,
+  type CreateLeaveRequestBody,
+} from '@/shared/api/m3-provisional';
+
+const base = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}`;
+
+/** attendance-leave.md §5 (đơn của tôi + số phép). */
+export const leaveApi = {
+  mine: (wsId: string, cursor?: string) =>
+    http.request('GET', `${base(wsId)}/leave-requests`, {
+      schema: z.array(LeaveRequestDto),
+      query: { mine: 1, cursor, limit: 50 },
+    }),
+  create: (wsId: string, body: CreateLeaveRequestBody) =>
+    http.post(`${base(wsId)}/leave-requests`, { schema: LeaveRequestDto, body }),
+  cancel: (wsId: string, id: string, expectedVersion: number) =>
+    http.post(`${base(wsId)}/leave-requests/${encodeURIComponent(id)}/cancel`, {
+      schema: LeaveRequestDto,
+      body: { expectedVersion },
+    }),
+  myBalance: (wsId: string, year: number) =>
+    http.get(`${base(wsId)}/leave-balances/me`, { schema: LeaveBalanceDto, query: { year } }),
+};

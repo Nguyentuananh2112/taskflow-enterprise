@@ -113,6 +113,9 @@ export function AttendanceCard({ wsId, enabled }: Props) {
           <Link href={`/w/${wsId}/attendance`} className="text-sm text-primary hover:underline">
             Bảng công của tôi
           </Link>
+          <Link href={`/w/${wsId}/leave`} className="text-sm text-primary hover:underline">
+            Nghỉ phép
+          </Link>
         </div>
       </div>
     </section>
