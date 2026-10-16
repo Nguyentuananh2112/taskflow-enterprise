@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { requestContext } from '../../../../core/context/request-context';
 import {
@@ -175,5 +175,62 @@ describe('CreateTaskUseCase', () => {
     expect(attempts).toBe(3);
     expect(h.uow.rollbacks).toBe(3);
     expect((await h.project(P1)).nextTaskNumber).toBe(1);
+  });
+});
+
+// F3 (mutation, report §4.2) — biên của create mà mutant còn sống.
+describe('CreateTaskUseCase — biên (F3 mutation)', () => {
+  it('T-2: khóa ĐÚNG cột TODO trước khi đọc rank cuối (ADR-116 — không đọc khóa tạm `~<id>` của rebalance)', async () => {
+    const h = await createTaskHarness();
+    const lockColumn = vi.spyOn(h.deps.tasks, 'lockColumn');
+    const lastRank = vi.spyOn(h.deps.tasks, 'lastRank');
+    await h.create.execute({ ...h.scope('Mia'), input: { title: 'Có khóa' } });
+    expect(lockColumn).toHaveBeenCalledWith(P1, 'TODO');
+    // Khóa phải lấy TRƯỚC khi đọc hàng xóm.
+    expect(lockColumn.mock.invocationCallOrder[0]!).toBeLessThan(
+      lastRank.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('T-10: description + priority khác mặc định được lưu', async () => {
+    const h = await createTaskHarness();
+    const dto = await h.create.execute({
+      ...h.scope('Mia'),
+      input: { title: 'abc', description: 'Mô tả', priority: 'HIGH' },
+    });
+    expect(dto).toMatchObject({ description: 'Mô tả', priority: 'HIGH' });
+  });
+
+  it('T-11: MEMBER gửi `assigneeId: null` (không gán) ⇒ tạo được', async () => {
+    const h = await createTaskHarness();
+    const dto = await h.create.execute({
+      ...h.scope('Mia'),
+      input: { title: 'Không gán', assigneeId: null },
+    });
+    expect(dto.assignee).toBeNull();
+  });
+
+  it('T-22: 403 mang đúng quyền thiếu (`details.required`)', async () => {
+    const h = await createTaskHarness();
+    await expect(
+      h.create.execute({ ...h.scope('Vic'), input: { title: 'x' } }),
+    ).rejects.toMatchObject({ statusCode: 403, details: { required: 'task:create' } });
+    await expect(
+      h.create.execute({ ...h.scope('Mia'), input: { title: 'x', assigneeId: U.Max } }),
+    ).rejects.toMatchObject({ statusCode: 403, details: { required: 'task:assign:any' } });
+  });
+
+  it('T-23: project của workspace khác ⇒ 404 `details.resource = project`', async () => {
+    const h = await createTaskHarness();
+    await expect(
+      h.create.execute({ ...h.scope('Mia', Q1), input: { title: 'x' } }),
+    ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'project' } });
+  });
+
+  it('T-24: project archived + assignee không phải thành viên ⇒ PROJECT_ARCHIVED (422 đứng trước kiểm assignee)', async () => {
+    const h = await createTaskHarness();
+    await expect(
+      h.create.execute({ ...h.scope('Pam', P2), input: { title: 'x', assigneeId: U.Otto } }),
+    ).rejects.toBeInstanceOf(ProjectArchivedError);
   });
 });
