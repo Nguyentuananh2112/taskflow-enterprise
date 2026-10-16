@@ -1,5 +1,5 @@
+import { ResourceNotFoundError } from '../../../../core/errors';
 import { countLeaveHalfDays } from '../../domain/leave-days';
-import { LeaveNotFoundError } from '../../domain/leave-errors';
 import { nextLeaveStatus } from '../../domain/leave-status';
 import { toLeaveDto, type LeaveRequestDto } from '../leave-dto';
 import {
@@ -25,7 +25,7 @@ export class CancelLeaveUseCase {
     const { workspaceId, actorId } = scope;
     const d = this.kit.d;
     const found = await d.requests.find(workspaceId, input.requestId);
-    if (!found || found.userId !== actorId) throw new LeaveNotFoundError();
+    if (!found || found.userId !== actorId) throw new ResourceNotFoundError('leave_request');
 
     return d.uow.run(async () => {
       await d.requests.lockUser(workspaceId, actorId);

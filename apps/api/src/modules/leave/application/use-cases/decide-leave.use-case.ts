@@ -1,5 +1,6 @@
+import { ResourceNotFoundError } from '../../../../core/errors';
 import { countLeaveHalfDays } from '../../domain/leave-days';
-import { LeaveConflictError, LeaveNotFoundError } from '../../domain/leave-errors';
+import { LeaveConflictError } from '../../domain/leave-errors';
 import { nextLeaveStatus, type LeaveAction } from '../../domain/leave-status';
 import { toLeaveDto, type LeaveRequestDto } from '../leave-dto';
 import {
@@ -42,7 +43,7 @@ export class DecideLeaveUseCase {
     if (action === 'revoke') this.kit.requireNote(note, 'Thu hồi đơn đã duyệt phải có lý do.');
     await this.kit.requireActor(workspaceId, actorId, PERMISSION_HR_MANAGE);
     const found = await d.requests.find(workspaceId, requestId);
-    if (!found) throw new LeaveNotFoundError();
+    if (!found) throw new ResourceNotFoundError('leave_request');
 
     return d.uow.run(async () => {
       await d.requests.lockUser(workspaceId, found.userId);

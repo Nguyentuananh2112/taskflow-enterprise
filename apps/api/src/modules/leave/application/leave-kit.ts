@@ -1,5 +1,6 @@
 import type { IClock, IIdGenerator } from '../../../core/domain';
 import {
+  BusinessRuleViolationError,
   ForbiddenError,
   ResourceNotFoundError,
   ValidationError,
@@ -13,7 +14,6 @@ import {
   type LeaveType,
 } from '../domain/leave-balance';
 import { countLeaveHalfDays, type CalendarDate, type HalfDays } from '../domain/leave-days';
-import { LeaveNotFoundError } from '../domain/leave-errors';
 import { localDate } from '../domain/leave-status';
 import { toLeaveDto } from './leave-dto';
 import type {
@@ -75,8 +75,9 @@ export class LeaveKit {
   }
 
   /**
-   * B-H1: lệnh `hr:manage` nhắm vào CHÍNH MÌNH ⇒ 403, trừ OWNER (R26) — OWNER tự làm thì bắt buộc lý do
-   * (ghi vào HrAuditLog qua `note`).
+   * B-H1 (quy ước chung attendance + leave, B): lệnh `hr:manage` nhắm vào CHÍNH MÌNH ⇒ 403 (kiểm TRƯỚC lý do),
+   * trừ OWNER (R26) — OWNER tự làm mà thiếu lý do ⇒ 422 `REASON_REQUIRED` (lý do CÓ ĐIỀU KIỆN theo người gọi,
+   * schema không biết actor). Sẽ thay bằng helper `assertHrWrite` của T-037 phần 2.
    */
   assertNotSelf(actor: LeaveActor, targetUserId: string, note: string | null): void {
     if (actor.userId !== targetUserId) return;
@@ -86,7 +87,12 @@ export class LeaveKit {
         'Không thể tự xử lý dữ liệu nghỉ phép của mình.',
       );
     }
-    this.requireNote(note, 'Chủ workspace tự xử lý dữ liệu của mình phải ghi lý do.');
+    if (!note?.trim()) {
+      throw new BusinessRuleViolationError(
+        'REASON_REQUIRED',
+        'Chủ workspace tự xử lý dữ liệu của mình phải ghi lý do.',
+      );
+    }
   }
 
   requireNote(note: string | null, message: string): void {
@@ -100,7 +106,7 @@ export class LeaveKit {
     expectedVersion: number,
   ): Promise<LeaveRequestRecord> {
     const record = await this.d.requests.find(workspaceId, requestId);
-    if (!record) throw new LeaveNotFoundError();
+    if (!record) throw new ResourceNotFoundError('leave_request');
     if (record.version !== expectedVersion) throw new VersionConflictError(record.version);
     return record;
   }

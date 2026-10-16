@@ -182,13 +182,15 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     expect(h.requests.rows()[0]).toMatchObject({ status: 'PENDING', version: 1 });
   });
 
-  it('LV-10: Olivia (OWNER) tự duyệt ⇒ bắt buộc lý do (400 note), có lý do ⇒ 200 + audit note (R26)', async () => {
+  it('LV-10: Olivia (OWNER) tự duyệt ⇒ thiếu lý do 422 REASON_REQUIRED (quy ước B), có lý do ⇒ 200 + audit note (R26)', async () => {
     const h = createLeaveHarness();
     h.seed({ id: 'boss', userId: U.Olivia });
-    await expect(h.leave.approve(h.as(U.Olivia), 'boss', 1)).rejects.toMatchObject({
-      statusCode: 400,
-      details: { issues: [expect.objectContaining({ path: ['note'] })] },
-    });
+    for (const note of [null, '   ']) {
+      await expect(h.leave.approve(h.as(U.Olivia), 'boss', 1, note)).rejects.toMatchObject({
+        statusCode: 422,
+        details: { rule: 'REASON_REQUIRED' },
+      });
+    }
     await expect(
       h.leave.approve(h.as(U.Olivia), 'boss', 1, 'chủ công ty tự duyệt'),
     ).resolves.toMatchObject({
@@ -394,17 +396,23 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
     });
   });
 
-  it('LB-05: Hana chỉnh của chính Hana ⇒ 403; OWNER tự chỉnh ⇒ cần lý do', async () => {
+  it('LB-05: Hana chỉnh của chính Hana ⇒ 403 dù CÓ lý do (self kiểm trước lý do); OWNER tự chỉnh thiếu lý do ⇒ 422 REASON_REQUIRED', async () => {
     const h = createLeaveHarness();
     await expect(
-      h.leave.adjustBalance(h.as(U.Hana), { userId: U.Hana, year: 2026, adjustment: 4 }),
+      h.leave.adjustBalance(h.as(U.Hana), {
+        userId: U.Hana,
+        year: 2026,
+        adjustment: 4,
+        note: 'có lý do',
+      }),
     ).rejects.toMatchObject({
       statusCode: 403,
     });
     await expect(
       h.leave.adjustBalance(h.as(U.Olivia), { userId: U.Olivia, year: 2026, adjustment: 4 }),
     ).rejects.toMatchObject({
-      statusCode: 400,
+      statusCode: 422,
+      details: { rule: 'REASON_REQUIRED' },
     });
     await expect(
       h.leave.adjustBalance(h.as(U.Olivia), {
