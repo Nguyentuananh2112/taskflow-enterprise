@@ -72,7 +72,7 @@ test('CD-02: bấm-thả tại chỗ trên tiêu đề (kể cả giữ lâu) �
   expect(patches).toEqual([]);
 });
 
-test('CD-03: nhấn trên nút "⋯" rồi rê 60 px ⇒ KHÔNG kéo; nút vẫn mở menu', async ({
+test('CD-03: nhấn trên nút "⋯" rồi rê 60 px ⇒ KHÔNG kéo; chính lần nhấn đó mở menu', async ({
   page,
   request,
 }, testInfo) => {
@@ -87,9 +87,11 @@ test('CD-03: nhấn trên nút "⋯" rồi rê 60 px ⇒ KHÔNG kéo; nút vẫn
   await expect(page.locator('[data-dnd-dragging]')).toHaveCount(0);
   await page.mouse.up();
   await expect(todoCard).toBeVisible();
-  await menu.click();
+  // Menu mở NGAY lúc pointerdown (như Radix) — chính lần nhấn đó mở menu thay vì khởi động kéo. Không
+  // click lại: pointerdown lần hai sẽ ĐÓNG menu (F, cổng 84f8332).
   await expect(page.getByRole('menuitem', { name: /Chuyển tới Đang làm/ })).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menuitem')).toHaveCount(0);
   expect(patches).toEqual([]);
 });
 
