@@ -99,10 +99,15 @@ describe('mock HR — chấm công', () => {
     const members = (today.body.data as { members: Array<{ user: { fullName: string } }> }).members;
     expect(members.map((m) => m.user.fullName)).toEqual(['Nguyễn An', 'Trần Lan']);
     const month = await send('GET', p(ws, '/attendance?month=2026-10'), owner.token);
-    const rows = month.body.data as Array<{ days: unknown[]; totals: { absentDays: number } }>;
+    const rows = month.body.data as Array<{
+      days: Array<{ date: string; status: string }>;
+      totals: { absentDays: number };
+    }>;
     expect(rows).toHaveLength(2);
     expect(rows[0]?.days).toHaveLength(31);
-    expect(rows[0]?.totals.absentDays).toBeGreaterThan(0);
+    // Gia nhập hôm nay (15/10) ⇒ ngày trước đó NOT_EMPLOYED, không tính vắng (A: NOT_EMPLOYED tính 0).
+    expect(rows[0]?.days[13]).toMatchObject({ date: '2026-10-14', status: 'NOT_EMPLOYED' });
+    expect(rows[0]?.totals.absentDays).toBe(0);
     const stranger = crypto.randomUUID();
     const none = await send(
       'GET',

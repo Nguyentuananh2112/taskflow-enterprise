@@ -5,7 +5,7 @@ import { useState, type FormEvent } from 'react';
 
 import { minutesToClock } from '@/entities/attendance';
 import { calendarErrorMessage, hrAttendanceApi, hrKeys } from '@/entities/hr';
-import { CreateWorkScheduleBody } from '@/shared/api/m3-provisional';
+import { CreateWorkScheduleBody } from '@taskflow/contracts/attendance';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { toast } from '@/shared/ui/toast';

@@ -1,12 +1,12 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 
-import type { HrDayDto, AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
+import type { AttendanceDayDto, AttendanceMemberMonthDto } from '@taskflow/contracts/attendance';
 
 import { hrKeys } from '../model/query-keys';
 import { replaceTimesheetDay, totalsOf } from './timesheet-cache';
 
-const day = (date: string, over: Partial<HrDayDto> = {}): HrDayDto => ({
+const day = (date: string, over: Partial<AttendanceDayDto> = {}): AttendanceDayDto => ({
   date,
   timezone: 'Asia/Ho_Chi_Minh',
   isWorkday: true,
@@ -25,7 +25,7 @@ const day = (date: string, over: Partial<HrDayDto> = {}): HrDayDto => ({
   ...over,
 });
 
-const row = (id: string, days: HrDayDto[]): AttendanceMemberMonthDto => ({
+const row = (id: string, days: AttendanceDayDto[]): AttendanceMemberMonthDto => ({
   user: { id, fullName: id },
   left: false,
   days,
@@ -66,7 +66,7 @@ describe('replaceTimesheetDay', () => {
       pages: [{ data: [a, b], page: undefined, requestId: undefined }],
       pageParams: [undefined],
     });
-    const { timezone: _tz, ...fresh } = day('2026-10-02', {
+    const fresh = day('2026-10-02', {
       status: 'PRESENT',
       workedMin: 480,
       firstIn: '2026-10-02T01:00:00.000Z',

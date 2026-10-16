@@ -1,16 +1,14 @@
-import type { AttendanceDayDto } from '@taskflow/contracts/attendance';
+import type { AttendanceDayDto, AttendanceMemberMonthDto } from '@taskflow/contracts/attendance';
 import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 
 import type { ApiResult } from '@/shared/api';
-import type { HrDayDto, AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
-
 import { hrKeys } from '../model/query-keys';
 
 type Pages = InfiniteData<ApiResult<AttendanceMemberMonthDto[]>>;
 
 /** Tổng của một người — CÙNG quy tắc với server (A chốt): vắng/nghỉ bước 0,5. */
-export function totalsOf(days: readonly HrDayDto[]): AttendanceMemberMonthDto['totals'] {
-  const sum = (f: (d: HrDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
+export function totalsOf(days: readonly AttendanceDayDto[]): AttendanceMemberMonthDto['totals'] {
+  const sum = (f: (d: AttendanceDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
   return {
     workedMin: sum((d) => d.workedMin),
     lateDays: sum((d) => (d.late ? 1 : 0)),

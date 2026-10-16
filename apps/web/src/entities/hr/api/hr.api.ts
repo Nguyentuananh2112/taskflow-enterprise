@@ -1,7 +1,12 @@
 import {
+  AttendanceCompanyTodayDto,
   AttendanceEventChangeDto,
   AttendanceEventsDto,
+  AttendanceMemberMonthDto,
+  HolidayDto,
+  WorkScheduleDto,
   type AdjustAttendanceBody,
+  type CreateWorkScheduleBody,
 } from '@taskflow/contracts/attendance';
 import type { LeaveStatus } from '@taskflow/contracts/hr';
 import {
@@ -12,13 +17,6 @@ import {
 import * as z from 'zod';
 
 import { http } from '@/shared/api';
-import {
-  AttendanceCompanyTodayDto,
-  HolidayDto,
-  AttendanceMemberMonthDto,
-  WorkScheduleDto,
-  type CreateWorkScheduleBody,
-} from '@/shared/api/m3-provisional';
 
 const ws = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}`;
 const att = (wsId: string) => `${ws(wsId)}/attendance`;

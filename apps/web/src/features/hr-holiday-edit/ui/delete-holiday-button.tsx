@@ -1,6 +1,6 @@
 'use client';
 
-import type { HolidayDto } from '@/shared/api/m3-provisional';
+import type { HolidayDto } from '@taskflow/contracts/attendance';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 

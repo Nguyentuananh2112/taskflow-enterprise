@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { MonthTable } from '@/entities/attendance';
 import { DayPunchesDialog } from '@/features/hr-attendance-adjust';
-import type { AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
+import type { AttendanceMemberMonthDto } from '@taskflow/contracts/attendance';
 
 type Props = Readonly<{
   wsId: string;

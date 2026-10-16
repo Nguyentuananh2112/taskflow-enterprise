@@ -114,24 +114,12 @@ export class MockAttendance {
     return id;
   }
 
-  /** Lượt theo id trong workspace (HR hủy lượt — id của workspace khác ⇒ không thấy). */
-  locate(wsId: string, id: string): { userId: string; date: string; punch: Punch } | undefined {
-    for (const [k, list] of this.#punches) {
+  /** Mọi (user, ngày, lượt) của workspace — phía HR (`MockHr`) tự lọc: tìm lượt theo id, người đã rời. */
+  *entries(wsId: string): Generator<{ userId: string; date: string; punches: readonly Punch[] }> {
+    for (const [k, punches] of this.#punches) {
       const [w, userId = '', date = ''] = k.split('|');
-      const punch = w === wsId ? list.find((p) => p.id === id) : undefined;
-      if (punch) return { userId, date, punch };
+      if (w === wsId) yield { userId, date, punches };
     }
-    return undefined;
-  }
-
-  /** Mọi (user, ngày) có lượt chấm trong workspace — HR xem cả người đã rời. */
-  usersWithPunches(wsId: string, from: string, to: string): Set<string> {
-    const out = new Set<string>();
-    for (const k of this.#punches.keys()) {
-      const [w, userId = '', date = ''] = k.split('|');
-      if (w === wsId && date >= from && date <= to) out.add(userId);
-    }
-    return out;
   }
 
   events(wsId: string, userId: string, date: string): AttendanceEventDto[] {

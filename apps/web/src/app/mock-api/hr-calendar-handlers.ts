@@ -8,7 +8,7 @@ import {
   HolidayDto,
   PutHolidayBody,
   WorkScheduleDto,
-} from '@/shared/api/m3-provisional';
+} from '@taskflow/contracts/attendance';
 
 import { forbiddenUnlessGranted, requireMember, type MemberContext } from './mock-guard';
 import { ruleFail, type MockHr } from './mock-hr';

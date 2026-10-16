@@ -1,7 +1,6 @@
-import type { DayStatus } from '@taskflow/contracts/attendance';
+import type { AttendanceCompanyTodayDto, DayStatus } from '@taskflow/contracts/attendance';
 
 import { DAY_STATUS, LEAVE_PART_LABEL, duration, timeOfDay } from '@/entities/attendance';
-import type { AttendanceCompanyTodayDto } from '@/shared/api/m3-provisional';
 import { cn } from '@/shared/lib/cn';
 import { EmptyState } from '@/shared/ui/empty-state';
 

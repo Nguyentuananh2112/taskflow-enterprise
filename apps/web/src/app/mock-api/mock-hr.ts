@@ -1,11 +1,12 @@
+import type {
+  AttendanceDayDto,
+  AttendanceMemberMonthDto,
+  HolidayDto,
+  WorkScheduleDto,
+} from '@taskflow/contracts/attendance';
 import type { UserRefDto } from '@taskflow/contracts/auth';
 
-import type {
-  HolidayDto,
-  HrDayDto,
-  AttendanceMemberMonthDto,
-  WorkScheduleDto,
-} from '@/shared/api/m3-provisional';
+import { dateIn } from '@/entities/attendance';
 
 import { MOCK_TZ, type MockAttendance } from './mock-attendance';
 import type { MockDb } from './mock-db';
@@ -30,8 +31,11 @@ export class MockHr {
     return this.holidays.get(wsId)?.find((h) => h.date === date);
   }
 
-  day(wsId: string, userId: string, date: string): HrDayDto {
-    const base = this.attendance.summarize(wsId, userId, date);
+  day(wsId: string, userId: string, date: string): AttendanceDayDto {
+    // Ngày trước khi gia nhập (theo lịch) ⇒ NOT_EMPLOYED (E, TL chốt) — không đè bằng lễ/nghỉ.
+    const joined = this.db.workspaces.member(wsId, userId)?.joinedAt;
+    const day = this.attendance.summarize(wsId, userId, date, joined && dateIn(joined, MOCK_TZ));
+    if (day.status === 'NOT_EMPLOYED') return day;
     const holiday = this.holidayOn(wsId, date);
     const leave = this.leave.items.find(
       (l) =>
@@ -41,9 +45,8 @@ export class MockHr {
         l.startDate <= date &&
         date <= l.endDate,
     );
-    const day: HrDayDto = { ...base, timezone: MOCK_TZ };
     if (holiday) return { ...day, status: 'HOLIDAY', holidayName: holiday.name };
-    if (leave && base.isWorkday) {
+    if (leave && day.isWorkday) {
       const part = leave.dayPart;
       return part === 'FULL'
         ? { ...day, status: 'ON_LEAVE', leave: 'FULL' }
@@ -59,7 +62,7 @@ export class MockHr {
       .filter((m) => m.membership.role !== 'VIEWER')
       .map((m) => ({ user: { id: m.user.id, fullName: m.user.fullName }, left: false }));
     const ids = new Set(current.map((p) => p.user.id));
-    const gone = [...this.attendance.usersWithPunches(wsId, from, to)]
+    const gone = [...this.usersWithPunches(wsId, from, to)]
       .filter((id) => !ids.has(id))
       .flatMap((id) => {
         const u = this.db.getUser(id);
@@ -71,11 +74,29 @@ export class MockHr {
     );
   }
 
+  /** Lượt theo id trong workspace (HR hủy lượt — id của workspace khác ⇒ không thấy). */
+  locate(wsId: string, id: string) {
+    for (const { userId, date, punches } of this.attendance.entries(wsId)) {
+      const punch = punches.find((x) => x.id === id);
+      if (punch) return { userId, date, punch };
+    }
+    return undefined;
+  }
+
+  /** User có lượt chấm trong [from, to] — HR xem cả người đã rời. */
+  usersWithPunches(wsId: string, from: string, to: string): Set<string> {
+    const out = new Set<string>();
+    for (const e of this.attendance.entries(wsId)) {
+      if (e.date >= from && e.date <= to) out.add(e.userId);
+    }
+    return out;
+  }
+
   /** Có dữ liệu trong workspace (thành viên hiện tại hoặc từng chấm công) — không thì 404. */
   known(wsId: string, userId: string): boolean {
     return (
       this.db.workspaces.member(wsId, userId) !== undefined ||
-      this.attendance.usersWithPunches(wsId, '0000-01-01', '9999-12-31').has(userId)
+      this.usersWithPunches(wsId, '0000-01-01', '9999-12-31').has(userId)
     );
   }
 }
@@ -86,8 +107,8 @@ export function monthDays(month: string): string[] {
   return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
-export function totalsOf(days: readonly HrDayDto[]): AttendanceMemberMonthDto['totals'] {
-  const sum = (f: (d: HrDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
+export function totalsOf(days: readonly AttendanceDayDto[]): AttendanceMemberMonthDto['totals'] {
+  const sum = (f: (d: AttendanceDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
   return {
     workedMin: sum((d) => d.workedMin),
     lateDays: sum((d) => (d.late ? 1 : 0)),

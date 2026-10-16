@@ -8,6 +8,7 @@ import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
 import { startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
+import { DAY_STATUS } from '@/entities/attendance';
 import { getClientId } from '@/shared/lib/client-id';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
@@ -250,7 +251,9 @@ describe('trang Nhân sự — các tab', () => {
     const day = within(month).getByRole('button', { name: /14\/10/ });
     // Dialog mở ⇒ Radix ẩn phần ngoài khỏi cây a11y: giữ tham chiếu hàng (key theo ngày, không đổi).
     const dayRow = day.closest('tr');
-    expect(dayRow?.textContent).toContain('Vắng');
+    // Gia nhập hôm nay ⇒ 14/10 trung tính (NOT_EMPLOYED), không phải "Vắng".
+    expect(dayRow?.textContent).toContain(DAY_STATUS.NOT_EMPLOYED.label);
+    expect(dayRow?.textContent).not.toContain(DAY_STATUS.ABSENT.label);
     await u.click(day);
     const dialog = await screen.findByRole('dialog', { name: /Nguyễn An — / });
     expect(await within(dialog).findByText('Không có lượt chấm nào trong ngày này.')).toBeTruthy();

@@ -1,16 +1,16 @@
 import {
   AdjustAttendanceBody,
+  AttendanceCompanyTodayDto,
   AttendanceEventChangeDto,
   AttendanceEventsDto,
   AttendanceEventsQuery,
+  AttendanceMemberMonthDto,
   AttendanceMonthQuery,
   VoidAttendanceBody,
 } from '@taskflow/contracts/attendance';
 import { Cursor, limitQuery } from '@taskflow/contracts/common';
 import { HttpResponse, http, type HttpHandler } from 'msw';
 import * as z from 'zod';
-
-import { AttendanceCompanyTodayDto, AttendanceMemberMonthDto } from '@/shared/api/m3-provisional';
 
 import { DAY_STATUS } from '@/entities/attendance';
 import { MOCK_SCHEDULE, MOCK_TZ } from './mock-attendance';
@@ -154,7 +154,7 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
       const body = await parseBody(request, VoidAttendanceBody);
       if (body.response) return body.response;
       const wsId = String(params.wsId);
-      const hit = attendance.locate(wsId, String(params.id));
+      const hit = hr.locate(wsId, String(params.id));
       if (!hit) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'attendance_event' });
       const denied = selfWrite(ctx.ok, hit.userId);
       if (denied) return denied;
