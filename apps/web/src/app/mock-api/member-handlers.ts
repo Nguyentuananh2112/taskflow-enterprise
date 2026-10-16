@@ -118,8 +118,11 @@ export function createMemberHandlers(
         });
       }
       if (target.role === 'OWNER' && ownersOf(wsId).length === 1) return lastOwner();
+      const hadGrants = target.grants.length > 0;
       ws.setMember(wsId, target.userId, body.data.role);
       const o = origin(ctx.ok, request);
+      // ADR-119 / B-M2: sang OWNER / VIEWER ⇒ grants về [] trong cùng thao tác + báo người đó.
+      if (hadGrants && target.grants.length === 0) grantsChanged(board, o, wsId, target.userId, []);
       const unassignedTaskCount =
         body.data.role === 'VIEWER'
           ? unassignAll(board, o, actorRef(ctx.ok), wsId, target.userId)

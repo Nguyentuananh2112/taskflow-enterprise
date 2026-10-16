@@ -50,7 +50,7 @@ function fresh() {
 }
 
 describe('công tắc Quản lý nhân sự', () => {
-  it('OWNER cấp (xác nhận) rồi thu; OWNER "Luôn có", VIEWER "Không áp dụng"; a11y', async () => {
+  it('OWNER cấp (xác nhận) rồi thu; OWNER bật + khóa, VIEWER tắt + khóa, có chú thích; a11y', async () => {
     const { f, tabFor } = fresh();
     const an = f.addUser('Nguyễn An', 'an@example.com', 'MEMBER');
     f.addUser('Khách Vy', 'vy@example.com', 'VIEWER');
@@ -59,13 +59,23 @@ describe('công tắc Quản lý nhân sự', () => {
     const sw = await screen.findByRole('switch', { name: 'Quản lý nhân sự: Nguyễn An' });
     expect(screen.getByRole('columnheader', { name: 'Quản lý nhân sự' })).toBeTruthy();
     expect(sw.getAttribute('aria-checked')).toBe('false');
-    expect(within(screen.getByRole('row', { name: /Trần Lan/ })).getByText('Luôn có')).toBeTruthy();
+    expect(sw.getAttribute('aria-disabled')).toBeNull();
+    const ownerSw = screen.getByRole('switch', { name: 'Quản lý nhân sự: Trần Lan' });
+    expect(ownerSw.getAttribute('aria-checked')).toBe('true');
+    expect(ownerSw.getAttribute('aria-disabled')).toBe('true');
     expect(
-      within(screen.getByRole('row', { name: /Khách Vy/ })).getByText('Không áp dụng'),
-    ).toBeTruthy();
+      document.getElementById(ownerSw.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Chủ sở hữu luôn có quyền Quản lý nhân sự');
+    const viewerSw = screen.getByRole('switch', { name: 'Quản lý nhân sự: Khách Vy' });
+    expect(viewerSw.getAttribute('aria-checked')).toBe('false');
+    expect(viewerSw.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('Người xem không được cấp quyền Quản lý nhân sự')).toBeTruthy();
     await expectNoA11yViolations();
 
     const u = user();
+    await u.click(viewerSw);
+    await u.click(ownerSw);
+    expect(screen.queryByRole('dialog')).toBeNull();
     await u.click(sw);
     const dialog = await screen.findByRole('dialog', {
       name: /Cấp quyền Quản lý nhân sự cho Nguyễn An/,

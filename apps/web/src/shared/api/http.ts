@@ -60,6 +60,20 @@ export type DownloadResult = { blob: Blob; filename: string | null };
 
 export type ApiResult<T> = { data: T; page: PageMeta | undefined; requestId: string | undefined };
 
+/** RFC 6266: `filename*=UTF-8''…` (tên có dấu) ưu tiên hơn `filename="…"`. */
+function filenameOf(headers: Headers): string | null {
+  const disposition = headers.get('Content-Disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim());
+    } catch {
+      // %-mã hóa hỏng ⇒ dùng filename= thường
+    }
+  }
+  return /filename="([^"]+)"/i.exec(disposition)?.[1] ?? null;
+}
+
 const buildUrl = (base: string, path: string, query: Query | undefined) => {
   if (!path.startsWith('/')) throw new Error(`Đường dẫn API phải bắt đầu bằng "/": ${path}`);
   const url = new URL(base + path);
@@ -178,9 +192,7 @@ export function createHttpClient(deps: HttpDeps) {
   /** File (CSV) thành công ⇒ Blob; lỗi vẫn là envelope JSON ⇒ `parse` ném ApiError như mọi request. */
   async function readFile(response: Response): Promise<DownloadResult> {
     if (!response.ok) await parse(response, z.never());
-    const disposition = response.headers.get('Content-Disposition') ?? '';
-    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? null;
-    return { blob: await response.blob(), filename };
+    return { blob: await response.blob(), filename: filenameOf(response.headers) };
   }
 
   async function request<S extends z.ZodType, T = ApiResult<z.output<S>>>(

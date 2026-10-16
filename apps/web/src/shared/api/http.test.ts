@@ -398,4 +398,19 @@ describe('http — PUT và download (T-041c)', () => {
     expect(file.filename).toBeNull();
     expect(call(1).headers.get('Authorization')).toBe('Bearer new');
   });
+
+  it('filename*=UTF-8 (RFC 6266, tên có dấu) ưu tiên hơn filename=', async () => {
+    const encoded = encodeURIComponent('Bảng công 10.csv');
+    const file = new Response('x', {
+      headers: {
+        'Content-Disposition': `attachment; filename="bang-cong.csv"; filename*=UTF-8''${encoded}`,
+      },
+    });
+    const broken = new Response('x', {
+      headers: { 'Content-Disposition': `attachment; filename="a.csv"; filename*=UTF-8''%E0%A4%A` },
+    });
+    const { http } = setup([file, broken]);
+    expect((await http.download('/f', { accept: 'text/csv' })).filename).toBe('Bảng công 10.csv');
+    expect((await http.download('/f', { accept: 'text/csv' })).filename).toBe('a.csv');
+  });
 });
