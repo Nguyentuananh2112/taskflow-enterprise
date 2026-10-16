@@ -2,6 +2,7 @@ import { describe, expect } from 'vitest';
 
 import { Actors, seedTenants, type Actor, type Tenants } from './harness/actors';
 import { errorEnvelope } from './harness/http-client';
+import { connected, emitAck, nextEvent, openSocket } from './harness/socket';
 import { outOfScope, secCase, useApi } from './harness/suite';
 
 // Đa tenant / workspace (security.md §8: SEC-01, 13..16, 40, 46, 47, 51..55, 58). Case task: task.sec.ts.
@@ -305,7 +306,33 @@ describe('Workspace xóa mềm (ADR-047/050)', () => {
   secCase(
     'SEC-47b',
     'ws A bị xóa khi Mia đang ở phòng project:P1 ⇒ nhận workspace:access-revoked, rời phòng; project:join sau đó ⇒ RESOURCE_NOT_FOUND (WSD-07)',
-    'socket auth wiring (Phase 3)',
+    'socket auth',
+    async () => {
+      const t = await fresh();
+      const sockets = [t.mia, t.pam].map((a) => openSocket(api, a.accessToken));
+      try {
+        await Promise.all(sockets.map((s) => connected(s)));
+        // Đối chứng (F): trước khi xóa, cả hai vào phòng được ⇒ 404 sau đó không phải do helper sai.
+        for (const s of sockets) {
+          expect(
+            await emitAck(s, 'project:join', { workspaceId: t.wsA, projectId: t.projectA.id }),
+          ).toEqual({ ok: true });
+        }
+        const revoked = sockets.map((s) =>
+          nextEvent<{ data: unknown }>(s, 'workspace:access-revoked'),
+        );
+        await deleteWorkspace(t.alice, t.wsA);
+        for (const r of await Promise.all(revoked)) expect(r.data).toEqual({ workspaceId: t.wsA });
+        // ws đã xóa ⇒ không tạo được task để đo "không nhận event"; join lại phải bị từ chối như ws lạ.
+        for (const s of sockets) {
+          expect(
+            await emitAck(s, 'project:join', { workspaceId: t.wsA, projectId: t.projectA.id }),
+          ).toEqual({ ok: false, code: 'RESOURCE_NOT_FOUND' });
+        }
+      } finally {
+        for (const s of sockets) s.close();
+      }
+    },
   );
   secCase(
     'SEC-51',

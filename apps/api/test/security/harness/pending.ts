@@ -26,10 +26,7 @@ export const PENDING_PREFIX = '[PENDING ';
  * vẫn xanh — review B), hoặc (b) id ở đây không còn là todo trong file đã chạy (viết thân xong ⇒ xóa mục
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
-export const TODO_BUDGET: Readonly<Record<string, string>> = {
-  // Phần socket của SEC-47 (WSD-07) — chưa có test nào ở mọi tầng; nhóm socket của A (F4).
-  'SEC-47b': 'tenant.sec.ts',
-};
+export const TODO_BUDGET: Readonly<Record<string, string>> = {};
 
 export interface OutOfScopeCase {
   /** File `.sec.ts` khai báo ca (`outOfScope(id, title, coveredBy)`). */
