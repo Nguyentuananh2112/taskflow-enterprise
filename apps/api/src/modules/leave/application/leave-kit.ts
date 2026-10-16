@@ -162,14 +162,17 @@ export class LeaveKit {
   }
 
   /**
-   * "Hôm nay" theo múi giờ của lịch hiệu lực (D-M5). Múi giờ lấy từ lịch của ngày UTC hiện tại — phiên bản lịch
-   * chỉ đổi theo ngày nên sai lệch ±1 ngày quanh nửa đêm không đổi múi giờ (trừ chính ngày đổi múi giờ — chấp nhận).
+   * "Hôm nay" theo múi giờ của lịch hiệu lực ĐÚNG ngày địa phương đó (D-M5, ADR-120 — A review LOW-1). Một lần gọi
+   * port cho [UTC − 1, UTC + 1] rồi chọn ngày `d` có `localDate(now, d.timezone) === d.date` — đúng cả quanh nửa
+   * đêm và vào ngày đổi phiên bản lịch có đổi múi giờ (cùng cách `localToday` của attendance).
    */
   async today(workspaceId: string): Promise<CalendarDate> {
     const now = this.d.clock.now();
-    const utc = now.toISOString().slice(0, 10);
-    const [day] = await this.d.calendar.workingDays({ workspaceId, from: utc, to: utc });
-    if (!day) throw new Error('WorkCalendarPort không trả lịch cho hôm nay');
-    return localDate(now, day.schedule.timezone);
+    const shift = (days: number) =>
+      new Date(now.getTime() + days * 86_400_000).toISOString().slice(0, 10);
+    const days = await this.d.calendar.workingDays({ workspaceId, from: shift(-1), to: shift(1) });
+    const match = days.find((d) => localDate(now, d.schedule.timezone) === d.date);
+    if (!match) throw new Error('WorkCalendarPort không trả lịch cho hôm nay');
+    return match.date;
   }
 }
