@@ -25,7 +25,6 @@ import type { IAccessTokenService } from '../modules/auth/application/ports/acce
 import type { IPasswordHasher } from '../modules/auth/application/ports/password-hasher.port';
 import type { PasswordPolicy } from '../modules/auth/domain/password-policy';
 import type { IRolePermissions } from '../modules/task/application/task-actor';
-import { createLeaveModule } from '../modules/leave/leave.module';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import {
@@ -37,15 +36,11 @@ import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
-import { attendanceMembership, noApprovedLeaves } from './attendance-adapters';
+import { attendanceMembership } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
-import { defaultLeaveCalendar, leaveAudit, leaveMembership } from './leave-adapters';
+import { LateApprovedLeaves, wireLeave } from './leave-wiring';
 import type { Persistence } from './persistence';
-import {
-  attendanceNotifierFrom,
-  hrGrantNotifierFrom,
-  leaveNotifierFrom,
-} from './notification-adapters';
+import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
 
 export interface ContainerConfig extends AppConfig {
@@ -157,9 +152,10 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
   });
   workspaceRef.current = workspace;
+  const lateLeaves = new LateApprovedLeaves(); // leave ↔ attendance phụ thuộc vòng ⇒ gắn leave sau
   const attendance = createAttendanceModule({
     repos: persistence.attendance,
-    leaves: noApprovedLeaves, // TODO(T-039): leave.approvedLeaves (D nối, tham chiếu trễ)
+    leaves: lateLeaves,
     tenures: workspace.tenure,
     users: persistence.task.users,
     hrAccess: workspace.hrAccess,
@@ -196,19 +192,9 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
 
-  const leave = createLeaveModule({
-    ...persistence.leave,
-    users: persistence.task.users,
-    calendar: defaultLeaveCalendar, // TODO(T-038): adapter WorkCalendarPort của attendance (A)
-    notifier: leaveNotifierFrom(notifications.publisher),
-    membership: leaveMembership(() => workspace),
-    audit: leaveAudit(() => workspace),
-    uow: persistence.uow,
-    clock,
-    ids,
-    responder,
-    http: { authenticate: auth.authenticate, limit },
-  });
+  const leave = lateLeaves.bind(
+    wireLeave(d, { workspace, attendance, notifications, auth }, { responder, limit }),
+  );
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [

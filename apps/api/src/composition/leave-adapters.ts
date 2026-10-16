@@ -8,9 +8,7 @@ import type {
 import type {
   IHrAudit,
   ILeaveMembership,
-  IWorkCalendarPort,
   LeaveActor,
-  WorkCalendarDay,
 } from '../modules/leave/application/ports/leave.ports';
 import type { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import type { DbProvider } from '../modules/leave/infrastructure/persistence/prisma/db';
@@ -71,30 +69,6 @@ export function leaveAudit(ws: () => HrPorts): IHrAudit {
     },
   };
 }
-
-/**
- * TẠM tới khi A nối adapter `WorkCalendarPort` của attendance (T-038): lịch mặc định của thiết kế (T2–T7 làm, CN
- * nghỉ, 'Asia/Ho_Chi_Minh', không ngày lễ) — trùng `DEFAULT_SCHEDULE` khi workspace chưa đặt lịch.
- */
-export const defaultLeaveCalendar: IWorkCalendarPort = {
-  workingDays({ from, to }) {
-    const days: WorkCalendarDay[] = [];
-    const end = new Date(`${to}T00:00:00Z`).getTime();
-    for (
-      const d = new Date(`${from}T00:00:00Z`);
-      d.getTime() <= end;
-      d.setUTCDate(d.getUTCDate() + 1)
-    ) {
-      days.push({
-        date: d.toISOString().slice(0, 10),
-        isWorkday: d.getUTCDay() !== 0,
-        isHoliday: false,
-        schedule: { timezone: 'Asia/Ho_Chi_Minh' },
-      });
-    }
-    return Promise.resolve(days);
-  },
-};
 
 /**
  * Danh bạ nhân viên cho chế độ BỘ NHỚ (local/test) — đọc hết thành viên qua `IWorkspaceQueries.listMembers` rồi lọc

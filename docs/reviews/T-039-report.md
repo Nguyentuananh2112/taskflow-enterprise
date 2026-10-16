@@ -2,7 +2,7 @@
 
 Nhánh `feat/T-039-leave`. Nguồn: `docs/design/attendance-leave.md` §2 (ADR-122), §4, §5, §9 · `docs/design/test-spec-hr.md` §2–§4, §8.
 
-> Trạng thái: **chưa DONE**. Còn: nối composition root (cần adapter T-037/T-038/T-040 trên main), test HTTP/SEC, chạy tầng I/C ×20 lượt cuối (xin lượt TL).
+> Trạng thái: code xong, composition nối adapter THẬT (lịch ← T-038, thông báo ← T-040, quyền/audit ← T-037), không còn adapter tạm. Chờ verify đầy đủ của TL + cổng hộp đen F (`SEC_RUN_PENDING=T-039`).
 
 ## 1. Đã làm
 
@@ -41,6 +41,5 @@ Nhánh `feat/T-039-leave`. Nguồn: `docs/design/attendance-leave.md` §2 (ADR-1
 
 ## 4. Còn lại trước `DONE T-039`
 
-1. Nối composition root: membership/audit ← T-037, lịch ← T-038 (A), notifier ← T-040 (G), tên ← auth; `approvedLeaves` → attendance.
-2. Test HTTP + SEC-HR (01/02/03/05/07/15/25), LSP chạy lại file test A trên Prisma, CC-HR-11 thật.
-3. `pnpm verify` + integration + security exit 0 (lượt TL).
+1. TL: `pnpm verify` + integration (gồm tầng I/C leave ×20) + security exit 0.
+2. F: cổng hộp đen `SEC_RUN_PENDING=T-039` (SEC-HR-04/05/07/10/12/25, CC-HR-03..12 ×20 — gồm CC-HR-11 thật với FOR SHARE).

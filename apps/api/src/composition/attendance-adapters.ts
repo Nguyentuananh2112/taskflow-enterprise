@@ -1,7 +1,6 @@
 import { effectivePermissions } from '@taskflow/contracts';
 
 import { ResourceNotFoundError } from '../core/errors';
-import type { ApprovedLeavePort } from '../modules/attendance/application/ports/approved-leave.port';
 import type { AttendanceMembership } from '../modules/attendance/presentation/attendance-access';
 import type { WorkspaceModule } from '../modules/workspace/workspace.module';
 
@@ -24,8 +23,3 @@ export function attendanceMembership(
     },
   };
 }
-
-/** TẠM tới khi T-039 (D) vào main: D nối `leave.approvedLeaves` (tham chiếu trễ — leave cần `workCalendar`). */
-export const noApprovedLeaves: ApprovedLeavePort = {
-  approvedLeaves: () => Promise.resolve([]),
-};

@@ -156,6 +156,48 @@ describe('leave HTTP — thông báo bền (T-040, adapter thật)', () => {
   });
 });
 
+describe('leave ↔ attendance (T-038 nối thật)', () => {
+  interface Day {
+    date: string;
+    status: string;
+    leave: string | null;
+  }
+  it('duyệt đơn FULL ⇒ attendance/me?month có ngày đó ON_LEAVE (FULL); bảng công HR tăng leaveDays', async () => {
+    const dto = envelopeOf<LeaveDto>(await post(mia, '/leave-requests', twoDays)).data;
+    await post(hana, `/leave-requests/${dto?.id}/approve`, { expectedVersion: 1 });
+
+    const mine = await get(mia, '/attendance/me?month=2026-11');
+    expect(mine.status).toBe(200);
+    const days = envelopeOf<{ days: Day[] }>(mine).data?.days ?? [];
+    for (const date of ['2026-11-23', '2026-11-24']) {
+      expect(days.find((d) => d.date === date)).toMatchObject({
+        status: 'ON_LEAVE',
+        leave: 'FULL',
+      });
+    }
+    expect(days.find((d) => d.date === '2026-11-25')?.leave).toBeNull();
+
+    const hr = await get(hana, '/attendance?month=2026-11');
+    expect(hr.status).toBe(200);
+    const rows = envelopeOf<{ user: { id: string }; totals: { leaveDays: number } }[]>(hr).data;
+    expect(rows?.find((r) => r.user.id === mia.id)?.totals.leaveDays).toBe(2);
+    expect(rows?.find((r) => r.user.id === max.id)?.totals.leaveDays).toBe(0);
+  });
+
+  it('lịch thật của attendance: ngày lễ HR đặt giữa khoảng đơn ⇒ preview / số ngày đơn không tính ngày đó', async () => {
+    const put = await request(t.app)
+      .put(`${base()}/attendance/holidays/2026-11-24`)
+      .set(olivia.auth)
+      .send({ name: 'Lễ thử' });
+    expect([200, 201]).toContain(put.status);
+    const res = await get(
+      mia,
+      '/leave-requests/preview?type=ANNUAL&startDate=2026-11-23&endDate=2026-11-24',
+    );
+    expect(envelopeOf(res).data).toEqual({ days: 1, remainingDays: 12 });
+  });
+});
+
 describe('leave HTTP — thứ tự lỗi & bảo mật', () => {
   it('SEC-HR-01: Otto (ws khác) gọi route leave của W1 ⇒ 404 workspace', async () => {
     for (const res of [
