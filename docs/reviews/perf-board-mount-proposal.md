@@ -67,3 +67,9 @@ jsdom (`test:perf`, trên `b2b3bfd`): 1 `task:moved` commit **31 / 46 ms** (1×5
 **Đề xuất tiếp (chưa làm, chờ Tech Lead):**
 1. Đo ĐỐI CHỨNG ~3 phút: cùng bản build, board **10 task** ⇒ "sàn khởi động" (thẻ đầu, long task max). Nếu sàn ≈ 800–1200 ms thì ngân sách < 300 ms @4× không đạt được bằng việc tối ưu board; phần còn lại là bundle/khởi động (ticket khác: tách chunk, hoãn Sentry/socket…).
 2. **Giữ bậc 1.** Bậc 3: hoặc bỏ (revert `b2b3bfd`), hoặc giữ nếu Tech Lead coi "thẻ đầu sớm" quan trọng hơn tổng thời gian; nếu giữ, sửa chi phí lô (memo phần `KanbanBoard` ngoài cột, tránh flip `dragLocked` render lại cả cột) rồi đo lại. Mình nghiêng về **bỏ bậc 3** cho tới khi có số đối chứng.
+
+## Kết luận (Tech Lead quyết, 2026-10-16)
+- **Giữ bậc 1** (`1988932`): −47 % script, −49 % long task, thẻ đầu −39 %, không đổi UX/a11y.
+- **Bỏ bậc 3**: revert bằng commit revert `4f00c27` (không viết lại lịch sử) — tổng JS tăng, long task không giảm, thêm phức tạp (khóa kéo, `aria-busy`) mà không đạt mục tiêu. Code `apps/` sau revert trùng hệt `1988932` (đã test: menu 5, board-flow 9, two-clients 1, render-count 4).
+- **Bậc 2 bỏ** (layout chỉ ~9 % task).
+- **Còn lại:** lượt đối chứng "sàn khởi động" (board 10 task, cùng build, ~3 phút) sau k6 của D. Nếu sàn ≈ 1 s ⇒ tiêu chí < 300 ms @4× thuộc ticket khởi động/bundle riêng (sau Mốc 1), board coi như xong. Sau đó F chạy E2E (kéo-thả, Chuyển tới, realtime, axe), Tech Lead verify + merge.
