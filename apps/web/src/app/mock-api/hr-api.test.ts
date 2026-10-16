@@ -277,3 +277,29 @@ describe('mock HR — nghỉ phép', () => {
     expect(self.body.error?.details.rule).toBe('REASON_REQUIRED');
   });
 });
+
+describe('mock HR — thông báo theo quyền hiện tại (B-H3)', () => {
+  it('HR bằng grant thấy LEAVE_SUBMITTED; bị thu HR_MANAGE ⇒ thông báo đó biến mất khỏi chuông', async () => {
+    const { api, send, owner, ws, join } = await setup();
+    const ha = await join('ha@example.com', 'Lê Hà', 'MEMBER');
+    const grants = p(ws, `/members/${ha.id}/grants`);
+    await send('PUT', grants, owner.token, { grants: ['HR_MANAGE'] });
+    api.notifications.notify(ha.id, {
+      type: 'LEAVE_SUBMITTED',
+      refId: crypto.randomUUID(),
+      workspaceId: ws,
+      workspaceName: 'WS',
+      actor: null,
+      leave: { type: 'ANNUAL', startDate: '2026-10-19', endDate: '2026-10-19' },
+    });
+    const count = async () =>
+      (
+        (await send('GET', '/me/notifications/unread-count', ha.token)).body.data as {
+          count: number;
+        }
+      ).count;
+    expect(await count()).toBe(1);
+    await send('PUT', grants, owner.token, { grants: [] });
+    expect(await count()).toBe(0);
+  });
+});
