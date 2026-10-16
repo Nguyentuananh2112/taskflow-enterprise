@@ -18,6 +18,12 @@ ENV CI=true \
     PRISMA_HIDE_UPDATE_MESSAGE=1
 # CHECKPOINT_DISABLE / PRISMA_HIDE_UPDATE_MESSAGE: Prisma CLI không gọi mạng kiểm tra phiên bản/telemetry
 # (có thể treo 120s+ trên mạng chậm; production không gửi dữ liệu ra ngoài) — T-022.
+# openssl NGAY TỪ base: postinstall của @prisma/engines (lúc `pnpm install`) chọn schema-engine theo libssl dò
+# được. Không có openssl ⇒ tải bản openssl-1.1.x; stage migrate có openssl 3 lại đòi bản 3.0.x và cố tải vào
+# node_modules (user node không ghi được ⇒ migrate lỗi — đã gặp khi chỉ cài ở stage migrate). Hai nơi phải khớp.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 COPY package.json ./
 # Tải đúng pnpm trong "packageManager" (11.28.2) một lần, mở quyền đọc cho user node (stage migrate).
@@ -56,6 +62,12 @@ ENV NODE_ENV=production \
     CHECKPOINT_DISABLE=1 \
     PRISMA_HIDE_UPDATE_MESSAGE=1
 WORKDIR /app
+# Prisma CLI dò phiên bản libssl lúc chạy ⇒ phải KHỚP engine đã tải ở stage install (base cũng cài openssl — xem
+# trên). Thiếu ⇒ cảnh báo "failed to detect the libssl/openssl version … Defaulting to openssl-1.1.x" (lát cắt D3).
+# Không ghim phiên bản apt: base đã ghim digest ⇒ Debian bookworm cố định, gói chỉ đổi khi có bản vá bảo mật.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=migrate-files /migrate ./
 USER node
 # migrate deploy rồi grant DML cho taskflow_app (docker/migrate/migrate.mjs + grant-app.sql) — lỗi bước nào ⇒ exit ≠ 0.
