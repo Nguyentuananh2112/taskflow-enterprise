@@ -1,11 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { pendingRoute, useApi } from './harness/suite';
+import { secCase, useApi } from './harness/suite';
 import { flushRateLimitCounters as flushCounters } from './harness/valkey';
 
 // Rate limit toàn cục (security.md §6.4). Suite tự phát hiện limiter: chưa có (main trước T-016)
-// ⇒ skip có nhãn PENDING-ROUTE; có ⇒ chạy thật. Bộ đếm nằm ở Valkey db 15 riêng, xóa trước mỗi test.
+// ⇒ skip động có nhãn BUILD-PROBE (trên main ⇒ skip-budget reporter làm run đỏ); có ⇒ chạy thật. Bộ đếm nằm ở Valkey db 15 riêng, xóa trước mỗi test.
 
 const api = useApi({ TRUST_PROXY_HOPS: '0' });
 const PROBE = '/api/v1/__sec-probe';
@@ -42,7 +42,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async (ctx) => {
-  if (!limiterLive) ctx.skip('[PENDING-ROUTE T-016] chưa có rate limit toàn cục trên build này');
+  if (!limiterLive) ctx.skip('[BUILD-PROBE T-016] chưa có rate limit toàn cục trên build này');
   await flushCounters();
 });
 
@@ -79,17 +79,17 @@ describe('Rate limit toàn cục — request chưa xác thực', () => {
 });
 
 describe('Rate limit theo endpoint', () => {
-  pendingRoute(
+  secCase(
     'GATE-T016-401',
     'Token rác trên route CẦN xác thực: bucket 401 (30/phút/IP) ⇒ request thứ 31 bị 429',
     'route đã xác thực (T-021)',
   );
-  pendingRoute(
+  secCase(
     'SEC-28',
     '6 lần login sai cùng IP+email trong 15 phút ⇒ lần 6: 429 + Retry-After',
     'auth routes (Phase 3)',
   );
-  pendingRoute(
+  secCase(
     'SEC-28b',
     'Valkey tắt ⇒ login/register 503 (fail-closed), API thường vẫn chạy',
     'auth routes (Phase 3)',

@@ -1,0 +1,65 @@
+/**
+ * Ca SEC đã có thân test nhưng CHƯA chạy được vì tính năng chưa làm — danh sách DUY NHẤT được phép
+ * skip. Mỗi mục bắt buộc có lý do + ticket. Ca không có ở đây ⇒ chạy mặc định (local lẫn CI).
+ *
+ * `skip-budget-reporter.ts` làm lượt chạy ĐỎ nếu có ca bị skip mà không khai báo ở đây (kể cả skip
+ * động bằng `ctx.skip()` — vd build từ chối khởi động, probe không thấy limiter/gateway). Trước đây
+ * mọi ca `pendingRoute` đều skip khi thiếu `SEC_RUN_PENDING` ⇒ CI không chạy 44 ca dù route đã có.
+ *
+ * Nghiệm thu branch làm tính năng: `SEC_RUN_PENDING=all` hoặc danh sách ticket/id (vd `T-040,SEC-28`).
+ * Tính năng merge ⇒ XÓA mục khỏi đây trong cùng PR.
+ */
+export interface DeclaredPending {
+  readonly reason: string;
+  readonly ticket: string;
+}
+
+export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {};
+
+/** Tiền tố tên ca skip hợp lệ: `[PENDING <ticket>] <id> — <title>` (reporter đọc id sau `] `). */
+export const PENDING_PREFIX = '[PENDING ';
+
+/**
+ * Ca SEC CHƯA có thân (`secCase` không `fn`, `outOfScope`) — nợ thật của ma trận SEC (BACKLOG F4), id → file.
+ * Reporter đỏ nếu (a) có todo KHÔNG nằm ở đây (một ca vừa bị xóa thân / bọc `it.todo` ⇒ mất kiểm mà suite
+ * vẫn xanh — review B), hoặc (b) id ở đây không còn là todo trong file đã chạy (viết thân xong ⇒ xóa mục
+ * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
+ */
+export const TODO_BUDGET: Readonly<Record<string, string>> = {
+  'SEC-17': 'auth.sec.ts',
+  'SEC-19': 'auth.sec.ts',
+  'SEC-20': 'auth.sec.ts',
+  'SEC-22': 'auth.sec.ts',
+  'SEC-23': 'auth.sec.ts',
+  'SEC-24': 'auth.sec.ts',
+  'SEC-24d': 'auth.sec.ts',
+  'SEC-26': 'auth.sec.ts',
+  'SEC-27': 'auth.sec.ts',
+  'SEC-32': 'auth.sec.ts',
+  'SEC-48': 'auth.sec.ts',
+  'SEC-49': 'auth.sec.ts',
+  'SEC-50': 'auth.sec.ts',
+  'GATE-T016-401': 'rate-limit.sec.ts',
+  'SEC-28': 'rate-limit.sec.ts',
+  'SEC-28b': 'rate-limit.sec.ts',
+  'SEC-35': 'realtime.sec.ts',
+  'SEC-36': 'realtime.sec.ts',
+  'SEC-37': 'realtime.sec.ts',
+  'SEC-37b': 'realtime.sec.ts',
+  'SEC-38': 'realtime.sec.ts',
+  'SEC-39': 'realtime.sec.ts',
+  'SEC-41': 'realtime.sec.ts',
+  'SEC-21b': 'realtime.sec.ts',
+  'SEC-09': 'task.sec.ts',
+  'SEC-16': 'tenant.sec.ts',
+  'SEC-13': 'tenant.sec.ts',
+  'SEC-14': 'tenant.sec.ts',
+  'SEC-15': 'tenant.sec.ts',
+  'SEC-46': 'tenant.sec.ts',
+  'SEC-47': 'tenant.sec.ts',
+  'SEC-51': 'tenant.sec.ts',
+  'SEC-52': 'tenant.sec.ts',
+  'SEC-53': 'tenant.sec.ts',
+  'SEC-54': 'tenant.sec.ts',
+  'SEC-55': 'tenant.sec.ts',
+};

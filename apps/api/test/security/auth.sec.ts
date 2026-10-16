@@ -4,7 +4,7 @@ import { describe, expect } from 'vitest';
 import { Actors, refreshCookieOf, type Actor } from './harness/actors';
 import { TEST_JWT_SECRET } from './harness/config';
 import { errorEnvelope } from './harness/http-client';
-import { outOfScope, pendingRoute, useApi } from './harness/suite';
+import { outOfScope, secCase, useApi } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
 
 // Phiên & token (security.md §2–3, SEC-17..27, 32..34, 57). Chờ auth routes (Phase 3).
@@ -35,13 +35,9 @@ function unsigned(claims: Record<string, unknown>) {
 }
 
 describe('Refresh token rotation & reuse', () => {
-  pendingRoute(
-    'SEC-17',
-    'Refresh hợp lệ ⇒ 200, token cũ ROTATED, replacedById, cùng familyId',
-    AUTH,
-  );
+  secCase('SEC-17', 'Refresh hợp lệ ⇒ 200, token cũ ROTATED, replacedById, cùng familyId', AUTH);
 
-  pendingRoute(
+  secCase(
     'SEC-18',
     'Dùng lại refresh cũ sau >10s ⇒ 401 + thu hồi cả family + access của sid bị từ chối',
     AUTH,
@@ -59,13 +55,13 @@ describe('Refresh token rotation & reuse', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-19',
     '2 refresh song song cùng token ⇒ đúng 1 cái 200, 1 cái 409, family không bị thu hồi',
     AUTH,
   );
-  pendingRoute('SEC-20', 'Refresh quá expiresAt / familyExpiresAt ⇒ 401', AUTH);
-  pendingRoute(
+  secCase('SEC-20', 'Refresh quá expiresAt / familyExpiresAt ⇒ 401', AUTH);
+  secCase(
     'SEC-29',
     'Refresh với Origin lạ/thiếu ⇒ 403 ORIGIN_NOT_ALLOWED, token không bị xoay',
     AUTH,
@@ -82,23 +78,19 @@ describe('Refresh token rotation & reuse', () => {
 });
 
 describe('Thu hồi phiên', () => {
-  pendingRoute('SEC-21', 'Sau logout-all: access cũ ⇒ 401; mọi refresh ⇒ 401', AUTH, async () => {
+  secCase('SEC-21', 'Sau logout-all: access cũ ⇒ 401; mọi refresh ⇒ 401', AUTH, async () => {
     const alice = await actors.register('logoutall');
     expect((await actors.json('POST', '/auth/logout-all', alice.accessToken)).status).toBe(204);
     expect((await me(alice.accessToken)).status).toBe(401);
     expect((await actors.refresh(alice.refreshCookie)).status).toBe(401);
   });
-  pendingRoute('SEC-22', 'Logout 1 thiết bị: phiên đó 401, phiên khác 200', AUTH);
-  pendingRoute('SEC-23', 'Đổi mật khẩu: phiên khác 401, phiên hiện tại token mới 200', AUTH);
-  pendingRoute(
-    'SEC-24',
-    'Logout-all khi Valkey tắt ⇒ access cũ vẫn bị từ chối (fallback DB)',
-    AUTH,
-  );
+  secCase('SEC-22', 'Logout 1 thiết bị: phiên đó 401, phiên khác 200', AUTH);
+  secCase('SEC-23', 'Đổi mật khẩu: phiên khác 401, phiên hiện tại token mới 200', AUTH);
+  secCase('SEC-24', 'Logout-all khi Valkey tắt ⇒ access cũ vẫn bị từ chối (fallback DB)', AUTH);
   // ADR-105 (A3): ghi thu hồi vào Valkey TRƯỚC commit; lỗi ⇒ 503 + rollback; read-through chỉ SET NX.
   // Cổng nghiệm thu trên branch T-020 (Postgres + Valkey thật). 24b/24d cần container Valkey RIÊNG
   // do suite tự tạo/hủy: SEC-24b ở `valkey-outage.sec.ts`; 24d chưa viết thân.
-  pendingRoute(
+  secCase(
     'SEC-24c',
     'Đọc xen giữa: cache tv bị xóa (miss) + authenticate song song với logout-all ×20 ⇒ sau 204 access cũ LUÔN 401 (SET NX không đè giá trị thu hồi)',
     T020,
@@ -116,7 +108,7 @@ describe('Thu hồi phiên', () => {
       }
     },
   );
-  pendingRoute(
+  secCase(
     'SEC-24d',
     'Ghi trước commit thành công, ghi lại sau commit lỗi (Valkey tắt giữa chừng) rồi hồi phục ⇒ access cũ vẫn 401',
     T020,
@@ -128,7 +120,7 @@ describe('Thu hồi phiên', () => {
   const login = (email: string, password: string) =>
     actors.json('POST', '/auth/login', undefined, { email, password });
 
-  pendingRoute(
+  secCase(
     'SEC-23b',
     'Race login(mật khẩu cũ) ‖ đổi mật khẩu, 20 vòng ⇒ trạng thái cuối khớp đúng bên thắng (mới đúng + cũ sai, hoặc ngược lại khi đổi thua race)',
     `${AUTH} · ${T020}`,
@@ -162,7 +154,7 @@ describe('Thu hồi phiên', () => {
   // Ép nhánh "đổi mật khẩu thua race" bằng hộp đen (TL duyệt, thay cho hook trễ trong src): hai lần
   // đổi cùng currentPassword chạy song song — bên sau luôn thua, dù thua ở bước verify hay ở UPDATE
   // có điều kiện `password_hash = oldHash` (ADR-104).
-  pendingRoute(
+  secCase(
     'SEC-23c',
     '2 change-password song song cùng currentPassword, 20 vòng ⇒ đúng 1×200 + 1×400 INVALID_CURRENT_PASSWORD, chỉ mật khẩu bên thắng đăng nhập được',
     `${AUTH} · ${T020}`,
@@ -196,7 +188,7 @@ describe('Thu hồi phiên', () => {
       }
     },
   );
-  pendingRoute(
+  secCase(
     'SEC-21c',
     'Race login ‖ logout-all, 20 vòng ⇒ access token cấp TRƯỚC logout-all luôn 401 (cả khi cache tv bị xóa ⇒ đọc DB)',
     `${AUTH} · ${T020}`,
@@ -220,7 +212,7 @@ describe('Thu hồi phiên', () => {
 });
 
 describe('JWT giả mạo', () => {
-  pendingRoute(
+  secCase(
     'SEC-25',
     'alg none / secret sai / sửa sub / thiếu tv / sai iss, aud ⇒ 401 UNAUTHORIZED',
     AUTH,
@@ -241,21 +233,21 @@ describe('JWT giả mạo', () => {
       }
     },
   );
-  pendingRoute('SEC-26', 'JWT hết hạn ⇒ 401 TOKEN_EXPIRED', AUTH);
+  secCase('SEC-26', 'JWT hết hạn ⇒ 401 TOKEN_EXPIRED', AUTH);
 });
 
 describe('Đăng nhập & mật khẩu', () => {
-  pendingRoute(
+  secCase(
     'SEC-27',
     'Login email lạ vs sai mật khẩu: cùng status/code/message, chênh trung vị < 50ms',
     AUTH,
   );
-  pendingRoute(
+  secCase(
     'SEC-32',
     'Mật khẩu 11/257 ký tự, phổ biến, chứa email ⇒ 400; 12/256 (cả tiếng Việt) ⇒ 201',
     AUTH,
   );
-  pendingRoute(
+  secCase(
     'SEC-33',
     'Log của login/refresh/register/change-password không chứa password/token/Cookie/Authorization',
     AUTH,
@@ -273,7 +265,7 @@ describe('Đăng nhập & mật khẩu', () => {
 });
 
 describe('Mass assignment hồ sơ', () => {
-  pendingRoute(
+  secCase(
     'SEC-57',
     'PATCH /auth/me có email/tokenVersion/id ⇒ 400, không trường nào đổi',
     AUTH,
@@ -313,7 +305,7 @@ describe('Ngoài phạm vi API (Playwright Phase 4/5)', () => {
 describe('Refresh ‖ thu hồi toàn bộ (X4)', () => {
   const T032 = 'T-032 X4 refresh race';
   const ROUNDS = 40;
-  pendingRoute(
+  secCase(
     'X4',
     `refresh ‖ logout-all và refresh ‖ change-password ×${String(ROUNDS)} ⇒ không còn refresh token nào sống (trừ phiên mới của change-password)`,
     T032,

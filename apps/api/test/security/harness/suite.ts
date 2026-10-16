@@ -4,6 +4,7 @@ import { API_DIR, startApi, type RunningApi } from './api-process';
 import { loadHarnessConfig } from './config';
 import { prepareSuiteDatabase, type SuiteDatabase } from './database';
 import { rawRequest, type RawRequest, type RawResponse } from './http-client';
+import { DECLARED_PENDING, PENDING_PREFIX } from './pending';
 import { baseEnv } from './suite-env';
 import { flushRateLimitCounters } from './valkey';
 
@@ -84,33 +85,41 @@ export function useApi(
 }
 
 /**
- * Case SEC chưa chạy được vì route/tính năng chưa có. Tên luôn mang nhãn `PENDING-ROUTE` để báo
- * cáo đếm được; bị skip (KHÔNG xanh giả). Phase 3: đổi `pendingRoute` → `it` khi route merge.
+ * Ca SEC trong `DECLARED_PENDING` có chạy ở lượt này không: chỉ khi `SEC_RUN_PENDING=all` hoặc danh
+ * sách (phân cách bằng dấu phẩy) chứa id hoặc ticket của ca — dùng nghiệm thu branch làm tính năng.
+ * Ca KHÔNG khai báo pending luôn chạy.
  */
-export function runPending(blockedBy: string): boolean {
+export function caseRuns(id: string): boolean {
+  const declared = DECLARED_PENDING[id];
+  if (!declared) return true;
   const raw = process.env.SEC_RUN_PENDING ?? '';
   if (raw === 'all') return true;
   const tags = raw
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
-  return tags.some((tag) => blockedBy.includes(tag));
+  return tags.some((tag) => tag === id || tag === declared.ticket);
 }
 
-export function pendingRoute(
+/**
+ * Một ca SEC. Mặc định CHẠY (local lẫn CI). Skip chỉ khi id có trong `DECLARED_PENDING` (lý do +
+ * ticket) — mọi skip khác làm lượt chạy đỏ (`skip-budget-reporter.ts`). Chưa có thân ⇒ todo (không
+ * bao giờ xanh giả). `area` chỉ để đọc tên ca (route/tính năng ca này kiểm).
+ */
+export function secCase(
   id: string,
   title: string,
-  blockedBy: string,
+  area: string,
   fn?: () => unknown,
   /** Case dựng/hủy hạ tầng (vd restart container Valkey) cần lâu hơn `testTimeout` 20s khi máy tải. */
   timeoutMs?: number,
 ) {
-  const name = `[PENDING-ROUTE ${blockedBy}] ${id} — ${title}`;
-  // Nghiệm thu branch có route: `SEC_RUN_PENDING=all` hoặc danh sách nhãn (vd `auth,workspaces`) khớp
-  // chuỗi con của `blockedBy` ⇒ chạy thật các case ĐÃ có thân test. Case chưa có thân luôn là todo —
-  // không bao giờ xanh giả.
-  if (!fn) return it.todo(name);
-  return runPending(blockedBy) ? it(name, fn, timeoutMs) : it.skip(name, fn, timeoutMs);
+  if (!fn) return it.todo(`[TODO ${area}] ${id} — ${title}`);
+  const declared = DECLARED_PENDING[id];
+  if (declared && !caseRuns(id)) {
+    return it.skip(`${PENDING_PREFIX}${declared.ticket}] ${id} — ${title}`, fn, timeoutMs);
+  }
+  return it(`${id} — ${title}`, fn, timeoutMs);
 }
 
 /** Case thuộc tầng khác (Playwright/k6) — chỉ liệt kê để ma trận SEC đầy đủ. */

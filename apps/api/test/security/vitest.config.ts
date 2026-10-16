@@ -23,5 +23,8 @@ export default defineConfig({
     maxWorkers: 1,
     testTimeout: 20_000,
     hookTimeout: 600_000,
+    // Skip ngoài danh sách pending đã khai báo (harness/pending.ts) ⇒ lượt chạy đỏ, cả local lẫn CI.
+    // Nạp theo đường dẫn (không import vào config — loader native của Vite không nhận import thiếu đuôi).
+    reporters: ['default', './test/security/harness/skip-budget-reporter.ts'],
   },
 });

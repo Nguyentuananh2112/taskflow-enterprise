@@ -5,7 +5,7 @@ import type { ApiUnderTest } from './suite';
 
 /**
  * Dựng dữ liệu CHỈ qua API công khai (data-and-api.md §2) — không chọc DB. Viết theo contract
- * trước khi route tồn tại; các test dùng helper này hiện là PENDING-ROUTE.
+ * trước khi route tồn tại (T-017); nay route đã có, các ca chạy mặc định (harness/pending.ts).
  */
 export type Role = 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER';
 
