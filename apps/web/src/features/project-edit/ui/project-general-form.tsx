@@ -18,6 +18,7 @@ import { toast } from '@/shared/ui/toast';
 
 const FormSchema = z.object({ name: ProjectName, description: ProjectDescription });
 const FIELDS = ['name', 'description'] as const;
+const STALE_CODES = ['PROJECT_ARCHIVED', 'VERSION_CONFLICT', 'RESOURCE_NOT_FOUND'] as const;
 
 type Props = Readonly<{ project: ProjectDto; canEdit: boolean }>;
 
@@ -30,6 +31,14 @@ export function ProjectGeneralForm({ project, canEdit }: Props) {
     onSuccess: (saved, _body, _result, context) => {
       context.client.setQueryData(projectKeys.detail(project.workspaceId, project.id), saved);
       void context.client.invalidateQueries({ queryKey: projectKeys.all(project.workspaceId) });
+    },
+    // Đã lưu trữ / vừa bị ghi ở nơi khác ⇒ đọc lại để nút Lưu trữ/Khôi phục đúng trạng thái (G1 W3).
+    onError: (error, _body, _result, context) => {
+      if (STALE_CODES.some((code) => isApiError(error, code))) {
+        void context.client.invalidateQueries({
+          queryKey: projectKeys.detail(project.workspaceId, project.id),
+        });
+      }
     },
   });
   const { register, handleSubmit, setError, reset, formState } = useForm({

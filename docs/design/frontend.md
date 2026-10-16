@@ -442,6 +442,8 @@ Mỗi route có `error.tsx` (error boundary) hiển thị khối lỗi + Thử l
 - Sự kiện cấp ứng dụng (`features/realtime-session`):
   - `workspace:access-revoked { workspaceId }` (bị xóa/tự rời, **hoặc workspace bị xóa mềm** — phát cho mọi thành viên) ⇒ `removeQueries(['ws', workspaceId])`, invalidate `['workspaces']`, `['workspaces', 'deleted']`, `['me']`; nếu đang ở workspace đó ⇒ về `/w` + toast trung tính "Bạn không còn truy cập được workspace này" (payload không phân biệt hai lý do — không đoán).
   - `member:role-changed { workspaceId, role }` ⇒ `setQueryData(['ws', workspaceId], …myRole = role)` ⇒ `usePermission` cập nhật tức thì; toast "Vai trò của bạn đã đổi thành …". Hạ xuống VIEWER: các task của mình bị bỏ giao — đến qua `task:updated` bình thường (ADR-044), FE không cần xử lý riêng.
+  - Đường dự phòng khi socket đang rớt: thao tác thành viên nhận `404` với `details.resource = 'workspace'` (mình vừa bị xóa/hạ, hoặc workspace đã xóa) ⇒ xử lý y như `workspace:access-revoked` (`isWorkspaceGone` + `forgetWorkspace` của `entities/workspace`); `404 user` ⇒ "Người này không còn trong workspace" + làm mới bảng (G1 W1/W2).
+- **Không live (có chủ đích, G1 I1):** `member:role-changed` chỉ tới phòng `user:{id}` của người bị đổi; `project:updated` chỉ tới phòng project (chỉ board join). Bảng thành viên của admin khác, danh sách dự án (tab lưu trữ) và trang cài đặt dự án **không** tự cập nhật — dựa vào `staleTime` 60 s / refetch khi focus, và lỗi server (`VERSION_CONFLICT`, `PROJECT_ARCHIVED`, `404`) ⇒ invalidate detail. `project:updated` không có version ⇒ board bỏ event có `updatedAt` cũ hơn bản đang có, bằng nhau thì nhận (G1 W4). PATCH workspace/project là last-write-wins (ADR-117).
 
 ### 3.6. Cấu hình runtime (ADR-074, ADR-084)
 

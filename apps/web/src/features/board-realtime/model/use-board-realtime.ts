@@ -1,3 +1,4 @@
+import type { ProjectDto } from '@taskflow/contracts/project';
 import { ProjectUpdatedEvent, type TaskDeletedEvent } from '@taskflow/contracts/realtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -14,6 +15,7 @@ import {
   type TaskEvent,
 } from './apply-realtime-event';
 import { parseTaskEvent } from './parse-task-event';
+import { isStaleProjectEvent } from './project-event-order';
 
 const TASK_EVENTS = ['task:created', 'task:updated', 'task:moved', 'task:deleted'] as const;
 
@@ -69,7 +71,10 @@ export function useBoardRealtime(scope: TaskScope, options: Options) {
       client.on('project:updated', (raw) => {
         const event = ProjectUpdatedEvent.safeParse(raw);
         if (!event.success || event.data.data.project.id !== projectId) return;
-        queryClient.setQueryData(projectKeys.detail(wsId, projectId), event.data.data.project);
+        const incoming = event.data.data.project;
+        queryClient.setQueryData<ProjectDto>(projectKeys.detail(wsId, projectId), (cached) =>
+          isStaleProjectEvent(cached, incoming) ? cached : incoming,
+        );
       }),
       client.onStatus((status) => {
         if (status === 'connected') join();
