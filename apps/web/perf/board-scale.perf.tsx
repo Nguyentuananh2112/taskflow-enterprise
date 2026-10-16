@@ -72,14 +72,15 @@ function mountBoard(tasks: TaskDto[]) {
     ctx,
     onApplied: (events) => (applied += events.length),
   });
-  const deliverViaSink = async (raws: unknown[]) => {
+  const deliverViaSink = async (raws: unknown[], gap: 'timeout' | 'immediate') => {
     const target = applied + raws.length;
     await act(async () => {
       for (const raw of raws) {
         const event = parseTaskEvent(raw);
         if (!event) throw new Error('event không hợp lệ');
         sink.push(event);
-        await new Promise((r) => setTimeout(r, 0));
+        // timeout: ≥ 1 ms/event (Node) — cận xấu; immediate: như trình duyệt xả message WS đã đệm.
+        await new Promise((r) => (gap === 'timeout' ? setTimeout(r, 0) : setImmediate(r)));
       }
       while (applied < target) await new Promise((r) => setTimeout(r, 5));
       await new Promise((r) => setTimeout(r, 0));
@@ -119,20 +120,30 @@ async function scenario(label: string, columns: number, perColumn: number) {
     `rebalance ${seq.n} event lần lượt: wall ${ms(seq.wall)}ms (${ms(seq.wall / seq.n)}ms/event) · commit avg ${ms(seq.avg)} p95 ${ms(seq.p95)} max ${ms(seq.max)}ms`,
   );
 
-  // Cùng N event qua sink gom theo frame (P1) — rank 'c…'.
-  const raws2 = rest.map((t, i) =>
-    movedEvent({ ...t, version: t.version + 1 }, { status: 'TODO', rank: rank('c', i) }),
-  );
-  b.commits.length = 0;
-  t0 = performance.now();
-  await b.deliverViaSink(raws2);
-  const batch = { ...stats(b.commits), wall: performance.now() - t0, commits: b.commits.length };
-  report.push(
-    `qua sink ${raws2.length} event: ${batch.commits} commit, tổng ${ms(batch.sum)} max ${ms(batch.max)}ms, wall ${ms(batch.wall)}ms`,
-  );
+  // Cùng N event qua sink gom theo frame (P1), 2 nhịp đến khác nhau.
+  const viaSink: Record<string, unknown> = {};
+  for (const [gap, prefix] of [
+    ['timeout', 'c'],
+    ['immediate', 'd'],
+  ] as const) {
+    const raws2 = rest.map((t, i) =>
+      movedEvent(
+        { ...t, version: t.version + (prefix === 'c' ? 1 : 2) },
+        { status: 'TODO', rank: rank(prefix, i) },
+      ),
+    );
+    b.commits.length = 0;
+    t0 = performance.now();
+    await b.deliverViaSink(raws2, gap);
+    const r = { ...stats(b.commits), wall: performance.now() - t0, commits: b.commits.length };
+    viaSink[gap] = r;
+    report.push(
+      `sink/${gap}: ${r.commits} commit, tổng ${ms(r.sum)} max ${ms(r.max)}ms, wall ${ms(r.wall)}ms`,
+    );
+  }
 
   console.info(report.join(' · '));
-  return { mount: b.mount, one, seq, batch };
+  return { mount: b.mount, one, seq, viaSink };
 }
 
 describe('board quy mô T-027 (perf/board-500)', () => {
