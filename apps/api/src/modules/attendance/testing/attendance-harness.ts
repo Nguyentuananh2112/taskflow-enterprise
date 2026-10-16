@@ -7,6 +7,7 @@ import {
 import type { AttendanceDeps } from '../application/attendance-days';
 import type { HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
+import { AttendanceExportUseCase } from '../application/use-cases/attendance-export.use-case';
 import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-case';
 import { HrAttendanceQueries } from '../application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
@@ -148,6 +149,8 @@ export async function createAttendanceHarness(
     queries: new MyAttendanceQueries(deps),
     eventUseCases,
     calendarUseCases,
+    exportUseCase: new AttendanceExportUseCase({ ...deps, ...collaborators }),
+    collaborators,
     hrQueries: new HrAttendanceQueries({ ...deps, users: collaborators.users }),
     members,
     notified,

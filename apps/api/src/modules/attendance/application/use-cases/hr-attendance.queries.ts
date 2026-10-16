@@ -20,7 +20,7 @@ export interface HrAttendanceDeps extends AttendanceDeps {
   users: IUserRefReader;
 }
 
-interface RosterEntry {
+export interface RosterEntry {
   user: UserRefDto;
   left: boolean;
 }
@@ -48,7 +48,7 @@ export class HrAttendanceQueries {
       await d.calendar.scheduleVersions(workspaceId),
       now,
     );
-    const roster = await this.#roster(workspaceId, date, date);
+    const roster = await this.roster(workspaceId, date, date);
     const days = await summarizeUsers(d, {
       workspaceId,
       userIds: roster.map((r) => r.user.id),
@@ -81,7 +81,7 @@ export class HrAttendanceQueries {
   ): Promise<{ data: AttendanceMemberMonthDto[]; page: PageMeta }> {
     const from = `${q.month}-01`;
     const to = lastDayOf(q.month);
-    const roster = await this.#roster(workspaceId, from, to);
+    const roster = await this.roster(workspaceId, from, to);
     const after = q.cursor === undefined ? null : decodeCursor(q.cursor, CURSOR_KIND, AfterKey);
     const rest = after
       ? roster.filter(
@@ -113,7 +113,8 @@ export class HrAttendanceQueries {
     };
   }
 
-  async #roster(workspaceId: string, from: LocalDate, to: LocalDate): Promise<RosterEntry[]> {
+  /** Người của khoảng `[from, to]`, đã sắp (dùng chung với xuất CSV). */
+  async roster(workspaceId: string, from: LocalDate, to: LocalDate): Promise<RosterEntry[]> {
     const { d } = this;
     const [versions, tenures, withEvents] = await Promise.all([
       d.calendar.scheduleVersions(workspaceId),
