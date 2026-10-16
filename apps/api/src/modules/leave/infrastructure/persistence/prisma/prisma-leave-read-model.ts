@@ -58,6 +58,46 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
     return rows.map(toRecord);
   }
 
+  async findBalances(
+    workspaceId: string,
+    userIds: readonly string[],
+    year: number,
+  ): Promise<ReadonlyMap<string, LeaveBalanceRecord>> {
+    const rows = await this.db().leaveBalance.findMany({
+      where: { workspaceId, year, userId: { in: [...userIds] } },
+      select: { userId: true, entitledDays: true, adjustmentDays: true },
+    });
+    return new Map(
+      rows.map((r) => [
+        r.userId,
+        {
+          entitled: halfDaysFromDecimal(r.entitledDays),
+          adjustment: halfDaysFromDecimal(r.adjustmentDays),
+        },
+      ]),
+    );
+  }
+
+  async listHoldingFor(
+    workspaceId: string,
+    userIds: readonly string[],
+    year: number,
+  ): Promise<LeaveRequestRecord[]> {
+    const rows = await this.db().leaveRequest.findMany({
+      where: {
+        workspaceId,
+        userId: { in: [...userIds] },
+        status: { in: ['PENDING', 'APPROVED'] },
+        startDate: {
+          gte: fromDateOnly(`${String(year)}-01-01`),
+          lt: fromDateOnly(`${String(year + 1)}-01-01`),
+        },
+      },
+      orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+    });
+    return rows.map(toRecord);
+  }
+
   async findBalance(
     workspaceId: string,
     userId: string,

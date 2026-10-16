@@ -266,3 +266,59 @@ describe('Lý do nghỉ tùy chọn (TL: trim, rỗng ⇒ null; ≤ 1000 ở con
     expect((await h.rows())[0]?.reason).toBe(expected);
   });
 });
+
+describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=)', () => {
+  it('mọi nhân viên hiện tại (không VIEWER, không người đã rời), sắp theo tên; người chưa có dòng ⇒ 12; không tạo dòng', async () => {
+    const h = await createLeaveHarness();
+    await h.seed({ id: id(1), status: 'APPROVED', startDate: '2026-11-23', endDate: '2026-11-24' });
+    await h.seed({
+      id: id(2),
+      userId: U.Max,
+      startDate: '2026-11-25',
+      endDate: '2026-11-25',
+      dayPart: 'PM',
+    });
+    await h.seed({ id: id(3), userId: U.Rex, status: 'APPROVED' }); // đã rời
+    await h.leave.adjustBalance(h.as(U.Olivia), { userId: U.Pam, year: 2026, adjustment: 3 });
+    const page = await h.queries.listBalances(h.as(U.Hana), { year: 2026, limit: 50 });
+    expect(page.items.map((r) => r.user.fullName)).toEqual(['Hana', 'Max', 'Mia', 'Olivia', 'Pam']);
+    expect(page.items.find((r) => r.userId === U.Mia)).toMatchObject({
+      year: 2026,
+      usedDays: 2,
+      remainingDays: 10,
+    });
+    expect(page.items.find((r) => r.userId === U.Max)).toMatchObject({
+      pendingDays: 0.5,
+      remainingDays: 11.5,
+    });
+    expect(page.items.find((r) => r.userId === U.Pam)).toMatchObject({
+      adjustmentDays: 1.5,
+      remainingDays: 13.5,
+    });
+    expect(await h.requests.hasHistory(W1, U.Hana)).toBe(false);
+  });
+
+  it('phân trang theo (tên, id); cursor của endpoint khác ⇒ 400; Mia ⇒ 403', async () => {
+    const h = await createLeaveHarness();
+    const p1 = await h.queries.listBalances(h.as(U.Hana), { year: 2026, limit: 2 });
+    expect(p1.items.map((r) => r.user.fullName)).toEqual(['Hana', 'Max']);
+    const cursor = p1.page.nextCursor ?? '';
+    const p2 = await h.queries.listBalances(h.as(U.Hana), { year: 2026, limit: 2, cursor });
+    expect(p2.items.map((r) => r.user.fullName)).toEqual(['Mia', 'Olivia']);
+    const p3 = await h.queries.listBalances(h.as(U.Hana), {
+      year: 2026,
+      limit: 2,
+      cursor: p2.page.nextCursor ?? '',
+    });
+    expect(p3.items.map((r) => r.user.fullName)).toEqual(['Pam']);
+    expect(p3.page).toMatchObject({ hasMore: false, nextCursor: null });
+    await expect(h.queries.listMine(h.as(U.Mia), { limit: 2, cursor })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(
+      h.queries.listBalances(h.as(U.Mia), { year: 2026, limit: 2 }),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+});

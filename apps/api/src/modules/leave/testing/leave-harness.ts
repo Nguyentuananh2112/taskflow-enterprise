@@ -3,7 +3,11 @@ import type { UserRefDto } from '@taskflow/contracts';
 
 import { LeaveCommands } from '../application/leave-commands';
 import { LeaveQueries } from '../application/leave-queries';
-import type { ILeaveUserRefs } from '../application/ports/leave-read-model.port';
+import type {
+  EmployeeKey,
+  ILeaveEmployeeDirectory,
+  ILeaveUserRefs,
+} from '../application/ports/leave-read-model.port';
 import type { LeaveRequestRecord } from '../application/ports/leave.ports';
 import { FakeLeaveMembership, FakeWorkCalendar, SpyHrAudit, SpyLeaveNotifier } from './leave-fakes';
 import { inMemoryLeaveBackend, RecordingLeaveRepository, type LeaveBackend } from './leave-backend';
@@ -43,6 +47,40 @@ export class FakeUserRefs implements ILeaveUserRefs {
   }
 }
 
+/** Nhân viên = thành viên không phải VIEWER của fake membership, tên từ FakeUserRefs, keyset (tên, id). */
+export class FakeEmployeeDirectory implements ILeaveEmployeeDirectory {
+  constructor(
+    private readonly membership: FakeLeaveMembership,
+    private readonly users: FakeUserRefs,
+  ) {}
+
+  listEmployees(
+    workspaceId: string,
+    after: EmployeeKey | null,
+    limit: number,
+  ): Promise<UserRefDto[]> {
+    const cmp = (x: UserRefDto, y: EmployeeKey) =>
+      x.fullName < y.fullName
+        ? -1
+        : x.fullName > y.fullName
+          ? 1
+          : x.id < y.id
+            ? -1
+            : x.id > y.id
+              ? 1
+              : 0;
+    const people = [...this.membership.members.entries()]
+      .filter(([k, m]) => k.startsWith(`${workspaceId}:`) && m.role !== 'VIEWER')
+      .map(([k]) => {
+        const id = k.slice(workspaceId.length + 1);
+        return { id, fullName: this.users.names.get(id) ?? id };
+      })
+      .filter((u) => after === null || cmp(u, after) > 0)
+      .sort(cmp);
+    return Promise.resolve(people.slice(0, limit));
+  }
+}
+
 export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBackend()) {
   await backend.prepare({ workspaces: [W1, W2], users: Object.values(U) });
   const requests = new RecordingLeaveRepository(backend.requests);
@@ -65,7 +103,8 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
 
   const deps = { requests, calendar, membership, notifier, audit, uow, clock, ids, users };
   const leave = new LeaveCommands(deps);
-  const queries = new LeaveQueries({ ...deps, readModel: backend.readModel });
+  const employees = new FakeEmployeeDirectory(membership, users);
+  const queries = new LeaveQueries({ ...deps, readModel: backend.readModel, employees });
   const as = (actorId: string, workspaceId: string = W1) => ({ workspaceId, actorId });
 
   /** Đơn có sẵn (không qua use case) — mặc định ANNUAL FULL PENDING của Mia. */
@@ -98,6 +137,7 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
     leave,
     queries,
     users,
+    employees,
     requests,
     locks: requests.locks,
     rows: () => backend.rows(),

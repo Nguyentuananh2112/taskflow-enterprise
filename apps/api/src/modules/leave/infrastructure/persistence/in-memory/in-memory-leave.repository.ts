@@ -169,6 +169,28 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
     );
   }
 
+  async findBalances(
+    workspaceId: string,
+    userIds: readonly string[],
+    year: number,
+  ): Promise<ReadonlyMap<string, LeaveBalanceRecord>> {
+    const found = new Map<string, LeaveBalanceRecord>();
+    for (const userId of userIds) {
+      const b = await this.findBalance(workspaceId, userId, year);
+      if (b) found.set(userId, b);
+    }
+    return found;
+  }
+
+  async listHoldingFor(
+    workspaceId: string,
+    userIds: readonly string[],
+    year: number,
+  ): Promise<LeaveRequestRecord[]> {
+    const lists = await Promise.all(userIds.map((u) => this.listHolding(workspaceId, u, year)));
+    return lists.flat();
+  }
+
   findBalance(
     workspaceId: string,
     userId: string,

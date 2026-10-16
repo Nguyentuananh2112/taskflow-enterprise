@@ -19,13 +19,19 @@ import {
   type LeaveCommandDeps,
   type LeaveScope,
 } from './leave-kit';
-import type { ILeaveReadModel, LeaveListKey } from './ports/leave-read-model.port';
+import type {
+  ILeaveEmployeeDirectory,
+  ILeaveReadModel,
+  LeaveListKey,
+} from './ports/leave-read-model.port';
 import type { LeaveRequestRecord } from './ports/leave.ports';
+import { ListBalancesQuery } from './use-cases/list-balances.query';
 import { PreviewLeaveQuery, type LeavePreviewDto } from './use-cases/preview-leave.query';
 import type { SubmitLeaveInput } from './use-cases/submit-leave.use-case';
 
 export interface LeaveQueryDeps extends LeaveCommandDeps {
   readModel: ILeaveReadModel;
+  employees: ILeaveEmployeeDirectory;
 }
 
 export interface LeavePage {
@@ -51,10 +57,12 @@ const KeySchema = z.object({ createdAt: z.iso.datetime(), id: z.uuid() });
 export class LeaveQueries {
   readonly #kit: LeaveKit;
   readonly #preview: PreviewLeaveQuery;
+  readonly #balances: ListBalancesQuery;
 
   constructor(private readonly d: LeaveQueryDeps) {
     this.#kit = new LeaveKit(d);
     this.#preview = new PreviewLeaveQuery(this.#kit, d.readModel);
+    this.#balances = new ListBalancesQuery(this.#kit, d.readModel, d.employees);
   }
 
   /** `GET leave-requests?mine=1` — chỉ đơn của CHÍNH người gọi (route không nhận `userId` — SEC-HR-03). */
@@ -84,6 +92,11 @@ export class LeaveQueries {
       calendar,
     );
     return toBalanceDto(year, balance);
+  }
+
+  /** `GET leave-balances?year=` (HR) — mọi nhân viên hiện tại, sắp theo tên. */
+  listBalances(scope: LeaveScope, query: { year: number; cursor?: string; limit: number }) {
+    return this.#balances.execute(scope, query);
   }
 
   /** `GET leave-requests/preview` (TL duyệt) — kiểm như submit, không khóa, không ghi. */

@@ -31,6 +31,18 @@ export interface ILeaveReadModel {
     from: CalendarDate;
     to: CalendarDate;
   }): Promise<LeaveRequestRecord[]>;
+  /** Số dư đã lưu của nhiều người cùng năm (danh sách HR) — người chưa có dòng không có trong map. */
+  findBalances(
+    workspaceId: string,
+    userIds: readonly string[],
+    year: number,
+  ): Promise<ReadonlyMap<string, LeaveBalanceRecord>>;
+  /** Đơn PENDING/APPROVED có `startDate` trong `year` của nhiều người (như `listHolding`, một truy vấn). */
+  listHoldingFor(
+    workspaceId: string,
+    userIds: readonly string[],
+    year: number,
+  ): Promise<LeaveRequestRecord[]>;
   /** Số dư đã lưu — KHÔNG tạo (GET không ghi); chưa có ⇒ `null` (bên gọi dùng mặc định 12 ngày). */
   findBalance(
     workspaceId: string,
@@ -42,4 +54,22 @@ export interface ILeaveReadModel {
 /** Tên hiển thị (`user`, `decidedBy`) — adapter của auth nối ở composition root, như `IUserRefReader` của attendance. */
 export interface ILeaveUserRefs {
   findRefs(ids: readonly string[]): Promise<ReadonlyMap<string, UserRefDto>>;
+}
+
+/** Khóa keyset danh sách nhân viên: (fullName, id) tăng dần. */
+export interface EmployeeKey {
+  readonly fullName: string;
+  readonly id: string;
+}
+
+/**
+ * Nhân viên HIỆN TẠI của workspace (OWNER/PM/MEMBER — như `isEmployee` của T-037), sắp theo tên rồi id. Dùng cho
+ * `GET leave-balances?year=` (HR): mọi nhân viên kể cả chưa có dòng số dư.
+ */
+export interface ILeaveEmployeeDirectory {
+  listEmployees(
+    workspaceId: string,
+    after: EmployeeKey | null,
+    limit: number,
+  ): Promise<UserRefDto[]>;
 }
