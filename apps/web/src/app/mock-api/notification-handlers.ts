@@ -1,4 +1,5 @@
 import { NotificationDto, UnreadNotificationCountDto } from '@taskflow/contracts/hr';
+import { roleHasPermission } from '@taskflow/contracts/rbac';
 import { NotificationNewEvent } from '@taskflow/contracts/realtime';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
@@ -14,6 +15,12 @@ import { userRoom } from './workspace-events';
 // khoảng ngày nghỉ, KHÔNG lý do) join lúc đọc — ở mock lưu sẵn trong bản ghi.
 
 type Stored = NotificationDto & { recipientId: string };
+
+// Loại gửi cho HR (đơn mới / đơn bị hủy) — quyền xét lúc ĐỌC, không phải lúc gửi.
+const HR_ONLY: ReadonlySet<NotificationDto['type']> = new Set([
+  'LEAVE_SUBMITTED',
+  'LEAVE_CANCELLED',
+]);
 
 export class MockNotifications {
   #items: Stored[] = [];
@@ -50,10 +57,13 @@ export class MockNotifications {
     return item;
   }
 
+  /** Chỉ workspace còn là thành viên; thông báo dành cho HR chỉ hiện khi VẪN còn `hr:manage` (§9 B-H3). */
   of(userId: string, db: MockDb): Stored[] {
-    return this.#items.filter(
-      (n) => n.recipientId === userId && db.membershipIn(userId, n.workspaceId),
-    );
+    return this.#items.filter((n) => {
+      const m = n.recipientId === userId && db.membershipIn(userId, n.workspaceId);
+      if (!m) return false;
+      return !HR_ONLY.has(n.type) || roleHasPermission(m.role, 'hr:manage');
+    });
   }
 }
 

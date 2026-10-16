@@ -74,7 +74,13 @@ export function AttendancePage() {
           </nav>
         )}
       </div>
-      {data.isError ? (
+      {month === undefined && today.isError ? (
+        // Không có ?month và chưa biết "hôm nay" của server ⇒ báo lỗi thay vì kẹt skeleton.
+        <EmptyState
+          title="Không tải được bảng công"
+          action={<Button onClick={() => void today.refetch()}>Thử lại</Button>}
+        />
+      ) : data.isError ? (
         <EmptyState
           title="Không tải được bảng công"
           action={<Button onClick={() => void data.refetch()}>Thử lại</Button>}

@@ -43,7 +43,10 @@ export function useAttendanceCheck(wsId: string) {
       failures < 1 && isApiError(error) && error.code === CLIENT_ERROR_CODES.network,
     onSuccess: (today: AttendanceTodayDto, { kind }, _r, context) => {
       context.client.setQueryData(attendanceKeys.today(wsId), today);
-      void context.client.invalidateQueries({ queryKey: [...attendanceKeys.all(wsId), 'month'] });
+      // Bảng tháng + lượt chấm (chi tiết ngày hôm nay) đều đổi theo lượt vừa chấm.
+      for (const part of ['month', 'events'] as const) {
+        void context.client.invalidateQueries({ queryKey: [...attendanceKeys.all(wsId), part] });
+      }
       toast({ title: kind === 'IN' ? 'Đã chấm vào' : 'Đã chấm ra', tone: 'success' });
     },
     onError: (error, _v, _r, context) => {

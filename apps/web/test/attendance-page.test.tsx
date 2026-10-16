@@ -1,11 +1,12 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
 import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
-import { startMockApi } from '@test/mock-api';
+import { API_BASE, startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
 import { getClientId } from '@/shared/lib/client-id';
@@ -100,5 +101,25 @@ describe('bảng công tháng', () => {
     expect(within(dialog).getByText(`Đã hủy bởi Hana HR: ${evil}`)).toBeTruthy();
     expect(dialog.querySelector('img')).toBeNull();
     await expectNoA11yViolations();
+  });
+
+  it('không có ?month và me/today lỗi ⇒ "Không tải được bảng công" + Thử lại, không kẹt skeleton', async () => {
+    const boom = () =>
+      HttpResponse.json(
+        { success: false, error: { code: 'INTERNAL_ERROR', message: 'x' } },
+        { status: 500 },
+      );
+    const f = seedBoard(mock);
+    const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    mock.server.use(...[1, 2, 3].map(() => http.get(url, boom, { once: true })));
+    f.signInAs(f.owner);
+    const hub = new FakeRealtimeHub(mock.board, mock.db);
+    openApp(`/w/${f.wsId}/attendance`, hub.client(getClientId(), f.owner.id));
+    expect(
+      await screen.findByText('Không tải được bảng công', {}, { timeout: 10_000 }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('status', { name: 'Đang tải bảng công' })).toBeNull();
+    await userEvent.setup({ delay: null }).click(screen.getByRole('button', { name: 'Thử lại' }));
+    expect(await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' })).toBeTruthy();
   });
 });

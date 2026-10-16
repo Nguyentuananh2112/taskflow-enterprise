@@ -14,6 +14,7 @@ import { CheckButtons } from '@/features/attendance-check';
 import { cn } from '@/shared/lib/cn';
 import type { AttendanceTodayDto } from '@taskflow/contracts/attendance';
 import { Alert } from '@/shared/ui/alert';
+import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
 
 type Props = Readonly<{ wsId: string; enabled: boolean }>;
@@ -45,7 +46,14 @@ export function AttendanceCard({ wsId, enabled }: Props) {
   const clock = useServerClock(today.data?.serverNow, today.dataUpdatedAt);
   if (!enabled) return null;
   if (!today.data) {
-    return today.isError ? null : (
+    return today.isError ? (
+      <p className="flex flex-wrap items-center gap-2 rounded-card border border-border p-4 text-sm">
+        Không tải được chấm công.
+        <Button variant="secondary" size="sm" onClick={() => void today.refetch()}>
+          Thử lại
+        </Button>
+      </p>
+    ) : (
       <div
         role="status"
         aria-busy="true"
@@ -72,7 +80,8 @@ export function AttendanceCard({ wsId, enabled }: Props) {
           <p className="text-sm text-text-muted">
             {clock === null ? '' : dayFormat(t.timezone).format(clock)}
           </p>
-          <p className="font-mono text-2xl tabular-nums" aria-label="Giờ hiện tại theo máy chủ">
+          <p className="font-mono text-2xl tabular-nums">
+            <span className="sr-only">Giờ hiện tại theo máy chủ: </span>
             {clock === null ? '--:--:--' : clockFormat(t.timezone).format(clock)}
           </p>
         </div>

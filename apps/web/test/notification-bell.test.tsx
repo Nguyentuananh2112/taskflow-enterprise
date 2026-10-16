@@ -85,6 +85,33 @@ describe('chuông thông báo', () => {
   });
 });
 
+describe('thông báo dành cho HR (§9 B-H3)', () => {
+  it('người không còn hr:manage ⇒ không thấy LEAVE_SUBMITTED/CANCELLED, vẫn thấy thông báo của mình', async () => {
+    const f = seedBoard(mock);
+    const mia = f.addUser('Mia', `mia-${crypto.randomUUID()}@example.com`, 'MEMBER');
+    const base = {
+      refId: crypto.randomUUID(),
+      workspaceId: f.wsId,
+      workspaceName: 'Công ty Lan',
+      actor: { id: f.owner.id, fullName: 'Lan' },
+      leave: { type: 'ANNUAL', startDate: '2026-10-20', endDate: '2026-10-21' },
+    } as const;
+    for (const type of ['LEAVE_SUBMITTED', 'LEAVE_CANCELLED', 'LEAVE_APPROVED'] as const) {
+      mock.notifications.notify(mia.id, { ...base, type });
+    }
+    f.signInAs(mia);
+    openApp(
+      `/w/${f.wsId}/projects`,
+      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), mia.id),
+    );
+    await waitFor(() => expect(bell().getAttribute('aria-label')).toBe('Thông báo, 1 chưa đọc'));
+    await userEvent.setup({ delay: null }).click(bell());
+    const panel = await screen.findByRole('dialog', { name: 'Thông báo' });
+    expect(await within(panel).findAllByRole('link')).toHaveLength(1);
+    expect(within(panel).queryByText(/gửi đơn nghỉ/)).toBeNull();
+  });
+});
+
 describe('member:grants-changed', () => {
   it('được cấp HR ⇒ báo ngay (usePermission đổi theo myGrants, không reload)', async () => {
     const { f } = open();
