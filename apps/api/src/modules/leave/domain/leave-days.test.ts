@@ -4,6 +4,7 @@ import { BusinessRuleViolationError, ValidationError } from '../../../core/error
 import {
   assertLeaveRange,
   countLeaveHalfDays,
+  leaveDatesWithin,
   occupiedSlots,
   overlaps,
   type CalendarDay,
@@ -189,5 +190,45 @@ describe('overlaps (D-M2: chồng theo ngày + phần)', () => {
       '2026-11-17:PM',
     ]);
     expect(occupiedSlots(span('2026-11-16', '2026-11-16', 'PM'))).toEqual(['2026-11-16:PM']);
+  });
+});
+
+describe('leaveDatesWithin — ngày của đơn trong [from, to] (ApprovedLeavePort, mutation L1/L2)', () => {
+  const span = (startDate: string, endDate: string, dayPart: LeaveSpan['dayPart'] = 'FULL') => ({
+    startDate,
+    endDate,
+    dayPart,
+  });
+
+  it('đơn vắt qua cuối tháng (29/11–03/12) hỏi tháng 11 ⇒ chỉ 29–30/11; hỏi tháng 12 ⇒ chỉ 01–03/12', () => {
+    const across = span('2026-11-29', '2026-12-03');
+    expect(leaveDatesWithin(across, '2026-11-01', '2026-11-30')).toEqual([
+      { date: '2026-11-29', part: 'FULL' },
+      { date: '2026-11-30', part: 'FULL' },
+    ]);
+    expect(leaveDatesWithin(across, '2026-12-01', '2026-12-31').map((d) => d.date)).toEqual([
+      '2026-12-01',
+      '2026-12-02',
+      '2026-12-03',
+    ]);
+  });
+
+  it('khoảng hỏi nằm gọn trong đơn ⇒ cắt cả hai đầu; giữ phần AM/PM', () => {
+    expect(leaveDatesWithin(span('2026-11-02', '2026-11-20'), '2026-11-10', '2026-11-11')).toEqual([
+      { date: '2026-11-10', part: 'FULL' },
+      { date: '2026-11-11', part: 'FULL' },
+    ]);
+    expect(
+      leaveDatesWithin(span('2026-11-23', '2026-11-23', 'PM'), '2026-11-01', '2026-11-30'),
+    ).toEqual([{ date: '2026-11-23', part: 'PM' }]);
+  });
+
+  it('đơn nằm hẳn ngoài khoảng hỏi (trước hoặc sau) ⇒ []', () => {
+    expect(leaveDatesWithin(span('2026-10-20', '2026-10-31'), '2026-11-01', '2026-11-30')).toEqual(
+      [],
+    );
+    expect(leaveDatesWithin(span('2026-12-01', '2026-12-02'), '2026-11-01', '2026-11-30')).toEqual(
+      [],
+    );
   });
 });
