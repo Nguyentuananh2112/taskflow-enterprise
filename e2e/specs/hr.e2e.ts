@@ -23,7 +23,7 @@ import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
 // E2E-HR-* (docs/design/test-spec-hr.md §9, T-042). Thân viết theo UI THẬT của nhánh web (T-041a/b/c @ feat/T-041c-hr-web
-// 6733a06, H soát lại trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
+// 6733a06; E soát a/b trên 268c7d4/7817d42, H soát c trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
 // grants T-037). Vẫn `test.fixme` + nhãn vé: vé web tương ứng lên main ⇒ đổi `test.fixme` → `test` trong cùng PR.
 //   T-041a: thẻ Chấm công ở /projects, /attendance, chuông thông báo, nút gọn trên header
 //   T-041b: /leave (số dư, form gửi đơn, đơn của tôi)
@@ -50,7 +50,7 @@ const cardValue = (card: Locator, term: string) =>
 
 const bell = (page: Page) => page.getByRole('button', { name: /^Thông báo/ });
 
-/** Hàng của ngày `date` trong bảng công tháng — tiêu đề hàng là nút "T5, 15/10". */
+/** Hàng của ngày `date` trong bảng công tháng — tiêu đề hàng là nút "Th 5, 15/10" (Intl vi-VN) ⇒ chỉ neo đuôi dd/MM. */
 const dayRow = (table: Locator, date: string) =>
   table
     .getByRole('row')
@@ -103,7 +103,8 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
       `đồng hồ ${shown} ≠ giờ VN ${vnHm()} (máy: New York)`,
     ).toBe(true);
 
-    // Tab thứ hai mở TRƯỚC khi chấm ⇒ vẫn hiện "Chấm vào" (dữ liệu cũ) — dùng để bấm vào lần 2 qua UI.
+    // Tab thứ hai mở TRƯỚC khi chấm ⇒ vẫn hiện "Chấm vào" (dữ liệu cũ) — dùng để bấm vào lần 2 qua UI. Phải bấm trong
+    // 60 s kể từ lúc tab này tải (staleTime của useAttendanceToday, E) và KHÔNG bringToFront ⇒ không refetch.
     const stale = await context.newPage();
     await stale.goto(projectsPath(w));
     await expect(attendanceCard(stale).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
@@ -177,9 +178,7 @@ test.fixme(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realti
   await form.getByRole('button', { name: 'Gửi đơn' }).click();
   expect((await submitted).status()).toBe(201);
   await expect(page.getByText(/^Đã gửi đơn — 1 ngày, chờ duyệt/)).toBeVisible();
-  const mine = page
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Đơn của tôi' }) });
+  const mine = page.getByRole('region', { name: 'Đơn của tôi' });
   await expect(mine.getByText('Chờ duyệt')).toBeVisible();
 
   // HR: chuông +1 qua notification:new, hàng đợi tự tải lại — không reload.
@@ -405,7 +404,7 @@ test.fixme(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) �
   const res = await csvRes;
   expect(res.status()).toBe(200);
   expect(
-    res.request().headers()['authorization'],
+    (await res.request().allHeaders())['authorization'],
     'CSV gọi bằng Bearer (fetch), không phải link GET trần',
   ).toMatch(/^Bearer /);
   const file = await download;
