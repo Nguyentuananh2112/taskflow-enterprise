@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { UserRefDto } from '../auth/auth.schemas';
 import { DateOnly, IsoDateTime, Uuid } from '../common/primitives';
 
 // Chấm công (T-038, thiết kế attendance-leave.md §4–§5, hợp đồng web chốt với E cho T-041a).
@@ -94,3 +95,71 @@ export const AttendanceMonthDto = z.object({
   days: z.array(AttendanceDayDto),
 });
 export type AttendanceMonthDto = z.infer<typeof AttendanceMonthDto>;
+
+// ---------- Lượt chấm thô (§5, TL duyệt kèm góp ý E): HR xem/thêm/hủy, nhân viên xem của mình ----------
+
+export const AttendanceKind = z.enum(['IN', 'OUT']);
+export type AttendanceKind = z.infer<typeof AttendanceKind>;
+export const AttendanceSource = z.enum(['WEB', 'DEVICE', 'ADJUSTMENT']);
+export type AttendanceSource = z.infer<typeof AttendanceSource>;
+
+/**
+ * Một lượt chấm, gồm cả lượt ĐÃ HỦY (log bất biến — ADR-121). IP/UA chỉ có ở route HR (`hr:manage`) và
+ * route của chính nhân viên (NĐ 13 Đ.14 — §9); không vào CSV / thông báo.
+ */
+export const AttendanceEventDto = z.object({
+  id: Uuid,
+  userId: Uuid,
+  kind: AttendanceKind,
+  source: AttendanceSource,
+  occurredAt: IsoDateTime,
+  workDate: DateOnly,
+  note: z.string().nullable(),
+  createdBy: UserRefDto,
+  voidedAt: IsoDateTime.nullable(),
+  voidedBy: UserRefDto.nullable(),
+  voidReason: z.string().nullable(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+});
+export type AttendanceEventDto = z.infer<typeof AttendanceEventDto>;
+
+/** `GET attendance/events` (HR) · `GET attendance/me/events` — lượt theo `workDate`, sắp theo giờ. */
+export const AttendanceEventsDto = z.object({
+  /** Múi giờ của lịch hiệu lực ngày đó (hiển thị giờ theo lịch, không theo máy). */
+  timezone: z.string().min(1),
+  events: z.array(AttendanceEventDto),
+});
+export type AttendanceEventsDto = z.infer<typeof AttendanceEventsDto>;
+
+export const AttendanceEventsQuery = z.strictObject({ userId: Uuid, date: DateOnly });
+export type AttendanceEventsQuery = z.infer<typeof AttendanceEventsQuery>;
+export const MyAttendanceEventsQuery = z.strictObject({ date: DateOnly });
+export type MyAttendanceEventsQuery = z.infer<typeof MyAttendanceEventsQuery>;
+
+/** Lý do bắt buộc của ADJUSTMENT / void (§5) — không chép vào thông báo. */
+const Reason = z.string().trim().min(1).max(500);
+
+/**
+ * `POST attendance/events` (ADJUSTMENT, `hr:manage`): HR nhập giờ theo LỊCH của ngày `date`
+ * (`time` = HH:mm); `nextDay: true` cho lượt OUT sau nửa đêm vẫn thuộc `date` (giờ chốt 06:00).
+ */
+export const AdjustAttendanceBody = z.strictObject({
+  userId: Uuid,
+  kind: AttendanceKind,
+  date: DateOnly,
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Giờ phải có dạng HH:mm.'),
+  nextDay: z.boolean().default(false),
+  reason: Reason,
+});
+export type AdjustAttendanceBody = z.infer<typeof AdjustAttendanceBody>;
+
+export const VoidAttendanceBody = z.strictObject({ reason: Reason });
+export type VoidAttendanceBody = z.infer<typeof VoidAttendanceBody>;
+
+/** Kết quả ADJUSTMENT (201) / void (200): lượt + ô ngày đã tính lại — web cập nhật đúng 1 ô bảng tháng. */
+export const AttendanceEventChangeDto = z.object({
+  event: AttendanceEventDto,
+  day: AttendanceDayDto,
+});
+export type AttendanceEventChangeDto = z.infer<typeof AttendanceEventChangeDto>;
