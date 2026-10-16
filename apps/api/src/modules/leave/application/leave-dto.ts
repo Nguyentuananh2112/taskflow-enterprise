@@ -39,10 +39,16 @@ export interface LeaveBalanceDto {
   remainingDays: number;
 }
 
+/** Một dòng số dư theo người (HR: `GET leave-balances?year=`, kết quả `PATCH leave-balances/:userId/:year`). */
+export interface LeaveBalanceRowDto extends LeaveBalanceDto {
+  userId: string;
+  user: UserRefDto;
+}
+
 /** User đã ẩn danh / không còn bản ghi ⇒ tên thay thế, như UserRefDto của task/audit. */
 export const DELETED_USER_NAME = 'Người dùng đã xóa';
 
-const refOf = (refs: ReadonlyMap<string, UserRefDto>, id: string): UserRefDto =>
+export const refOf = (refs: ReadonlyMap<string, UserRefDto>, id: string): UserRefDto =>
   refs.get(id) ?? { id, fullName: DELETED_USER_NAME };
 
 export function toLeaveDto(

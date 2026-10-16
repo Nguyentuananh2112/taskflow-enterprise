@@ -47,8 +47,13 @@ export class DecideLeaveUseCase {
 
     return d.uow.run(async () => {
       await d.requests.lockUser(workspaceId, found.userId);
-      const actor = await this.kit.requireActor(workspaceId, actorId, PERMISSION_HR_MANAGE); // B-H3: sau khóa
-      this.kit.assertNotSelf(actor, found.userId, note);
+      // B-H3 + B-H1 sau khóa: đọc lại quyền (FOR SHARE) + luật tự xử lý — chốt chung T-037.
+      await d.membership.authorizeHrWrite({
+        workspaceId,
+        actorId,
+        targetUserId: found.userId,
+        reason: note,
+      });
       const record = await this.kit.reload(workspaceId, requestId, expectedVersion);
 
       const today = await this.kit.today(workspaceId);

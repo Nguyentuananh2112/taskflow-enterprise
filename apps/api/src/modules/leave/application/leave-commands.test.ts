@@ -488,7 +488,7 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
         adjustment: 4,
         note: 'thâm niên',
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ userId: U.Olivia });
   });
 
   it('LB-06: userId chưa từng có dữ liệu trong ws ⇒ 404 user; người đã rời nhưng còn đơn ⇒ được', async () => {
@@ -502,7 +502,7 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
     await h.seed({ id: 'rex', userId: U.Rex, status: 'APPROVED' });
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), { userId: U.Rex, year: 2026, adjustment: 1 }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ userId: U.Rex });
   });
 
   it('LB-07: năm ngoài ±1 ⇒ 400 year; trong ±1 ⇒ được', async () => {
@@ -515,7 +515,7 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
     });
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2027, adjustment: 1 }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ year: 2027 });
   });
 
   it('LB-08: adjustment âm làm số dư âm khi đã có đơn APPROVED ⇒ được; đơn ANNUAL mới ⇒ 422', async () => {
@@ -523,7 +523,13 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
     await h.seed({ id: 'a', status: 'APPROVED', startDate: '2026-11-02', endDate: '2026-11-07' }); // 6 ngày
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -20 }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      userId: U.Mia,
+      user: { fullName: 'Mia' },
+      adjustmentDays: -10,
+      usedDays: 6,
+      remainingDays: -4,
+    }); // trả dòng số dư MỚI (H), được âm
     await expect(
       h.leave.submit(h.as(U.Mia), { ...mia2days, startDate: '2026-11-30', endDate: '2026-11-30' }),
     ).rejects.toMatchObject({ details: { rule: 'INSUFFICIENT_BALANCE' } });

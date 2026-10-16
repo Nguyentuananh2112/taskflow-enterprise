@@ -1,4 +1,4 @@
-import type { LeaveRequestDto } from './leave-dto';
+import type { LeaveBalanceRowDto, LeaveRequestDto } from './leave-dto';
 import { LeaveKit, type LeaveCommandDeps, type LeaveScope } from './leave-kit';
 import { AdjustBalanceUseCase, type AdjustBalanceInput } from './use-cases/adjust-balance.use-case';
 import { CancelLeaveUseCase } from './use-cases/cancel-leave.use-case';
@@ -57,7 +57,7 @@ export class LeaveCommands {
     return this.#cancel.execute(scope, { requestId, expectedVersion });
   }
 
-  adjustBalance(scope: LeaveScope, input: AdjustBalanceInput): Promise<void> {
+  adjustBalance(scope: LeaveScope, input: AdjustBalanceInput): Promise<LeaveBalanceRowDto> {
     return this.#adjust.execute(scope, input);
   }
 }

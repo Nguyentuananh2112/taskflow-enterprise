@@ -1,6 +1,5 @@
 import type { IClock, IIdGenerator } from '../../../core/domain';
 import {
-  BusinessRuleViolationError,
   ForbiddenError,
   ResourceNotFoundError,
   ValidationError,
@@ -94,27 +93,6 @@ export class LeaveKit {
     if (!actor) throw new ResourceNotFoundError('workspace');
     if (!actor.permissions.has(permission)) throw new ForbiddenError(permission);
     return actor;
-  }
-
-  /**
-   * B-H1 (quy ước chung attendance + leave, B): lệnh `hr:manage` nhắm vào CHÍNH MÌNH ⇒ 403 (kiểm TRƯỚC lý do),
-   * trừ OWNER (R26) — OWNER tự làm mà thiếu lý do ⇒ 422 `REASON_REQUIRED` (lý do CÓ ĐIỀU KIỆN theo người gọi,
-   * schema không biết actor). Sẽ thay bằng helper `assertHrWrite` của T-037 phần 2.
-   */
-  assertNotSelf(actor: LeaveActor, targetUserId: string, note: string | null): void {
-    if (actor.userId !== targetUserId) return;
-    if (actor.role !== 'OWNER') {
-      throw new ForbiddenError(
-        PERMISSION_HR_MANAGE,
-        'Không thể tự xử lý dữ liệu nghỉ phép của mình.',
-      );
-    }
-    if (!note?.trim()) {
-      throw new BusinessRuleViolationError(
-        'REASON_REQUIRED',
-        'Chủ workspace tự xử lý dữ liệu của mình phải ghi lý do.',
-      );
-    }
   }
 
   requireNote(note: string | null, message: string): void {

@@ -97,7 +97,19 @@ export interface ILeaveMembership {
    * lúc mở form và bấm duyệt ⇒ 403). Không còn là thành viên ⇒ `null`.
    */
   reloadActor(workspaceId: string, userId: string): Promise<LeaveActor | null>;
-  /** Người gửi còn là thành viên đủ điều kiện xin nghỉ (OWNER/PM/MEMBER — không VIEWER) (D-M4). */
+  /**
+   * Chốt ghi HR dùng chung (T-037: adapter = `HrAccess.authorizeWrite`). Gọi TRONG transaction, sau khóa
+   * (ws, user), TRƯỚC khi đọc dữ liệu: khóa membership người gọi `FOR SHARE` + đọc lại role/grants (B-H3 — thu grant
+   * song song không lọt, CC-HR-11) ⇒ 404 workspace / 403 `hr:manage`; `targetUserId === actorId` ⇒ 403 trừ OWNER,
+   * OWNER thiếu `reason` ⇒ 422 `REASON_REQUIRED` (B-H1, R26).
+   */
+  authorizeHrWrite(input: {
+    workspaceId: string;
+    actorId: string;
+    targetUserId: string | null;
+    reason: string | null;
+  }): Promise<LeaveActor>;
+  /** Người gửi còn là thành viên đủ điều kiện xin nghỉ (OWNER/PM/MEMBER — không VIEWER) (D-M4). T-037: `isEmployee`. */
   isEligibleRequester(workspaceId: string, userId: string): Promise<boolean>;
 }
 

@@ -1,28 +1,30 @@
 import { ResourceNotFoundError, ValidationError } from '../../../../core/errors';
 import type { HalfDays } from '../../domain/leave-days';
-import { PERMISSION_HR_MANAGE, yearOf, type LeaveKit, type LeaveScope } from '../leave-kit';
+import { refOf, toBalanceDto, type LeaveBalanceRowDto } from '../leave-dto';
+import { summarizeStored, yearOf, type LeaveKit, type LeaveScope } from '../leave-kit';
 
 export interface AdjustBalanceInput {
   userId: string;
   year: number;
-  /** Nửa ngày, có thể âm (Q4: số dư được phép âm khi đã có đơn APPROVED). */
+  /** GIÁ TRỊ MỚI tuyệt đối (không phải delta), nửa ngày, có thể âm (Q4 — TL chốt (a): kể cả remaining − pending < 0). */
   adjustment: HalfDays;
   note?: string | null;
 }
 
 /**
- * PATCH leave-balances/:userId/:year (test-spec LB-04..08). Thứ tự: thiếu quyền / tự chỉnh 403 → năm ngoài ±1
- * 400 → userId chưa từng có dữ liệu 404 → khóa (ws, user) cùng khóa với đơn nghỉ (D-H2) → đọc lại quyền (B-H3).
+ * PATCH leave-balances/:userId/:year (test-spec LB-04..08). Thứ tự: chốt ghi HR (404 ws / 403 quyền / 403 tự
+ * chỉnh / 422 OWNER thiếu lý do) → năm ngoài ±1 400 → userId chưa từng có dữ liệu 404 → khóa (ws, user) cùng khóa
+ * với đơn nghỉ (D-H2) → chốt ghi HR LẦN NỮA trong khóa (B-H3). Trả dòng số dư mới để web cập nhật một dòng (H).
  */
 export class AdjustBalanceUseCase {
   constructor(private readonly kit: LeaveKit) {}
 
-  async execute(scope: LeaveScope, input: AdjustBalanceInput): Promise<void> {
+  async execute(scope: LeaveScope, input: AdjustBalanceInput): Promise<LeaveBalanceRowDto> {
     const { workspaceId, actorId } = scope;
     const d = this.kit.d;
     const note = input.note ?? null;
-    const actor = await this.kit.requireActor(workspaceId, actorId, PERMISSION_HR_MANAGE);
-    this.kit.assertNotSelf(actor, input.userId, note);
+    const guard = { workspaceId, actorId, targetUserId: input.userId, reason: note };
+    await d.membership.authorizeHrWrite(guard);
     const currentYear = yearOf(await this.kit.today(workspaceId));
     if (Math.abs(input.year - currentYear) > 1) {
       throw new ValidationError([
@@ -41,9 +43,9 @@ export class AdjustBalanceUseCase {
       throw new ResourceNotFoundError('user');
     }
 
-    await d.uow.run(async () => {
+    const balance = await d.uow.run(async () => {
       await d.requests.lockUser(workspaceId, input.userId);
-      await this.kit.requireActor(workspaceId, actorId, PERMISSION_HR_MANAGE); // B-H3
+      await d.membership.authorizeHrWrite(guard); // B-H3: sau khóa
       const before = await d.requests.getOrCreateBalance(workspaceId, input.userId, input.year);
       await d.requests.setBalanceAdjustment(
         workspaceId,
@@ -61,6 +63,17 @@ export class AdjustBalanceUseCase {
         after: { year: input.year, adjustmentHalfDays: input.adjustment },
         note,
       });
+      return summarizeStored(
+        { entitled: before.entitled, adjustment: input.adjustment },
+        await d.requests.listHolding(workspaceId, input.userId, input.year),
+        await this.kit.yearCalendar(workspaceId, input.year),
+      );
     });
+    const refs = await d.users.findRefs([input.userId]);
+    return {
+      userId: input.userId,
+      user: refOf(refs, input.userId),
+      ...toBalanceDto(input.year, balance),
+    };
   }
 }
