@@ -633,7 +633,7 @@ describe('Biên HTTP', () => {
         'idempotency-key': randomUUID(),
         'user-agent': 'U'.repeat(10_000),
       },
-      body: '',
+      body: '{}',
     });
     expect(res.status).toBe(201);
   });
