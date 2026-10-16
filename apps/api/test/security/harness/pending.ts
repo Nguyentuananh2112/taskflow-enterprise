@@ -91,6 +91,10 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
     reason:
       'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
   },
+  'SEC-HR-16': {
+    ticket: 'T-037',
+    reason: 'Mốc 3 chưa có route GET hr-audit-logs (T-037, B chốt đường dẫn + quyền hr:grant)',
+  },
   'SEC-HR-17': {
     ticket: 'T-040',
     reason:
@@ -219,8 +223,7 @@ export const PENDING_PREFIX = '[PENDING ';
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
 export const TODO_BUDGET: Readonly<Record<string, string>> = {
-  // T-042: SEC-HR-16 route đọc HrAuditLog chưa có trong §5; SEC-HR-23 cần process API riêng hops=0; CC-HR-13 cần route ngày lễ + đếm ngày (T-038/T-039).
-  'SEC-HR-16': 'hr.sec.ts',
+  // T-042: SEC-HR-23 cần process API riêng hops=0; CC-HR-13 cần route ngày lễ + đếm ngày (T-038/T-039).
   'SEC-HR-23': 'hr.sec.ts',
   'CC-HR-13': 'hr-races.sec.ts',
 };

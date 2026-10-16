@@ -32,6 +32,8 @@ export const HR = {
   grants: (ws: string, userId: string) => `/workspaces/${ws}/members/${userId}/grants`,
   notifications: '/me/notifications',
   notificationRead: (id: string) => `/me/notifications/${id}/read`,
+  /** T-037 (B chốt): OWNER-only (`hr:grant`), mới nhất trước, cursor kind riêng. */
+  auditLogs: (ws: string) => `/workspaces/${ws}/hr-audit-logs`,
 } as const;
 
 export interface HrTenant {

@@ -364,13 +364,57 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
       expect(
         (await actors.json('GET', HR.myLeaveRequests(t.ws), t.max.accessToken)).text,
       ).not.toContain(secret);
+      // HrAuditLog (LEAVE_SUBMIT): before/after KHÔNG chép `reason` (B-H2).
+      expect(
+        (await actors.json('GET', HR.auditLogs(t.ws), t.olivia.accessToken)).text,
+      ).not.toContain(secret);
     },
   );
 
   secCase(
     'SEC-HR-16',
-    'HrAuditLog chỉ OWNER đọc; Hana ⇒ 403 (route đọc audit chưa có trong thiết kế §5)',
+    'HrAuditLog chỉ OWNER đọc (hr:grant): Olivia 200 thấy GRANT của Hana; Hana (HR) 403; Mia 403; Otto 404 như ws không tồn tại',
     AREA,
+    async () => {
+      const t = await seedHr(actors); // seed cấp HR_MANAGE cho Hana ⇒ có đúng 1 mục GRANT
+      const own = await actors.json('GET', HR.auditLogs(t.ws), t.olivia.accessToken);
+      expect(own.status).toBe(200);
+      const rows = (
+        own.json as {
+          data: {
+            action: string;
+            targetUserId: string | null;
+            after: { grants?: string[] } | null;
+          }[];
+        }
+      ).data;
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          action: 'GRANT',
+          targetUserId: t.hana.userId,
+          after: expect.objectContaining({ grants: ['HR_MANAGE'] }) as unknown,
+        }),
+      );
+      expect((await actors.json('GET', HR.auditLogs(t.ws), t.hana.accessToken)).status).toBe(403);
+      expect((await actors.json('GET', HR.auditLogs(t.ws), t.mia.accessToken)).status).toBe(403);
+      const foreign = await actors.json('GET', HR.auditLogs(t.ws), t.otto.accessToken);
+      const missing = await actors.json('GET', HR.auditLogs(NIL_WS), t.otto.accessToken);
+      expect(foreign.status).toBe(404);
+      expect(errorEnvelope(foreign).error).toEqual(errorEnvelope(missing).error);
+      // cursor HỢP LỆ của endpoint khác (định dạng core/http/cursor.ts: { k, v }) ⇒ 400 (kind riêng — B).
+      const otherCursor = Buffer.from(
+        JSON.stringify({ k: 'members', v: { after: t.mia.userId } }),
+      ).toString('base64url');
+      expect(
+        (
+          await actors.json(
+            'GET',
+            `${HR.auditLogs(t.ws)}?cursor=${otherCursor}`,
+            t.olivia.accessToken,
+          )
+        ).status,
+      ).toBe(400);
+    },
   );
 });
 
