@@ -360,47 +360,102 @@ describe('JWT giả mạo', () => {
 });
 
 describe('Đăng nhập & mật khẩu', () => {
+  /** Số dòng `test.argon2_verify` mới (theo target) kể từ `since` — log chỉ có ở APP_ENV=test. */
+  const verifiesSince = async (since: number) => {
+    const parse = () =>
+      api
+        .logs()
+        .slice(since)
+        .flatMap((line) => {
+          try {
+            const entry = JSON.parse(line) as { msg?: string; target?: string };
+            return entry.msg === 'test.argon2_verify' ? [entry.target] : [];
+          } catch {
+            return [];
+          }
+        });
+    // stdout của API có thể tới sau response ⇒ chờ dòng đầu, rồi thêm một nhịp để bắt dòng thừa.
+    const deadline = Date.now() + 5_000;
+    while (parse().length === 0 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    await new Promise((r) => setTimeout(r, 150));
+    return parse();
+  };
+  const wrongLogin = async (email: string) => {
+    const since = api.logs().length;
+    const res = await actors.json('POST', '/auth/login', undefined, {
+      email,
+      password: 'definitely-wrong-passphrase',
+    });
+    return { res, verifies: await verifiesSince(since) };
+  };
+
+  // Không đo thời gian (CI ồn ⇒ chập chờn): chứng minh trực tiếp nguyên nhân khiến thời gian bằng nhau —
+  // email lạ vẫn chạy đúng MỘT lần argon2.verify (trên hash giả), như email có thật sai mật khẩu.
   secCase(
     'SEC-27',
-    'Login email lạ vs sai mật khẩu: cùng status/code/message, chênh trung vị < 50ms',
+    'Login email lạ vs sai mật khẩu: cùng status/code/message; cả hai chạy đúng 1 lần argon2.verify (hash giả / hash thật)',
     AUTH,
     async () => {
-      const alice = await actors.register('timing');
-      const attempt = async (email: string) => {
-        const started = performance.now();
-        const res = await actors.json('POST', '/auth/login', undefined, {
-          email,
-          password: 'definitely-wrong-passphrase',
-        });
-        return { res, ms: performance.now() - started };
-      };
-      const unknown = () => attempt(`nobody-${Math.random().toString(36).slice(2)}@sec.example`);
-      const wrong = () => attempt(alice.email);
-      // Làm nóng (JIT, argon2 với hash giả, pool DB) — không tính.
-      const firstUnknown = await unknown();
-      const firstWrong = await wrong();
-      expect(firstUnknown.res.status, 'email lạ').toBe(401);
-      expect(firstWrong.res.status, 'sai mật khẩu').toBe(401);
-      expect(errorEnvelope(firstUnknown.res).error).toEqual(errorEnvelope(firstWrong.res).error);
-      // Xen kẽ để tải máy ảnh hưởng đều hai bên. Tổng 9 lần sai cho email của alice < ngưỡng
-      // (IP, email) = 10 (ADR-108); mỗi request một IP ngẫu nhiên.
-      const samples = { unknown: [] as number[], wrong: [] as number[] };
-      for (let i = 0; i < 8; i += 1) {
-        samples.unknown.push((await unknown()).ms);
-        samples.wrong.push((await wrong()).ms);
-      }
-      const median = (xs: number[]) => {
-        const sorted = [...xs].sort((a, b) => a - b);
-        const mid = sorted.length / 2;
-        return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
-      };
-      const [mu, mw] = [median(samples.unknown), median(samples.wrong)];
-      expect(
-        Math.abs(mu - mw),
-        `trung vị email lạ ${mu.toFixed(1)} ms vs sai mật khẩu ${mw.toFixed(1)} ms`,
-      ).toBeLessThan(50);
+      const alice = await actors.register('enum');
+      const unknown = await wrongLogin(`nobody-${Math.random().toString(36).slice(2)}@sec.example`);
+      const malformed = await wrongLogin('not-an-email-at-all');
+      const wrong = await wrongLogin(alice.email);
+
+      expect(unknown.res.status, 'email lạ').toBe(401);
+      expect(wrong.res.status, 'sai mật khẩu').toBe(401);
+      expect(errorEnvelope(unknown.res).error).toEqual(errorEnvelope(wrong.res).error);
+      expect(unknown.verifies, 'email lạ ⇒ verify hash giả đúng 1 lần').toEqual(['dummy']);
+      expect(wrong.verifies, 'sai mật khẩu ⇒ verify hash thật đúng 1 lần').toEqual(['stored']);
+      // Email sai định dạng bị schema `LoginBody` chặn (400) TRƯỚC use case: không chạm argon2, và lỗi
+      // định dạng không nói gì về việc tài khoản có tồn tại hay không.
+      expect(malformed.res.status, malformed.res.text.slice(0, 200)).toBe(400);
+      expect(errorEnvelope(malformed.res).error.code).toBe('VALIDATION_ERROR');
+      expect(malformed.verifies, 'email sai định dạng ⇒ không verify').toEqual([]);
     },
   );
+
+  // Bản đo thời gian: CHỈ chạy local khi `SEC_TIMING=1` (máy yên). Không đăng ký ca ở chế độ khác ⇒
+  // không phải skip/todo (CI không bao giờ thấy ca chập chờn này).
+  if (process.env.SEC_TIMING === '1') {
+    secCase(
+      'SEC-27t',
+      'Login email lạ vs sai mật khẩu: chênh trung vị < 50ms (chỉ local, SEC_TIMING=1)',
+      AUTH,
+      async () => {
+        const alice = await actors.register('timing');
+        const attempt = async (email: string) => {
+          const started = performance.now();
+          const res = await actors.json('POST', '/auth/login', undefined, {
+            email,
+            password: 'definitely-wrong-passphrase',
+          });
+          expect(res.status).toBe(401);
+          return performance.now() - started;
+        };
+        const unknown = () => attempt(`nobody-${Math.random().toString(36).slice(2)}@sec.example`);
+        const wrong = () => attempt(alice.email);
+        await unknown(); // làm nóng
+        await wrong();
+        // Tổng 9 lần sai cho email của alice < ngưỡng (IP, email) = 10 (ADR-108).
+        const samples = { unknown: [] as number[], wrong: [] as number[] };
+        for (let i = 0; i < 8; i += 1) {
+          samples.unknown.push(await unknown());
+          samples.wrong.push(await wrong());
+        }
+        const median = (xs: number[]) => {
+          const sorted = [...xs].sort((a, b) => a - b);
+          const mid = sorted.length / 2;
+          return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+        };
+        const [mu, mw] = [median(samples.unknown), median(samples.wrong)];
+        expect(
+          Math.abs(mu - mw),
+          `trung vị email lạ ${mu.toFixed(1)} ms vs sai mật khẩu ${mw.toFixed(1)} ms`,
+        ).toBeLessThan(50);
+      },
+    );
+  }
   secCase(
     'SEC-32',
     'Mật khẩu 11/257 ký tự, phổ biến, chứa email ⇒ 400; 12/256 (cả tiếng Việt) ⇒ 201',
