@@ -43,5 +43,5 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 ## Chung (ai hết hàng thì lấy)
 | # | Việc | Đang làm |
 |---|---|---|
-| G1 | Đọc chéo một module KHÔNG phải của mình, tìm lỗi (bảo mật, đồng thời, xử lý lỗi), gửi findings cho chủ module + Tech Lead | A — web (session, realtime, lỗi) — 2026-10-15 · B — T-033 (C): scheduler bảo trì + rebalance rank — 2026-10-15 · B — D3 (D): bảo mật deploy — 2026-10-15 (`review/G1-D3-security`) |
+| G1 | Đọc chéo một module KHÔNG phải của mình, tìm lỗi (bảo mật, đồng thời, xử lý lỗi), gửi findings cho chủ module + Tech Lead | A — web (session, realtime, lỗi) — 2026-10-15 · B — T-033 (C): scheduler bảo trì + rebalance rank — 2026-10-15 · B — D3 (D): bảo mật deploy — 2026-10-15 (`review/G1-D3-security`) · D — auth (A): phiên/refresh token, đồng thời, xử lý lỗi — 2026-10-16 (`review/G1-auth`) |
 | G2 | Rà `docs/design/*` đối chiếu code hiện tại: chỗ nào tài liệu lệch thực tế ⇒ báo chủ tài liệu | E (frontend.md, test-spec-*) — 2026-10-15 23:30, `review/G2-design-drift` · A (data-and-api, security, devops) |
