@@ -151,7 +151,8 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     expect(dto).toMatchObject({
       status: 'APPROVED',
       version: 2,
-      decidedBy: U.Hana,
+      user: { id: U.Mia, fullName: 'Mia' },
+      decidedBy: { id: U.Hana, fullName: 'Hana' },
       decidedAt: '2026-11-17T03:00:00.000Z',
       days: 1,
     });

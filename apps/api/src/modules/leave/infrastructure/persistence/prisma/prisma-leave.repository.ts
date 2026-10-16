@@ -9,7 +9,7 @@ import { fromDateOnly, toDateOnly, type DbProvider } from './db';
 
 type Row = Awaited<ReturnType<ReturnType<DbProvider>['leaveRequest']['findFirstOrThrow']>>;
 
-const toRecord = (r: Row): LeaveRequestRecord => ({
+export const toRecord = (r: Row): LeaveRequestRecord => ({
   id: r.id,
   workspaceId: r.workspaceId,
   userId: r.userId,
@@ -17,7 +17,7 @@ const toRecord = (r: Row): LeaveRequestRecord => ({
   startDate: toDateOnly(r.startDate),
   endDate: toDateOnly(r.endDate),
   dayPart: r.dayPart,
-  reason: r.reason,
+  reason: r.reason === '' ? null : r.reason,
   status: r.status,
   decidedBy: r.decidedById,
   decidedAt: r.decidedAt,
@@ -75,7 +75,7 @@ export class PrismaLeaveRepository implements ILeaveRepository {
         startDate: fromDateOnly(r.startDate),
         endDate: fromDateOnly(r.endDate),
         dayPart: r.dayPart,
-        reason: r.reason,
+        reason: r.reason ?? '',
         status: r.status,
         decidedById: r.decidedBy,
         decidedAt: r.decidedAt,

@@ -1,14 +1,11 @@
-import { BusinessRuleViolationError } from '../../../../core/errors';
 import type { LeaveType } from '../../domain/leave-balance';
 import {
   assertLeaveRange,
   countLeaveHalfDays,
-  overlaps,
   type CalendarDate,
   type LeaveDayPart,
 } from '../../domain/leave-days';
-import { LeaveConflictError } from '../../domain/leave-errors';
-import { toLeaveDto, type LeaveRequestDto } from '../leave-dto';
+import type { LeaveRequestDto } from '../leave-dto';
 import {
   PERMISSION_LEAVE_SELF,
   auditView,
@@ -17,13 +14,20 @@ import {
   type LeaveScope,
 } from '../leave-kit';
 import type { LeaveRequestRecord } from '../ports/leave.ports';
+import { assertHasWorkingDays, assertNoOverlap } from './new-leave-checks';
 
 export interface SubmitLeaveInput {
   type: LeaveType;
   startDate: CalendarDate;
   endDate: CalendarDate;
   dayPart: LeaveDayPart;
-  reason: string;
+  /** Tùy chọn (TL): trim; rỗng ⇒ `null`. Độ dài ≤ 1000 kiểm ở schema contracts. */
+  reason?: string | null | undefined;
+}
+
+export function normalizeReason(reason: string | null | undefined): string | null {
+  const trimmed = reason?.trim() ?? '';
+  return trimmed === '' ? null : trimmed;
 }
 
 /** Gửi đơn (thiết kế §9 dòng "(mới) → PENDING", test-spec LV-01..07, LD-06..08). */
@@ -41,23 +45,10 @@ export class SubmitLeaveUseCase {
       const year = yearOf(input.startDate);
       const calendar = await this.kit.yearCalendar(workspaceId, year);
       const halfDays = countLeaveHalfDays(input, calendar);
-      // LD-06 / D-M1: khoảng chỉ gồm ngày nghỉ / ngày lễ ⇒ không tạo đơn 0 ngày.
-      if (halfDays === 0) {
-        throw new BusinessRuleViolationError(
-          'NO_WORKING_DAYS',
-          'Khoảng nghỉ không có ngày làm việc nào.',
-        );
-      }
+      assertHasWorkingDays(halfDays);
 
       const holding = await d.requests.listHolding(workspaceId, actorId, year);
-      const clash = holding.find((r) => overlaps(r, input));
-      if (clash) {
-        throw new LeaveConflictError(
-          'overlapping_leave',
-          { requestId: clash.id },
-          'Đã có đơn nghỉ trùng thời gian.',
-        );
-      }
+      assertNoOverlap(holding, input);
       await this.kit.assertBalance({
         workspaceId,
         userId: actorId,
@@ -73,7 +64,11 @@ export class SubmitLeaveUseCase {
         id: d.ids.next(),
         workspaceId,
         userId: actorId,
-        ...input,
+        type: input.type,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dayPart: input.dayPart,
+        reason: normalizeReason(input.reason),
         status: 'PENDING',
         decidedBy: null,
         decidedAt: null,
@@ -99,7 +94,7 @@ export class SubmitLeaveUseCase {
         actorId,
         recipient: { kind: 'hr' },
       });
-      return toLeaveDto(record, halfDays, { includeReason: true });
+      return this.kit.dto(record, halfDays);
     });
   }
 }

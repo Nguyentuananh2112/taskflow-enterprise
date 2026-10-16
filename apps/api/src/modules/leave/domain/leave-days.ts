@@ -98,3 +98,18 @@ export function overlaps(a: LeaveSpan, b: LeaveSpan): boolean {
   const taken = new Set(occupiedSlots(a));
   return occupiedSlots(b).some((slot) => taken.has(slot));
 }
+
+/**
+ * Các ngày của đơn nằm trong [from, to] kèm phần nghỉ (ApprovedLeavePort của attendance — thiết kế §4). Trả mọi
+ * ngày LỊCH BIỂU kể cả ngày nghỉ/lễ: attendance tự áp thứ tự ưu tiên HOLIDAY > OFF > ON_LEAVE.
+ */
+export function leaveDatesWithin(
+  span: LeaveSpan,
+  from: CalendarDate,
+  to: CalendarDate,
+): { date: CalendarDate; part: LeaveDayPart }[] {
+  const start = span.startDate > from ? span.startDate : from;
+  const end = span.endDate < to ? span.endDate : to;
+  if (end < start) return [];
+  return [...datesBetween(start, end)].map((date) => ({ date, part: span.dayPart }));
+}

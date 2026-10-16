@@ -1,6 +1,7 @@
 // Backend Prisma cho harness leave (tầng I/C): repo Prisma + PrismaUnitOfWork trên Postgres thật — cùng hợp đồng
 // `LeaveBackend` với bản InMemory. Lịch / membership / thông báo / audit vẫn là fake của harness.
 import type { LeaveRequestRecord } from '../../../src/modules/leave/application/ports/leave.ports';
+import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
 import { PrismaLeaveRepository } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave.repository';
 import type { LeaveBackend } from '../../../src/modules/leave/testing/leave-backend';
 import { RecordingUnitOfWork, testPrisma } from '../support/prisma-test-kit';
@@ -12,6 +13,7 @@ export function prismaLeaveBackend(): LeaveBackend {
   return {
     uow,
     requests,
+    readModel: new PrismaLeaveReadModel(() => uow.db()),
     async prepare({ workspaces, users }) {
       await prisma.user.createMany({
         data: users.map((id) => ({

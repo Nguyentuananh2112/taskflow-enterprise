@@ -15,7 +15,8 @@ import {
 } from '../domain/leave-balance';
 import { countLeaveHalfDays, type CalendarDate, type HalfDays } from '../domain/leave-days';
 import { localDate } from '../domain/leave-status';
-import { toLeaveDto } from './leave-dto';
+import { toLeaveDto, type LeaveRequestDto } from './leave-dto';
+import type { ILeaveUserRefs } from './ports/leave-read-model.port';
 import type {
   IHrAudit,
   ILeaveMembership,
@@ -39,11 +40,32 @@ export interface LeaveCommandDeps {
   uow: IUnitOfWork;
   clock: IClock;
   ids: IIdGenerator;
+  users: ILeaveUserRefs;
 }
 
 export interface LeaveScope {
   workspaceId: string;
   actorId: string;
+}
+
+/** Số dư từ bản ghi đã lưu + các đơn đang giữ chỗ, số ngày tính theo lịch hiện tại (D-H3a). */
+export function summarizeStored(
+  stored: { entitled: HalfDays; adjustment: HalfDays },
+  holding: readonly LeaveRequestRecord[],
+  calendar: readonly WorkCalendarDay[],
+  excludeId?: string,
+) {
+  return summarizeBalance({
+    entitled: stored.entitled,
+    adjustment: stored.adjustment,
+    requests: holding.map((r) => ({
+      id: r.id,
+      type: r.type,
+      status: r.status,
+      halfDays: countLeaveHalfDays(r, calendar),
+    })),
+    ...(excludeId === undefined ? {} : { excludeId }),
+  });
 }
 
 export const yearOf = (date: CalendarDate): number => Number(date.slice(0, 4));
@@ -120,8 +142,15 @@ export class LeaveKit {
     const current = await this.d.requests.find(next.workspaceId, next.id);
     throw new VersionConflictError(
       current?.version ?? previous.version,
-      current ? toLeaveDto(current, halfDays, { includeReason: true }) : null,
+      current ? await this.dto(current, halfDays) : null,
     );
+  }
+
+  /** DTO cho người gửi / HR (có `reason`), kèm tên hiển thị `user` + `decidedBy`. */
+  async dto(record: LeaveRequestRecord, halfDays: HalfDays): Promise<LeaveRequestDto> {
+    const ids = record.decidedBy === null ? [record.userId] : [record.userId, record.decidedBy];
+    const refs = await this.d.users.findRefs(ids);
+    return toLeaveDto(record, halfDays, refs, { includeReason: true });
   }
 
   /** 422 INSUFFICIENT_BALANCE nếu đơn ANNUAL vượt số dư (LB-02: `excludeId` = chính đơn đang duyệt). */
@@ -141,17 +170,7 @@ export class LeaveKit {
       input.userId,
       input.year,
     );
-    const balance = summarizeBalance({
-      entitled: stored.entitled,
-      adjustment: stored.adjustment,
-      requests: input.holding.map((r) => ({
-        id: r.id,
-        type: r.type,
-        status: r.status,
-        halfDays: countLeaveHalfDays(r, input.calendar),
-      })),
-      ...(input.excludeId === undefined ? {} : { excludeId: input.excludeId }),
-    });
+    const balance = summarizeStored(stored, input.holding, input.calendar, input.excludeId);
     assertBalanceCovers(input.type, input.requested, balance);
   }
 

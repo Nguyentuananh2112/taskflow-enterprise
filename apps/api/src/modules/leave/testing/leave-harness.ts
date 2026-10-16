@@ -1,5 +1,9 @@
 import { FakeClock, SequentialIdGenerator } from '../../../../test/support';
+import type { UserRefDto } from '@taskflow/contracts';
+
 import { LeaveCommands } from '../application/leave-commands';
+import { LeaveQueries } from '../application/leave-queries';
+import type { ILeaveUserRefs } from '../application/ports/leave-read-model.port';
 import type {
   HrAuditAction,
   IHrAudit,
@@ -99,6 +103,22 @@ export class FakeWorkCalendar implements IWorkCalendarPort {
   }
 }
 
+/** Tên hiển thị = tên fixture (Mia, Hana…); xóa khỏi `names` để giả user đã ẩn danh. Đếm lần gọi (N+1). */
+export class FakeUserRefs implements ILeaveUserRefs {
+  readonly names = new Map<string, string>(Object.entries(U).map(([name, id]) => [id, name]));
+  calls = 0;
+
+  findRefs(ids: readonly string[]): Promise<ReadonlyMap<string, UserRefDto>> {
+    this.calls += 1;
+    const refs = new Map<string, UserRefDto>();
+    for (const id of ids) {
+      const fullName = this.names.get(id);
+      if (fullName !== undefined) refs.set(id, { id, fullName });
+    }
+    return Promise.resolve(refs);
+  }
+}
+
 export interface SentNotification {
   workspaceId: string;
   type: LeaveNotificationType;
@@ -144,6 +164,7 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
   const audit = new SpyHrAudit();
   const clock = new FakeClock(NOW);
   const ids = new SequentialIdGenerator();
+  const users = new FakeUserRefs();
 
   membership.set(W1, U.Olivia, 'OWNER');
   membership.set(W1, U.Hana, 'MEMBER', ['HR_MANAGE']);
@@ -153,16 +174,9 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
   membership.set(W1, U.Vic, 'VIEWER');
   membership.set(W2, U.Otto, 'OWNER');
 
-  const leave = new LeaveCommands({
-    requests,
-    calendar,
-    membership,
-    notifier,
-    audit,
-    uow,
-    clock,
-    ids,
-  });
+  const deps = { requests, calendar, membership, notifier, audit, uow, clock, ids, users };
+  const leave = new LeaveCommands(deps);
+  const queries = new LeaveQueries({ ...deps, readModel: backend.readModel });
   const as = (actorId: string, workspaceId: string = W1) => ({ workspaceId, actorId });
 
   /** Đơn có sẵn (không qua use case) — mặc định ANNUAL FULL PENDING của Mia. */
@@ -193,6 +207,8 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
 
   return {
     leave,
+    queries,
+    users,
     requests,
     locks: requests.locks,
     rows: () => backend.rows(),

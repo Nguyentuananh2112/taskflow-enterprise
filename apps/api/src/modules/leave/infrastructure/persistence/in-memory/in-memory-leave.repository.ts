@@ -2,10 +2,16 @@ import { DEFAULT_ENTITLED_HALF_DAYS } from '../../../domain/leave-balance';
 import type { HalfDays } from '../../../domain/leave-days';
 import { holdsBalance } from '../../../domain/leave-status';
 import type {
+  ILeaveReadModel,
+  LeaveListFilter,
+  LeaveListKey,
+} from '../../../application/ports/leave-read-model.port';
+import type {
   ILeaveRepository,
   LeaveBalanceRecord,
   LeaveRequestRecord,
 } from '../../../application/ports/leave.ports';
+import type { CalendarDate } from '../../../domain/leave-days';
 
 interface State {
   requests: Map<string, LeaveRequestRecord>;
@@ -15,10 +21,10 @@ interface State {
 const balanceKey = (ws: string, user: string, year: number) => `${ws}:${user}:${String(year)}`;
 
 /**
- * Repo leave trong bộ nhớ cho test A (test-spec §0.1) — cùng hợp đồng với bản Prisma. Snapshottable để
+ * Repo + read model leave trong bộ nhớ cho test A (test-spec §0.1) — cùng hợp đồng với bản Prisma. Snapshottable để
  * `FakeUnitOfWork` rollback thật. `lockUser` ghi lại thứ tự khóa (test kiểm "khóa TRƯỚC khi đọc").
  */
-export class InMemoryLeaveRepository implements ILeaveRepository {
+export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadModel {
   #s: State = { requests: new Map(), balances: new Map() };
   readonly locks: string[] = [];
 
@@ -117,5 +123,57 @@ export class InMemoryLeaveRepository implements ILeaveRepository {
       k.startsWith(`${workspaceId}:${userId}:`),
     );
     return Promise.resolve(inRequests || inBalances);
+  }
+
+  // ------------------------------------------------------------ phía đọc (ILeaveReadModel)
+
+  listRequests(
+    workspaceId: string,
+    filter: LeaveListFilter,
+    after: LeaveListKey | null,
+    limit: number,
+  ): Promise<LeaveRequestRecord[]> {
+    const keyOf = (r: LeaveRequestRecord) => `${r.createdAt.toISOString()}|${r.id}`;
+    const cut = after ? `${after.createdAt}|${after.id}` : null;
+    return Promise.resolve(
+      [...this.#s.requests.values()]
+        .filter(
+          (r) =>
+            r.workspaceId === workspaceId &&
+            (filter.userId === undefined || r.userId === filter.userId) &&
+            (filter.status === undefined || r.status === filter.status) &&
+            (cut === null || keyOf(r) < cut),
+        )
+        .sort((a, b) => keyOf(b).localeCompare(keyOf(a)))
+        .slice(0, limit),
+    );
+  }
+
+  listApproved(q: {
+    workspaceId: string;
+    userIds?: readonly string[] | undefined;
+    from: CalendarDate;
+    to: CalendarDate;
+  }): Promise<LeaveRequestRecord[]> {
+    return Promise.resolve(
+      [...this.#s.requests.values()]
+        .filter(
+          (r) =>
+            r.workspaceId === q.workspaceId &&
+            r.status === 'APPROVED' &&
+            (q.userIds === undefined || q.userIds.includes(r.userId)) &&
+            r.startDate <= q.to &&
+            r.endDate >= q.from,
+        )
+        .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
+    );
+  }
+
+  findBalance(
+    workspaceId: string,
+    userId: string,
+    year: number,
+  ): Promise<LeaveBalanceRecord | null> {
+    return Promise.resolve(this.#s.balances.get(balanceKey(workspaceId, userId, year)) ?? null);
   }
 }

@@ -1,7 +1,7 @@
 import { ResourceNotFoundError } from '../../../../core/errors';
 import { countLeaveHalfDays } from '../../domain/leave-days';
 import { nextLeaveStatus } from '../../domain/leave-status';
-import { toLeaveDto, type LeaveRequestDto } from '../leave-dto';
+import type { LeaveRequestDto } from '../leave-dto';
 import {
   PERMISSION_LEAVE_SELF,
   auditView,
@@ -61,7 +61,7 @@ export class CancelLeaveUseCase {
         actorId,
         recipient: { kind: 'hr' },
       });
-      return toLeaveDto(next, halfDays, { includeReason: true });
+      return this.kit.dto(next, halfDays);
     });
   }
 }

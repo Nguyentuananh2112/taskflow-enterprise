@@ -1,5 +1,6 @@
 import { FakeUnitOfWork } from '../../../../test/support/fake-unit-of-work';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
+import type { ILeaveReadModel } from '../application/ports/leave-read-model.port';
 import type {
   ILeaveRepository,
   LeaveBalanceRecord,
@@ -16,6 +17,7 @@ import { InMemoryLeaveRepository } from '../infrastructure/persistence/in-memory
 export interface LeaveBackend {
   readonly uow: IUnitOfWork & { readonly commits: number; readonly rollbacks: number };
   readonly requests: ILeaveRepository;
+  readonly readModel: ILeaveReadModel;
   /** Dựng sẵn user/workspace của fixture (FK ở bản Prisma); InMemory: không làm gì. */
   prepare(fixture: { workspaces: readonly string[]; users: readonly string[] }): Promise<void>;
   seed(record: LeaveRequestRecord): Promise<void>;
@@ -27,6 +29,7 @@ export function inMemoryLeaveBackend(): LeaveBackend {
   return {
     uow: new FakeUnitOfWork(requests),
     requests,
+    readModel: requests,
     prepare: () => Promise.resolve(),
     seed: (record) => {
       requests.seed(record);

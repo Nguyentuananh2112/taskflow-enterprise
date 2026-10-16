@@ -31,8 +31,11 @@ export interface LeaveRequestRecord {
   readonly startDate: CalendarDate;
   readonly endDate: CalendarDate;
   readonly dayPart: LeaveDayPart;
-  /** Dữ liệu nhạy cảm (B-H2): chỉ người gửi + `hr:manage` đọc; không vào thông báo / log / audit / CSV. */
-  readonly reason: string;
+  /**
+   * Dữ liệu nhạy cảm (B-H2): chỉ người gửi + `hr:manage` đọc; không vào thông báo / log / audit / CSV. TÙY CHỌN
+   * (TL) — `null` khi bỏ trống (cột DB NOT NULL ⇒ repo Prisma lưu `''`, đọc `''` ⇒ `null`).
+   */
+  readonly reason: string | null;
   readonly status: LeaveStatus;
   readonly decidedBy: string | null;
   readonly decidedAt: Date | null;
