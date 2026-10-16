@@ -99,6 +99,15 @@ describe('http — request', () => {
     expect(call(1).headers.get('Content-Type')).toBeNull();
   });
 
+  it('idempotencyKey ⇒ header Idempotency-Key; không truyền ⇒ không có header (chấm công §5)', async () => {
+    const { http, call } = setup([ok({ id: 'a' }), ok({ id: 'b' })]);
+    const key = '0199e5a2-0000-7000-8000-0000000000k1';
+    await http.post('/attendance/check-in', { schema: Item, idempotencyKey: key });
+    await http.post('/tasks', { schema: Item });
+    expect(call(0).headers.get('Idempotency-Key')).toBe(key);
+    expect(call(1).headers.get('Idempotency-Key')).toBeNull();
+  });
+
   it('POST/PATCH KHÔNG body vẫn gửi Content-Type JSON + body {} (T-029 H2: API trả 415 nếu thiếu)', async () => {
     const { http, call } = setup([ok({ id: 'a' }), ok({ id: 'b' }), ok({ id: 'c' })]);
     await http.post('/auth/logout', { schema: Item });
