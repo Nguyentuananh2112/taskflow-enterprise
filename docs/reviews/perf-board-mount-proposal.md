@@ -1,5 +1,8 @@
 # perf/board-mount — đề xuất giảm thời gian mount board 500 thẻ (CHƯA code)
 
+
+> **ĐÍNH CHÍNH (2026-10-16, sau đo xen kẽ):** các số "bậc 1: −47 % script, −49 % long task" ở dưới là từ lượt đo tuần tự, không đối chứng — **không dùng**. Số hợp lệ (xen kẽ main vs HEAD, kiểm dấu hiệu từng lượt): bậc 1 giảm ~15–19 % với 500 thẻ; sàn khởi động ≈ 0,8 s @4×. Xem `perf-board-mount-result.md`. Tech Lead chốt merge bậc 1.
+
 Engineer E · 2026-10-16 · branch `perf/board-mount` (từ `perf/board-500` @4991791) · chờ Tech Lead duyệt.
 
 ## Vấn đề (số đã đo, `perf-board-500-report.md`)
