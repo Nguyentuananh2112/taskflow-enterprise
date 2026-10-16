@@ -21,15 +21,16 @@
 | `docs/tasks/BACKLOG.md` | D3 "Đang làm: D" |
 
 ## Kiểm chứng (không tài nguyên thật)
-Không tạo tài khoản, không push image, không gọi API DigitalOcean/GitHub thật. Lần kiểm cuối trên nhánh đã rebase lên `main` (154f23c):
+Không tạo tài khoản, không push image, không gọi API DigitalOcean/GitHub thật. Lần kiểm cuối 2026-10-16 trên nhánh đã rebase lên `main` (d647383), sau G1 vòng 2:
 
 | Kiểm | Kết quả |
 |---|---|
-| `actionlint` 1.7.12 (mọi workflow, gồm release/deploy) | exit 0 |
+| `pnpm install --frozen-lockfile` · `pnpm verify` (VITEST_MAX_WORKERS=2, Valkey db 12, REQUIRE_INTEGRATION=1, `VERIFY_DB_URL` = DB mới `taskflow_d3` trên postgres-test) | exit 0 · exit 0 — lint 0, typecheck 0, test 0 (1708 passed), audit 0, prisma validate 0, db:deploy 0, drift 0. Lượt trước đó lint = 1 do prettier quét `load/results/` (kết quả k6 cục bộ, gitignore ở `load/.gitignore` lồng nhau mà prettier không đọc) ⇒ thêm `load/results/` vào `.prettierignore` |
+| `actionlint` 1.7.12 (image `rhysd/actionlint`, mọi workflow, gồm release/deploy) | exit 0 |
 | `shellcheck` (koalaman/shellcheck:stable) `bootstrap.sh deploy.sh ci-entry.sh` | exit 0 |
-| `docker compose -p taskflow-d3check -f compose.prod.yml config -q` (env từ các `.example`, không `up`) | exit 0; 7 service với profile migrate/backup |
+| `docker compose -p taskflow-d3check -f compose.prod.yml config -q` (env từ các `.example`, không `up`) · `docker-compose.yml` dev | exit 0; 7 service với profile migrate/backup · exit 0 |
 | Render spec App Platform bằng **đúng biểu thức yq của deploy.yml** (mikefarah/yq:4) | exit 0; 4 digest + 2 `GIT_SHA` được thay, không còn placeholder ngoài comment |
-| `ci-entry.sh` thử tay (`TASKFLOW_DIR` tạm) | `receive` chỉ ghi file trong allowlist (không đè `deploy.sh`); `deploy x;id …` và `bash -i` ⇒ rc 2; `deploy`/`rollback` hợp lệ chuyển cho deploy.sh |
+| `ci-entry.sh` thử tay (`TASKFLOW_DIR` tạm, `deploy.sh` giả) — sau M1 vòng 2 | hash khớp (có/không backup) ⇒ chuyển đúng `<sha> <digests…>` cho deploy.sh, rc 0; hash lệch 1 hoặc 2 file ⇒ rc 3 kèm tên file + commit; `receive`, `bash -i`, `…;id`, thiếu tham số ⇒ rc 2; `rollback` rc 0, `rollback x` rc 2. `compose.prod.yml`/`Caddyfile` ghim `eol=lf` ⇒ sha256 giống nhau trên runner/máy admin |
 | `caddy validate`, `bootstrap.sh` (sinh `.env`/cert Valkey) | xanh (lần kiểm trước rebase) |
 | Lát cắt VPS chạy thật trên máy dev (project `taskflow-d3-slice`, Caddy 127.0.0.1:18080/18443) | Postgres + Valkey TLS healthy; **job migrate (`migrate.mjs`) + grant exit 0**. API image cũ (t022) crashloop vì env.ts cũ bắt `SENTRY_DSN` ⇒ **chưa chạy lại** với image mới — việc mở bên dưới |
 
@@ -42,19 +43,23 @@ Không tạo tài khoản, không push image, không gọi API DigitalOcean/GitH
 6. Deploy staging → kiểm → deploy production cùng SHA (job guard bắt buộc thứ tự này).
 
 ## Rủi ro còn lại
-- **`compose.prod.yml` đến từ CI** (qua `receive`) mà user deploy thuộc nhóm docker ≈ root ⇒ ai sửa được file này trên `main` và qua được reviewer là có root VPS. Giảm thiểu: chỉ từ `main` (guard + release H1), required reviewers, forced command chặn mọi thứ khác.
+- **Cấu hình VPS do admin cài tay** (M1 vòng 2) ⇒ thêm 1 bước tay mỗi khi `deploy/vps/*` đổi; quên ⇒ deploy dừng ở exit 3 (an toàn, không deploy lệch cấu hình). Khóa CI lộ chỉ deploy/rollback được image đã release với cấu hình admin đã cài.
+- **Bằng chứng staging xanh** là deployment `task=deploy:smoke-ok` — ai có quyền ghi repo cũng tạo được qua API; chấp nhận vì quyền ghi repo đã đủ để sửa workflow (ranh giới thật là required reviewers của production). Chưa chạy thử trên GitHub thật (không tạo tài nguyên).
 - Secret: App Platform chỉ nằm ở DO (`EV[…]`); VPS giữ `.env*` quyền 600 trong `/opt/taskflow` (700).
 - Chưa PoC App Platform thật (WebSocket qua ingress, PRE_DEPLOY, grace period) — cần tài khoản.
 
 ## Đọc chéo đã xử lý
 | Nguồn | Mục | Xử lý | Commit |
 |---|---|---|---|
-| G1 (B) | **H1** `workflow_run` lọc nhánh theo TÊN ⇒ fork có nhánh `main` lọt vào release (packages:write) | job `if`: `workflow_run.event == 'push'` + `head_branch == 'main'` + `head_repository.full_name == github.repository`; dispatch chỉ `refs/heads/main` | `7027b06` |
-| G1 | **M1** user deploy ∈ nhóm docker ≈ root | forced command `deploy/vps/ci-entry.sh` (`restrict,command=…`, root sở hữu): chỉ `receive` (tar, allowlist file cấu hình) / `deploy <sha40> <digest…>` / `rollback`; deploy.yml bỏ scp/shell. deploy.sh, bootstrap.sh, unit systemd: admin cài tay | `0bee5ce` |
-| G1 | **M2** "staging trước, chỉ main" chỉ nằm ở runbook | job `guard` trước bước duyệt: ref main; production đòi deployment staging `success` cho đúng SHA (Deployments API) | `b7bab0d` |
-| G1 | **M3** URL backup có mật khẩu bị backup.sh từ chối; `.env.*.example` bị `.gitignore` chặn | URL không mật khẩu + `PGPASSWORD` (SECRET) ở app.yaml/.env.backup.example/runbook; `!.env.*.example` | `7027b06` |
-| G1 | Low: deploy.sh không kiểm sha | `^[0-9a-f]{40}$` | `7027b06` |
-| G2 (A) | **O1** `pnpm db:deploy` ở gốc không tồn tại; **O2** migrate trong doc bỏ grant; **O3** target thật là `runtime`/`migrate` | sửa devops.md §3/§4.1/§8; workflow D3 vốn đã dùng `migrate.mjs` (migrate + grant) và target `runtime`/`migrate` | `7027b06` |
+| G1 (B) | **H1** `workflow_run` lọc nhánh theo TÊN ⇒ fork có nhánh `main` lọt vào release (packages:write) | job `if`: `workflow_run.event == 'push'` + `head_branch == 'main'` + `head_repository.full_name == github.repository`; dispatch chỉ `refs/heads/main` | `df48c36` |
+| G1 | **M1** user deploy ∈ nhóm docker ≈ root | forced command `deploy/vps/ci-entry.sh` (`restrict,command=…`, root sở hữu); deploy.yml bỏ scp/shell | `6856ac8` |
+| G1 vòng 2 (B đọc lại @3cb1ba4, Tech Lead đồng ý) | **M1** `receive` cho khóa lộ ghi `compose.prod.yml`/`Caddyfile` ⇒ root VPS / nghe lén | BỎ `receive`; mọi file do admin cài tay (runbook §B.2); CI gửi `deploy <sha40> <digests…> <sha256 compose> <sha256 Caddyfile>`, `ci-entry.sh` so file đang cài, lệch ⇒ exit 3 "admin cài lại cấu hình theo commit X" | (commit này) |
+| G1 vòng 2 | **M2** deployment tự tạo cho job `environment:` mang `GITHUB_SHA` (đầu main lúc dispatch — docs "events that trigger workflows": *Last commit on the GITHUB_REF branch*), không phải `inputs.git_sha` ⇒ guard sai 2 chiều | sau smoke staging xanh, job deploy (`deployments: write`) tạo deployment `ref=git_sha`, `environment=staging`, `task=deploy:smoke-ok`, `auto_merge=false`, `required_contexts=[]` + status `success` (`continue-on-error` — lỗi ghi nhận không được kích hoạt rollback); guard lọc `task=deploy:smoke-ok`. Runbook: Deployment branches = `main` cho cả staging và production. Tham số API đối chiếu docs REST "Deployments" (list: `sha`/`task`/`environment`; create: `ref`/`task`/`auto_merge`/`required_contexts`/`environment`) | (commit này) |
+| G1 | **M2** "staging trước, chỉ main" chỉ nằm ở runbook | job `guard` trước bước duyệt: ref main; production đòi deployment staging `success` cho đúng SHA (Deployments API) | `f75cc54` |
+| G1 | **M3** URL backup có mật khẩu bị backup.sh từ chối; `.env.*.example` bị `.gitignore` chặn | URL không mật khẩu + `PGPASSWORD` (SECRET) ở app.yaml/.env.backup.example/runbook; `!.env.*.example` | `df48c36` |
+| G1 | Low: deploy.sh không kiểm sha | `^[0-9a-f]{40}$` | `df48c36` |
+| G2 (A) | **O1** `pnpm db:deploy` ở gốc không tồn tại; **O2** migrate trong doc bỏ grant; **O3** target thật là `runtime`/`migrate` | sửa devops.md §3/§4.1/§8; workflow D3 vốn đã dùng `migrate.mjs` (migrate + grant) và target `runtime`/`migrate` | `df48c36` |
+| Tự rà sau rebase lên d647383 | Ping heartbeat bằng `wget` nhưng image B2 (`postgres:18.6-bookworm` + age/awscli, `--no-install-recommends`) không có wget/curl (**đã kiểm**: `command -v` trong image nền ⇒ MISSING; `apt-get install -s age awscli` kéo `python3`) ⇒ backup xong vẫn exit 127, không ping ⇒ báo động giả hằng ngày | ping bằng `python3 -c urllib` (URL qua argv, không nội suy vào code) — python3 có sẵn vì awscli Debian chạy trên python3; app.yaml + compose.prod.yml | (commit này) |
 
 Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted sources Managed PG/Valkey; chú thích owner `/opt/taskflow` (bootstrap vs runbook).
 
@@ -66,7 +71,7 @@ Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted
 5. **Backup:** App Platform job SCHEDULED / VPS systemd timer chạy script B2; cảnh báo độc lập bằng **heartbeat** uptime monitor (không ping > 26 h ⇒ email) — tương đương "không có `.ok` mới trong 26 h" của B, không cần quyền đọc bucket.
 
 ## Việc mở / phụ thuộc
-- B2 (`docker/backup/`) chưa merge ⇒ bước build image backup trong release tự bỏ qua; deploy giữ image backup hiện có khi chưa có tag.
+- B2 (`docker/backup/`) đã vào main ⇒ release build image backup (bước `hashFiles` không còn bỏ qua).
 - Lát cắt VPS: chạy lại api/web với image build từ main hiện tại (migrate đã xanh) — làm khi máy rảnh.
 - Domain chưa có (ADR-071) ⇒ `example.com` trong spec/runbook.
 - Trước Phase 5: PoC App Platform (WebSocket qua ingress, PRE_DEPLOY, grace period) theo devops.md §1.3 — cần tài khoản thật ⇒ người dùng quyết.

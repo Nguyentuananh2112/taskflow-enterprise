@@ -124,9 +124,10 @@ services:
     image: ghcr.io/${GHCR_OWNER:?}/taskflow-backup@${BACKUP_DIGEST:-sha256:CHANGE_ME}
     profiles: [backup]
     env_file: .env.backup # BACKUP_* + AWS_* (PutObject-only) + BACKUP_HEARTBEAT_URL — mẫu: .env.backup.example
+    # Ping heartbeat bằng python3 (có sẵn — awscli Debian chạy trên python3); image B2 không có wget/curl.
     entrypoint: ['sh', '-c']
     command:
-      - backup.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then wget -qO- "$${BACKUP_HEARTBEAT_URL}" >/dev/null; fi
+      - backup.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then python3 -c "import sys,urllib.request as u; u.urlopen(sys.argv[1], timeout=30).read()" "$${BACKUP_HEARTBEAT_URL}"; fi
     depends_on:
       postgres: { condition: service_healthy }
 

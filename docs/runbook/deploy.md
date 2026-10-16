@@ -14,7 +14,7 @@
 | Mục | Giá trị |
 |---|---|
 | Biến repo `ENABLE_RELEASE` | `true` khi bắt đầu dùng release (trước đó release.yml không chạy) |
-| Environments | `staging`, `production` (Settings → Environments). `production`: **Required reviewers** = người dùng + Tech Lead; **Deployment branches** = `main` |
+| Environments | `staging`, `production` (Settings → Environments). **Deployment branches** = `main` cho **CẢ** `staging` và `production`; `production` thêm **Required reviewers** = người dùng + Tech Lead. Guard của production chỉ tin deployment `staging` có `task = deploy:smoke-ok` do chính `deploy.yml` tạo sau smoke xanh (không tin deployment GitHub tự tạo — nó mang SHA đầu `main` lúc dispatch, không phải `git_sha`) |
 | Biến environment | `API_BASE_URL` (`https://api.<domain>`), `APP_BASE_URL` (`https://app.<domain>`); App Platform: `DO_APP_ID`; VPS: `VPS_HOST`, `VPS_USER` |
 | Secret environment | App Platform: `DIGITALOCEAN_ACCESS_TOKEN` (token chỉ scope app cần thiết); VPS: `VPS_SSH_KEY` (khóa riêng cho deploy), `VPS_KNOWN_HOSTS` (`ssh-keyscan <host>` rồi **đối chiếu fingerprint**) |
 Thiếu biến/secret ⇒ `deploy.yml` dừng ngay ở bước đầu, in tên thứ còn thiếu.
@@ -67,10 +67,17 @@ install -d -m 700 -o deploy ~deploy/.ssh
 echo 'restrict,command="/usr/local/sbin/taskflow-ci-entry" ssh-ed25519 AAAA… github-actions-deploy' >> ~deploy/.ssh/authorized_keys
 chown deploy ~deploy/.ssh/authorized_keys && chmod 600 ~deploy/.ssh/authorized_keys
 ```
-Khóa CI chỉ chạy được `receive` (tar trên stdin; chỉ nhận `compose.prod.yml`, `Caddyfile`, các `.env*.example`, `postgres-init/01-roles.sh`), `deploy <sha40> <digest…>` (kiểm định dạng) và `rollback`. `deploy.sh`, `bootstrap.sh`, unit systemd và `ci-entry.sh` do **admin cài tay** (khóa SSH riêng của admin) khi chúng đổi. Rủi ro còn lại: `compose.prod.yml` vẫn đến từ CI mà Docker ≈ root — chấp nhận vì nó chỉ đến từ `main` qua job guard + required reviewers.
+Khóa CI chỉ chạy được `deploy <sha40> <api> <web> <migrate> [backup] <sha256 compose.prod.yml> <sha256 Caddyfile>` (kiểm định dạng) và `rollback` — **không ghi được file nào**. Mối đe dọa là **khóa lộ** (ssh thẳng, không qua guard/reviewers): nếu khóa ghi được `compose.prod.yml` (service privileged, mount `/:/host`) hoặc `Caddyfile` (reverse_proxy sang máy lạ) thì đó là root VPS / nghe lén mật khẩu. Vì vậy **mọi** file trên VPS — `compose.prod.yml`, `Caddyfile`, `postgres-init/01-roles.sh`, mẫu `.env*.example`, `deploy.sh`, `bootstrap.sh`, unit systemd, `ci-entry.sh` — do **admin cài tay** (khóa SSH riêng của admin, §B.2). `ci-entry.sh` so sha256 của `compose.prod.yml` + `Caddyfile` đang cài với hash CI gửi (tính từ đúng `git_sha`); lệch ⇒ **exit 3** "admin cài lại cấu hình theo commit X" và không deploy. Khóa lộ chỉ deploy/rollback được image đã release từ `main` với cấu hình admin đã cài.
 DNS: bản ghi A `app.<domain>` và `api.<domain>` → IP VPS (Caddy xin chứng chỉ Let's Encrypt tự động khi có DNS).
 ### B.2 Bootstrap (1 lần)
-Copy `deploy/vps/*` (kể cả `.env.example`, `.env.api.example`) vào `/opt/taskflow/`, `docker/postgres/init/01-roles.sh` vào `/opt/taskflow/postgres-init/` (deploy.yml tự đồng bộ compose/Caddyfile/mẫu env mỗi lần deploy; `deploy.sh`, `bootstrap.sh`, unit systemd thì admin copy tay khi đổi), rồi:
+Admin (không phải khóa CI) cài file từ **đúng commit sẽ deploy** — lần đầu và **mỗi khi** `deploy/vps/*` hoặc `docker/postgres/init/01-roles.sh` đổi (deploy báo exit 3 "admin cài lại cấu hình theo commit X" là dấu hiệu):
+```bash
+git -C ~/taskflow-src fetch && git -C ~/taskflow-src checkout --detach <commit X>   # bản clone chỉ đọc của admin
+cd ~/taskflow-src && sudo install -o root -g root -m 644 deploy/vps/{compose.prod.yml,Caddyfile,.env.example,.env.api.example,.env.backup.example,deploy.sh,bootstrap.sh} /opt/taskflow/
+sudo install -o root -g root -m 644 docker/postgres/init/01-roles.sh /opt/taskflow/postgres-init/
+sha256sum /opt/taskflow/compose.prod.yml /opt/taskflow/Caddyfile   # khớp hash in trong log job Deploy
+```
+Lần đầu, tiếp:
 ```bash
 cd /opt/taskflow && APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=<email> GHCR_OWNER=<owner> bash bootstrap.sh
 ```

@@ -69,7 +69,7 @@ jobs:
       registry: ghcr.io
       repository: __GHCR_OWNER__/taskflow-backup
       digest: __BACKUP_DIGEST__
-    run_command: sh -c 'backup.sh && if [ -n "$BACKUP_HEARTBEAT_URL" ]; then wget -qO- "$BACKUP_HEARTBEAT_URL" >/dev/null; fi'
+    run_command: sh -c 'backup.sh && if [ -n "$BACKUP_HEARTBEAT_URL" ]; then python3 -c "import sys,urllib.request as u; u.urlopen(sys.argv[1], timeout=30).read()" "$BACKUP_HEARTBEAT_URL"; fi'
     instance_size_slug: apps-s-1vcpu-1gb
     instance_count: 1
     envs:
@@ -83,7 +83,8 @@ jobs:
       - { key: AWS_ACCESS_KEY_ID, value: CHANGE_ME, scope: RUN_TIME, type: SECRET } # PutObject-only
       - { key: AWS_SECRET_ACCESS_KEY, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
       - { key: AWS_DEFAULT_REGION, value: auto, scope: RUN_TIME }
-      # Heartbeat của uptime monitor (gói free): không có ping > 26 h ⇒ email (devops.md §6.5)
+      # Heartbeat của uptime monitor (gói free): không có ping > 26 h ⇒ email (devops.md §6.5). Ping bằng python3
+      # (có sẵn vì awscli Debian chạy trên python3) — image B2 (postgres bookworm) không có wget/curl.
       - { key: BACKUP_HEARTBEAT_URL, value: CHANGE_ME, scope: RUN_TIME, type: SECRET }
 
 services:
