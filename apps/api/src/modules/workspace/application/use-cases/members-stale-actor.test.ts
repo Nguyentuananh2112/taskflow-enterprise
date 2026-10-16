@@ -21,7 +21,7 @@ beforeEach(async () => {
 });
 
 /** Đổi role trong lưu trữ — actor đã nạp trước đó vẫn mang role cũ (như request đang bay). */
-async function demote(name: string, role: 'MEMBER' | 'VIEWER') {
+async function demote(name: string, role: 'PM' | 'MEMBER' | 'VIEWER') {
   const m = (await h.memberships.find(ctx.A, uid(name)))!;
   m.changeRole(role, h.clock.now());
   await h.memberships.save(m);
@@ -34,6 +34,29 @@ describe('actor bị hạ role giữa chừng (role cũ còn trong request)', ()
       new AddMemberUseCase(h).execute(ctx.pam, { email: 'nina@example.com', role: 'VIEWER' }),
     ).rejects.toBeInstanceOf(ForbiddenError);
     expect(await h.memberships.find(ctx.A, uid('nina'))).toBeNull();
+  });
+
+  // F3 W-1 (P1): OWNER bị hạ xuống PM vẫn còn `member:add` ⇒ `requirePermission` cho qua; kiểm `canGrant`
+  // đầu use case dùng role CŨ (OWNER) cũng cho qua. Chốt DUY NHẤT là `canGrant(fresh.role)` sau khóa owners —
+  // bỏ nó ⇒ PM tự cấp OWNER/PM cho người khác (leo thang quyền).
+  it.each(['OWNER', 'PM'] as const)(
+    'OWNER bị hạ xuống PM ⇒ cấp role %s cho người khác 403 (role cũ trong request không được dùng)',
+    async (role) => {
+      await demote('olga', 'PM');
+      const err = await new AddMemberUseCase(h)
+        .execute(ctx.olga, { email: 'nina@example.com', role })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ForbiddenError);
+      expect((err as ForbiddenError).details).toEqual({ required: 'member:add' });
+      expect(await h.memberships.find(ctx.A, uid('nina'))).toBeNull();
+    },
+  );
+
+  it('đối chứng W-1: OWNER bị hạ xuống PM vẫn cấp được MEMBER (quyền của PM)', async () => {
+    await demote('olga', 'PM');
+    await expect(
+      new AddMemberUseCase(h).execute(ctx.olga, { email: 'nina@example.com', role: 'MEMBER' }),
+    ).resolves.toMatchObject({ role: 'MEMBER' });
   });
 
   it('PM bị hạ xuống MEMBER ⇒ xóa người khác 403', async () => {
