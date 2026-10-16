@@ -40,7 +40,13 @@ export interface RegisterDeps {
   clock: IClock;
 }
 
-function isSlugConflict(err: unknown): boolean {
+/**
+ * BẢN SAO CÓ CHỦ ĐÍCH của `isSlugConflict` ở `modules/workspace/application/workspace-creator.ts`
+ * (Tech Lead, F3): auth chỉ cần nhận ra "trùng slug" để thử slug khác — import public API của
+ * workspace chỉ vì vậy là phụ thuộc ngược chiều không đáng. Hai bản được giữ khớp bằng
+ * `composition/slug-conflict-parity.test.ts` (đỏ cả hai nếu field / tên constraint đổi).
+ */
+export function isSlugConflict(err: unknown): boolean {
   return err instanceof ResourceConflictError && err.details?.['field'] === 'slug';
 }
 
