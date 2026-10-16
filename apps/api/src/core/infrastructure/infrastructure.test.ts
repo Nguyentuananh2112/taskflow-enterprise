@@ -74,6 +74,24 @@ describe('Valkey client', () => {
     }
   });
 
+  it('F5: timeout socket lấy từ tùy chọn (env VALKEY_SOCKET_TIMEOUT_MS), mặc định hằng 3000; ping + offline queue giữ nguyên', () => {
+    const options = (c: ReturnType<typeof createValkeyClient>) =>
+      c.options as {
+        socket?: { socketTimeout?: number };
+        pingInterval?: number;
+        disableOfflineQueue?: boolean;
+      };
+    const custom = options(createValkeyClient('redis://127.0.0.1:1', new SpyLogger(), 7_500));
+    expect(custom.socket?.socketTimeout).toBe(7_500);
+    expect(custom).toMatchObject({
+      pingInterval: VALKEY_PING_INTERVAL_MS,
+      disableOfflineQueue: true,
+    });
+    expect(
+      options(createValkeyClient('redis://127.0.0.1:1', new SpyLogger())).socket?.socketTimeout,
+    ).toBe(VALKEY_SOCKET_TIMEOUT_MS);
+  });
+
   it('connectInBackground không ném; thất bại được log warn', async () => {
     const logger = new SpyLogger();
     const client = { connect: () => Promise.reject(new Error('down')) } as unknown as ValkeyClient;

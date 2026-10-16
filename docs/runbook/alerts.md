@@ -93,4 +93,5 @@ Notification channel: **email** (ADR-073). Add both the owner's and the Tech Lea
 ## 4. When you receive an alert email
 1. **New issue / spike in Sentry:** open the issue and look at the `reqId` tag. Search the logs for that `reqId`; every log line in a request has `reqId` and `ip` (T-031). That gives you the full request.
 2. **Uptime `/healthz` failing:** check the hosting platform (instance status, crash loop), then the logs from the last minutes before the outage.
-3. Record the incident in `docs/runbook/` if it is new.
+3. **Short bursts of 503 on login / register / refresh** (log `rate_limit.store_unavailable_fail_closed`): Valkey sent nothing for `VALKEY_SOCKET_TIMEOUT_MS` (default 3000) ⇒ fail-closed by design (ADR-108), recovers ~0.1 s after Valkey answers again (F5). Raise the env value only when Valkey is remote / the network is slow; if the API event loop or CPU is stalling, follow `scaling.md` instead — a longer timeout only turns a fast 503 into a slow hang.
+4. Record the incident in `docs/runbook/` if it is new.

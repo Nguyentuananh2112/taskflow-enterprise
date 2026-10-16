@@ -53,7 +53,7 @@ export async function startServer(
   metrics.gauge('db_pool_total', 'Kết nối DB trong pool', () => pool.totalCount);
   metrics.gauge('db_pool_idle', 'Kết nối DB rảnh', () => pool.idleCount);
   metrics.gauge('db_pool_waiting', 'Request đang chờ kết nối DB', () => pool.waitingCount);
-  const valkey = createValkeyClient(env.REDIS_URL, logger);
+  const valkey = createValkeyClient(env.REDIS_URL, logger, env.VALKEY_SOCKET_TIMEOUT_MS);
   connectInBackground(valkey, logger);
 
   // T-020: Prisma + Valkey mặc định (DATABASE_URL luôn bắt buộc). `PERSISTENCE=memory` chỉ local/test.
