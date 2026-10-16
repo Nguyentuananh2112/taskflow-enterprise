@@ -55,6 +55,7 @@ function day(
     schedule,
     holiday: over.holiday ?? false,
     leave: over.leave ?? null,
+    employed: over.employed ?? true,
     now,
   });
 }
@@ -218,6 +219,31 @@ describe('summarizeDay — lễ, OFF, vắng, chưa tới (SD-19..SD-26b, SD-34)
   it('SD-26 hôm nay 17:31, chưa IN ⇒ ABSENT; SD-26b đúng 17:30 ⇒ PENDING (chỉ ABSENT khi now > end)', () => {
     expect(day(MON, [], { nowLocal: '17:31' }).status).toBe('ABSENT');
     expect(day(MON, [], { nowLocal: '17:30' }).status).toBe('PENDING');
+  });
+
+  it('SD-43 ngoài nhiệm kỳ, không lượt ⇒ NOT_EMPLOYED (thắng HOLIDAY / OFF / ON_LEAVE); 0 phút, không cờ', () => {
+    for (const over of [{}, { holiday: true }, { leave: 'FULL' as const }]) {
+      expect(day(MON, [], { ...over, employed: false })).toEqual({
+        status: 'NOT_EMPLOYED',
+        firstIn: null,
+        lastOut: null,
+        workedMin: 0,
+        lateMin: 0,
+        earlyMin: 0,
+        flags: { late: false, early: false, absentHalf: false, inProgress: false },
+      });
+    }
+    expect(day(SUN, [], { employed: false }).status).toBe('NOT_EMPLOYED');
+    expect(day(MON, [], { employed: true }).status).toBe('ABSENT');
+  });
+
+  it('SD-41 có lượt ngoài nhiệm kỳ ⇒ tính như thường; SD-42 chỉ lượt đã hủy ⇒ NOT_EMPLOYED', () => {
+    const live = day(MON, [ev('IN', MON, '08:00'), ev('OUT', MON, '17:30')], { employed: false });
+    expect(live).toMatchObject({ status: 'PRESENT', workedMin: 480 });
+    expect(day(MON, [ev('OUT', MON, '17:30')], { employed: false }).status).toBe('ABSENT');
+    expect(day(MON, [ev('IN', MON, '08:00', { voided: true })], { employed: false }).status).toBe(
+      'NOT_EMPLOYED',
+    );
   });
 
   it('SD-34 Chủ nhật + nghỉ cả ngày ⇒ OFF (OFF > ON_LEAVE)', () => {

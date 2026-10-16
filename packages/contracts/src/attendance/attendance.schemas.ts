@@ -7,8 +7,13 @@ import { AttendanceKind, AttendanceSource } from '../hr/hr.schemas';
 // Chấm công (T-038, thiết kế attendance-leave.md §4–§5, hợp đồng web chốt với E cho T-041a).
 // Giờ trả về là ISO UTC; web hiển thị theo `timezone` của LỊCH hiệu lực (ADR-120), không theo máy.
 
-/** Trạng thái ngày — thứ tự ưu tiên HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT > PENDING. */
+/**
+ * Trạng thái ngày — thứ tự ưu tiên NOT_EMPLOYED > HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT >
+ * PENDING. `NOT_EMPLOYED`: ngày trước khi gia nhập / sau khi rời mà không có lượt chấm — không phải ngày
+ * công, 0 ở mọi tổng và CSV (TL chốt).
+ */
 export const DayStatus = z.enum([
+  'NOT_EMPLOYED',
   'HOLIDAY',
   'OFF',
   'ON_LEAVE',
@@ -80,6 +85,8 @@ export type AttendanceTodayDto = z.infer<typeof AttendanceTodayDto>;
 /** Một ngày trong bảng công tháng. */
 export const AttendanceDayDto = z.object({
   date: DateOnly,
+  /** Múi giờ của lịch hiệu lực NGÀY ĐÓ — đổi lịch giữa tháng vẫn hiển thị đúng giờ (H, T-041c). */
+  timezone: z.string().min(1),
   isWorkday: z.boolean(),
   holidayName: z.string().nullable(),
   workedMin: z.int().min(0),
@@ -162,3 +169,93 @@ export const AttendanceEventChangeDto = z.object({
   day: AttendanceDayDto,
 });
 export type AttendanceEventChangeDto = z.infer<typeof AttendanceEventChangeDto>;
+
+// ---------- Lịch làm việc theo phiên bản + ngày lễ (§4–§5): đọc mọi thành viên, ghi `hr:manage` ----------
+
+const IANA_SHAPE = /^(UTC|[A-Z][A-Za-z_-]*(\/[A-Za-z0-9_+-]+){1,2})$/;
+/**
+ * IANA hợp lệ (AT-19): đúng dạng `Vùng/Thành_phố` (hoặc `UTC`) VÀ runtime nhận làm `timeZone`. KHÔNG dùng
+ * `Intl.supportedValuesOf('timeZone')`: danh sách đó chỉ có tên chuẩn CLDR — thiếu `Asia/Ho_Chi_Minh` (có
+ * `Asia/Saigon`), `Asia/Kolkata`… Còn `Intl.DateTimeFormat` một mình lại nhận cả `+07:00`, `utc` ⇒ kiểm dạng trước.
+ */
+export const isSupportedTimeZone = (tz: string) => {
+  if (!IANA_SHAPE.test(tz)) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const TimeZoneName = z
+  .string()
+  .max(64)
+  .refine(isSupportedTimeZone, 'Múi giờ không hợp lệ (IANA, vd Asia/Ho_Chi_Minh).');
+
+const DayMinute = z.int().min(0).max(1440);
+
+/**
+ * `POST attendance/schedules` — phiên bản lịch hiệu lực từ `effectiveFrom` (≥ hôm nay theo lịch đang hiệu lực,
+ * nếu không 422 `SCHEDULE_IN_PAST`). Trùng `effectiveFrom` với phiên bản đã có ⇒ thay phiên bản đó.
+ * `workdays`: bit0 = T2 … bit6 = CN. Không nghỉ trưa ⇒ `breakStartMin = breakEndMin`.
+ */
+export const CreateWorkScheduleBody = z
+  .strictObject({
+    effectiveFrom: DateOnly,
+    timezone: TimeZoneName,
+    workdays: z.int().min(1).max(127),
+    startMin: DayMinute,
+    endMin: DayMinute,
+    breakStartMin: DayMinute,
+    breakEndMin: DayMinute,
+    graceMin: z.int().min(0).max(120),
+  })
+  .refine((s) => s.startMin < s.endMin, {
+    path: ['endMin'],
+    message: 'Giờ kết thúc phải sau giờ bắt đầu.',
+  })
+  .refine(
+    (s) =>
+      s.startMin <= s.breakStartMin &&
+      s.breakStartMin <= s.breakEndMin &&
+      s.breakEndMin <= s.endMin,
+    { path: ['breakStartMin'], message: 'Giờ nghỉ phải nằm trong ca.' },
+  );
+export type CreateWorkScheduleBody = z.infer<typeof CreateWorkScheduleBody>;
+
+/** Một phiên bản lịch đã lưu. `GET attendance/schedules` rỗng ⇒ workspace đang dùng lịch mặc định. */
+export const WorkScheduleDto = z.object({
+  effectiveFrom: DateOnly,
+  timezone: z.string().min(1),
+  workdays: z.int().min(1).max(127),
+  ...WorkShiftDto.shape,
+  createdBy: UserRefDto,
+  createdAt: IsoDateTime,
+});
+export type WorkScheduleDto = z.infer<typeof WorkScheduleDto>;
+
+export const HolidayDto = z.object({ date: DateOnly, name: z.string() });
+export type HolidayDto = z.infer<typeof HolidayDto>;
+
+export const HolidayListQuery = z.strictObject({
+  year: z.coerce.number().int().min(2000).max(2100),
+});
+export type HolidayListQuery = z.infer<typeof HolidayListQuery>;
+
+export const HolidayDateParams = z.strictObject({ date: DateOnly });
+export type HolidayDateParams = z.infer<typeof HolidayDateParams>;
+
+/**
+ * `PUT attendance/holidays/:date` (tạo / đổi tên). Ngày đã qua: chỉ OWNER và bắt buộc `reason`
+ * (HR khác ⇒ 422 `HOLIDAY_IN_PAST`; OWNER thiếu ⇒ 422 `REASON_REQUIRED`, AT-18).
+ */
+export const PutHolidayBody = z.strictObject({
+  name: z.string().trim().min(1).max(100),
+  reason: Reason.optional(),
+});
+export type PutHolidayBody = z.infer<typeof PutHolidayBody>;
+
+/** `DELETE attendance/holidays/:date` ⇒ 204 (idempotent); luật ngày đã qua như PUT. */
+export const DeleteHolidayBody = z.strictObject({ reason: Reason.optional() });
+export type DeleteHolidayBody = z.infer<typeof DeleteHolidayBody>;

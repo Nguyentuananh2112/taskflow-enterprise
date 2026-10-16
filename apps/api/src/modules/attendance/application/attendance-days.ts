@@ -4,6 +4,7 @@ import type { IClock, IIdGenerator } from '../../../core/domain';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import { addDays, daysBetween, toLocal, type LocalDate } from '../domain/local-time';
 import { summarizeDay, type LeavePart } from '../domain/summarize-day';
+import { employedOn } from '../domain/tenure';
 import {
   DEFAULT_SCHEDULE,
   effectiveSchedule,
@@ -12,12 +13,14 @@ import {
 } from '../domain/work-schedule';
 import type { ApprovedLeavePort } from './ports/approved-leave.port';
 import type { IAttendanceEventStore } from './ports/attendance-event-store.port';
+import type { IMembershipTenurePort } from './ports/membership-tenure.port';
 import type { IWorkCalendarStore } from './ports/work-calendar-store.port';
 
 export interface AttendanceDeps {
   events: IAttendanceEventStore;
   calendar: IWorkCalendarStore;
   leaves: ApprovedLeavePort;
+  tenures: IMembershipTenurePort;
   clock: IClock;
   ids: IIdGenerator;
   uow: IUnitOfWork;
@@ -45,6 +48,16 @@ export function localToday(
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
+const DAY_MS = 86_400_000;
+/**
+ * Cửa sổ instant phủ mọi ngày địa phương `[from, to]` ở MỌI múi giờ (lệch ≤ ±14 h): 00:00Z(from) − 1 ngày tới
+ * 00:00Z(to) + 2 ngày; `employedOn` lọc chính xác theo múi giờ lịch.
+ */
+export const tenureWindow = (from: LocalDate, to: LocalDate) => ({
+  from: new Date(Date.parse(`${from}T00:00:00Z`) - DAY_MS),
+  to: new Date(Date.parse(`${to}T00:00:00Z`) + 2 * DAY_MS),
+});
+
 /**
  * Bảng công của MỘT người cho các ngày `[from, to]` (gồm cả hai đầu) — tính khi đọc (ADR-121), không lưu
  * bảng tổng hợp. Ngày chưa có phiên bản lịch ⇒ lịch mặc định.
@@ -53,7 +66,7 @@ export async function summarizeRange(
   d: AttendanceDeps,
   q: { workspaceId: string; userId: string; from: LocalDate; to: LocalDate },
 ): Promise<AttendanceDayDto[]> {
-  const [versions, holidays, leaves, events] = await Promise.all([
+  const [versions, holidays, leaves, events, tenures] = await Promise.all([
     d.calendar.scheduleVersions(q.workspaceId),
     d.calendar.holidays(q),
     d.leaves.approvedLeaves({
@@ -63,7 +76,13 @@ export async function summarizeRange(
       to: q.to,
     }),
     d.events.listForUser(q),
+    d.tenures.tenuresOf({
+      workspaceId: q.workspaceId,
+      userIds: [q.userId],
+      ...tenureWindow(q.from, q.to),
+    }),
   ]);
+  const mine = tenures.filter((t) => t.userId === q.userId);
   const holidayOf = new Map(holidays.map((h) => [h.date, h.name]));
   const leaveOf = new Map<LocalDate, LeavePart>(
     leaves.filter((l) => l.userId === q.userId).map((l) => [l.date, l.part]),
@@ -82,10 +101,12 @@ export async function summarizeRange(
       schedule,
       holiday: holidayName !== null,
       leave,
+      employed: employedOn(mine, date, schedule.timezone),
       now,
     });
     days.push({
       date,
+      timezone: schedule.timezone,
       isWorkday: isWorkday(schedule, date),
       holidayName,
       workedMin: s.workedMin,
@@ -115,7 +136,7 @@ export async function todayCard(
     now,
   );
   const [day] = await summarizeRange(d, { ...q, from: date, to: date });
-  const { workedMin: _w, lateMin: _l, earlyMin: _e, ...flags } = day!;
+  const { workedMin: _w, lateMin: _l, earlyMin: _e, timezone: _tz, ...flags } = day!;
   return {
     serverNow: now.toISOString(),
     timezone,

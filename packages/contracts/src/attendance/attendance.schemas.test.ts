@@ -8,9 +8,15 @@ import {
   AttendanceMonthDto,
   AttendanceMonthQuery,
   AttendanceTodayDto,
+  CreateWorkScheduleBody,
+  DayStatus,
+  DeleteHolidayBody,
+  HolidayListQuery,
   IdempotencyKey,
   MyAttendanceEventsQuery,
+  PutHolidayBody,
   VoidAttendanceBody,
+  WorkScheduleDto,
 } from './attendance.schemas';
 
 // Hợp đồng web T-041a (E) ↔ T-038 (A): ví dụ đầy đủ phải qua schema; giá trị sai phải bị từ chối.
@@ -41,7 +47,7 @@ describe('attendance contracts', () => {
   });
 
   it('AttendanceMonthDto: ngày có phút làm; phút âm bị từ chối', () => {
-    const { serverNow: _s, isHoliday: _h, schedule: _sc, timezone: _tz, ...day } = today;
+    const { serverNow: _s, isHoliday: _h, schedule: _sc, ...day } = today;
     const row = { ...day, holidayName: null, workedMin: 480, lateMin: 0, earlyMin: 0 };
     const month = { month: '2026-11', timezone: 'Asia/Ho_Chi_Minh', days: [row] };
     expect(AttendanceMonthDto.parse(month)).toEqual(month);
@@ -92,7 +98,7 @@ describe('attendance contracts', () => {
   });
 
   it('AttendanceEventChangeDto: { event, day }', () => {
-    const { serverNow: _s, isHoliday: _h, schedule: _sc, timezone: _tz, ...day } = today;
+    const { serverNow: _s, isHoliday: _h, schedule: _sc, ...day } = today;
     const row = { ...day, holidayName: null, workedMin: 0, lateMin: 0, earlyMin: 0 };
     const change = { event, day: row };
     expect(AttendanceEventChangeDto.parse(change)).toEqual(change);
@@ -129,5 +135,84 @@ describe('attendance contracts', () => {
     expect(
       AdjustAttendanceBody.safeParse({ ...body, occurredAt: '2026-11-16T00:00:00Z' }).success,
     ).toBe(false);
+  });
+
+  it('DayStatus có NOT_EMPLOYED (TL: ngoài nhiệm kỳ, không lượt)', () => {
+    expect(DayStatus.options[0]).toBe('NOT_EMPLOYED');
+  });
+
+  it('CreateWorkScheduleBody: AT-19 múi giờ lạ ⇒ từ chối; ca / giờ nghỉ / workdays / grace trong miền', () => {
+    const s0 = {
+      effectiveFrom: '2026-11-17',
+      timezone: 'Asia/Ho_Chi_Minh',
+      workdays: 0b0111111,
+      startMin: 480,
+      endMin: 1050,
+      breakStartMin: 720,
+      breakEndMin: 810,
+      graceMin: 0,
+    };
+    expect(CreateWorkScheduleBody.parse(s0)).toEqual(s0);
+    for (const timezone of [
+      'UTC',
+      'Europe/Berlin',
+      'America/New_York',
+      'Asia/Kolkata',
+      'Etc/GMT+7',
+    ]) {
+      expect(CreateWorkScheduleBody.safeParse({ ...s0, timezone }).success).toBe(true);
+    }
+    for (const bad of [
+      { timezone: 'Mars/Base' },
+      { timezone: '' },
+      // `Intl.DateTimeFormat` nhận các dạng này, nhưng chúng không phải tên IANA.
+      { timezone: '+07:00' },
+      { timezone: 'utc' },
+      { timezone: 'EST' },
+      { workdays: 0 },
+      { workdays: 128 },
+      { startMin: 1050, endMin: 1050 },
+      { endMin: 1441 },
+      { breakStartMin: 470 },
+      { breakEndMin: 1060 },
+      { breakStartMin: 810, breakEndMin: 720 },
+      { graceMin: -1 },
+      { graceMin: 121 },
+      { startMin: 480.5 },
+      { createdBy: 'x' },
+    ]) {
+      expect(CreateWorkScheduleBody.safeParse({ ...s0, ...bad }).success, JSON.stringify(bad)).toBe(
+        false,
+      );
+    }
+    // Không nghỉ trưa: breakStart = breakEnd.
+    expect(
+      CreateWorkScheduleBody.safeParse({ ...s0, breakStartMin: 720, breakEndMin: 720 }).success,
+    ).toBe(true);
+    const dto = {
+      ...s0,
+      createdBy: { id: '0199e5a2-0000-7000-8000-000000000001', fullName: 'Hana' },
+      createdAt: '2026-11-17T03:00:00.000Z',
+    };
+    expect(WorkScheduleDto.parse(dto)).toEqual(dto);
+  });
+
+  it('ngày lễ: tên trim 1–100, lý do tùy chọn (trim 1–500); năm 2000–2100; không nhận khóa lạ', () => {
+    expect(PutHolidayBody.parse({ name: '  Quốc khánh ' })).toEqual({ name: 'Quốc khánh' });
+    expect(PutHolidayBody.safeParse({ name: 'x', reason: 'Nhập bù' }).success).toBe(true);
+    for (const bad of [
+      { name: '  ' },
+      { name: 'x'.repeat(101) },
+      { name: 'x', reason: ' ' },
+      { name: 'x', date: '2026-01-01' },
+    ]) {
+      expect(PutHolidayBody.safeParse(bad).success).toBe(false);
+    }
+    expect(DeleteHolidayBody.safeParse({}).success).toBe(true);
+    expect(DeleteHolidayBody.safeParse({ reason: '' }).success).toBe(false);
+    expect(HolidayListQuery.parse({ year: '2026' })).toEqual({ year: 2026 });
+    for (const year of ['1999', '2101', '20x6', '2026.5']) {
+      expect(HolidayListQuery.safeParse({ year }).success).toBe(false);
+    }
   });
 });

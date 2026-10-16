@@ -1,9 +1,19 @@
 import { minutesFrom, type LocalDate } from './local-time';
 import { isWorkday, type WorkSchedule } from './work-schedule';
 
-/** Thứ tự ưu tiên (thiết kế §4, A#6): HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT > PENDING. */
+/**
+ * Thứ tự ưu tiên (thiết kế §4, A#6; TL chốt NOT_EMPLOYED): NOT_EMPLOYED (ngoài nhiệm kỳ VÀ không có lượt
+ * chưa hủy) > HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT > PENDING.
+ */
 export type DayStatus =
-  'HOLIDAY' | 'OFF' | 'ON_LEAVE' | 'PRESENT' | 'MISSING_OUT' | 'ABSENT' | 'PENDING';
+  | 'NOT_EMPLOYED'
+  | 'HOLIDAY'
+  | 'OFF'
+  | 'ON_LEAVE'
+  | 'PRESENT'
+  | 'MISSING_OUT'
+  | 'ABSENT'
+  | 'PENDING';
 
 export type LeavePart = 'FULL' | 'AM' | 'PM';
 
@@ -20,6 +30,11 @@ export interface DayInput {
   schedule: WorkSchedule;
   holiday: boolean;
   leave: LeavePart | null;
+  /**
+   * Ngày nằm trong một nhiệm kỳ thành viên (từ ngày gia nhập tới ngày rời, gồm cả hai) — lớp gọi tính từ
+   * `IMembershipTenurePort` để hàm vẫn thuần. Ngoài nhiệm kỳ mà vẫn có lượt chấm ⇒ tính như thường.
+   */
+  employed: boolean;
   now: Date;
 }
 
@@ -66,6 +81,8 @@ export function summarizeDay(input: DayInput): DaySummary {
     flags: { late: false, early: false, absentHalf: false, inProgress: false },
   };
 
+  // Trước khi gia nhập / sau khi rời: không phải ngày công, 0 ở mọi tổng (bảng HR, CSV) — trừ khi có dữ liệu.
+  if (!input.employed && live.length === 0) return { ...base, status: 'NOT_EMPLOYED' };
   if (input.holiday) return { ...base, status: 'HOLIDAY' };
   if (!isWorkday(schedule, date)) return { ...base, status: 'OFF' };
   if (leave === 'FULL') return { ...base, status: 'ON_LEAVE' };

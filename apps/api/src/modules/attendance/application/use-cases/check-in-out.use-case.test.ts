@@ -152,6 +152,24 @@ describe('MyAttendanceQueries', () => {
     expect(lastDayOf('2028-02')).toBe('2028-02-29');
   });
 
+  it('SD-37/38 qua bảng tháng: gia nhập 10/11 lúc 14:00 ⇒ 1..9/11 NOT_EMPLOYED (0 phút), từ 10/11 tính như thường', async () => {
+    const t = await setup('2026-11-30 20:00');
+    t.tenures.rows.splice(0, t.tenures.rows.length, {
+      workspaceId: W1,
+      userId: MIA,
+      from: instantOf('2026-11-10', 14 * 60, VN),
+      until: null,
+    });
+    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const statusOf = (date: string) => month.days.find((x) => x.date === date)!.status;
+    expect(month.days.filter((x) => x.status === 'NOT_EMPLOYED').map((x) => x.date)).toEqual(
+      Array.from({ length: 9 }, (_, i) => `2026-11-0${i + 1}`),
+    );
+    expect(statusOf('2026-11-10')).toBe('ABSENT');
+    expect(statusOf('2026-11-15')).toBe('OFF');
+    expect(month.days.every((x) => x.timezone === VN)).toBe(true);
+  });
+
   it('workspace chưa lưu lịch nào ⇒ dùng DEFAULT_SCHEDULE (TL: không seed); HR lưu phiên bản mới thì theo phiên bản đó', async () => {
     const t = await setup();
     expect(await t.queries.today({ workspaceId: W1, userId: MIA })).toMatchObject({

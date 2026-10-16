@@ -11,7 +11,10 @@ import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-cas
 import { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
 import { instantOf } from '../domain/local-time';
 import type { WorkSchedule } from '../domain/work-schedule';
-import { FakeApprovedLeaves } from '../infrastructure/persistence/in-memory/in-memory-attendance';
+import {
+  FakeApprovedLeaves,
+  FakeMembershipTenures,
+} from '../infrastructure/persistence/in-memory/in-memory-attendance';
 import { inMemoryAttendanceBackend, type AttendanceBackend } from './attendance-backend';
 
 /**
@@ -54,10 +57,18 @@ export async function createAttendanceHarness(
   // Không seed phiên bản lịch nào (TL): workspace chưa lưu lịch ⇒ DEFAULT_SCHEDULE (= nội dung S0).
   const { events, calendar } = backend;
   const leaves = new FakeApprovedLeaves();
+  // Nhân viên của fixture (không VIEWER — adapter T-037b tự lọc) đều gia nhập W1 từ 2020.
+  const tenures = new FakeMembershipTenures();
+  for (const [userId, role] of Object.entries(ROLES)) {
+    if (role !== 'VIEWER') {
+      tenures.rows.push({ workspaceId: W1, userId, from: vnTime('2020-01-01 09:00'), until: null });
+    }
+  }
   const deps: AttendanceDeps = {
     events,
     calendar,
     leaves,
+    tenures,
     clock,
     ids: new SequentialIdGenerator(),
     uow: backend.uow,
@@ -127,6 +138,7 @@ export async function createAttendanceHarness(
     deps,
     clock,
     leaves,
+    tenures,
     checkInOut,
     queries: new MyAttendanceQueries(deps),
     eventUseCases,
