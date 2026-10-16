@@ -48,3 +48,22 @@ Chromium headless, bản prod, 1 cột × 500 thẻ: CPU 1× mount 994 ms (long 
 ⇒ JS chiếm ~70 % thời gian task, style + layout ~11 % ⇒ **bậc 2 (`content-visibility`) lợi ít, bỏ qua trừ khi sau bậc 1 layout thành phần lớn**. Cả cột hiện một lần (thẻ đầu = đủ 500) ⇒ nếu bậc 1 chưa đủ, bậc 3 (mount dần) là bậc kế.
 
 Bậc 1 (MoveMenu lười) đã code + test (`shared/ui/dropdown-menu`, 5 ca phím/chuột/axe; board-flow, board-two-clients, render-count xanh). Lượt đo sau bậc 1 bị dừng: build treo > 10 phút vì máy chịu tải ngoài dự án (một ứng dụng ~7,5 GB RAM) ⇒ không lấy số, chờ lượt máy mới. Một lần chạy test trước đó cũng treo (cùng lúc với lỗi kiểu `onOpenAutoFocus` không có trên `DropdownMenu.Content` — đã sửa bằng effect focus mục đầu); chạy lại từng file có timeout: không tái hiện.
+
+## Đo bậc 1 và bậc 3 (2026-10-16 17:55–18:02, CPU nền 16 %, RAM trống 11 GB; Chromium 4×, 1×500, trung vị 3 lần; mỗi bản `next build` riêng)
+
+| Bản | Thẻ đầu | Đủ 500 | Long task max / tổng | Script | Layout | Style | Task |
+|---|---|---|---|---|---|---|---|
+| Bậc 0 baseline (`bfb6706`) | 3468 | 3468 | 2573 / 3484 | 2781 | 348 | 84 | 3998 |
+| Bậc 1 MoveMenu lười (`1988932`) | **2107** | 2107 | **1303** / 2022 | **1487** | 275 | 73 | 2504 |
+| Bậc 1 + 3 mount dần (`b2b3bfd`) | **868** | 2407 | 1258 / 2589 | 2666 | 259 | 75 | 3747 |
+
+jsdom (`test:perf`, trên `b2b3bfd`): 1 `task:moved` commit **31 / 46 ms** (1×500 / 4×500) — không hồi quy (< 50); rebalance không gom: commit max 93 / 165 ms (< 200); qua sink, event dồn: 1 commit 39 / 27 ms. (Số "mount" của jsdom giờ chỉ là lô đầu 40 thẻ/cột.)
+
+**Đọc số (trung thực):**
+- **Bậc 1 thắng rõ:** Script −47 % (2781 → 1487), long task max −49 % (2573 → 1303), thẻ đầu −39 %. Không đổi UX.
+- **Bậc 3 lẫn lộn:** thẻ đầu nhanh hơn nữa (2107 → 868) nhưng long task max **không giảm** (1303 → 1258), tổng Script TĂNG (1487 → 2666) và đủ 500 thẻ chậm hơn (2107 → 2407): mỗi lô render lại `KanbanBoard`/cột, và lúc chốt `dragLocked` đổi ⇒ 500 wrapper render lại.
+- **Chưa đạt tiêu chí** (thẻ đầu < 300 ms, không long task > 200 ms @4×). Còn một long task ~1,25 s mà bậc 3 không chia nhỏ được ⇒ nghi là phần KHỞI ĐỘNG APP (tải/parse/hydrate JS, khôi phục phiên, query) chứ không phải render board — chưa có số đối chứng để khẳng định.
+
+**Đề xuất tiếp (chưa làm, chờ Tech Lead):**
+1. Đo ĐỐI CHỨNG ~3 phút: cùng bản build, board **10 task** ⇒ "sàn khởi động" (thẻ đầu, long task max). Nếu sàn ≈ 800–1200 ms thì ngân sách < 300 ms @4× không đạt được bằng việc tối ưu board; phần còn lại là bundle/khởi động (ticket khác: tách chunk, hoãn Sentry/socket…).
+2. **Giữ bậc 1.** Bậc 3: hoặc bỏ (revert `b2b3bfd`), hoặc giữ nếu Tech Lead coi "thẻ đầu sớm" quan trọng hơn tổng thời gian; nếu giữ, sửa chi phí lô (memo phần `KanbanBoard` ngoài cột, tránh flip `dragLocked` render lại cả cột) rồi đo lại. Mình nghiêng về **bỏ bậc 3** cho tới khi có số đối chứng.
