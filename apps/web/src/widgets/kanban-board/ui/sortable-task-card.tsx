@@ -73,12 +73,19 @@ export const SortableTaskCard = memo(function SortableTaskCard({
     [canDrag, handleRef, pending, task.key],
   );
   const actions = useMemo(
-    () => (canDrag ? <MoveMenu task={task} getColumns={getColumns} onMove={onMove} /> : undefined),
+    () =>
+      canDrag ? (
+        // Nút "⋯" và menu: KHÔNG khởi động kéo (card-drag-sensors: preventCardActivation).
+        <span data-no-drag="">
+          <MoveMenu task={task} getColumns={getColumns} onMove={onMove} />
+        </span>
+      ) : undefined,
     [canDrag, task, getColumns, onMove],
   );
 
   return (
-    <li>
+    // Kéo bằng cả thẻ (feat/card-drag-whole) ⇒ con trỏ "nắm" trên thẻ khi kéo được.
+    <li className={canDrag ? 'cursor-grab' : undefined}>
       <TaskCard
         // Không kéo được (VIEWER/lưu trữ) ⇒ không đăng ký phần tử: plugin Accessibility của dnd-kit
         // sẽ biến chính <article> thành role="button" khi không có tay kéo.

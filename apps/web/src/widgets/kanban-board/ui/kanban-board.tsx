@@ -23,6 +23,7 @@ import {
 import { useCspNonce } from '@/shared/config';
 
 import { createBoardPlugins } from '../model/a11y-announcements';
+import { BOARD_SENSORS } from '../model/card-drag-sensors';
 import { useBoardDnd } from '../model/use-board-dnd';
 import { useReducedMotion } from '../model/use-reduced-motion';
 import { BoardColumn } from './board-column';
@@ -75,7 +76,7 @@ export function KanbanBoard({ scope, board, canDrag, onOpen }: Props) {
   const allowed = state.from ? allowedTargets(state.from) : null;
 
   return (
-    <DragDropProvider plugins={plugins} {...handlers}>
+    <DragDropProvider plugins={plugins} sensors={BOARD_SENSORS} {...handlers}>
       {/* Tràn ra lề của PAGE_CONTAINER: cột cuộn ngang tới sát mép màn, mép trái lúc chưa cuộn vẫn thẳng header. */}
       <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-4 sm:-mx-6 sm:px-6">
         {TASK_STATUS_ORDER.map((status) => (
