@@ -70,15 +70,26 @@ if ! { echo "$ready" | grep -q '"db":"ok"' && echo "$ready" | grep -q '"valkey":
 fi
 echo "ok  /readyz $ready"
 
+vk_stop_ms="$(date +%s%3N)"
 docker stop -t 30 "$VK" >/dev/null
-# Không dùng file tạm (curl gốc Windows và Git Bash hiểu /tmp khác nhau): body + mã HTTP ở dòng cuối.
-resp="$(curl -s -w '\n%{http_code}' "$BASE/readyz" || true)"
-code="$(printf '%s\n' "$resp" | tail -n 1)"
-body="$(printf '%s\n' "$resp" | sed '$d')"
+echo "..  Valkey dừng sau $(($(date +%s%3N) - vk_stop_ms))ms (docker stop)"
+# /readyz cache kết quả probe READINESS_CACHE_MS (1 s — T-031, 6945d14) ⇒ ngay sau khi Valkey dừng có thể còn nhận
+# "ok" cũ (runner GitHub dừng container < 1 s; Docker Desktop chậm hơn nên local không lộ). Hỏi lại tới 10 lần × 1 s
+# (giới hạn /readyz 60/phút — vòng trên tối đa 20 lần). Không dùng file tạm (curl gốc Windows và Git Bash hiểu /tmp
+# khác nhau): body + mã HTTP ở dòng cuối.
+code="" body="" tries=0
+for _ in $(seq 1 10); do
+  tries=$((tries + 1))
+  resp="$(curl -s -w '\n%{http_code}' "$BASE/readyz" || true)"
+  code="$(printf '%s\n' "$resp" | tail -n 1)"
+  body="$(printf '%s\n' "$resp" | sed '$d')"
+  [ "$code" = "200" ] && echo "$body" | grep -q '"valkey":"degraded"' && break
+  sleep 1
+done
 if ! { [ "$code" = "200" ] && echo "$body" | grep -q '"valkey":"degraded"'; }; then
   fail "Valkey chết: /readyz $code $body"
 fi
-echo "ok  Valkey chết ⇒ /readyz 200 $body (ADR-074)"
+echo "ok  Valkey chết ⇒ /readyz 200 $body (ADR-074) — thấy degraded sau $(($(date +%s%3N) - vk_stop_ms))ms, lần hỏi thứ $tries"
 
 start="$(date +%s)"
 docker stop -t 30 "$API" >/dev/null
