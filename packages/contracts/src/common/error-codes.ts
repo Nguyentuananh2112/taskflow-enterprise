@@ -72,6 +72,8 @@ export const NotFoundDetails = z.object({
     'attendance_event',
     'holiday',
     'work_schedule',
+    // Mốc 3 (T-040)
+    'notification',
   ]),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;

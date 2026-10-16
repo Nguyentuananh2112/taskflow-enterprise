@@ -56,6 +56,16 @@ export const NotificationDto = z.object({
 });
 export type NotificationDto = z.infer<typeof NotificationDto>;
 
+/** `GET /api/v1/me/notifications` — mới nhất trước, cursor opaque (data-and-api §3.1); không có `userId` — luôn của mình (Q6). */
+export const ListNotificationsQuery = z.object({
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type ListNotificationsQuery = z.infer<typeof ListNotificationsQuery>;
+
+export const NotificationParams = z.object({ id: Uuid });
+export type NotificationParams = z.infer<typeof NotificationParams>;
+
 export const UnreadNotificationCountDto = z.object({ count: z.int().min(0) });
 export type UnreadNotificationCountDto = z.infer<typeof UnreadNotificationCountDto>;
 

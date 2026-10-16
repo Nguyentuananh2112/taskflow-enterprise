@@ -1,4 +1,4 @@
-import { ROLE_PERMISSIONS } from '@taskflow/contracts';
+import { ROLE_PERMISSIONS, hasPermission } from '@taskflow/contracts';
 import type { Store } from 'express-rate-limit';
 import type { Express, Router } from 'express';
 import type { Logger } from 'pino';
@@ -21,6 +21,11 @@ import type { IPasswordHasher } from '../modules/auth/application/ports/password
 import type { PasswordPolicy } from '../modules/auth/domain/password-policy';
 import type { IRolePermissions } from '../modules/task/application/task-actor';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
+import {
+  NOTIFICATIONS_PATH,
+  createNotificationsModule,
+  type NotificationsModule,
+} from '../modules/notifications/notifications.module';
 import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
@@ -61,6 +66,8 @@ export interface Container {
   auth: AuthModule;
   workspace: WorkspaceModule;
   task: TaskModule;
+  /** Thông báo bền (ADR-123): `publisher` nối vào port của leave / attendance / workspace. */
+  notifications: NotificationsModule;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
   /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
@@ -122,6 +129,17 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
   });
   workspaceRef.current = workspace;
+  const notifications = createNotificationsModule({
+    repos: persistence.notifications,
+    // B-H3b: quyền hiệu lực role ∪ grants đọc từ DB mỗi lần (audience), cùng ma trận với contracts.
+    canManageHr: (role, grants) => hasPermission(role, grants, 'hr:manage'),
+    realtime,
+    uow: persistence.uow,
+    ids,
+    clock,
+    responder,
+    limit,
+  });
   const auth = createAuthModule({
     repos: persistence.auth,
     hasher: d.hasher,
@@ -153,6 +171,7 @@ export function createContainer(d: ContainerDeps): Container {
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
+    { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
   ];
   const app = createApp({
     config,
@@ -166,5 +185,5 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
     routers,
   });
-  return { app, auth, workspace, task, realtime, routers };
+  return { app, auth, workspace, task, notifications, realtime, routers };
 }

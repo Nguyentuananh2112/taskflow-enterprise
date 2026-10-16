@@ -92,7 +92,9 @@ export type ResourceKind =
   | 'leave_request'
   | 'attendance_event'
   | 'holiday'
-  | 'work_schedule';
+  | 'work_schedule'
+  // Mốc 3 (T-040)
+  | 'notification';
 
 /** 404 — không tồn tại **hoặc** thuộc tenant khác (ADR-020): cùng một hình dạng cho cả hai. */
 export class ResourceNotFoundError extends AppError {

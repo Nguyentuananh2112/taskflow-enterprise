@@ -1,7 +1,14 @@
 import * as z from 'zod';
 
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
-import { HrAuditLogDto, ListHrAuditLogsQuery } from '../hr/hr.schemas';
+import {
+  HrAuditLogDto,
+  ListHrAuditLogsQuery,
+  ListNotificationsQuery,
+  NotificationDto,
+  NotificationParams,
+  UnreadNotificationCountDto,
+} from '../hr/hr.schemas';
 import {
   AuthTokenDto,
   ChangePasswordBody,
@@ -57,7 +64,7 @@ import {
  */
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type Security = 'bearer' | 'refreshCookie' | 'none';
-export type Tag = 'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr';
+export type Tag = 'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'notifications';
 
 export interface ApiRoute {
   method: HttpMethod;
@@ -281,6 +288,42 @@ export const API_ROUTES: readonly ApiRoute[] = [
     params: WorkspaceParams,
     query: ListHrAuditLogsQuery,
     response: { status: 200, data: z.array(HrAuditLogDto), paged: true },
+  },
+
+  // ---------- notifications (ADR-123, T-040) — luôn của người gọi, chỉ ws còn là thành viên ----------
+  {
+    method: 'get',
+    path: '/me/notifications',
+    summary: 'Thông báo của tôi (mới nhất trước); loại dành cho HR lọc theo quyền hiện tại',
+    tag: 'notifications',
+    security: 'bearer',
+    query: ListNotificationsQuery,
+    response: { status: 200, data: z.array(NotificationDto), paged: true },
+  },
+  {
+    method: 'get',
+    path: '/me/notifications/unread-count',
+    summary: 'Số thông báo chưa đọc (chuông)',
+    tag: 'notifications',
+    security: 'bearer',
+    response: { status: 200, data: UnreadNotificationCountDto },
+  },
+  {
+    method: 'post',
+    path: '/me/notifications/read-all',
+    summary: 'Đánh dấu mọi thông báo của tôi đã đọc',
+    tag: 'notifications',
+    security: 'bearer',
+    response: { status: 204 },
+  },
+  {
+    method: 'post',
+    path: '/me/notifications/{id}/read',
+    summary: 'Đánh dấu một thông báo đã đọc (id của người khác ⇒ 404)',
+    tag: 'notifications',
+    security: 'bearer',
+    params: NotificationParams,
+    response: { status: 204 },
   },
 
   // ---------- projects ----------
