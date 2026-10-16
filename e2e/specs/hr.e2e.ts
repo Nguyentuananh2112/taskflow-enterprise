@@ -13,6 +13,7 @@ import {
   apiSubmitLeave,
   ddMm,
   hrCall,
+  refreshed,
   seedHrWorld,
   vnDate,
   vnHm,
@@ -143,13 +144,14 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     await expect(cardValue(card, 'Trạng thái')).not.toContainText('Đang làm');
     await expect(card.getByRole('button', { name: 'Chấm ra lại' })).toBeVisible();
 
-    const today = await apiMyToday(request, w.olivia, w.mia);
+    const mia = await refreshed(request, w.mia);
+    const today = await apiMyToday(request, w.olivia, mia);
     expect(today.timezone).toBe('Asia/Ho_Chi_Minh');
     const { events } = await hrCall<{ events: { kind: string; voidedAt: string | null }[] }>(
       request,
       'GET',
       `/workspaces/${w.olivia.workspaceId}/attendance/me/events?date=${vnDate()}`,
-      { token: w.mia.accessToken, expected: 200 },
+      { token: mia.accessToken, expected: 200 },
     );
     expect(events.filter((e) => e.kind === 'IN')).toHaveLength(1);
     expect(events.filter((e) => e.kind === 'OUT')).toHaveLength(1);
@@ -254,7 +256,14 @@ test.fixme(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ o
   offline = true;
   await page.context().setOffline(true);
   for (const ws of sockets.splice(0)) await ws.close({ code: 1006, reason: 'e2e offline' });
-  await apiDecideLeave(request, w.olivia, w.hana, leave, 'reject', 'Thiếu giấy tờ');
+  await apiDecideLeave(
+    request,
+    w.olivia,
+    await refreshed(request, w.hana),
+    leave,
+    'reject',
+    'Thiếu giấy tờ',
+  );
   await expect(bell(page)).toHaveAccessibleName('Thông báo');
 
   offline = false;
@@ -338,7 +347,7 @@ test(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công (thẻ, nút he
   ).toBeVisible();
   await expect(page.getByRole('table', { name: /^Bảng công tháng/ })).toHaveCount(0);
 
-  await apiCheckIn(request, w.olivia, w.vic.accessToken, 403);
+  await apiCheckIn(request, w.olivia, (await refreshed(request, w.vic)).accessToken, 403);
 });
 
 test.fixme(`E2E-HR-04b [${T041B}]: VIEWER mở /leave ⇒ báo vai trò, không có form; gửi đơn qua API ⇒ 403`, async ({
@@ -353,7 +362,7 @@ test.fixme(`E2E-HR-04b [${T041B}]: VIEWER mở /leave ⇒ báo vai trò, không 
   ).toBeVisible();
   await expect(page.getByRole('form', { name: 'Gửi đơn nghỉ' })).toHaveCount(0);
   await hrCall(request, 'POST', `/workspaces/${w.olivia.workspaceId}/leave-requests`, {
-    token: w.vic.accessToken,
+    token: (await refreshed(request, w.vic)).accessToken,
     body: { type: 'SICK', startDate: vnWorkday(3), endDate: vnWorkday(3), dayPart: 'FULL' },
     expected: 403,
   });
@@ -391,7 +400,7 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
   await expect(attendanceCard(again.page).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
   await again.close();
 
-  const after = await apiMyToday(request, w.olivia, w.mia);
+  const after = await apiMyToday(request, w.olivia, await refreshed(request, w.mia));
   expect(after.firstIn, 'đăng nhập / reload không được tự tạo lượt IN').toBeNull();
 });
 

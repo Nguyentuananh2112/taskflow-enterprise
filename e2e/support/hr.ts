@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { APIRequestContext } from '@playwright/test';
 
-import { apiAddMember, apiRegister, type Seeded } from './api';
+import { apiAddMember, apiLogin, apiRegister, type Seeded } from './api';
 import { API_URL, WEB_ORIGIN } from './env';
 import { newUser, type E2EUser } from './fixtures';
 
@@ -72,6 +72,14 @@ async function join(
   const s = await apiRegister(request, user);
   await apiAddMember(request, owner, user, role);
   return { user, userId: s.userId, accessToken: s.accessToken };
+}
+
+/**
+ * Đăng nhập lại qua API ⇒ access token mới. E2E đặt access TTL 10 s (E2E_ACCESS_TTL, E2E-11): token lúc seed hết
+ * hạn trước các lời gọi API ở CUỐI ca (sau thao tác UI / chờ) ⇒ 401 TOKEN_EXPIRED (cổng T-041a, mobile).
+ */
+export async function refreshed(request: APIRequestContext, who: HrPerson): Promise<HrPerson> {
+  return { ...who, accessToken: (await apiLogin(request, who.user)).accessToken };
 }
 
 export async function seedHrWorld(
