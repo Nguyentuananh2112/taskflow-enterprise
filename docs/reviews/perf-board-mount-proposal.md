@@ -39,3 +39,12 @@ Chromium headless, bản prod, 1 cột × 500 thẻ: CPU 1× mount 994 ms (long 
 ## Cần Tech Lead quyết
 - Duyệt thứ tự 0 → 1 → (2) → (3); và cách hiểu ngân sách "render đầu < 300 ms ở 4×" = thẻ đầu tiên hiện, không phải đủ 500 thẻ.
 - Lượt máy ~5 phút cho bậc 0 (Chromium trace).
+
+## Bậc 0 — baseline đo (2026-10-16, bản build perf/board-500 `bfb6706`, Chromium 4×, 1×500, trung vị 3 lần)
+| Thẻ đầu hiện | Đủ 500 thẻ | Long task max / tổng | Script | RecalcStyle | Layout | Task |
+|---|---|---|---|---|---|---|
+| 3468 ms | 3468 ms | 2573 / 3484 ms | **2781 ms** | 84 ms | 348 ms | 3998 ms |
+
+⇒ JS chiếm ~70 % thời gian task, style + layout ~11 % ⇒ **bậc 2 (`content-visibility`) lợi ít, bỏ qua trừ khi sau bậc 1 layout thành phần lớn**. Cả cột hiện một lần (thẻ đầu = đủ 500) ⇒ nếu bậc 1 chưa đủ, bậc 3 (mount dần) là bậc kế.
+
+Bậc 1 (MoveMenu lười) đã code + test (`shared/ui/dropdown-menu`, 5 ca phím/chuột/axe; board-flow, board-two-clients, render-count xanh). Lượt đo sau bậc 1 bị dừng: build treo > 10 phút vì máy chịu tải ngoài dự án (một ứng dụng ~7,5 GB RAM) ⇒ không lấy số, chờ lượt máy mới. Một lần chạy test trước đó cũng treo (cùng lúc với lỗi kiểu `onOpenAutoFocus` không có trên `DropdownMenu.Content` — đã sửa bằng effect focus mục đầu); chạy lại từng file có timeout: không tái hiện.
