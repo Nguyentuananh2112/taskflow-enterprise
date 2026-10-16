@@ -11,7 +11,33 @@
 
 **Mục tiêu:** ≥ 90 % mỗi nhóm.
 
-## Kết quả
+## Lượt 2 (sau khi vá GAP): main `db252de`, 2026-10-17 02:21–02:31
+
+Test vá GAP đã vào main: A ở `cc5b934` (A1–A5), D ở `1e43014` (L1–L3). Chạy cùng cấu hình như lượt 1; Stryker exit 0 cả hai nhóm.
+
+| Nhóm                | Mutant | Killed | Timeout | Survived | **Điểm**    | Lượt 1  | Điểm bỏ EQ | Thời gian |
+| ------------------- | -----: | -----: | ------: | -------: | ----------: | ------: | ---------: | --------: |
+| `attendance-domain` |    307 |    292 |       0 |       15 | **95,11 %** | 90,55 % |     98,6 % |    6 phút |
+| `leave-domain`      |    200 |    182 |       3 |       15 | **92,50 %** | 91,00 % |     95,9 % |    4 phút |
+
+**Không còn GAP nào.** Toàn bộ 16 GAP của attendance và 3 GAP của leave đã bị giết.
+
+**`attendance-domain`: 15 mutant sống = 11 EQ + 4 LOW.**
+
+- EQ:
+  - 9 mutant EQ của lượt 1 vẫn còn.
+  - `work-date.ts:38` `kind === 'OUT'` → `true`: EQ, như A đã chỉ ra. `lastIn` là IN muộn nhất nên không có IN nào sau nó.
+  - `work-date.ts:35` `>` → `>=` khi chọn `lastIn`: chỉ khác khi hai IN trùng đúng một ms.
+- LOW:
+  - `local-time.ts:86` ×2: đoán offset quanh giờ đổi DST.
+  - `work-date.ts:32`: lượt trùng thời điểm `now`.
+  - `work-date.ts:38` `>` → `>=`: OUT trùng đúng ms với `lastIn`. Thực tế không xảy ra, vì Idempotency-Key và unique index chặn.
+
+**`leave-domain`: 15 mutant sống = đúng 7 EQ + 8 LOW (chỉ chuỗi) của lượt 1.** `leave-errors.ts:15` (`code`) đã bị giết.
+
+Không cần thêm test cho hai nhóm này. Các mutant còn lại hoặc tương đương, hoặc chỉ đổi chuỗi hiển thị.
+
+## Lượt 1: main `fec8215`, kết quả và phân loại (giữ để tham khảo)
 
 | Nhóm                | Mutant | Killed | Timeout | Survived | No cov | **Điểm** | Điểm bỏ EQ | Thời gian |
 | ------------------- | -----: | -----: | ------: | -------: | -----: | -------: | ---------: | --------: |
@@ -99,5 +125,5 @@ Với attendance, test của module **không giết thêm** mutant nào. Vì v�
 
 - **A:** viết các ca A1–A5. Ưu tiên A1 và A3, là hai ca có thể gặp thật: IN trước 06:00 khi hôm qua còn mở; vào lại trong ngày rồi ra qua nửa đêm. Nếu A thấy hành vi hiện tại đúng thì xác nhận bằng test.
 - **D:** viết L1–L3. L1 ảnh hưởng trực tiếp tới bảng công tháng khi một đơn vắt qua cuối tháng.
-- **F:** chạy lại hai nhóm sau khi A và D thêm test, khi Tech Lead cấp lượt.
+- **F:** chạy lại hai nhóm sau khi A và D thêm test, khi Tech Lead cấp lượt. **Đã xong**, xem mục "Lượt 2" ở đầu file.
 - Hai nhóm mới đã có script `mutation:attendance-domain` / `mutation:leave-domain` trong `apps/api/package.json`, và config trong `apps/api/stryker/`.
