@@ -27,19 +27,7 @@ export const PENDING_PREFIX = '[PENDING ';
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
 export const TODO_BUDGET: Readonly<Record<string, string>> = {
-  'SEC-17': 'auth.sec.ts',
-  'SEC-19': 'auth.sec.ts',
-  'SEC-20': 'auth.sec.ts',
-  'SEC-22': 'auth.sec.ts',
-  'SEC-23': 'auth.sec.ts',
-  'SEC-24': 'auth.sec.ts',
   'SEC-24d': 'auth.sec.ts',
-  'SEC-26': 'auth.sec.ts',
-  'SEC-27': 'auth.sec.ts',
-  'SEC-32': 'auth.sec.ts',
-  'GATE-T016-401': 'rate-limit.sec.ts',
-  'SEC-28': 'rate-limit.sec.ts',
-  'SEC-28b': 'rate-limit.sec.ts',
   'SEC-35': 'realtime.sec.ts',
   'SEC-36': 'realtime.sec.ts',
   'SEC-37': 'realtime.sec.ts',

@@ -83,15 +83,46 @@ describe('Rate limit theo endpoint', () => {
     'GATE-T016-401',
     'Token rác trên route CẦN xác thực: bucket 401 (30/phút/IP) ⇒ request thứ 31 bị 429',
     'route đã xác thực (T-021)',
+    async () => {
+      const me = () =>
+        api.request({
+          path: '/api/v1/auth/me',
+          headers: { authorization: 'Bearer garbage.token.x' },
+        });
+      for (let i = 1; i <= 30; i += 1) {
+        const res = await me();
+        expect(res.status, `request ${i}`).toBe(401);
+      }
+      const blocked = await me();
+      expect(blocked.status, 'request 31').toBe(429);
+      expect(errorEnvelope(blocked).error.code).toBe('RATE_LIMITED');
+      expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    },
   );
   secCase(
     'SEC-28',
-    '6 lần login sai cùng IP+email trong 15 phút ⇒ lần 6: 429 + Retry-After',
-    'auth routes (Phase 3)',
+    // ADR-108 thay ngưỡng cũ (6 lần): 10 lần 401 cùng (IP, email) / 15 phút ⇒ lần 11 bị 429.
+    '10 lần login sai cùng IP+email trong 15 phút ⇒ lần 11: 429 + Retry-After; email khác cùng IP vẫn được thử',
+    'auth routes (ADR-108)',
+    async () => {
+      const login = (email: string, password: string) =>
+        api.request({
+          method: 'POST',
+          path: '/api/v1/auth/login',
+          headers: { 'content-type': 'application/json', origin: api.webOrigin },
+          body: JSON.stringify({ email, password }),
+        });
+      const victim = `sec28-${Date.now()}@sec.example`; // không cần tồn tại: 401 như sai mật khẩu
+      for (let i = 1; i <= 10; i += 1) {
+        expect((await login(victim, `wrong-passphrase-${i}`)).status, `lần ${i}`).toBe(401);
+      }
+      const blocked = await login(victim, 'wrong-passphrase-11');
+      expect(blocked.status, 'lần 11').toBe(429);
+      expect(errorEnvelope(blocked).error.code).toBe('RATE_LIMITED');
+      expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+      // Bucket theo CẶP (IP, email): cùng IP, email khác chưa bị chặn (chưa tới trần 20/15 phút/IP).
+      expect((await login(`other-${victim}`, 'wrong-passphrase')).status).toBe(401);
+    },
   );
-  secCase(
-    'SEC-28b',
-    'Valkey tắt ⇒ login/register 503 (fail-closed), API thường vẫn chạy',
-    'auth routes (Phase 3)',
-  );
+  // SEC-28b nằm ở `valkey-outage.sec.ts` (cần container Valkey riêng để tắt).
 });

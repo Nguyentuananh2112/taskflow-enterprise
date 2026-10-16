@@ -19,7 +19,7 @@ let valkey: TempValkey | undefined;
 
 beforeAll(async () => {
   // Mọi ca của file bị skip (đều khai báo pending) ⇒ không dựng container cho tốn RAM.
-  if (!['SEC-24b', 'SEC-24e', 'SEC-24f'].some(caseRuns)) return;
+  if (!['SEC-24', 'SEC-24b', 'SEC-24e', 'SEC-24f', 'SEC-28b'].some(caseRuns)) return;
   valkey = await startTempValkey();
   env.REDIS_URL = valkey.url;
 }, 120_000);
@@ -80,6 +80,67 @@ describe('Valkey sự cố', () => {
         actors.json('POST', '/auth/login', undefined, { email: user.email, password });
       expect((await login(user.password)).status, 'mật khẩu cũ vẫn đúng').toBe(200);
       expect((await login(newPassword)).status, 'mật khẩu mới không được ghi').toBe(401);
+    },
+    RESTART_TIMEOUT_MS,
+  );
+
+  secCase(
+    'SEC-24',
+    'Logout-all (Valkey sống) rồi Valkey tắt ⇒ access cũ vẫn bị từ chối (fallback DB), phiên khác vẫn qua',
+    T020,
+    async () => {
+      if (!valkey) throw new Error('container Valkey tạm chưa dựng');
+      await waitValkeyReconnected();
+      const user = await actors.register('logoutall-down');
+      const other = await actors.register('logoutall-down-ctl');
+      expect((await actors.json('POST', '/auth/logout-all', user.accessToken)).status).toBe(204);
+      expect((await me(user.accessToken)).status, 'ngay sau logout-all').toBe(401);
+
+      valkey.kill();
+      try {
+        // Cache không đọc được ⇒ authenticator hỏi DB cả tv lẫn sid (MW-06): tv trong DB đã tăng.
+        expect((await me(user.accessToken)).status, 'access cũ khi Valkey chết').toBe(401);
+        // Đối chứng: fallback DB thật sự chạy (không phải mọi request đều 401/503 khi Valkey chết).
+        expect((await me(other.accessToken)).status, 'phiên khác khi Valkey chết').toBe(200);
+      } finally {
+        await valkey.restart();
+        await waitValkeyReconnected();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
+
+  secCase(
+    'SEC-28b',
+    'Valkey tắt ⇒ login/register 503 (fail-closed), API thường vẫn chạy',
+    T020,
+    async () => {
+      if (!valkey) throw new Error('container Valkey tạm chưa dựng');
+      await waitValkeyReconnected();
+      const user = await actors.register('limiter-down');
+
+      valkey.kill();
+      try {
+        const login = await actors.json('POST', '/auth/login', undefined, {
+          email: user.email,
+          password: user.password,
+        });
+        expect(login.status, `login: ${login.text.slice(0, 200)}`).toBe(503);
+        expect(errorEnvelope(login).error.code).toBe('SERVICE_UNAVAILABLE');
+        const register = await actors.json('POST', '/auth/register', undefined, {
+          email: `limiter-down-new-${user.userId.slice(0, 8)}@sec.example`,
+          password: 'correct-horse-battery-staple-9',
+          fullName: 'Sec limiter',
+        });
+        expect(register.status, `register: ${register.text.slice(0, 200)}`).toBe(503);
+        expect(errorEnvelope(register).error.code).toBe('SERVICE_UNAVAILABLE');
+        // Limiter fail-closed chỉ ở luồng xác thực (ADR-074): API đã xác thực vẫn chạy.
+        expect((await me(user.accessToken)).status, 'GET /auth/me khi Valkey chết').toBe(200);
+        expect((await api.request({ method: 'GET', path: '/healthz' })).status).toBe(200);
+      } finally {
+        await valkey.restart();
+        await waitValkeyReconnected();
+      }
     },
     RESTART_TIMEOUT_MS,
   );
