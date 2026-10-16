@@ -1,5 +1,3 @@
-import type { BrowserContext, Page } from '@playwright/test';
-
 import {
   apiAddMember,
   apiAssign,
@@ -13,6 +11,7 @@ import {
 import { card, column, waitBoardReady } from '../support/board';
 import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 import { openAs } from '../support/users';
+import { arm, assertInert } from '../support/xss';
 
 // SEC-49 (security.md): nội dung người dùng nhập — tiêu đề/mô tả task, họ tên, tên workspace/project — luôn hiển thị dạng TEXT,
 // không bao giờ thành HTML/JS ở board, drawer (sửa + chỉ đọc), realtime client khác, toast, danh sách
@@ -22,13 +21,6 @@ import { openAs } from '../support/users';
 //   3. phần tử nguy hiểm lọt vào DOM (img[src=x], svg/onload, a[href^=javascript:], thuộc tính on*);
 //   4. vi phạm CSP (fixture `noCspViolations` + `openAs().close()`) — CSP nonce chặn handler inline nhưng
 //      vẫn báo vi phạm ⇒ HTML bị chèn dù không chạy được cũng làm test đỏ.
-
-declare global {
-  interface Window {
-    __xssHits?: number[];
-    __xss?: (n: number) => void;
-  }
-}
 
 /** Mỗi payload ≤ 150 ký tự, một dòng (TaskTitle). `n` khác nhau ⇒ biết payload nào chạy. */
 const TITLES = [
@@ -46,41 +38,6 @@ const DESCRIPTION = [...TITLES, '<iframe srcdoc="<script>parent.__xss(8)</script
 /** ≤ 100 ký tự, không ký tự điều khiển (luật họ tên). */
 const EVIL_NAME = '<img src=x onerror=__xss(9)>"><svg onload=alert(10)>';
 const EDITED_TITLE = '<details open ontoggle=__xss(11)>T11';
-
-/** Phần tử/thuộc tính không bao giờ được xuất hiện nếu nội dung người dùng chỉ là text. */
-const DANGEROUS =
-  'img[src="x"], svg[onload], a[href^="javascript:"], iframe[srcdoc], details[ontoggle], [onerror], [onload], [ontoggle]';
-
-async function arm(context: BrowserContext): Promise<string[]> {
-  await context.addInitScript(() => {
-    window.__xssHits = [];
-    window.__xss = (n: number) => window.__xssHits?.push(n);
-  });
-  const dialogs: string[] = [];
-  context.on('dialog', (d) => {
-    dialogs.push(`${d.type()}: ${d.message()}`);
-    void d.dismiss();
-  });
-  // Trang mở sau khi gắn (context.on chỉ phủ page mới) — gắn cho page đang có.
-  for (const p of context.pages()) {
-    p.on('dialog', (d) => {
-      dialogs.push(`${d.type()}: ${d.message()}`);
-      void d.dismiss();
-    });
-  }
-  return dialogs;
-}
-
-async function assertInert(page: Page, dialogs: readonly string[], where: string): Promise<void> {
-  expect(await page.evaluate(() => window.__xssHits ?? []), `${where}: payload đã chạy`).toEqual(
-    [],
-  );
-  expect(dialogs, `${where}: có hộp thoại`).toEqual([]);
-  expect(
-    await page.locator(DANGEROUS).evaluateAll((els) => els.map((e) => e.outerHTML.slice(0, 120))),
-    `${where}: phần tử nguy hiểm trong DOM`,
-  ).toEqual([]);
-}
 
 test('SEC-49: payload XSS ở tiêu đề + mô tả task (API thật) ⇒ board, drawer sửa/chỉ đọc, realtime 2 client chỉ hiển thị text', async ({
   page,

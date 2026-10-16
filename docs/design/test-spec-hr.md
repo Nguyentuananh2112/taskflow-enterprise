@@ -288,7 +288,8 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | ID                | Luồng                                                                                                                   | Kỳ vọng                                                                                                                     |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | E2E-HR-01 `@main` | Mia mở `/w/:ws/projects` ⇒ thẻ Chấm công ⇒ Vào ⇒ Ra                                                                     | giờ hiển thị theo `serverNow` + múi giờ lịch (không theo máy — đổi `timezoneId` của context vẫn đúng); trạng thái đổi       |
-| E2E-HR-02 `@main` | Mia gửi đơn ⇒ Hana (context khác) thấy chuông +1 realtime < 2 s ⇒ duyệt ⇒ Mia thấy chuông + lịch tháng hiện "Nghỉ phép" | không reload; offline rồi online vẫn đúng (bảng bền — ADR-123)                                                              |
+| E2E-HR-02 `@main` | Mia gửi đơn ⇒ Hana (context khác) thấy chuông +1 realtime < 2 s ⇒ duyệt ⇒ Mia thấy chuông + lịch tháng hiện "Nghỉ phép" | không reload; vế offline tách thành E2E-HR-02b |
+| E2E-HR-02b | Mia offline (cắt WebSocket như E2E-13) lúc Hana từ chối đơn ⇒ online lại | chuông +1 sau reconnect, đơn "Bị từ chối" + ghi chú HR (bảng bền — ADR-123) |
 | E2E-HR-03         | Olivia bật "Quản lý nhân sự" cho Mia                                                                                    | tab của Mia hiện mục HR ngay (`member:grants-changed`), không reload                                                        |
 | E2E-HR-04         | Vic                                                                                                                     | không thấy UI chấm công/nghỉ; gọi API ⇒ 403                                                                                 |
 | E2E-HR-05         | banner nhắc chưa chấm vào                                                                                               | hiện trong ngày làm việc; KHÔNG tự chấm khi đăng nhập                                                                       |
@@ -296,6 +297,8 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | E2E-HR-07         | a11y                                                                                                                    | lịch tháng là `<table>` có tiêu đề hàng/cột, trạng thái có chữ + biểu tượng (axe serious/critical = 0, sáng + tối)          |
 | E2E-HR-08         | XSS (mở rộng SEC-49)                                                                                                    | `reason`, `decisionNote`, ghi chú ADJUSTMENT, tên ngày lễ chứa payload ⇒ hiển thị text ở danh sách đơn, chuông, lịch, `/hr` |
 | E2E-HR-09         | responsive 360 → 1440, Firefox                                                                                          | luồng `@main` xanh                                                                                                          |
+
+Tách theo vé web (cổng T-041a): phần chỉ cần T-041a (thẻ chấm công, `/attendance`, chuông) giữ id gốc; phần cần `/leave` (T-041b) hoặc `/hr` (T-041c) tách thành id hậu tố — **E2E-HR-04b** (VIEWER ở `/leave`), **07b** (axe `/leave`), **07c** (axe mọi tab `/hr`), **08b** (XSS lý do đơn + ghi chú HR ở `/leave`), **08c** (XSS ở `/hr`), **09b** (responsive `/leave`).
 
 ## 10. Mutation
 
