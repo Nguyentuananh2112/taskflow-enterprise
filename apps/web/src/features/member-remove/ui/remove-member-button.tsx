@@ -4,8 +4,7 @@ import type { MemberDto } from '@taskflow/contracts/workspace';
 import { useMutation } from '@tanstack/react-query';
 
 import { memberApi, memberErrorMessage, memberKeys, unassignedNote } from '@/entities/member';
-import { sessionKeys } from '@/entities/session';
-import { workspaceKeys } from '@/entities/workspace';
+import { WORKSPACE_GONE_MESSAGE, forgetWorkspace, isWorkspaceGone } from '@/entities/workspace';
 import { Button } from '@/shared/ui/button';
 import { Dialog, DialogClose } from '@/shared/ui/dialog';
 import { toast } from '@/shared/ui/toast';
@@ -15,7 +14,7 @@ type Props = Readonly<{
   member: MemberDto;
   /** Chính mình ⇒ "Rời" (member:leave); người khác ⇒ "Xóa" (member:remove). */
   isSelf: boolean;
-  /** Tự rời thành công ⇒ về /w. */
+  /** Tự rời thành công, hoặc chính mình đã mất quyền workspace (404 `workspace`) ⇒ về /w. */
   onLeft: () => void;
 }>;
 
@@ -26,9 +25,7 @@ export function RemoveMemberButton({ wsId, member, isSelf, onLeft }: Props) {
     onSuccess: ({ unassignedTaskCount }, _v, _r, context) => {
       const note = unassignedNote(unassignedTaskCount);
       if (isSelf) {
-        context.client.removeQueries({ queryKey: workspaceKeys.root(wsId) });
-        void context.client.invalidateQueries({ queryKey: workspaceKeys.list });
-        void context.client.invalidateQueries({ queryKey: sessionKeys.me });
+        forgetWorkspace(context.client, wsId);
         toast({
           title: 'Bạn đã rời workspace',
           ...(note ? { description: note } : {}),
@@ -39,7 +36,16 @@ export function RemoveMemberButton({ wsId, member, isSelf, onLeft }: Props) {
       void context.client.invalidateQueries({ queryKey: memberKeys.all(wsId) });
       toast({ title: 'Đã xóa', ...(note ? { description: note } : {}), tone: 'success' });
     },
-    onError: (error) => toast({ title: memberErrorMessage(error), tone: 'error' }),
+    onError: (error, _v, _r, context) => {
+      if (isWorkspaceGone(error)) {
+        forgetWorkspace(context.client, wsId);
+        toast({ title: WORKSPACE_GONE_MESSAGE, tone: 'error' });
+        return onLeft();
+      }
+      // Người này có thể đã bị xóa ở tab khác (404 `user`) ⇒ làm mới bảng (G1 W2).
+      void context.client.invalidateQueries({ queryKey: memberKeys.all(wsId) });
+      toast({ title: memberErrorMessage(error), tone: 'error' });
+    },
   });
 
   const label = isSelf ? 'Rời' : 'Xóa';

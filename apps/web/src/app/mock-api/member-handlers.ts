@@ -86,7 +86,8 @@ export function createMemberHandlers(
       if (!user) return notFoundUser();
       const wsId = String(params.wsId);
       if (ws.member(wsId, user.id)) {
-        return fail(409, 'RESOURCE_CONFLICT', { field: 'email', reason: 'already_member' });
+        // Như API thật (`CONFLICTS` của prisma/db.ts): không có `field` (G1 I2).
+        return fail(409, 'RESOURCE_CONFLICT', { reason: 'already_member' });
       }
       ws.setMember(wsId, user.id, body.data.role);
       return ok(MemberDto, toDto(wsId, user.id), { status: 201 });

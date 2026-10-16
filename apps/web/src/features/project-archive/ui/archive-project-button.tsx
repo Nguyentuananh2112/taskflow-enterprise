@@ -21,7 +21,11 @@ export function ArchiveProjectButton({ project }: Readonly<{ project: ProjectDto
         tone: 'success',
       });
     },
-    onError: () => toast({ title: 'Không thực hiện được. Vui lòng thử lại.', tone: 'error' }),
+    onError: (_error, _v, _r, context) => {
+      // Trạng thái hiển thị có thể đã cũ (G1 W3) ⇒ đọc lại.
+      void context.client.invalidateQueries({ queryKey: projectKeys.detail(wsId, id) });
+      toast({ title: 'Không thực hiện được. Vui lòng thử lại.', tone: 'error' });
+    },
   });
 
   if (project.isArchived) {

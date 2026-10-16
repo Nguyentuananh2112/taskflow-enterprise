@@ -6,7 +6,12 @@ import { useEffect, useRef } from 'react';
 
 import { memberKeys } from '@/entities/member';
 import { sessionKeys } from '@/entities/session';
-import { ROLE_LABEL, workspaceKeys } from '@/entities/workspace';
+import {
+  ROLE_LABEL,
+  WORKSPACE_GONE_MESSAGE,
+  forgetWorkspace,
+  workspaceKeys,
+} from '@/entities/workspace';
 import { useRealtimeClient } from '@/shared/socket';
 import { toast } from '@/shared/ui/toast';
 
@@ -44,15 +49,13 @@ export function useRealtimeSession(): void {
       const event = WorkspaceAccessRevokedEvent.safeParse(raw);
       if (!event.success) return;
       const { workspaceId } = event.data.data;
-      queryClient.removeQueries({ queryKey: workspaceKeys.root(workspaceId) });
-      void queryClient.invalidateQueries({ queryKey: sessionKeys.me });
-      void queryClient.invalidateQueries({ queryKey: workspaceKeys.list });
+      forgetWorkspace(queryClient, workspaceId);
       if (path.current.startsWith(`/w/${workspaceId}`)) {
         router.replace('/w');
         // Do chính tab này gây ra (tự rời / xóa workspace) thì màn đó đã báo — không toast lần hai.
         // Payload không phân biệt bị xóa khỏi workspace hay workspace bị xóa — không đoán.
         if (event.data.originClientId !== client.clientId) {
-          toast({ title: 'Bạn không còn truy cập được workspace này' });
+          toast({ title: WORKSPACE_GONE_MESSAGE });
         }
       }
     });
