@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import type { SubmitLeaveBody } from '@taskflow/contracts/leave';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value';
@@ -15,10 +15,15 @@ export const leaveKeys = {
   preview: (wsId: string, d: Draft | null) => ['ws', wsId, 'leave', 'preview', d] as const,
 };
 
+/** Đơn của tôi, mới nhất trước, phân trang cursor (50/trang) ⇒ "Tải thêm". */
 export function useMyLeaveRequests(wsId: string, enabled: boolean) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: leaveKeys.mine(wsId),
-    queryFn: async () => (await leaveApi.mine(wsId)).data,
+    queryFn: ({ pageParam }) => leaveApi.mine(wsId, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) =>
+      last.page?.hasMore ? (last.page.nextCursor ?? undefined) : undefined,
+    select: (d) => d.pages.flatMap((p) => p.data),
     enabled,
     staleTime: 30_000,
   });

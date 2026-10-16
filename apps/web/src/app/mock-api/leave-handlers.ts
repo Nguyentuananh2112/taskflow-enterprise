@@ -9,12 +9,13 @@ import {
   LeavePreviewDto,
   LeavePreviewQuery,
   LeaveRequestDto,
+  ListLeaveRequestsQuery,
 } from '@taskflow/contracts/leave';
 
 import type { MockDb } from './mock-db';
 import { requireMember } from './mock-guard';
 import { conflict, evaluate, selfOnly, strip, type Leave, type MockLeave } from './mock-leave';
-import { fail, ok, parseBody, parseQuery } from './respond';
+import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 
 // Nghỉ phép (attendance-leave.md §5, ADR-122; mã lỗi TL chốt): VIEWER 403 `leave:self`; 422 rule
 // NO_WORKING_DAYS / LEAVE_SPANS_YEARS / INSUFFICIENT_BALANCE; 409 reason overlapping_leave (AM + PM cùng
@@ -29,10 +30,16 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
       if (ctx.response) return ctx.response;
       const denied = selfOnly(ctx.ok);
       if (denied) return denied;
+      // Strict như server: tham số lạ (vd `userId` — SEC-HR-03) ⇒ 400; trang theo cursor, mới nhất trước.
+      const query = parseQuery(request, ListLeaveRequestsQuery);
+      if (query.response) return query.response;
+      const { status, cursor, limit } = query.data;
       const mine = leave.items
         .filter((l) => l.workspaceId === params.wsId && l.userId === ctx.ok.user.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return ok(z.array(LeaveRequestDto), mine.map(strip));
+        .filter((l) => !status || l.status === status)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const page = paginate(mine.map(strip), cursor, limit);
+      return ok(z.array(LeaveRequestDto), page.data, { page: page.page });
     }),
     http.get(`${base}/leave-requests/preview`, ({ request, params }) => {
       const ctx = requireMember(request, db, params);

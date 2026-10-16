@@ -22,7 +22,8 @@ export function LeavePage() {
   const { role, can } = usePermission(wsId);
   const allowed = valid && can('leave:self');
   // "Hôm nay" theo múi giờ của LỊCH (server) — quy tắc hủy đơn APPROVED so với ngày bắt đầu (D-M5).
-  const today = useAttendanceToday(wsId, allowed).data?.date ?? null;
+  const todayQuery = useAttendanceToday(wsId, allowed);
+  const today = todayQuery.data?.date ?? null;
   const balance = useMyLeaveBalance(wsId, today ? Number(today.slice(0, 4)) : null);
   const requests = useMyLeaveRequests(wsId, allowed);
 
@@ -68,19 +69,45 @@ export function LeavePage() {
         <h2 id="new-leave" className="text-base font-semibold">
           Gửi đơn mới
         </h2>
-        {today ? <LeaveRequestForm wsId={wsId} today={today} /> : <Skeleton className="h-48" />}
+        {today ? (
+          <LeaveRequestForm wsId={wsId} today={today} />
+        ) : todayQuery.isError ? (
+          // "Hôm nay" của server chưa có ⇒ không dựng form (min ngày, luật hủy) — báo lỗi, không kẹt skeleton.
+          <EmptyState
+            title="Không tải được ngày hôm nay"
+            action={<Button onClick={() => void todayQuery.refetch()}>Thử lại</Button>}
+          />
+        ) : (
+          <Skeleton className="h-48" />
+        )}
       </section>
       <section aria-labelledby="my-leave" className="flex flex-col gap-3">
         <h2 id="my-leave" className="text-base font-semibold">
           Đơn của tôi
         </h2>
-        {requests.isError ? (
+        {requests.isError || (todayQuery.isError && !today) ? (
           <EmptyState
             title="Không tải được đơn"
-            action={<Button onClick={() => void requests.refetch()}>Thử lại</Button>}
+            action={
+              <Button onClick={() => void Promise.all([requests.refetch(), todayQuery.refetch()])}>
+                Thử lại
+              </Button>
+            }
           />
         ) : requests.data && today ? (
-          <MyLeaveList wsId={wsId} requests={requests.data} today={today} />
+          <>
+            <MyLeaveList wsId={wsId} requests={requests.data} today={today} />
+            {requests.hasNextPage && (
+              <Button
+                variant="secondary"
+                className="self-center"
+                loading={requests.isFetchingNextPage}
+                onClick={() => void requests.fetchNextPage()}
+              >
+                Tải thêm
+              </Button>
+            )}
+          </>
         ) : (
           <div
             role="status"

@@ -3,7 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import * as z from 'zod';
 
-import { leaveApi, leaveKeys, leaveRange } from '@/entities/leave';
+import { LEAVE_TYPE_NAME, leaveApi, leaveKeys, leaveRange } from '@/entities/leave';
 import { isApiError } from '@/shared/api';
 import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 import { serverErrorMessage } from '@/shared/lib/form-errors';
@@ -39,7 +39,13 @@ export function CancelLeaveButton({ wsId, request }: Props) {
   return (
     <Dialog
       trigger={
-        <Button size="sm" variant="ghost" aria-label={`Hủy đơn ${leaveRange(request)}`}>
+        // Kèm loại nghỉ: chỉ đơn còn hiệu lực có nút, và server cấm đơn còn hiệu lực trùng ngày
+        // (overlapping_leave) ⇒ "loại + khoảng ngày" không trùng giữa các nút.
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={`Hủy đơn ${LEAVE_TYPE_NAME[request.type]} ${leaveRange(request)}`}
+        >
           Hủy đơn
         </Button>
       }

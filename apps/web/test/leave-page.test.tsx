@@ -1,11 +1,12 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
 import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
-import { startMockApi } from '@test/mock-api';
+import { API_BASE, startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
 import { getClientId } from '@/shared/lib/client-id';
@@ -92,7 +93,7 @@ describe('trang Nghỉ phép', () => {
     expect(await within(list).findByText('Lý do: <b>đi khám</b>')).toBeTruthy();
     expect(list.querySelector('b')).toBeNull();
     const u = userEvent.setup({ delay: null });
-    await u.click(within(list).getByRole('button', { name: /Hủy đơn 19\/10\/2026/ }));
+    await u.click(within(list).getByRole('button', { name: /Hủy đơn Phép năm 19\/10\/2026/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Hủy đơn nghỉ?' });
     await u.click(within(dialog).getByRole('button', { name: 'Hủy đơn' }));
     expect(await within(list).findByText('Đã hủy')).toBeTruthy();
@@ -156,5 +157,59 @@ describe('trang Nghỉ phép', () => {
       await screen.findByText('Vai trò Người xem không xin nghỉ trong workspace này'),
     ).toBeTruthy();
     expect(screen.queryByRole('form', { name: 'Gửi đơn nghỉ' })).toBeNull();
+  });
+
+  it('"Đơn của tôi" > 50 đơn ⇒ trang đầu 50 + "Tải thêm" ⇒ đủ 51 đơn, hết nút', async () => {
+    open('OWNER', (f) => {
+      const at = (i: number) => new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString();
+      for (let i = 0; i < 51; i++) {
+        mock.leave.items.push({
+          id: crypto.randomUUID(),
+          workspaceId: f.wsId,
+          userId: f.owner.id,
+          user: { id: f.owner.id, fullName: f.owner.fullName },
+          type: 'UNPAID',
+          startDate: '2026-01-05',
+          endDate: '2026-01-05',
+          dayPart: 'FULL',
+          reason: null,
+          days: 1,
+          status: 'REJECTED',
+          decidedBy: null,
+          decidedAt: null,
+          decisionNote: null,
+          version: 2,
+          createdAt: at(i),
+          updatedAt: at(i),
+        });
+      }
+    });
+    const section = await screen.findByRole('region', { name: 'Đơn của tôi' });
+    const more = await within(section).findByRole('button', { name: 'Tải thêm' });
+    expect(within(section).getAllByRole('listitem')).toHaveLength(50);
+    await userEvent.setup({ delay: null }).click(more);
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(51));
+    expect(within(section).queryByRole('button', { name: 'Tải thêm' })).toBeNull();
+  });
+
+  it('me/today lỗi ⇒ form và danh sách báo lỗi + Thử lại, không kẹt skeleton', async () => {
+    const boom = () =>
+      HttpResponse.json(
+        { success: false, error: { code: 'INTERNAL_ERROR', message: 'x' } },
+        { status: 500 },
+      );
+    open('OWNER', (f) => {
+      const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+      mock.server.use(...[1, 2, 3].map(() => http.get(url, boom, { once: true })));
+    });
+    expect(
+      await screen.findByText('Không tải được ngày hôm nay', {}, { timeout: 10_000 }),
+    ).toBeTruthy();
+    expect(screen.getByText('Không tải được đơn')).toBeTruthy();
+    expect(screen.queryByRole('status', { name: 'Đang tải đơn' })).toBeNull();
+    await userEvent
+      .setup({ delay: null })
+      .click(screen.getAllByRole('button', { name: 'Thử lại' })[0] as HTMLElement);
+    expect(await screen.findByRole('form', { name: 'Gửi đơn nghỉ' })).toBeTruthy();
   });
 });
