@@ -154,4 +154,9 @@ describe('AccessTokenAuthenticator (security.md 2.5)', () => {
     const { session } = await signedIn();
     await expect(auth.authenticate(`bearer   ${session.accessToken}`)).resolves.toBeDefined();
   });
+
+  it('F3 B-9: chốt hành vi — khoảng trắng CUỐI header ("Bearer <token>  ") ⇒ vẫn qua', async () => {
+    const { session } = await signedIn();
+    await expect(auth.authenticate(`Bearer ${session.accessToken}  `)).resolves.toBeDefined();
+  });
 });

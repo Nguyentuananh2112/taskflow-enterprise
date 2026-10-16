@@ -105,6 +105,12 @@ describe('Argon2idPasswordHasher (ADR-065)', () => {
       expect(hasher.needsRehash(old)).toBe(true);
     });
 
+    it('F3 B-10: cùng m/t/p nhưng version argon2 cũ (v=16, 0x10) ⇒ true', async () => {
+      const old = await argonHash('correct-horse-12', { ...ARGON2ID_PARAMS, version: 0 });
+      expect(parseOptions(old).version).not.toBe(ARGON2ID_PARAMS.version);
+      expect(hasher.needsRehash(old)).toBe(true);
+    });
+
     it('chuỗi hỏng ⇒ true', () => {
       expect(hasher.needsRehash('garbage')).toBe(true);
     });
