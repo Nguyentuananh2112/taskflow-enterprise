@@ -223,8 +223,11 @@ test('SEC-49: tên workspace + project chứa payload ⇒ picker /w, danh sách 
   await assertInert(page, dialogs, 'cài đặt workspace');
 
   // Khu "Đã xóa" ở /w liệt kê ws đã xóa mềm theo tên (đường render riêng).
+  // Trang đang mở là của ws vừa xóa ⇒ app tự về /w (realtime workspace:access-revoked). Tự `goto` chồng
+  // lên lần điều hướng đó làm Firefox hủy một navigation (NS_BINDING_ABORTED, CI) ⇒ chờ app về /w.
   await apiDeleteWorkspace(request, sa);
-  await page.goto('/w');
+  // Không tự về trong 10 s ⇒ không còn navigation nào đang chạy ⇒ `goto` an toàn.
+  await page.waitForURL(/\/w\/?(\?.*)?$/, { timeout: 10_000 }).catch(() => page.goto('/w'));
   await page.getByText(/Đã xóa — khôi phục được/).click();
   await expect(page.getByRole('button', { name: `Khôi phục ${EVIL_WS}` })).toBeVisible();
   await expect(

@@ -1,4 +1,4 @@
-import type { APIRequestContext, Browser, Page } from '@playwright/test';
+import type { APIRequestContext, Browser, Page, WebSocketRoute } from '@playwright/test';
 
 import {
   apiAddMember,
@@ -199,10 +199,29 @@ test('E2E-13: offline rồi online ⇒ board tự refetch, thấy thay đổi c�
   request,
 }) => {
   const { sa, userB } = await ownerAndMember(page, browser, request, 'MEMBER');
+  // `setOffline` chặn HTTP ở mọi trình duyệt nhưng KHÔNG cắt WebSocket đang mở trên Firefox (CI: B vẫn
+  // nhận realtime lúc "offline"). Cho mọi socket của B đi qua route do test điều khiển: offline ⇒ đóng
+  // socket đang mở + từ chối kết nối lại; online ⇒ nối thẳng server. Hành vi giống nhau mọi trình duyệt.
+  let offline = false;
+  const sockets: WebSocketRoute[] = [];
+  await userB.page.routeWebSocket(/\/socket\.io\//, (ws) => {
+    if (offline) return void ws.close({ code: 1006, reason: 'e2e offline' });
+    ws.connectToServer();
+    sockets.push(ws);
+  });
+  await userB.page.reload(); // socket hiện có mở trước khi có route ⇒ mở lại qua route
+  await waitBoardReady(userB.page);
+  await expect(userB.page.getByText('Trực tuyến')).toBeVisible();
+  expect(sockets.length, 'socket của B đi qua route').toBeGreaterThan(0);
+
+  offline = true;
   await userB.context.setOffline(true);
+  for (const ws of sockets.splice(0)) await ws.close({ code: 1006, reason: 'e2e offline' });
+  await expect(userB.page.getByText('Trực tuyến')).toHaveCount(0);
   await apiCreateTask(request, sa, 'Tạo lúc B offline');
   await expect(card(column(page, 'TODO'), 'Tạo lúc B offline')).toBeVisible(REALTIME);
   await expect(card(column(userB.page, 'TODO'), 'Tạo lúc B offline')).toHaveCount(0);
+  offline = false;
   await userB.context.setOffline(false);
   await expect(card(column(userB.page, 'TODO'), 'Tạo lúc B offline')).toBeVisible({
     timeout: 15_000,
