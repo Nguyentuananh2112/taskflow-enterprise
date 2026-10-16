@@ -168,6 +168,14 @@ describe('route HR', () => {
     expect(envelopeOf<{ events: { voidReason: string }[] }>(mine).data?.events[0]?.voidReason).toBe(
       'Nhầm',
     );
+    // Thông báo bền thật (T-040): 2 lần ATTENDANCE_ADJUSTED (thêm + hủy) cho Mia, actor = Hana.
+    const notes = await request(t.app).get('/api/v1/me/notifications').set(mia.auth);
+    const rows =
+      envelopeOf<{ type: string; refId: string; actor: { id: string } | null }[]>(notes).data;
+    expect(rows?.map((n) => [n.type, n.refId, n.actor?.id])).toEqual([
+      ['ATTENDANCE_ADJUSTED', eventId, hana.id],
+      ['ATTENDANCE_ADJUSTED', eventId, hana.id],
+    ]);
   });
 
   it('HR tự điều chỉnh công của mình ⇒ 403; hôm nay + tháng (cursor) cả công ty', async () => {

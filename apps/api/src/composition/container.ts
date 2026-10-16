@@ -35,14 +35,10 @@ import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
-import {
-  attendanceMembership,
-  noApprovedLeaves,
-  noAttendanceNotifications,
-} from './attendance-adapters';
+import { attendanceMembership, noApprovedLeaves } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
-import { hrGrantNotifierFrom } from './notification-adapters';
+import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
 
 export interface ContainerConfig extends AppConfig {
@@ -161,7 +157,7 @@ export function createContainer(d: ContainerDeps): Container {
     users: persistence.task.users,
     hrAccess: workspace.hrAccess,
     audit: workspace.hrAudit,
-    notifier: noAttendanceNotifications, // TODO(T-040): attendanceNotifierFrom(notifications.publisher)
+    notifier: attendanceNotifierFrom(notifications.publisher),
     membership: attendanceMembership(() => workspace),
     uow: persistence.uow,
     clock,

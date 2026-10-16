@@ -24,6 +24,9 @@ import { MyAttendanceQueries } from './application/use-cases/my-attendance.queri
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
 import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
 import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memory/in-memory-work-calendar';
+import type { DbProvider } from './infrastructure/persistence/prisma/db';
+import { PrismaAttendanceEventStore } from './infrastructure/persistence/prisma/prisma-attendance-event.store';
+import { PrismaWorkCalendarStore } from './infrastructure/persistence/prisma/prisma-work-calendar.store';
 import type { AttendanceMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
@@ -33,7 +36,12 @@ export interface AttendanceRepositories {
   calendar: IWorkCalendarStore;
 }
 
-/** Lưu trữ trong bộ nhớ (local/test). Prisma: `composition/persistence.ts`. */
+/** Repository Prisma — `db` = `uow.db()` dùng chung transaction với module khác (composition root). */
+export function createPrismaAttendanceRepositories(db: DbProvider): AttendanceRepositories {
+  return { events: new PrismaAttendanceEventStore(db), calendar: new PrismaWorkCalendarStore(db) };
+}
+
+/** Lưu trữ trong bộ nhớ (local/test). */
 export function createInMemoryAttendanceRepositories() {
   return { events: new InMemoryAttendanceEventStore(), calendar: new InMemoryWorkCalendarStore() };
 }

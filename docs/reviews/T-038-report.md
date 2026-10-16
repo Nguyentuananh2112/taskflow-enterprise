@@ -1,6 +1,6 @@
 # T-038 — Chấm công (attendance) — báo cáo Engineer A
 
-Nhánh `feat/T-038-attendance`. Bản này viết lúc chờ T-040 vào main; mục "Lệnh đã chạy" sẽ bổ sung khi báo DONE.
+Nhánh `feat/T-038-attendance`. Đã rebase lên main có T-040; mục "Lệnh đã chạy" sẽ bổ sung khi báo DONE.
 
 ## Đã làm (theo phạm vi ticket)
 
@@ -23,7 +23,7 @@ Nhánh `feat/T-038-attendance`. Bản này viết lúc chờ T-040 vào main; m�
 
 | Mục | Mức | Xử lý |
 |---|---|---|
-| `noApprovedLeaves` / notifier tạm trên đường production | MEDIUM | Notifier: nối `attendanceNotifierFrom` của T-040 TRƯỚC khi xin merge (TL). Leave: TL chấp nhận khoảng giữa T-038 và T-039 — main chưa có module leave nên không thể có đơn đã duyệt; D nối `leave.approvedLeaves` ở T-039. |
+| `noApprovedLeaves` / notifier tạm trên đường production | MEDIUM | Notifier: ĐÃ nối `attendanceNotifierFrom(notifications.publisher)` của T-040 (test HTTP kiểm Mia nhận `ATTENDANCE_ADJUSTED`). Leave: TL chấp nhận khoảng giữa T-038 và T-039 — main chưa có module leave nên không thể có đơn đã duyệt; D nối `leave.approvedLeaves` ở T-039. |
 | CSV: dấu toàn giác ＝ ＋ － ＠ và `\n` đầu ô | LOW | Đã sửa: `FORMULA_START` thêm U+FF1D/FF0B/FF0D/FF20 và `\n`, có test. |
 | Export chỉ kiểm quyền lúc bắt đầu; bị thu grant giữa lúc stream thì file vẫn chạy hết | LOW | Chấp nhận: quyền hợp lệ lúc bắt đầu (đọc lại trong tx, FOR SHARE) + audit EXPORT ghi trước byte đầu. |
 | Check-in/out không đọc lại membership trong transaction (chỉ kiểm ở route) — bị xóa đúng lúc đang chấm vẫn ghi được 1 lượt | LOW | Chấp nhận: không phải lệnh HR; lượt đó vẫn hiện cho HR (người đã rời có dữ liệu — R30). |

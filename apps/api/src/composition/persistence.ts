@@ -4,10 +4,9 @@ import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import {
   createInMemoryAttendanceRepositories,
+  createPrismaAttendanceRepositories,
   type AttendanceRepositories,
 } from '../modules/attendance/attendance.module';
-import { PrismaAttendanceEventStore } from '../modules/attendance/infrastructure/persistence/prisma/prisma-attendance-event.store';
-import { PrismaWorkCalendarStore } from '../modules/attendance/infrastructure/persistence/prisma/prisma-work-calendar.store';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import {
   ValkeySessionRevocationStore,
@@ -66,6 +65,10 @@ import {
 import { MirroringUserRepository } from './users';
 
 export type StorageKind = 'memory' | 'prisma';
+
+/** Mọi module cùng một loại lưu trữ (T-020: không chạy lai). */
+const allModules = (kind: StorageKind) =>
+  ({ auth: kind, workspace: kind, task: kind, notifications: kind, attendance: kind }) as const;
 
 export interface Persistence {
   kind: StorageKind;
@@ -130,13 +133,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   );
   return {
     kind: 'memory',
-    modules: {
-      auth: 'memory',
-      workspace: 'memory',
-      task: 'memory',
-      notifications: 'memory',
-      attendance: 'memory',
-    },
+    modules: allModules('memory'),
     auth: { users, refreshTokens: auth.refreshTokens, sessions: auth.sessions },
     workspace,
     task,
@@ -176,13 +173,7 @@ export function createPrismaPersistence(d: {
   const db = () => uow.db();
   return {
     kind: 'prisma',
-    modules: {
-      auth: 'prisma',
-      workspace: 'prisma',
-      task: 'prisma',
-      notifications: 'prisma',
-      attendance: 'prisma',
-    },
+    modules: allModules('prisma'),
     auth: {
       users: new PrismaUserRepository(db),
       refreshTokens: new PrismaRefreshTokenRepository(db),
@@ -212,10 +203,7 @@ export function createPrismaPersistence(d: {
       audience: new PrismaNotificationAudience(db),
       context: new PrismaNotificationContextReader(db),
     },
-    attendance: {
-      events: new PrismaAttendanceEventStore(db),
-      calendar: new PrismaWorkCalendarStore(db),
-    },
+    attendance: createPrismaAttendanceRepositories(db),
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),
     uow,
