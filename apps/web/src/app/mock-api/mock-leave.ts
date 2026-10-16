@@ -1,6 +1,6 @@
 import type * as z from 'zod';
 
-import type { LeaveRequestDto } from '@/shared/api/m3-provisional';
+import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 
 import type { MockAttendance } from './mock-attendance';
 import type { MemberContext } from './mock-guard';

@@ -5,8 +5,8 @@ import {
   LeaveBalanceDto,
   LeavePreviewDto,
   LeaveRequestDto,
-  type CreateLeaveRequestBody,
-} from '@/shared/api/m3-provisional';
+  type SubmitLeaveBody,
+} from '@taskflow/contracts/leave';
 
 const base = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}`;
 
@@ -17,7 +17,7 @@ export const leaveApi = {
       schema: z.array(LeaveRequestDto),
       query: { mine: 1, cursor, limit: 50 },
     }),
-  create: (wsId: string, body: CreateLeaveRequestBody) =>
+  create: (wsId: string, body: SubmitLeaveBody) =>
     http.post(`${base(wsId)}/leave-requests`, { schema: LeaveRequestDto, body }),
   cancel: (wsId: string, id: string, expectedVersion: number) =>
     http.post(`${base(wsId)}/leave-requests/${encodeURIComponent(id)}/cancel`, {
@@ -25,10 +25,8 @@ export const leaveApi = {
       body: { expectedVersion },
     }),
   /** Xem trước số ngày (chỉ đọc; lỗi giống khi gửi). */
-  preview: (
-    wsId: string,
-    q: Pick<CreateLeaveRequestBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>,
-  ) => http.get(`${base(wsId)}/leave-requests/preview`, { schema: LeavePreviewDto, query: q }),
+  preview: (wsId: string, q: Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>) =>
+    http.get(`${base(wsId)}/leave-requests/preview`, { schema: LeavePreviewDto, query: q }),
   myBalance: (wsId: string, year: number) =>
     http.get(`${base(wsId)}/leave-balances/me`, { schema: LeaveBalanceDto, query: { year } }),
 };

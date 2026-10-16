@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
 import { DAY_PART_NAME, LEAVE_TYPE_NAME, leaveApi, leaveKeys } from '@/entities/leave';
-import { CreateLeaveRequestBody } from '@/shared/api/m3-provisional';
+import { SubmitLeaveBody } from '@taskflow/contracts/leave';
 import { applyServerErrors } from '@/shared/lib/form-errors';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
@@ -29,12 +29,12 @@ type Props = Readonly<{ wsId: string; today: string }>;
 /** Gửi đơn nghỉ (attendance-leave.md §6). Số ngày do SERVER tính theo lịch + ngày lễ. */
 export function LeaveRequestForm({ wsId, today }: Props) {
   const create = useMutation({
-    mutationFn: (body: CreateLeaveRequestBody) => leaveApi.create(wsId, body),
+    mutationFn: (body: SubmitLeaveBody) => leaveApi.create(wsId, body),
     onSuccess: (_r, _b, _x, context) =>
       void context.client.invalidateQueries({ queryKey: leaveKeys.all(wsId) }),
   });
   const { register, handleSubmit, setError, reset, control, setValue, formState } = useForm({
-    resolver: zodResolver(CreateLeaveRequestBody),
+    resolver: zodResolver(SubmitLeaveBody),
     defaultValues: {
       type: 'ANNUAL' as const,
       startDate: today,
@@ -52,7 +52,7 @@ export function LeaveRequestForm({ wsId, today }: Props) {
   // Chỉ xem trước khi khoảng ngày hợp lệ (cùng luật với schema gửi).
   const draft =
     startDate && endDate && endDate >= startDate && (oneDay || dayPart === 'FULL')
-      ? { type, startDate, endDate, dayPart }
+      ? { type, startDate, endDate, dayPart: dayPart ?? 'FULL' }
       : null;
   // Nhiều ngày ⇒ chỉ "Cả ngày" (field disabled bị react-hook-form bỏ giá trị ⇒ không dùng disabled).
   useEffect(() => {

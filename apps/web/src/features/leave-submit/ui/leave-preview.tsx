@@ -1,11 +1,11 @@
 'use client';
 
 import { daysText, useLeavePreview } from '@/entities/leave';
-import type { CreateLeaveRequestBody } from '@/shared/api/m3-provisional';
+import type { SubmitLeaveBody } from '@taskflow/contracts/leave';
 
 import { leaveSubmitError } from '../model/leave-errors';
 
-type Draft = Pick<CreateLeaveRequestBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>;
+type Draft = Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>;
 type Props = Readonly<{ wsId: string; draft: Draft | null }>;
 
 /**

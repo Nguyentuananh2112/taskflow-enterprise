@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { LeaveRequestDto } from '@/shared/api/m3-provisional';
+import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 
 import { canCancel, daysText, leaveRange } from './labels';
 

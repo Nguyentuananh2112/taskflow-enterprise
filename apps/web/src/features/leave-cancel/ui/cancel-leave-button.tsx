@@ -5,7 +5,7 @@ import * as z from 'zod';
 
 import { leaveApi, leaveKeys, leaveRange } from '@/entities/leave';
 import { isApiError } from '@/shared/api';
-import type { LeaveRequestDto } from '@/shared/api/m3-provisional';
+import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 import { serverErrorMessage } from '@/shared/lib/form-errors';
 import { Button } from '@/shared/ui/button';
 import { Dialog, DialogClose } from '@/shared/ui/dialog';

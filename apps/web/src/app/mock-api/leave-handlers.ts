@@ -3,13 +3,13 @@ import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
 import {
-  CancelLeaveRequestBody,
-  CreateLeaveRequestBody,
+  CancelLeaveBody,
+  SubmitLeaveBody,
   LeaveBalanceDto,
   LeavePreviewDto,
   LeavePreviewQuery,
   LeaveRequestDto,
-} from '@/shared/api/m3-provisional';
+} from '@taskflow/contracts/leave';
 
 import type { MockDb } from './mock-db';
 import { requireMember } from './mock-guard';
@@ -55,7 +55,7 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
     http.post(`${base}/leave-requests`, async ({ request, params }) => {
       const ctx = requireMember(request, db, params);
       if (ctx.response) return ctx.response;
-      const body = await parseBody(request, CreateLeaveRequestBody);
+      const body = await parseBody(request, SubmitLeaveBody);
       if (body.response) return body.response;
       const b = body.data;
       const wsId = String(params.wsId);
@@ -90,7 +90,7 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
       if (ctx.response) return ctx.response;
       const denied = selfOnly(ctx.ok);
       if (denied) return denied;
-      const body = await parseBody(request, CancelLeaveRequestBody);
+      const body = await parseBody(request, CancelLeaveBody);
       if (body.response) return body.response;
       const l = leave.items.find(
         (x) => x.id === params.id && x.workspaceId === params.wsId && x.userId === ctx.ok.user.id,

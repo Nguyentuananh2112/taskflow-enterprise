@@ -1,6 +1,6 @@
 import type { LeaveDayPart, LeaveStatus, LeaveType } from '@taskflow/contracts/hr';
 
-import type { LeaveRequestDto } from '@/shared/api/m3-provisional';
+import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 
 export const LEAVE_TYPE_NAME: Readonly<Record<LeaveType, string>> = {
   ANNUAL: 'Phép năm',

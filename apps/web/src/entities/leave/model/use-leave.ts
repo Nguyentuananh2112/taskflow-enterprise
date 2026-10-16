@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 
-import type { CreateLeaveRequestBody } from '@/shared/api/m3-provisional';
+import type { SubmitLeaveBody } from '@taskflow/contracts/leave';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value';
 
 import { leaveApi } from '../api/leave.api';
 
-type Draft = Pick<CreateLeaveRequestBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>;
+type Draft = Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>;
 
 // Dưới gốc ['ws', wsId] ⇒ mất quyền workspace dọn luôn (frontend.md §3.2).
 export const leaveKeys = {

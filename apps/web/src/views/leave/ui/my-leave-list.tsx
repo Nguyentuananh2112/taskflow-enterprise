@@ -1,6 +1,6 @@
 import { LEAVE_STATUS, LEAVE_TYPE_NAME, canCancel, daysText, leaveRange } from '@/entities/leave';
 import { CancelLeaveButton } from '@/features/leave-cancel';
-import type { LeaveRequestDto } from '@/shared/api/m3-provisional';
+import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 import { cn } from '@/shared/lib/cn';
 
 type Props = Readonly<{ wsId: string; requests: readonly LeaveRequestDto[]; today: string }>;
