@@ -14,7 +14,157 @@ export interface DeclaredPending {
   readonly ticket: string;
 }
 
-export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {};
+export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
+  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 đã merge (e0b0fc9) — mục của nó đã gỡ.
+  'SEC-HR-01': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-02': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-03': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-04': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-05': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-06': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-07': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-09': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-10': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-11': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-12': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-13': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-14': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-15': {
+    ticket: 'T-040',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-28': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (route me/events — f8ddb7b)',
+  },
+  'SEC-HR-29': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (route attendance/events — f8ddb7b)',
+  },
+  'SEC-HR-17': {
+    ticket: 'T-040',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-18': {
+    ticket: 'T-040',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-19': {
+    ticket: 'T-040',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-20': {
+    ticket: 'T-040',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-21': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-22': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-24': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-25': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'SEC-HR-26': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-01': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-02': {
+    ticket: 'T-038',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-03': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-04': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-05': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-06': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-07': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-08': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-09': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-10': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-11': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+  'CC-HR-12': {
+    ticket: 'T-039',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
+  },
+};
 
 /** Tiền tố tên ca skip hợp lệ: `[PENDING <ticket>] <id> — <title>` (reporter đọc id sau `] `). */
 export const PENDING_PREFIX = '[PENDING ';
@@ -26,7 +176,11 @@ export const PENDING_PREFIX = '[PENDING ';
  * vẫn xanh — review B), hoặc (b) id ở đây không còn là todo trong file đã chạy (viết thân xong ⇒ xóa mục
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
-export const TODO_BUDGET: Readonly<Record<string, string>> = {};
+export const TODO_BUDGET: Readonly<Record<string, string>> = {
+  // T-042: SEC-HR-23 cần process API riêng hops=0; CC-HR-13 cần route ngày lễ + đếm ngày (T-038/T-039).
+  'SEC-HR-23': 'hr.sec.ts',
+  'CC-HR-13': 'hr-races.sec.ts',
+};
 
 export interface OutOfScopeCase {
   /** File `.sec.ts` khai báo ca (`outOfScope(id, title, coveredBy)`). */
