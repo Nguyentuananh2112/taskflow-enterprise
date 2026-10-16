@@ -3,13 +3,16 @@
 # Bản rõ KHÔNG BAO GIỜ chạm đĩa: pg_dump | age | aws s3 cp - (luồng trong bộ nhớ).
 #
 # Biến môi trường:
-#   BACKUP_DATABASE_URL     postgresql://… — role chỉ cần đọc (khuyến nghị role riêng có SELECT, xem runbook)
+#   BACKUP_DATABASE_URL     postgresql://user@host/db — role chỉ cần đọc (khuyến nghị role riêng có SELECT,
+#                           xem runbook). KHÔNG kèm mật khẩu: URL nằm trong argv của pg_dump (ps, /proc).
+#   PGPASSWORD / PGPASSFILE mật khẩu role backup (libpq đọc trực tiếp — env chỉ cùng UID đọc được)
 #   BACKUP_AGE_RECIPIENTS   một hoặc nhiều public key age (age1…), cách nhau khoảng trắng.
 #                           CHỈ public key — khóa giải mã không bao giờ nằm trên máy chạy backup.
 #   BACKUP_S3_BUCKET        tên bucket
 #   BACKUP_S3_PREFIX        tiền tố khóa (mặc định "taskflow/")
 #   BACKUP_S3_ENDPOINT      endpoint S3 tương thích (bỏ trống = AWS)
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION — credential CHỈ có quyền PutObject
+#   BACKUP_EXPECTED_SIZE    (tùy chọn) ước lượng byte bản mã ⇒ `--expected-size` (stdin mặc định ≤ ~78 GiB)
 #   BACKUP_NOW              (chỉ test) thời điểm ISO thay cho `date -u`
 #
 # Tầng giữ (devops.md §4.3) chọn LÚC TẢI LÊN, xóa cũ do lifecycle rule của bucket — credential
@@ -25,6 +28,12 @@ set -euo pipefail
 : "${BACKUP_AGE_RECIPIENTS:?thiếu BACKUP_AGE_RECIPIENTS (public key age)}"
 : "${BACKUP_S3_BUCKET:?thiếu BACKUP_S3_BUCKET}"
 PREFIX="${BACKUP_S3_PREFIX:-taskflow/}"
+case "$BACKUP_DATABASE_URL" in
+  *://*:*@*)
+    echo "BACKUP FAIL: BACKUP_DATABASE_URL chứa mật khẩu (lộ qua argv) — dùng PGPASSWORD / PGPASSFILE" >&2
+    exit 2
+    ;;
+esac
 
 now="${BACKUP_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 stamp="$(date -u -d "$now" +%Y%m%dT%H%M%SZ)"
@@ -43,6 +52,8 @@ done
 
 s3=(aws s3)
 [ -n "${BACKUP_S3_ENDPOINT:-}" ] && s3+=(--endpoint-url "$BACKUP_S3_ENDPOINT")
+size=()
+[ -n "${BACKUP_EXPECTED_SIZE:-}" ] && size=(--expected-size "$BACKUP_EXPECTED_SIZE")
 
 # Kiểm file dump đọc được TRƯỚC khi mã hóa (devops.md §4.4: "pg_restore --list sau mỗi lần dump")
 # mà không cần khóa giải mã trên máy này: một nhánh của luồng đi qua `pg_restore --file=/dev/null`.
@@ -57,7 +68,7 @@ check_pid=$!
 pg_dump --format=custom --compress=6 --no-password "$BACKUP_DATABASE_URL" \
   | tee "$fifo" \
   | age "${recipients[@]}" \
-  | "${s3[@]}" cp --only-show-errors - "s3://${BACKUP_S3_BUCKET}/${key}"
+  | "${s3[@]}" cp --only-show-errors "${size[@]}" - "s3://${BACKUP_S3_BUCKET}/${key}"
 
 wait "$check_pid" || { echo "BACKUP FAIL: pg_restore không đọc hết được dump" >&2; exit 3; }
 printf '%s\n' "$stamp" | "${s3[@]}" cp --only-show-errors - "s3://${BACKUP_S3_BUCKET}/${key}.ok"

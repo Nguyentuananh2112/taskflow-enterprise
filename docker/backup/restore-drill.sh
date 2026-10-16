@@ -50,7 +50,14 @@ recipient="$(age-keygen -y "$identity")"
 
 # 3. Backup thật bằng đúng script production.
 log "backup.sh"
-key="$(BACKUP_DATABASE_URL="$DRILL_SOURCE_URL" BACKUP_AGE_RECIPIENTS="$recipient" backup.sh)"
+# Như production: mật khẩu qua PGPASSWORD, URL không kèm mật khẩu. backup.sh phải TỪ CHỐI URL có
+# mật khẩu (exit 2 — lộ qua argv của pg_dump), kiểm ngay ở đây.
+rc=0
+BACKUP_DATABASE_URL="$DRILL_SOURCE_URL" BACKUP_AGE_RECIPIENTS="$recipient" backup.sh >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "backup.sh với URL có mật khẩu: exit $rc (phải là 2 — từ chối)"
+src_pass="$(printf '%s' "$DRILL_SOURCE_URL" | sed -nE 's#^[a-z]+://[^:@/]+:([^@]*)@.*#\1#p')"
+src_url="$(printf '%s' "$DRILL_SOURCE_URL" | sed -E 's#^([a-z]+://[^:@/]+):[^@]*@#\1@#')"
+key="$(PGPASSWORD="$src_pass" BACKUP_DATABASE_URL="$src_url" BACKUP_AGE_RECIPIENTS="$recipient" backup.sh)"
 log "đã tải lên: $key"
 "${s3[@]}" ls "s3://${BACKUP_S3_BUCKET}/${key}.ok" >/dev/null || fail "thiếu dấu hoàn tất ${key}.ok"
 
