@@ -86,11 +86,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Cấm `npx prisma` (ADR-061 — sẽ kéo Prisma 8 RC)
-        run: |
-          if git grep -nE 'npx +prisma' -- ':!*.md' ':!.github/workflows/ci.yml'; then
-            echo "::error::Dùng 'pnpm exec prisma', không dùng 'npx prisma' (ADR-061)"; exit 1
-          fi
+      # Bỏ qua dòng chú thích + *.md; cũng chạy trong `pnpm verify` (ADR-061 — npx có thể kéo Prisma chưa ghim).
+      - name: Cấm npx cho Prisma CLI (ADR-061)
+        run: node .github/scripts/check-no-npx-prisma.mjs
       - run: pnpm typecheck
       # prettier --check + ESLint (luật kiến trúc ADR-004/093) + dependency-cruiser + .env.example ↔ env.ts (ADR-098).
       - run: pnpm lint
