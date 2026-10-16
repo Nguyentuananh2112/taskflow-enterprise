@@ -1,20 +1,29 @@
 import { ListNotificationsQuery, NotificationParams } from '@taskflow/contracts';
 import { Router, type Request, type RequestHandler, type Response } from 'express';
+import * as z from 'zod';
 
 import type { HttpResponder } from '../../../core/http/envelope';
-import { afterFromCursor, pageMeta } from '../../../core/http/pagination';
+import { decodeCursor, encodeCursor } from '../../../core/http/cursor';
 import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
 import { requireUser } from '../../../core/http/request-user';
 import { validate } from '../../../core/http/validate';
 import type { NotificationQueries } from '../application/notification.queries';
 
-/** Mount dưới `/api/v1` (container) — cursor gắn với endpoint này (`afterFromCursor` kiểm uuid). */
+/** Mount dưới `/api/v1` (container). */
 export const NOTIFICATIONS_PATH = '/me/notifications';
+/** Cursor opaque gắn với endpoint này; khóa keyset `(createdAt, id)` validate trước khi chạm DB (X5). */
 const CURSOR_KIND = 'notifications';
+const CursorKey = z.object({ createdAt: z.iso.datetime(), id: z.uuid() });
 
 export interface NotificationControllerDeps {
   queries: Pick<NotificationQueries, 'list' | 'unreadCount' | 'markRead' | 'markAllRead'>;
   responder: HttpResponder;
+}
+
+function afterOf(cursor: string | undefined) {
+  if (cursor === undefined) return undefined;
+  const key = decodeCursor(cursor, CURSOR_KIND, CursorKey);
+  return { createdAt: new Date(key.createdAt), id: key.id };
 }
 
 /** userId luôn lấy từ access token (`requireUser`) — không route nào nhận userId của người khác. */
@@ -24,10 +33,17 @@ export class NotificationController {
   list = async (req: Request, res: Response) => {
     const query = req.query as unknown as ListNotificationsQuery;
     const page = await this.d.queries.list(requireUser(req).id, {
-      after: afterFromCursor(CURSOR_KIND, query.cursor),
+      after: afterOf(query.cursor),
       limit: query.limit,
     });
-    this.d.responder.ok(res, page.items, pageMeta(CURSOR_KIND, page.nextAfter, query.limit));
+    const next = page.nextAfter;
+    this.d.responder.ok(res, page.items, {
+      nextCursor: next
+        ? encodeCursor(CURSOR_KIND, { createdAt: next.createdAt.toISOString(), id: next.id })
+        : null,
+      hasMore: next !== null,
+      limit: query.limit,
+    });
   };
 
   unreadCount = async (req: Request, res: Response) => {

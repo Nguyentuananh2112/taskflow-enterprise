@@ -12,6 +12,7 @@ import type {
   INotificationContextReader,
   INotificationStore,
   LeaveSummary,
+  NotificationKey,
 } from './ports';
 
 /** = `NotificationDto` của contracts (parity ở notification.queries.test.ts). */
@@ -44,14 +45,18 @@ export class NotificationQueries {
 
   async list(
     userId: string,
-    page: { after?: string | undefined; limit: number },
-  ): Promise<{ items: NotificationView[]; nextAfter: string | null }> {
+    page: { after?: NotificationKey | undefined; limit: number },
+  ): Promise<{ items: NotificationView[]; nextAfter: NotificationKey | null }> {
     const { scope, names } = await this.#scope(userId);
     const rows = await this.d.store.list(scope, { after: page.after, limit: page.limit + 1 });
     const hasMore = rows.length > page.limit;
     const items = rows.slice(0, page.limit);
     const views = await this.#views(items, names);
-    return { items: views, nextAfter: hasMore ? (items.at(-1)?.id ?? null) : null };
+    const last = items.at(-1);
+    return {
+      items: views,
+      nextAfter: hasMore && last ? { createdAt: last.createdAt, id: last.id } : null,
+    };
   }
 
   async unreadCount(userId: string): Promise<number> {

@@ -8,15 +8,23 @@ import type { NotificationRecord, VisibilityScope } from '../domain/notification
  */
 export interface INotificationStore {
   addMany(records: readonly NotificationRecord[]): Promise<void>;
-  /** Mới nhất trước (id uuid v7 tăng theo thời gian — D9), keyset `id < after`, tối đa `limit`. */
+  /**
+   * Mới nhất trước theo `(createdAt, id)` giảm dần — uuid v7 trong cùng mili giây không theo thứ tự nên
+   * không sắp theo id riêng; fan-out cùng `createdAt` phân định bằng id. Keyset: sau `after`.
+   */
   list(
     scope: VisibilityScope,
-    page: { after?: string | undefined; limit: number },
+    page: { after?: NotificationKey | undefined; limit: number },
   ): Promise<NotificationRecord[]>;
   countUnread(scope: VisibilityScope): Promise<number>;
   /** Đánh dấu một thông báo (idempotent). `false` ⇒ không tồn tại / không thấy được ⇒ 404. */
   markRead(scope: VisibilityScope, id: string, at: Date): Promise<boolean>;
   markAllRead(scope: VisibilityScope, at: Date): Promise<number>;
+}
+
+export interface NotificationKey {
+  createdAt: Date;
+  id: string;
 }
 
 export interface MemberAccess {

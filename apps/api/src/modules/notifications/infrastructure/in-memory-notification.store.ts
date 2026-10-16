@@ -1,5 +1,9 @@
 import { isVisible, type NotificationRecord, type VisibilityScope } from '../domain/notification';
-import type { INotificationStore } from '../application/ports';
+import type { INotificationStore, NotificationKey } from '../application/ports';
+
+/** Thứ tự giảm dần theo (createdAt, id) — cùng thứ tự với ORDER BY của bản Prisma. */
+const newerFirst = (a: NotificationKey, b: NotificationKey) =>
+  b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 
 /** InMemory (dev/test) — tham gia snapshot/rollback của `InMemoryUnitOfWork` như repository khác. */
 export class InMemoryNotificationStore implements INotificationStore {
@@ -24,12 +28,12 @@ export class InMemoryNotificationStore implements INotificationStore {
 
   list(
     scope: VisibilityScope,
-    page: { after?: string | undefined; limit: number },
+    page: { after?: NotificationKey | undefined; limit: number },
   ): Promise<NotificationRecord[]> {
     const { after } = page;
     const rows = this.#visible(scope)
-      .filter((r) => after === undefined || r.id < after)
-      .sort((a, b) => (a.id < b.id ? 1 : -1))
+      .filter((r) => after === undefined || newerFirst(r, after) > 0)
+      .sort(newerFirst)
       .slice(0, page.limit);
     return Promise.resolve(rows.map((r) => ({ ...r })));
   }

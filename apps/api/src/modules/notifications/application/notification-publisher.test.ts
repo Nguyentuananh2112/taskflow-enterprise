@@ -108,6 +108,25 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     expect(h2.realtime.sent).toEqual([]);
   });
 
+  it('L1: phát cho một người nhận lỗi ⇒ người nhận khác vẫn nhận event (mỗi bản ghi một hook)', async () => {
+    const h = createNotificationHarness();
+    const original = h.realtime.notifyNotification.bind(h.realtime);
+    h.realtime.notifyNotification = (input, meta) =>
+      input.recipientId === U.olivia
+        ? Promise.reject(new Error('socket lỗi'))
+        : original(input, meta);
+    await h.notifyInTx({
+      workspaceId: W1,
+      type: 'LEAVE_SUBMITTED',
+      refId: REQ,
+      actorId: U.mia,
+      recipient: { kind: 'hr' },
+    });
+    expect(h.uow.hookErrors).toHaveLength(1);
+    expect(h.realtime.sent.map((e) => e.input.recipientId)).toEqual([U.hana]);
+    expect(h.store.rows()).toHaveLength(2); // dòng bền vẫn còn (client tải lại khi kết nối lại)
+  });
+
   it('ws chỉ có actor là HR ⇒ không ghi, không phát', async () => {
     const h = createNotificationHarness();
     await h.notifyInTx({

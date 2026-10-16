@@ -64,9 +64,11 @@ export class NotificationPublisher {
     await this.d.store.addMany(records);
 
     const meta = { actorId: input.actorId, originClientId: null };
-    this.d.uow.afterCommit(async () => {
-      for (const r of records) {
-        await this.d.realtime.notifyNotification(
+    // Mỗi người nhận một hook: UoW cô lập lỗi theo hook ⇒ một lần phát lỗi không làm mất event của
+    // người nhận sau (review B — L1).
+    for (const r of records) {
+      this.d.uow.afterCommit(() =>
+        this.d.realtime.notifyNotification(
           {
             recipientId: r.recipientId,
             notificationId: r.id,
@@ -74,9 +76,9 @@ export class NotificationPublisher {
             workspaceId: r.workspaceId,
           },
           meta,
-        );
-      }
-    });
+        ),
+      );
+    }
   }
 
   async #recipientsOf(input: NotifyInput): Promise<string[]> {

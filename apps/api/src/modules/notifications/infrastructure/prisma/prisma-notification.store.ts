@@ -4,7 +4,7 @@ import {
   type NotificationRecord,
   type VisibilityScope,
 } from '../../domain/notification';
-import type { INotificationStore } from '../../application/ports';
+import type { INotificationStore, NotificationKey } from '../../application/ports';
 
 /** = `uow.db()` của `PrismaUnitOfWork` — trong `run()` là transaction của bên gọi (ADR-012, ADR-123). */
 export type DbProvider = () => Prisma.TransactionClient;
@@ -44,13 +44,26 @@ export class PrismaNotificationStore implements INotificationStore {
 
   async list(
     scope: VisibilityScope,
-    page: { after?: string | undefined; limit: number },
+    page: { after?: NotificationKey | undefined; limit: number },
   ): Promise<NotificationRecord[]> {
+    const { after } = page;
     const rows = await this.db().notification.findMany({
       where: {
-        AND: [visibleWhere(scope), ...(page.after ? [{ id: { lt: page.after } }] : [])],
+        AND: [
+          visibleWhere(scope),
+          ...(after
+            ? [
+                {
+                  OR: [
+                    { createdAt: { lt: after.createdAt } },
+                    { createdAt: after.createdAt, id: { lt: after.id } },
+                  ],
+                },
+              ]
+            : []),
+        ],
       },
-      orderBy: { id: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: page.limit,
       select: SELECT,
     });

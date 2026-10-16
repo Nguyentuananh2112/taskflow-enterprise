@@ -129,6 +129,27 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     expect(await h.queries.unreadCount(U.mia)).toBe(1);
   });
 
+  it('phân trang keyset (createdAt, id): createdAt mới hơn đứng trước dù id nhỏ hơn', async () => {
+    const h = createNotificationHarness();
+    const notify = () =>
+      h.notifyInTx({
+        workspaceId: W1,
+        type: 'ATTENDANCE_ADJUSTED',
+        refId: REQ,
+        actorId: U.hana,
+        recipient: { kind: 'user', userId: U.mia },
+      });
+    await notify();
+    h.clock.advance(-60_000); // id tăng nhưng createdAt lùi (uuid v7 cùng ms không có thứ tự)
+    await notify();
+    const [older, newer] = h.store.rows().sort((a, b) => (a.id < b.id ? -1 : 1));
+    const p1 = await h.queries.list(U.mia, { limit: 1 });
+    expect(p1.items.map((n) => n.id)).toEqual([older?.id]);
+    const p2 = await h.queries.list(U.mia, { after: p1.nextAfter ?? undefined, limit: 1 });
+    expect(p2.items.map((n) => n.id)).toEqual([newer?.id]);
+    expect(p2.nextAfter).toBeNull();
+  });
+
   it('phân trang keyset: mới nhất trước, nextAfter = id cuối trang, trang sau không lặp', async () => {
     const h = createNotificationHarness();
     for (let i = 0; i < 5; i += 1) {
@@ -147,7 +168,7 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
       .reverse();
     const p1 = await h.queries.list(U.mia, { limit: 2 });
     expect(p1.items.map((n) => n.id)).toEqual(all.slice(0, 2));
-    expect(p1.nextAfter).toBe(all[1]);
+    expect(p1.nextAfter).toEqual({ createdAt: h.clock.now(), id: all[1] }); // cùng createdAt ⇒ id phân định
     const p2 = await h.queries.list(U.mia, { after: p1.nextAfter ?? undefined, limit: 2 });
     expect(p2.items.map((n) => n.id)).toEqual(all.slice(2, 4));
     const p3 = await h.queries.list(U.mia, { after: p2.nextAfter ?? undefined, limit: 2 });
