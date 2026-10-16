@@ -103,6 +103,7 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 | `GET attendance/me/events?date=YYYY-MM-DD` | `attendance:self` | lượt của chính mình kèm IP/UA (NĐ 13 Đ.14, §9) |
 | `GET/POST attendance/schedules` · `GET/PUT/DELETE attendance/holidays/:date` | đọc: thành viên · ghi: `hr:manage` | lịch mới chỉ hiệu lực từ hôm nay trở đi |
 | `POST leave-requests` · `GET leave-requests?mine=1` · `POST leave-requests/:id/cancel` | `leave:self` | hủy: của mình, PENDING hoặc APPROVED chưa tới ngày bắt đầu |
+| `GET leave-requests/preview?type&startDate&endDate&dayPart` | `leave:self` | `{ days, remainingDays }` (null nếu không phải ANNUAL); kiểm tra như submit, không ghi, không khóa. `reason` của đơn **tùy chọn** (trim, ≤ 1000); ghi chú từ chối tùy chọn; thu hồi bắt buộc lý do (D, TL duyệt) |
 | `GET leave-requests?status=` · `POST leave-requests/:id/approve` · `…/reject` · `…/revoke` | `hr:manage` | gửi `expectedVersion`; không tự duyệt (trừ OWNER) |
 | `GET leave-balances/me?year=` · `GET leave-balances?year=` · `PATCH leave-balances/:userId/:year` | self · `hr:manage` | |
 | `PUT members/:userId/grants` | `hr:grant` (OWNER) | |
