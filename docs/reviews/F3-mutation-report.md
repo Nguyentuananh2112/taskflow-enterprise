@@ -185,6 +185,24 @@ Thông điệp lỗi: `names.ts:17, 18, 19, 34`; `project.ts:27, 55`; `add-membe
 
 Theo nhóm: domain 42 = 6/2/34/0 · application 103 = 58/25/16/4 · infrastructure 3 = 1/2/0/0 · presentation 13 = 5/7/1/0 (GAP/EQ/LOW/INT).
 
+**Chạy lại sau test của A** (`test/F3-task-gaps`, merge `eee6177`; main 97d8349, 2026-10-16 19:57–20:36, concurrency 1 vì người dùng đang test dev server). Cả 4 nhóm exit 0:
+
+| Nhóm | Trước | Sau | Sống |
+|---|---|---|---|
+| task-domain | 84.03% | **87.40%** | 33 / 262 |
+| task-application | 82.45% | **92.84%** | 42 / 587 |
+| task-infrastructure (rank) | 86.36% | **94.44%** | 1 / 18 |
+| task-presentation | 87.50% | **93.20%** | 7 / 103 |
+| **task** | 83.50% | **91.44%** | 83 / 970 |
+
+Mẫu số giảm 6 vì A xóa mã chết (getter `Task.number`, mặc định `checkTask`, nhánh `n === 0` của `spread`).
+
+**T-1, T-2 (P1) và T-3..T-28 đã bị giết**, trừ một mảnh của T-23. T-2 bị giết bởi unit (spy `lockColumn(P1,'TODO')` trước `lastRank`). Integration CC-RB02 không nằm trong runner Stryker; A đã cấy tay mutant, CC-RB02 đỏ 3/3.
+
+**Còn lại (P3):** `create-task.use-case.ts:38` `new ResourceNotFoundError('project')` → `''` vẫn sống. Nhánh này là project biến mất giữa lúc đọc và lúc cấp số. Test đề xuất: `allocateTaskNumber` trả `null` + `findInWorkspace` trả `null` ⇒ `details = {resource:'project'}`.
+
+82 mutant còn sống khác đều là [EQ]/[LOW] đã phân loại dưới đây: code/message/path của ValidationError, `task-fields:53` (vế ngày), log/catch best-effort của rebalancer, `move:87/88 <=`, `rebalancer:65`, cleaner, policy, `'save'`, `update:19–22`, `realtime:19`, `task-dto:16`, `queries:29/30`, `fractional:10`, guard wiring, cờ `defineProperty`, `'/'` của Express.
+
 #### [GAP]
 
 | # | Ưu tiên | Vị trí | Đột biến sống | Vì sao test không bắt | Test đề xuất |
