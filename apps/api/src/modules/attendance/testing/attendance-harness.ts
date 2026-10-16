@@ -53,7 +53,7 @@ export const key = (n: number) => `0199e5a2-0000-7000-8000-${String(n).padStart(
 
 export async function createAttendanceHarness(
   now = '2026-11-17 07:55',
-  backend: AttendanceBackend = inMemoryAttendanceBackend(W1),
+  backend: AttendanceBackend = inMemoryAttendanceBackend(),
 ) {
   await backend.seed();
   const clock = new FakeClock(vnTime(now));

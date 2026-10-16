@@ -30,9 +30,9 @@ export interface AttendanceBackend {
 export const byTime = (a: AttendanceEventRecord, b: AttendanceEventRecord) =>
   a.occurredAt.getTime() - b.occurredAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-export function inMemoryAttendanceBackend(workspaceId: string): AttendanceBackend {
+export function inMemoryAttendanceBackend(): AttendanceBackend {
   const events = new InMemoryAttendanceEventStore();
-  const calendar = new InMemoryWorkCalendarStore(workspaceId);
+  const calendar = new InMemoryWorkCalendarStore();
   return {
     events,
     calendar,

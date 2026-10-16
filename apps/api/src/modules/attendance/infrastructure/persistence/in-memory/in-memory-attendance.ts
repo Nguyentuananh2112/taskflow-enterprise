@@ -132,9 +132,8 @@ export class InMemoryAttendanceEventStore implements IAttendanceEventStore {
 }
 
 export class InMemoryWorkCalendarStore implements IWorkCalendarStore {
-  readonly versions: ScheduleVersionRecord[] = [];
+  readonly versions: (ScheduleVersionRecord & { workspaceId: string })[] = [];
   readonly holidayRows: (HolidayRecord & { workspaceId: string })[] = [];
-  constructor(private readonly workspaceId: string) {}
 
   scheduleVersions(workspaceId: string): Promise<WorkSchedule[]> {
     return this.scheduleRecords(workspaceId);
@@ -142,20 +141,19 @@ export class InMemoryWorkCalendarStore implements IWorkCalendarStore {
 
   scheduleRecords(workspaceId: string) {
     return Promise.resolve(
-      workspaceId === this.workspaceId
-        ? this.versions
-            .map((v) => ({ ...v }))
-            .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1))
-        : [],
+      this.versions
+        .filter((v) => v.workspaceId === workspaceId)
+        .map(({ workspaceId: _w, ...v }) => v)
+        .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
     );
   }
 
   saveScheduleVersion(workspaceId: string, record: ScheduleVersionRecord) {
-    if (workspaceId === this.workspaceId) {
-      const i = this.versions.findIndex((v) => v.effectiveFrom === record.effectiveFrom);
-      if (i >= 0) this.versions.splice(i, 1);
-      this.versions.push({ ...record });
-    }
+    const i = this.versions.findIndex(
+      (v) => v.workspaceId === workspaceId && v.effectiveFrom === record.effectiveFrom,
+    );
+    if (i >= 0) this.versions.splice(i, 1);
+    this.versions.push({ ...record, workspaceId });
     return Promise.resolve();
   }
 

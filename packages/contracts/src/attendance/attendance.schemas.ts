@@ -42,6 +42,12 @@ export type AttendanceMonthQuery = z.infer<typeof AttendanceMonthQuery>;
  */
 export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key';
 export const IdempotencyKey = Uuid;
+/** Header bắt buộc của check-in/out (OpenAPI `in: header`). */
+export const IdempotencyKeyHeaders = z.object({ [IDEMPOTENCY_KEY_HEADER]: IdempotencyKey });
+
+/** `:eventId` của `POST attendance/events/:eventId/void`. */
+export const AttendanceEventParams = z.object({ wsId: Uuid, eventId: Uuid });
+export type AttendanceEventParams = z.infer<typeof AttendanceEventParams>;
 
 /** Mốc ca (phút kể từ 00:00 giờ của lịch). */
 export const WorkShiftDto = z.object({
@@ -243,7 +249,7 @@ export const HolidayListQuery = z.strictObject({
 });
 export type HolidayListQuery = z.infer<typeof HolidayListQuery>;
 
-export const HolidayDateParams = z.strictObject({ date: DateOnly });
+export const HolidayDateParams = z.object({ wsId: Uuid, date: DateOnly });
 export type HolidayDateParams = z.infer<typeof HolidayDateParams>;
 
 /**

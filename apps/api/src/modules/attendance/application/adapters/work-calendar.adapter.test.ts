@@ -8,13 +8,13 @@ const W1 = 'w1';
 
 describe('AttendanceWorkCalendar (WorkCalendarPort của leave)', () => {
   it('chưa lưu lịch ⇒ DEFAULT_SCHEDULE: T2–T7 làm, CN nghỉ; đủ mọi ngày gồm hai đầu', async () => {
-    const days = await new AttendanceWorkCalendar(
-      inMemoryAttendanceBackend(W1).calendar,
-    ).workingDays({
-      workspaceId: W1,
-      from: '2026-11-14',
-      to: '2026-11-16',
-    });
+    const days = await new AttendanceWorkCalendar(inMemoryAttendanceBackend().calendar).workingDays(
+      {
+        workspaceId: W1,
+        from: '2026-11-14',
+        to: '2026-11-16',
+      },
+    );
     expect(days).toEqual([
       { date: '2026-11-14', isWorkday: true, isHoliday: false, schedule: DEFAULT_SCHEDULE },
       { date: '2026-11-15', isWorkday: false, isHoliday: false, schedule: DEFAULT_SCHEDULE },
@@ -23,7 +23,7 @@ describe('AttendanceWorkCalendar (WorkCalendarPort của leave)', () => {
   });
 
   it('đổi lịch giữa khoảng ⇒ mỗi ngày theo phiên bản của nó; ngày lễ của đúng workspace; from > to ⇒ rỗng', async () => {
-    const backend = inMemoryAttendanceBackend(W1);
+    const backend = inMemoryAttendanceBackend();
     const store = backend.calendar;
     const mf = {
       ...DEFAULT_SCHEDULE,
