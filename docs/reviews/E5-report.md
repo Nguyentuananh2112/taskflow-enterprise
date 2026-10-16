@@ -40,7 +40,12 @@ Engineer E · 2026-10-16 · branch `feat/E-layout-g2` (từ main `d647383`)
 - Không thêm E2E layout: kiểm bằng script đo một lần. Nếu F muốn chặn hồi quy, gợi ý 1 assert `logo.left === h1.left` ở 360/1440 trong bộ viewport của F2.
 
 ## Kết quả lệnh
-Xem phần DoD ở cuối (điền sau khi chạy).
+Trên `741dee1` (đã rebase lên main `6900a97`, `pnpm install --frozen-lockfile`):
+- `VITEST_MAX_WORKERS=2 pnpm verify` ⇒ **exit 0** (lint + typecheck + test + audit; vitest báo 173 file / 1709 test passed; `No known vulnerabilities found`). Không đặt `REQUIRE_INTEGRATION`/Valkey — thay đổi chỉ ở web, test Valkey/DB của api để cổng F/Tech Lead.
+- Riêng web trước rebase: `vitest run` 450/450, exit 0; `tsc --noEmit` exit 0.
+- `pnpm --filter web build` (next build prod) ⇒ **exit 0** (lượt máy Tech Lead cho phép); `next start` + đo lại như bảng trên.
+- Hook pre-commit (prettier, gitleaks, eslint) chạy đủ, không bỏ qua.
+- Đã tắt next dev / next start :3021 sau khi đo.
 
 ## Rủi ro / câu hỏi mở
 - Màn danh sách (workspace, dự án, thành viên) giờ rộng tới 1232px ở 1440 thay vì 896–1024px — lưới thẻ vẫn 2 cột (`sm:grid-cols-2`), thẻ rộng hơn. Nếu Tech Lead muốn hẹp hơn: thêm `max-w-5xl` vào `className` của `PageMain` (vẫn căn trái).
