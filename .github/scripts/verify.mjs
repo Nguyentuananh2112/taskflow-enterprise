@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 
 const steps = [
   ['lint (prettier · eslint · depcruise · .env.example ↔ env.ts)', 'pnpm lint'],
+  ['cấm npx cho Prisma (ADR-061, như CI)', 'node .github/scripts/check-no-npx-prisma.mjs'],
   ['typecheck', 'pnpm typecheck'],
   ['test (unit + tầng I có Valkey nếu chạy)', 'pnpm test'],
   ['audit --prod (high/critical)', 'pnpm audit --prod --audit-level high'],
