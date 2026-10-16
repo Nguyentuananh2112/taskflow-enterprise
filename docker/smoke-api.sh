@@ -71,10 +71,18 @@ fi
 echo "ok  /readyz $ready"
 
 docker stop -t 30 "$VK" >/dev/null
-# Không dùng file tạm (curl gốc Windows và Git Bash hiểu /tmp khác nhau): body + mã HTTP ở dòng cuối.
-resp="$(curl -s -w '\n%{http_code}' "$BASE/readyz" || true)"
-code="$(printf '%s\n' "$resp" | tail -n 1)"
-body="$(printf '%s\n' "$resp" | sed '$d')"
+# /readyz cache kết quả probe READINESS_CACHE_MS (1 s — T-031, 6945d14) ⇒ ngay sau khi Valkey dừng có thể còn nhận
+# "ok" cũ (runner GitHub dừng container < 1 s; Docker Desktop chậm hơn nên local không lộ). Hỏi lại tới 10 lần × 1 s
+# (giới hạn /readyz 60/phút — vòng trên tối đa 20 lần). Không dùng file tạm (curl gốc Windows và Git Bash hiểu /tmp
+# khác nhau): body + mã HTTP ở dòng cuối.
+code="" body=""
+for _ in $(seq 1 10); do
+  resp="$(curl -s -w '\n%{http_code}' "$BASE/readyz" || true)"
+  code="$(printf '%s\n' "$resp" | tail -n 1)"
+  body="$(printf '%s\n' "$resp" | sed '$d')"
+  [ "$code" = "200" ] && echo "$body" | grep -q '"valkey":"degraded"' && break
+  sleep 1
+done
 if ! { [ "$code" = "200" ] && echo "$body" | grep -q '"valkey":"degraded"'; }; then
   fail "Valkey chết: /readyz $code $body"
 fi
