@@ -25,6 +25,7 @@ import type { IAccessTokenService } from '../modules/auth/application/ports/acce
 import type { IPasswordHasher } from '../modules/auth/application/ports/password-hasher.port';
 import type { PasswordPolicy } from '../modules/auth/domain/password-policy';
 import type { IRolePermissions } from '../modules/task/application/task-actor';
+import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import {
   NOTIFICATIONS_PATH,
@@ -35,8 +36,9 @@ import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
-import { attendanceMembership, noApprovedLeaves } from './attendance-adapters';
+import { attendanceMembership } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
+import { LateApprovedLeaves, wireLeave } from './leave-wiring';
 import type { Persistence } from './persistence';
 import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
@@ -150,9 +152,10 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
   });
   workspaceRef.current = workspace;
+  const lateLeaves = new LateApprovedLeaves(); // leave ↔ attendance phụ thuộc vòng ⇒ gắn leave sau
   const attendance = createAttendanceModule({
     repos: persistence.attendance,
-    leaves: noApprovedLeaves, // TODO(T-039): leave.approvedLeaves (D nối, tham chiếu trễ)
+    leaves: lateLeaves,
     tenures: workspace.tenure,
     users: persistence.task.users,
     hrAccess: workspace.hrAccess,
@@ -189,6 +192,10 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
 
+  const leave = lateLeaves.bind(
+    wireLeave(d, { workspace, attendance, notifications, auth }, { responder, limit }),
+  );
+
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
@@ -197,6 +204,8 @@ export function createContainer(d: ContainerDeps): Container {
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
     // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
     { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
+    // Leave cũng TRƯỚC /workspaces (cùng lý do với Task).
+    { path: LEAVE_PATH, router: leave.router },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
   ];

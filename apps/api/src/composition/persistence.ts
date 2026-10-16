@@ -17,6 +17,8 @@ import { PrismaRefreshTokenPurger } from '../modules/auth/infrastructure/persist
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
 import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
+import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
 import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
 import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
@@ -53,6 +55,7 @@ import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persi
 import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
+import { memoryLeaveRepositories, prismaLeaveRepositories } from './leave-adapters';
 import {
   InMemoryNotificationAudience,
   InMemoryNotificationContextReader,
@@ -64,11 +67,20 @@ import {
 } from './task-mirrors';
 import { MirroringUserRepository } from './users';
 
-export type StorageKind = 'memory' | 'prisma';
+import type { StorageKind } from './persistence-guard';
+
+export { assertPersistenceAllowed, type StorageKind } from './persistence-guard';
 
 /** Mọi module cùng một loại lưu trữ (T-020: không chạy lai). */
 const allModules = (kind: StorageKind) =>
-  ({ auth: kind, workspace: kind, task: kind, notifications: kind, attendance: kind }) as const;
+  ({
+    auth: kind,
+    workspace: kind,
+    task: kind,
+    notifications: kind,
+    attendance: kind,
+    leave: kind,
+  }) as const;
 
 export interface Persistence {
   kind: StorageKind;
@@ -82,6 +94,8 @@ export interface Persistence {
   notifications: NotificationRepositories;
   /** Chấm công (T-038): lượt chấm + lịch / ngày lễ. */
   attendance: AttendanceRepositories;
+  /** Module leave (T-039): đơn nghỉ + số dư + phía đọc. */
+  leave: LeaveRepositories;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
   workspacePurger?: IWorkspacePurger;
   /** Dọn refresh token hết hạn (G2 S2) — chỉ có ở Prisma, như `workspacePurger`. */
@@ -95,6 +109,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const ws = createInMemoryWorkspaceRepositories();
   const task = createInMemoryTaskRepositories();
   const attendance = createInMemoryAttendanceRepositories();
+  const leaveStore = new InMemoryLeaveRepository();
 
   // Bản sao của Workspace/Auth trong InMemoryTaskDatabase (Prisma đọc bảng chung nên không cần).
   const users = new MirroringUserRepository(auth.users, ws.directory, (user) => {
@@ -128,6 +143,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       notificationStore,
       attendance.events,
       attendance.calendar,
+      leaveStore,
     ],
     logger,
   );
@@ -143,9 +159,10 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
         queries: ws.queries,
         memberships: ws.memberships,
       }),
-      context: new InMemoryNotificationContextReader(users),
+      context: new InMemoryNotificationContextReader(users, leaveStore),
     },
     attendance,
+    leave: memoryLeaveRepositories(leaveStore, ws.queries),
     uow,
   };
 }
@@ -204,30 +221,9 @@ export function createPrismaPersistence(d: {
       context: new PrismaNotificationContextReader(db),
     },
     attendance: createPrismaAttendanceRepositories(db),
+    leave: prismaLeaveRepositories(db),
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),
     uow,
   };
-}
-
-/**
- * Quyết định Tech Lead (T-020): staging/production từ chối khởi động nếu BẤT KỲ module nào chạy
- * bộ nhớ (kể cả trạng thái "lai"). Local/test: trả danh sách module đang chạy bộ nhớ để cảnh báo.
- * Kiểm theo module THỰC SỰ đã wire (không chỉ theo biến môi trường) — module mới (Task — T-024)
- * phải khai `modules.task`.
- */
-export function assertPersistenceAllowed(
-  appEnv: 'local' | 'test' | 'staging' | 'production',
-  modules: Readonly<Record<string, StorageKind>>,
-): string[] {
-  const inMemory = Object.entries(modules)
-    .filter(([, kind]) => kind === 'memory')
-    .map(([name]) => name)
-    .sort();
-  if (inMemory.length > 0 && (appEnv === 'staging' || appEnv === 'production')) {
-    throw new Error(
-      `Lưu trữ bộ nhớ không được dùng ở ${appEnv} (module: ${inMemory.join(', ')}) — cần repository Prisma.`,
-    );
-  }
-  return inMemory;
 }

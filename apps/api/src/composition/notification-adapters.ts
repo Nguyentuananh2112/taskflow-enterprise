@@ -1,4 +1,6 @@
 import type { IUserRepository } from '../modules/auth/application/ports/user-repository.port';
+import type { ILeaveReadModel } from '../modules/leave/application/ports/leave-read-model.port';
+import type { ILeaveNotifier } from '../modules/leave/application/ports/leave.ports';
 import type { NotificationPublisher } from '../modules/notifications';
 import type {
   INotificationAudience,
@@ -39,9 +41,15 @@ export class InMemoryNotificationAudience implements INotificationAudience {
   }
 }
 
-/** Chế độ bộ nhớ: tên actor từ repository user của auth; chưa có module leave InMemory ⇒ `leave: null`. */
+/**
+ * Chế độ bộ nhớ: tên actor từ repository user của auth; tóm tắt đơn nghỉ qua reader của leave (T-039 —
+ * `leaveSummaries`, chỉ loại + ngày, không `reason`). T-040b (G) sẽ thay cả lớp này bằng reader của module.
+ */
 export class InMemoryNotificationContextReader implements INotificationContextReader {
-  constructor(private readonly users: IUserRepository) {}
+  constructor(
+    private readonly users: IUserRepository,
+    private readonly leaves: Pick<ILeaveReadModel, 'leaveSummaries'>,
+  ) {}
 
   async actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
     const out = new Map<string, string>();
@@ -52,28 +60,16 @@ export class InMemoryNotificationContextReader implements INotificationContextRe
     return out;
   }
 
-  leaveSummaries(): Promise<ReadonlyMap<string, LeaveSummary>> {
-    return Promise.resolve(new Map());
+  leaveSummaries(
+    refs: readonly { workspaceId: string; refId: string }[],
+  ): Promise<ReadonlyMap<string, LeaveSummary>> {
+    return this.leaves.leaveSummaries(refs);
   }
 }
 
 // ---------------------------------------------------------------- port của module dùng (ADR-093)
-// Chữ ký sao theo cấu trúc từ nhánh T-039 (`leave/application/ports/leave.ports.ts` — ILeaveNotifier) và
-// T-038 (`attendance/application/ports/collaborators.port.ts` — AttendanceNotifier) để không bắt A / D
-// đổi; khi merge, composition root khai `implements` bằng type thật của họ.
-
-type LeaveNotificationType =
-  'LEAVE_SUBMITTED' | 'LEAVE_APPROVED' | 'LEAVE_REJECTED' | 'LEAVE_CANCELLED' | 'LEAVE_REVOKED';
-
-export interface LeaveNotifierPort {
-  notify(input: {
-    workspaceId: string;
-    type: LeaveNotificationType;
-    requestId: string;
-    actorId: string;
-    recipient: { kind: 'user'; userId: string } | { kind: 'hr' };
-  }): Promise<void>;
-}
+// Leave (T-039): kiểu thật `ILeaveNotifier`. Attendance: chữ ký sao theo cấu trúc từ nhánh T-038
+// (`attendance/application/ports/collaborators.port.ts` — AttendanceNotifier) tới khi T-038 merge.
 
 export interface AttendanceNotifierPort {
   attendanceAdjusted(q: {
@@ -87,7 +83,7 @@ export interface AttendanceNotifierPort {
 type Publisher = Pick<NotificationPublisher, 'notify'>;
 
 /** `ILeaveNotifier` (D): `hr` ⇒ mọi người có `hr:manage` hiện tại trừ actor; `refId` = id đơn. */
-export function leaveNotifierFrom(publisher: Publisher): LeaveNotifierPort {
+export function leaveNotifierFrom(publisher: Publisher): ILeaveNotifier {
   return {
     notify: ({ workspaceId, type, requestId, actorId, recipient }) =>
       publisher.notify({ workspaceId, type, refId: requestId, actorId, recipient }),
