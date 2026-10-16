@@ -43,6 +43,16 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 | F4 | Viết thân 36 ca SEC todo trong `apps/api/test/security` (danh sách `TODO_BUDGET` ở `harness/pending.ts`: socket auth SEC-21b/35–39/41, rate limit SEC-28/28b/GATE-T016-401, auth SEC-17/19/20/22–24/24d/26/27/32, tenant SEC-13–16/46/47/51–55, task SEC-09; SEC-48–50 thuộc E2E — chỉ đối chiếu) — viết xong ca nào xóa mục đó cùng PR | nợ ma trận SEC (review B của sec-unpend) | |
 | F5 | Kiểm 503 fail-closed khi Valkey chậm (SEC-34 đỏ 1 lần lúc máy tải nặng, chạy lại xanh): hành vi đúng (ADR-108/074) hay timeout Valkey của harness quá chặt — harness ⇒ nới; sản phẩm ⇒ báo B | TL duyệt 2026-10-16 | F — xong 2026-10-16: fail-closed đúng thiết kế (docs/reviews/F5-valkey-503-report.md) |
 
+## Mốc 3 — Chấm công & Nghỉ phép (người dùng duyệt 2026-10-16; `docs/design/attendance-leave.md`)
+| Vé | Ai | Phụ thuộc | Đang làm |
+|---|---|---|---|
+| T-037 nền tảng (grants, migration 3, HrAuditLog) | B | — | B — 2026-10-16 |
+| T-038 attendance | A | T-037 | A — 2026-10-16 (domain trước) |
+| T-039 leave | D | T-037 | D — 2026-10-16 (domain trước) |
+| T-040 notifications | B | T-037 | |
+| T-041a/b/c web | E | contracts T-037 (mock trước) | E — 2026-10-16 |
+| T-042 kiểm thử độc lập | F | song song | F — 2026-10-16 |
+
 ## Chung (ai hết hàng thì lấy)
 | # | Việc | Đang làm |
 |---|---|---|
