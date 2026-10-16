@@ -1,4 +1,9 @@
 import { FakeClock, SequentialIdGenerator } from '../../../../test/support';
+import {
+  BusinessRuleViolationError,
+  ForbiddenError,
+  ResourceNotFoundError,
+} from '../../../core/errors';
 import type { AttendanceDeps } from '../application/attendance-days';
 import type { HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
@@ -74,9 +79,24 @@ export async function createAttendanceHarness(
           new Map(ids.filter((id) => NAMES[id]).map((id) => [id, { id, fullName: NAMES[id]! }])),
         ),
     },
-    members: {
-      roleOf: ({ workspaceId, userId }) =>
-        Promise.resolve(workspaceId === W1 ? (members.get(userId) ?? null) : null),
+    // Fake theo đúng luật `HrAccess.authorizeWrite` / `isEmployee` của T-037 (bản thật chạy ở runner LSP + HTTP);
+    // quyền `hr:manage` do route + bản thật kiểm, ở đây chỉ còn thành viên + luật tự xử lý.
+    hrAccess: {
+      authorizeWrite: ({ workspaceId, actorId, targetUserId, reason }) => {
+        const role = workspaceId === W1 ? members.get(actorId) : undefined;
+        if (!role) return Promise.reject(new ResourceNotFoundError('workspace'));
+        if (targetUserId === actorId) {
+          if (role !== 'OWNER') return Promise.reject(new ForbiddenError('hr:manage'));
+          if (!reason?.trim()) {
+            return Promise.reject(new BusinessRuleViolationError('REASON_REQUIRED', 'Cần lý do.'));
+          }
+        }
+        return Promise.resolve({ role });
+      },
+      isEmployee: ({ workspaceId, userId }) =>
+        Promise.resolve(
+          workspaceId === W1 && ['OWNER', 'PM', 'MEMBER'].includes(members.get(userId) ?? ''),
+        ),
     },
     notifier: {
       attendanceAdjusted: (n) => {
@@ -85,13 +105,17 @@ export async function createAttendanceHarness(
       },
     },
     audit: {
-      append: (e) => {
+      record: (e) => {
+        // Như `HrAuditWriter` (T-037): khóa `reason` trong before/after là lỗi lập trình (B-H2).
+        if ([e.before, e.after].some((v) => v && 'reason' in v)) {
+          return Promise.reject(new Error("HrAuditLog không được chứa 'reason'"));
+        }
         audit.push({
           action: e.action,
           actorId: e.actorId,
-          targetUserId: e.targetUserId,
-          refId: e.refId,
-          after: e.after,
+          targetUserId: e.targetUserId ?? null,
+          refId: e.refId ?? null,
+          after: e.after ?? null,
         });
         return Promise.resolve();
       },

@@ -14,8 +14,8 @@ import {
 } from '../../testing/attendance-harness';
 
 // test-spec-hr §5 (tầng A): AT-12..AT-16, AT-20 + route của chính nhân viên (§5, NĐ 13 Đ.14).
-const hana = { userId: HANA, isOwner: false };
-const olivia = { userId: OLIVIA, isOwner: true };
+const hana = HANA;
+const olivia = OLIVIA;
 const adjustBody = (over: Record<string, unknown> = {}) => ({
   userId: MIA,
   kind: 'IN' as const,

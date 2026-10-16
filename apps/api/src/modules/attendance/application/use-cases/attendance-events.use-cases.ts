@@ -5,11 +5,7 @@ import type {
   AttendanceEventsDto,
 } from '@taskflow/contracts';
 
-import {
-  ForbiddenError,
-  ResourceConflictError,
-  ResourceNotFoundError,
-} from '../../../../core/errors';
+import { ResourceConflictError, ResourceNotFoundError } from '../../../../core/errors';
 import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
 import { effectiveSchedule } from '../../domain/work-schedule';
 import { toEventDtos } from '../attendance-event-dto';
@@ -17,32 +13,24 @@ import { summarizeRange, type AttendanceDeps } from '../attendance-days';
 import type { AttendanceEventRecord } from '../ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
-  IHrAuditLog,
-  IMemberDirectory,
+  IHrAccess,
+  IHrAuditRecorder,
   IUserRefReader,
 } from '../ports/collaborators.port';
 
 export interface AttendanceEventDeps extends AttendanceDeps {
   users: IUserRefReader;
-  members: IMemberDirectory;
+  hrAccess: IHrAccess;
   notifier: AttendanceNotifier;
-  audit: IHrAuditLog;
+  audit: IHrAuditRecorder;
 }
-
-/** Người có `hr:manage` đang thao tác (route đã kiểm quyền); `isOwner` cho ngoại lệ tự điều chỉnh. */
-export interface HrActor {
-  userId: string;
-  isOwner: boolean;
-}
-
-/** Nhân viên được chấm công: OWNER, PM, MEMBER — VIEWER là khách, không phải nhân viên (§1). */
-const EMPLOYEE_ROLES = new Set(['OWNER', 'PM', 'MEMBER']);
 
 /**
  * Lượt chấm thô (§5): HR xem / thêm (ADJUSTMENT) / hủy; nhân viên xem lượt của chính mình kèm IP/UA
- * (NĐ 13 Đ.14). Log bất biến (ADR-121): hủy chỉ đánh dấu, không xóa dòng. HR không tự điều chỉnh công của
- * mình (B-H1) — trừ OWNER (chủ công ty); mọi ADJUSTMENT/void bắt buộc lý do, ghi `HrAuditLog` + thông báo
- * cho nhân viên trong CÙNG transaction (ADR-123).
+ * (NĐ 13 Đ.14). Log bất biến (ADR-121): hủy chỉ đánh dấu, không xóa dòng. Quyền + luật "không tự điều
+ * chỉnh công của mình" (B-H1, trừ OWNER) do `hrAccess.authorizeWrite` chốt TRONG transaction (đọc lại grant
+ * sau FOR SHARE). Mọi ADJUSTMENT/void bắt buộc lý do (lưu ở `note` / `voidReason` của lượt chấm — audit
+ * không chép văn bản tự do, B-H2), ghi `HrAuditLog` + thông báo cho nhân viên trong CÙNG transaction (ADR-123).
  */
 export class AttendanceEventsUseCases {
   constructor(private readonly d: AttendanceEventDeps) {}
@@ -67,15 +55,22 @@ export class AttendanceEventsUseCases {
   /** `POST attendance/events` (ADJUSTMENT) ⇒ 201 `{ event, day }`. */
   async adjust(
     workspaceId: string,
-    actor: HrActor,
+    actorId: string,
     body: AdjustAttendanceBody,
   ): Promise<AttendanceEventChangeDto> {
     const { d } = this;
-    this.#assertNotSelf(actor, body.userId);
     const id = d.ids.next();
     await d.uow.run(async () => {
-      const role = await d.members.roleOf({ workspaceId, userId: body.userId });
-      if (role === null || !EMPLOYEE_ROLES.has(role)) throw new ResourceNotFoundError('user');
+      await d.hrAccess.authorizeWrite({
+        workspaceId,
+        actorId,
+        targetUserId: body.userId,
+        reason: body.reason,
+      });
+      // Chỉ nhân viên HIỆN TẠI (VIEWER là khách, người đã rời không chấm thêm) ⇒ còn lại 404 user.
+      if (!(await d.hrAccess.isEmployee({ workspaceId, userId: body.userId }))) {
+        throw new ResourceNotFoundError('user');
+      }
       const versions = await d.calendar.scheduleVersions(workspaceId);
       const { timezone } = effectiveSchedule(versions, body.date);
       const [h, m] = body.time.split(':').map(Number) as [number, number];
@@ -96,31 +91,25 @@ export class AttendanceEventsUseCases {
         userAgent: null,
         idempotencyKey: null,
         note: body.reason,
-        createdBy: actor.userId,
+        createdBy: actorId,
         voidedAt: null,
         voidedBy: null,
         voidReason: null,
       });
-      await d.audit.append({
+      await d.audit.record({
         workspaceId,
-        actorId: actor.userId,
+        actorId,
         action: 'EVENT_ADJUST',
         targetUserId: body.userId,
         refId: id,
-        before: null,
-        after: {
-          kind: body.kind,
-          workDate: body.date,
-          occurredAt: occurredAt.toISOString(),
-          reason: body.reason,
-        },
+        after: { kind: body.kind, workDate: body.date, occurredAt: occurredAt.toISOString() },
       });
-      if (body.userId !== actor.userId) {
+      if (body.userId !== actorId) {
         await d.notifier.attendanceAdjusted({
           workspaceId,
           recipientId: body.userId,
           eventId: id,
-          actorId: actor.userId,
+          actorId,
         });
       }
     });
@@ -130,49 +119,49 @@ export class AttendanceEventsUseCases {
   /** `POST attendance/events/:id/void` ⇒ 200 `{ event, day }`; đã hủy ⇒ 409 `already_voided`. */
   async void(
     workspaceId: string,
-    actor: HrActor,
+    actorId: string,
     q: { id: string; reason: string },
   ): Promise<AttendanceEventChangeDto> {
     const { d } = this;
     await d.uow.run(async () => {
       const event = await d.events.findById(workspaceId, q.id);
       if (!event) throw new ResourceNotFoundError('attendance_event');
-      this.#assertNotSelf(actor, event.userId);
+      // Cần chủ của lượt chấm cho luật "không tự hủy" ⇒ chốt sau khi đọc lượt, vẫn TRƯỚC lệnh ghi.
+      await d.hrAccess.authorizeWrite({
+        workspaceId,
+        actorId,
+        targetUserId: event.userId,
+        reason: q.reason,
+      });
       const ok = await d.events.void({
         workspaceId,
         id: q.id,
         voidedAt: d.clock.now(),
-        voidedBy: actor.userId,
+        voidedBy: actorId,
         voidReason: q.reason,
       });
       if (!ok) {
         throw new ResourceConflictError({ reason: 'already_voided' }, 'Lượt chấm này đã bị hủy.');
       }
-      await d.audit.append({
+      await d.audit.record({
         workspaceId,
-        actorId: actor.userId,
+        actorId,
         action: 'EVENT_VOID',
         targetUserId: event.userId,
         refId: q.id,
         before: { voidedAt: null },
-        after: { voidedAt: d.clock.now().toISOString(), reason: q.reason },
+        after: { voidedAt: d.clock.now().toISOString() },
       });
-      if (event.userId !== actor.userId) {
+      if (event.userId !== actorId) {
         await d.notifier.attendanceAdjusted({
           workspaceId,
           recipientId: event.userId,
           eventId: q.id,
-          actorId: actor.userId,
+          actorId,
         });
       }
     });
     return this.#change(workspaceId, q.id);
-  }
-
-  #assertNotSelf(actor: HrActor, targetUserId: string): void {
-    if (actor.userId === targetUserId && !actor.isOwner) {
-      throw new ForbiddenError(undefined, 'Không được tự điều chỉnh công của chính mình.');
-    }
   }
 
   async #list(q: {
