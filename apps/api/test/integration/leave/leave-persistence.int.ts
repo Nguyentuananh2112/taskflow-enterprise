@@ -45,10 +45,11 @@ const id = (n: number) => `00000000-0000-7000-8000-0000000c${n.toString().padSta
 beforeEach(async () => {
   await resetDatabase();
   const prisma = testPrisma();
-  for (const [uid, name] of [
+  const users: readonly (readonly [string, string])[] = [
     [MIA, 'Mia'],
     [HANA, 'Hana'],
-  ]) {
+  ];
+  for (const [uid, name] of users) {
     await prisma.user.create({
       data: {
         id: uid,
