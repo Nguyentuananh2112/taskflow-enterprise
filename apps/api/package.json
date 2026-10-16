@@ -30,6 +30,8 @@
     "mutation:task-application": "stryker run stryker/task-application.config.mjs",
     "mutation:task-infrastructure": "stryker run stryker/task-infrastructure.config.mjs",
     "mutation:task-presentation": "stryker run stryker/task-presentation.config.mjs",
+    "mutation:attendance-domain": "stryker run stryker/attendance-domain.config.mjs",
+    "mutation:leave-domain": "stryker run stryker/leave-domain.config.mjs",
     "test:security": "prisma generate --no-hints && vitest run --config test/security/vitest.config.ts"
   },
   "dependencies": {
