@@ -10,7 +10,6 @@ import {
   MonthTable,
   dayLabel,
   useMyAttendanceEvents,
-  canSelfAttend,
   shiftMonth,
   useAttendanceMonth,
   useAttendanceToday,
@@ -30,8 +29,8 @@ const monthTitle = (m: string) => `tháng ${Number(m.slice(5))}/${m.slice(0, 4)}
 export function AttendancePage() {
   const { wsId = '' } = useParams<{ wsId: string }>();
   const valid = Uuid.safeParse(wsId).success;
-  const { role } = usePermission(wsId);
-  const allowed = valid && canSelfAttend(role);
+  const { role, can } = usePermission(wsId);
+  const allowed = valid && can('attendance:self');
   const today = useAttendanceToday(wsId, allowed);
   const asked = useSearchParams().get('month');
   // Tháng mặc định = tháng của "hôm nay" THEO SERVER (múi giờ của lịch), không theo máy.

@@ -17,9 +17,3 @@ export const DAY_STATUS: Readonly<
 };
 
 export const LEAVE_PART_LABEL = { FULL: 'cả ngày', AM: 'buổi sáng', PM: 'buổi chiều' } as const;
-
-/**
- * ⚠️ TẠM (T-041a): ai được chấm công/xin nghỉ = OWNER, PM, MEMBER (attendance-leave.md §1). Khi T-037
- * merge: thay bằng `can('attendance:self')` (hasPermission từ contracts), bỏ hàm này.
- */
-export const canSelfAttend = (role: string | null) => role !== null && role !== 'VIEWER';

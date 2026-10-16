@@ -7,6 +7,7 @@ import { LogoutButton } from '@/features/auth-logout';
 import { cn } from '@/shared/lib/cn';
 import { Avatar } from '@/shared/ui/avatar';
 import { PAGE_CONTAINER } from '@/shared/ui/page';
+import { NotificationBell } from '@/widgets/notification-bell';
 
 import { HeaderAttendance } from './header-attendance';
 
@@ -21,6 +22,7 @@ export function AppHeader() {
         </Link>
         <nav aria-label="Tài khoản" className="ml-auto flex items-center gap-2">
           <HeaderAttendance />
+          <NotificationBell />
           {user && (
             <span className="flex items-center gap-2 text-sm">
               <Avatar name={user.fullName} colorKey={user.id} size="sm" decorative />

@@ -4,6 +4,7 @@ import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { createMemberHandlers } from './member-handlers';
+import { MockNotifications, createNotificationHandlers } from './notification-handlers';
 import { createProjectHandlers } from './project-handlers';
 import { contentTypeGuard, createRateLimiter } from './request-guards';
 import { createTaskHandlers } from './task-handlers';
@@ -37,10 +38,12 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? [new URL(baseUrl).origin]);
   const limit = createRateLimiter(options.now ?? Date.now);
   const attendance = new MockAttendance(options.now ?? Date.now);
+  const notifications = new MockNotifications(board, options.now ?? Date.now);
   return {
     db,
     board,
     attendance,
+    notifications,
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins),
@@ -49,6 +52,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createProjectHandlers(baseUrl, db, board),
       ...createTaskHandlers(baseUrl, db, board),
       ...createAttendanceHandlers(baseUrl, db, attendance),
+      ...createNotificationHandlers(baseUrl, db, notifications),
     ],
   };
 }

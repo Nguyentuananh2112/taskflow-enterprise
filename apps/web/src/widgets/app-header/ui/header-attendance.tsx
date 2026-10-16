@@ -3,7 +3,7 @@
 import { Uuid } from '@taskflow/contracts/common';
 import { useParams } from 'next/navigation';
 
-import { canSelfAttend, useAttendanceToday } from '@/entities/attendance';
+import { useAttendanceToday } from '@/entities/attendance';
 import { usePermission } from '@/entities/workspace';
 import { CheckButtons } from '@/features/attendance-check';
 
@@ -14,8 +14,8 @@ import { CheckButtons } from '@/features/attendance-check';
 export function HeaderAttendance() {
   const { wsId } = useParams<{ wsId?: string }>();
   const id = wsId && Uuid.safeParse(wsId).success ? wsId : '';
-  const { role } = usePermission(id);
-  const allowed = id !== '' && canSelfAttend(role);
+  const { can } = usePermission(id);
+  const allowed = id !== '' && can('attendance:self');
   const today = useAttendanceToday(id, allowed);
   if (!allowed || !today.data) return null;
   return (
