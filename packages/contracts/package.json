@@ -13,6 +13,7 @@
     "./audit": "./src/audit/audit.schemas.ts",
     "./openapi": "./src/openapi/index.ts",
     "./realtime": "./src/realtime/events.ts",
+    "./hr": "./src/hr/hr.schemas.ts",
     "./system": "./src/system/healthz.schemas.ts"
   },
   "scripts": {

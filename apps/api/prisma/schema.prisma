@@ -279,7 +279,8 @@ model TaskAuditLog {
 
 // ---------------------------------------------------------------- Mốc 3: chấm công & nghỉ phép
 // Không FK tới workspace_members (attendance-leave.md §3, A#2): "là thành viên" kiểm ở tầng ứng dụng lúc ghi.
-// CHECK constraint + trigger seed lịch: SQL tay trong migration 20261017000000_hr_attendance_leave.
+// CHECK constraint: SQL tay trong migration 20261017000000_hr_attendance_leave. Không seed lịch: lịch mặc định là hằng số
+// của domain attendance (Tech Lead, T-037) — dòng work_schedules chỉ có khi HR lưu.
 
 /// ADR-120/121: lịch làm việc có phiên bản theo ngày hiệu lực; múi giờ nằm trong phiên bản.
 model WorkSchedule {
@@ -293,11 +294,11 @@ model WorkSchedule {
   breakStartMin Int      @map("break_start_min")
   breakEndMin   Int      @map("break_end_min")
   graceMin      Int      @default(0) @map("grace_min")
-  createdById   String?  @map("created_by_id") @db.Uuid // null = bản seed của hệ thống (migration / trigger)
+  createdById   String   @map("created_by_id") @db.Uuid // HR lưu lịch (không có bản seed — lịch mặc định là hằng số của domain attendance)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy User?     @relation("ScheduleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy User      @relation("ScheduleCreator", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@unique([workspaceId, effectiveFrom])
   @@index([createdById])

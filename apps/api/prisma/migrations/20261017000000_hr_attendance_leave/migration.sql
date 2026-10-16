@@ -1,6 +1,6 @@
 -- Mốc 3 (T-037): chấm công & nghỉ phép — attendance-leave.md §3, ADR-119…123.
--- Phần đầu do `prisma migrate diff` sinh; phần cuối là SQL VIẾT TAY (CHECK, seed lịch, trigger) mà Prisma 7.10
--- không mô hình hóa — không gây drift cho `migrate diff --exit-code`.
+-- Phần đầu do `prisma migrate diff` sinh; phần cuối là SQL VIẾT TAY (CHECK) mà Prisma 7.10 không mô hình hóa —
+-- không gây drift cho `migrate diff --exit-code`.
 
 -- CreateEnum
 CREATE TYPE "MemberGrant" AS ENUM ('HR_MANAGE');
@@ -38,7 +38,7 @@ CREATE TABLE "work_schedules" (
     "break_start_min" INTEGER NOT NULL,
     "break_end_min" INTEGER NOT NULL,
     "grace_min" INTEGER NOT NULL DEFAULT 0,
-    "created_by_id" UUID,
+    "created_by_id" UUID NOT NULL,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "work_schedules_pkey" PRIMARY KEY ("id")
@@ -284,33 +284,5 @@ ALTER TABLE "leave_balances" ADD CONSTRAINT "leave_balances_year_chk" CHECK ("ye
 ALTER TABLE "leave_balances" ADD CONSTRAINT "leave_balances_entitled_chk" CHECK ("entitled_days" >= 0);
 ALTER TABLE "leave_balances" ADD CONSTRAINT "leave_balances_version_chk" CHECK ("version" >= 1);
 
--- Seed lịch mặc định (người dùng chốt, attendance-leave.md §0): T2–T7 (bit0..bit5 = 63),
--- 08:00–17:30 (480–1050), nghỉ trưa 12:00–13:30 (720–810), grace 0, Asia/Ho_Chi_Minh.
--- Hiệu lực từ ngày tạo workspace (theo giờ VN). created_by_id NULL = bản của hệ thống.
-INSERT INTO "work_schedules"
-  ("id", "workspace_id", "effective_from", "timezone", "workdays",
-   "start_min", "end_min", "break_start_min", "break_end_min", "grace_min", "created_by_id")
-SELECT gen_random_uuid(), w."id", (w."created_at" AT TIME ZONE 'Asia/Ho_Chi_Minh')::date, 'Asia/Ho_Chi_Minh', 63,
-       480, 1050, 720, 810, 0, NULL
-  FROM "workspaces" w;
-
--- Workspace MỚI (mọi đường tạo: CreateWorkspace, Register/provisioner): cùng lịch mặc định, trong CÙNG
--- transaction với INSERT workspace. Trigger ở DB để module workspace không phụ thuộc module attendance (T-038).
--- search_path cố định (không bị chiếm bởi schema khác); chạy với quyền người gọi (taskflow_app có DML).
-CREATE FUNCTION "taskflow_seed_work_schedule"() RETURNS trigger
-  LANGUAGE plpgsql
-  SET search_path = pg_catalog, public
-AS $$
-BEGIN
-  INSERT INTO public.work_schedules
-    (id, workspace_id, effective_from, timezone, workdays,
-     start_min, end_min, break_start_min, break_end_min, grace_min, created_by_id)
-  VALUES (gen_random_uuid(), NEW.id, (NEW.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date, 'Asia/Ho_Chi_Minh', 63,
-          480, 1050, 720, 810, 0, NULL);
-  RETURN NEW;
-END
-$$;
-
-CREATE TRIGGER "workspaces_seed_work_schedule"
-  AFTER INSERT ON "workspaces"
-  FOR EACH ROW EXECUTE FUNCTION "taskflow_seed_work_schedule"();
+-- KHÔNG seed lịch, KHÔNG trigger (Tech Lead, T-037): lịch mặc định là MỘT hằng số trong domain attendance
+-- (không có phiên bản nào effective_from ≤ ngày ⇒ mặc định). Dòng work_schedules chỉ sinh khi HR lưu lịch.
