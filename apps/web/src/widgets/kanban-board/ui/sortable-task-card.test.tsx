@@ -34,7 +34,6 @@ describe('SortableTaskCard', () => {
             column="IN_PROGRESS"
             index={0}
             canDrag
-            dragLocked={false}
             pending={false}
             blocked={false}
             reducedMotion

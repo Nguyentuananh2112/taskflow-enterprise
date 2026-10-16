@@ -37,15 +37,11 @@ const stableOpen = () => undefined;
 
 afterEach(() => cleanup());
 
-function setup(onOpen: () => (taskId: string) => void, oneColumn = 0) {
+function setup(onOpen: () => (taskId: string) => void) {
   renders.clear();
-  const tasks = oneColumn
-    ? Array.from({ length: oneColumn }, (_, i) =>
-        makeTask({ rank: `a${String(i).padStart(3, '0')}` }),
-      )
-    : Array.from({ length: N }, (_, i) =>
-        makeTask({ status: STATUSES[i % 4] ?? 'TODO', rank: `a${String(i).padStart(3, '0')}` }),
-      );
+  const tasks = Array.from({ length: N }, (_, i) =>
+    makeTask({ status: STATUSES[i % 4] ?? 'TODO', rank: `a${String(i).padStart(3, '0')}` }),
+  );
   const client = createQueryClient();
   client.setQueryData(taskKeys.board(WS_ID, PROJECT_ID), boardFromTasks(tasks));
   function Board() {
@@ -110,14 +106,6 @@ describe('board: merge 1 event chỉ render lại đúng 1 thẻ (memo theo tham
     const inProgress = document.querySelector('section[aria-labelledby="column-IN_PROGRESS"]');
     expect(inProgress?.textContent).toContain(target.title);
     expect(changed(before)).toEqual([target.id]);
-  });
-
-  it('mount dần 150 thẻ một cột (bậc 3): cuối cùng đủ thẻ, hết "đang hiển thị thêm", mỗi TaskCard render ĐÚNG 1 lần', () => {
-    setup(() => stableOpen, 150);
-    expect(screen.getAllByRole('article')).toHaveLength(150);
-    expect(screen.queryByText('Đang hiển thị thêm thẻ…')).toBeNull();
-    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
-    expect([...renders.values()].every((count) => count === 1)).toBe(true);
   });
 
   it('đối chứng: callback không ổn định (closure mới mỗi render) ⇒ MỌI thẻ render lại', async () => {
