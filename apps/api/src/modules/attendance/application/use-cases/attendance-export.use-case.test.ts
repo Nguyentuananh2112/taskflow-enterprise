@@ -34,7 +34,19 @@ const parse = (csv: string) =>
 
 describe('csvCell', () => {
   it('SEC-HR-11 ô CHỮ bắt đầu bằng = + - @ \\t \\r ⇒ tiền tố \'; mọi ô bọc "; " nhân đôi; ô raw giữ nguyên', () => {
-    for (const bad of ['=1+1', '+84', '-2', '@SUM(A1)', '\tx', '\rx']) {
+    for (const bad of [
+      '=1+1',
+      '+84',
+      '-2',
+      '@SUM(A1)',
+      '\tx',
+      '\rx',
+      '\nx',
+      '\uFF1D1+1',
+      '\uFF0B84',
+      '\uFF0D2',
+      '\uFF20SUM(A1)',
+    ]) {
       expect(csvCell(bad, 'text')).toBe(`"'${bad}"`);
     }
     expect(csvCell('Mia "Ngọc"', 'text')).toBe('"Mia ""Ngọc"""');

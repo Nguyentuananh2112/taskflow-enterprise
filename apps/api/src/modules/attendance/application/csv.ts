@@ -1,5 +1,8 @@
-/** Ký tự đầu ô khiến Excel / Sheets hiểu là công thức (OWASP CSV injection). */
-const FORMULA_START = /^[=+\-@\t\r]/;
+/**
+ * Ký tự đầu ô khiến Excel / Sheets hiểu là công thức (OWASP CSV injection) — cả bản toàn giác ＝ ＋ － ＠
+ * (U+FF1D/FF0B/FF0D/FF20) mà một số bản Excel / Sheets cũng nhận, và xuống dòng (review B, LOW-1).
+ */
+const FORMULA_START = /^[=+\-@\t\r\n\uFF1D\uFF0B\uFF0D\uFF20]/;
 
 /**
  * Ô CSV: luôn bọc `"` và nhân đôi `"` bên trong. Ô CHỮ do người dùng nhập (`text`) thêm tiền tố `'` khi bắt đầu
