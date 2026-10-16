@@ -5,13 +5,18 @@ import { cn } from '@/shared/lib/cn';
 import { DAY_STATUS, LEAVE_PART_LABEL } from '../lib/labels';
 import { dayLabel, duration, timeOfDay } from '../lib/time';
 
-type Props = Readonly<{ month: AttendanceMonthDto; caption: string }>;
+type Props = Readonly<{
+  month: AttendanceMonthDto;
+  caption: string;
+  /** Bấm ngày ⇒ xem lượt chấm (trang của tôi). */
+  onSelectDay?: (date: string) => void;
+}>;
 
 /**
  * Bảng công tháng (attendance-leave.md §6, E2E-HR-07): `<table>` có tiêu đề cột + tiêu đề HÀNG (ngày),
  * trạng thái bằng CHỮ + biểu tượng `aria-hidden` (không chỉ màu). Giờ theo `timezone` của lịch.
  */
-export function MonthTable({ month, caption }: Props) {
+export function MonthTable({ month, caption, onSelectDay }: Props) {
   const { timezone: tz } = month;
   return (
     <div className="overflow-x-auto">
@@ -52,7 +57,17 @@ export function MonthTable({ month, caption }: Props) {
                 className={cn('border-b border-border', !d.isWorkday && 'bg-bg-subtle')}
               >
                 <th scope="row" className="py-2 pr-3 text-left font-normal whitespace-nowrap">
-                  {dayLabel(d.date)}
+                  {onSelectDay ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectDay(d.date)}
+                      className="rounded-control text-left text-primary hover:underline"
+                    >
+                      {dayLabel(d.date)}
+                    </button>
+                  ) : (
+                    dayLabel(d.date)
+                  )}
                 </th>
                 <td className={cn('py-2 pr-3', s.tone)}>
                   <span aria-hidden="true">{s.icon} </span>

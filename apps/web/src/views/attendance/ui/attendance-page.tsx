@@ -3,9 +3,13 @@
 import { Uuid } from '@taskflow/contracts/common';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 
 import {
+  EventsList,
   MonthTable,
+  dayLabel,
+  useMyAttendanceEvents,
   canSelfAttend,
   shiftMonth,
   useAttendanceMonth,
@@ -14,6 +18,7 @@ import {
 import { usePermission } from '@/entities/workspace';
 import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
+import { Dialog } from '@/shared/ui/dialog';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { PageMain } from '@/shared/ui/page';
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -32,6 +37,8 @@ export function AttendancePage() {
   // Tháng mặc định = tháng của "hôm nay" THEO SERVER (múi giờ của lịch), không theo máy.
   const month = asked && MONTH.test(asked) ? asked : today.data?.date.slice(0, 7);
   const data = useAttendanceMonth(wsId, month ?? '', allowed && month !== undefined);
+  const [day, setDay] = useState<string | null>(null);
+  const events = useMyAttendanceEvents(wsId, day);
 
   if (!valid || isApiError(data.error, 'RESOURCE_NOT_FOUND')) {
     return (
@@ -84,8 +91,27 @@ export function AttendancePage() {
           <Skeleton className="h-64" />
         </div>
       ) : (
-        <MonthTable month={data.data} caption={`Bảng công ${monthTitle(month)}`} />
+        <MonthTable
+          month={data.data}
+          caption={`Bảng công ${monthTitle(month)}`}
+          onSelectDay={setDay}
+        />
       )}
+      <Dialog
+        open={day !== null}
+        onOpenChange={(open) => !open && setDay(null)}
+        title={day ? `Lượt chấm ${dayLabel(day)}` : 'Lượt chấm'}
+      >
+        {events.data && day ? (
+          <EventsList data={events.data} date={day} />
+        ) : events.isError ? (
+          <p className="text-sm text-danger">Không tải được lượt chấm.</p>
+        ) : (
+          <p role="status" className="text-sm text-text-muted">
+            Đang tải…
+          </p>
+        )}
+      </Dialog>
     </PageMain>
   );
 }

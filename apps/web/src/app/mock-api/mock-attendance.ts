@@ -1,5 +1,6 @@
 import type {
   AttendanceDayDto,
+  AttendanceEventDto,
   AttendanceTodayDto,
   WorkShiftDto,
 } from '@taskflow/contracts/attendance';
@@ -17,7 +18,17 @@ export const MOCK_SCHEDULE: WorkShiftDto = {
   graceMin: 0,
 };
 
-type Punch = { kind: 'IN' | 'OUT'; at: number; key: string };
+type UserRef = { id: string; fullName: string };
+type Punch = {
+  id: string;
+  kind: 'IN' | 'OUT';
+  at: number;
+  key: string;
+  by: UserRef;
+  ip: string | null;
+  userAgent: string | null;
+  voided?: { at: number; by: UserRef; reason: string };
+};
 
 const parts = (ms: number) => {
   const f = new Intl.DateTimeFormat('en-CA', {
@@ -61,13 +72,44 @@ export class MockAttendance {
     return undefined;
   }
 
-  punch(wsId: string, userId: string, kind: Punch['kind'], key: string): void {
-    const k = this.#key(wsId, userId, this.today());
-    this.#punches.set(k, [...(this.#punches.get(k) ?? []), { kind, at: this.now(), key }]);
+  punch(
+    wsId: string,
+    by: UserRef,
+    kind: Punch['kind'],
+    key: string,
+    meta: { ip: string | null; userAgent: string | null } = { ip: null, userAgent: null },
+  ): void {
+    const k = this.#key(wsId, by.id, this.today());
+    const punch: Punch = { id: crypto.randomUUID(), kind, at: this.now(), key, by, ...meta };
+    this.#punches.set(k, [...(this.#punches.get(k) ?? []), punch]);
+  }
+
+  /** HR hủy lượt (test/dev): lượt vẫn còn trong log, không tính vào bảng công. */
+  voidPunch(wsId: string, userId: string, date: string, id: string, by: UserRef, reason: string) {
+    const hit = this.punches(wsId, userId, date).find((p) => p.id === id);
+    if (hit) hit.voided = { at: this.now(), by, reason };
+  }
+
+  events(wsId: string, userId: string, date: string): AttendanceEventDto[] {
+    return this.punches(wsId, userId, date).map((p) => ({
+      id: p.id,
+      userId,
+      kind: p.kind,
+      source: 'WEB',
+      occurredAt: new Date(p.at).toISOString(),
+      workDate: date,
+      note: null,
+      createdBy: p.by,
+      voidedAt: p.voided ? new Date(p.voided.at).toISOString() : null,
+      voidedBy: p.voided?.by ?? null,
+      voidReason: p.voided?.reason ?? null,
+      ip: p.ip,
+      userAgent: p.userAgent,
+    }));
   }
 
   summarize(wsId: string, userId: string, date: string): AttendanceDayDto {
-    const list = this.punches(wsId, userId, date);
+    const list = this.punches(wsId, userId, date).filter((p) => !p.voided);
     const firstIn = list.find((p) => p.kind === 'IN');
     const outs = list.filter((p) => p.kind === 'OUT' && firstIn && p.at >= firstIn.at);
     const lastOut = outs.at(-1);

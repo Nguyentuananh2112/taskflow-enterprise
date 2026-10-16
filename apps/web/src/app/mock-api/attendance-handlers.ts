@@ -5,6 +5,8 @@ import {
   AttendanceMonthDto,
   AttendanceTodayDto,
   AttendanceMonthQuery,
+  AttendanceEventsDto,
+  MyAttendanceEventsQuery,
 } from '@taskflow/contracts/attendance';
 
 import type { MockAttendance } from './mock-attendance';
@@ -50,7 +52,7 @@ export function createAttendanceHandlers(
           ? ok(AttendanceTodayDto, attendance.todayDto(wsId, userId))
           : fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'IDEMPOTENCY_KEY_REUSED' });
       }
-      const today = attendance.punches(wsId, userId, attendance.today());
+      const today = attendance.punches(wsId, userId, attendance.today()).filter((p) => !p.voided);
       const hasIn = today.some((p) => p.kind === 'IN');
       if (kind === 'IN' && hasIn) {
         return fail(409, 'RESOURCE_CONFLICT', { reason: 'already_checked_in' });
@@ -58,7 +60,10 @@ export function createAttendanceHandlers(
       if (kind === 'OUT' && !hasIn) {
         return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'NOT_CHECKED_IN' });
       }
-      attendance.punch(wsId, userId, kind, key);
+      attendance.punch(wsId, { id: userId, fullName: ctx.ok.user.fullName }, kind, key, {
+        ip: '127.0.0.1',
+        userAgent: request.headers.get('user-agent'),
+      });
       return ok(AttendanceTodayDto, attendance.todayDto(wsId, userId));
     });
 
@@ -87,6 +92,16 @@ export function createAttendanceHandlers(
         ),
       );
       return ok(AttendanceMonthDto, { month: query.data.month, timezone: MOCK_TZ, days });
+    }),
+    http.get(`${base}/me/events`, ({ request, params }) => {
+      const ctx = requireMember(request, db, params);
+      if (ctx.response) return ctx.response;
+      const denied = selfOnly(ctx.ok);
+      if (denied) return denied;
+      const query = parseQuery(request, MyAttendanceEventsQuery);
+      if (query.response) return query.response;
+      const events = attendance.events(String(params.wsId), ctx.ok.user.id, query.data.date);
+      return ok(AttendanceEventsDto, { timezone: MOCK_TZ, events });
     }),
     punch('IN'),
     punch('OUT'),

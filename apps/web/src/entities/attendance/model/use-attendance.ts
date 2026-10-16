@@ -26,3 +26,13 @@ export function useAttendanceMonth(wsId: string, month: string, enabled: boolean
     staleTime: 60_000,
   });
 }
+
+/** Lượt chấm của tôi trong `date` — chỉ tải khi mở chi tiết ngày. */
+export function useMyAttendanceEvents(wsId: string, date: string | null) {
+  return useQuery({
+    queryKey: attendanceKeys.myEvents(wsId, date ?? ''),
+    queryFn: () => attendanceApi.myEvents(wsId, date ?? ''),
+    enabled: date !== null,
+    staleTime: 30_000,
+  });
+}

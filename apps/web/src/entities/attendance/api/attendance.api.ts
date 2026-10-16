@@ -1,5 +1,9 @@
 import { http } from '@/shared/api';
-import { AttendanceMonthDto, AttendanceTodayDto } from '@taskflow/contracts/attendance';
+import {
+  AttendanceEventsDto,
+  AttendanceMonthDto,
+  AttendanceTodayDto,
+} from '@taskflow/contracts/attendance';
 
 const base = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}/attendance`;
 
@@ -11,6 +15,9 @@ export const attendanceApi = {
     http.post(`${base(wsId)}/check-in`, { schema: AttendanceTodayDto, idempotencyKey }),
   checkOut: (wsId: string, idempotencyKey: string) =>
     http.post(`${base(wsId)}/check-out`, { schema: AttendanceTodayDto, idempotencyKey }),
+  /** Lượt chấm của chính mình trong một ngày (gồm lượt đã hủy, có IP/UA — NĐ 13 Đ.14). */
+  myEvents: (wsId: string, date: string) =>
+    http.get(`${base(wsId)}/me/events`, { schema: AttendanceEventsDto, query: { date } }),
   month: (wsId: string, month: string) =>
     http.get(`${base(wsId)}/me`, { schema: AttendanceMonthDto, query: { month } }),
 };

@@ -1,4 +1,5 @@
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
@@ -63,5 +64,39 @@ describe('bảng công tháng', () => {
     expect(within(nav).getByRole('link', { name: 'Tháng sau →' }).getAttribute('href')).toBe(
       '?month=2026-10',
     );
+  });
+
+  it('bấm một ngày ⇒ lượt chấm kèm IP/thiết bị; lượt đã hủy gạch ngang + người hủy + lý do (hiển thị như TEXT)', async () => {
+    const f = open();
+    const me = { id: f.owner.id, fullName: f.owner.fullName };
+    mock.attendance.punch(f.wsId, me, 'IN', crypto.randomUUID(), {
+      ip: '10.0.0.7',
+      userAgent: 'Firefox/141',
+    });
+    mock.attendance.punch(f.wsId, me, 'OUT', crypto.randomUUID());
+    const out = mock.attendance.events(f.wsId, f.owner.id, '2026-10-15')[1];
+    const evil = '<img src=x onerror="alert(1)">';
+    mock.attendance.voidPunch(
+      f.wsId,
+      f.owner.id,
+      '2026-10-15',
+      out?.id ?? '',
+      { id: me.id, fullName: 'Hana HR' },
+      evil,
+    );
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    await userEvent
+      .setup({ delay: null })
+      .click(within(table).getByRole('button', { name: /15\/10/ }));
+    const dialog = await screen.findByRole('dialog', { name: /Lượt chấm/ });
+    expect(await within(dialog).findByText(/Vào lúc 10:00 · Web/)).toBeTruthy();
+    expect(within(dialog).getByText(/IP 10\.0\.0\.7/).textContent).toContain(
+      'Thiết bị: Firefox/141',
+    );
+    const voided = within(dialog).getByText(/Ra lúc 10:00 · Web/);
+    expect(voided.className).toContain('line-through');
+    expect(within(dialog).getByText(`Đã hủy bởi Hana HR: ${evil}`)).toBeTruthy();
+    expect(dialog.querySelector('img')).toBeNull();
+    await expectNoA11yViolations();
   });
 });
