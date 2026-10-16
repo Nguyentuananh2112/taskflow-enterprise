@@ -71,6 +71,24 @@ export interface IWorkspaceRealtimeNotifier {
   ): Promise<void>;
 }
 
+/**
+ * Thông báo bền HR_GRANTED / HR_REVOKED tới người được cấp / bị thu (ADR-123, GR-04, GR-09). Gọi TRONG
+ * `uow.run` — module notifications ghi cùng transaction (rollback ⇒ không còn dòng) và tự phát
+ * `notification:new` sau commit. Adapter ở composition root (ADR-093: Workspace không import notifications).
+ */
+export interface IHrGrantNotifier {
+  grantsChanged(input: {
+    workspaceId: string;
+    /** Người được cấp / bị thu — người nhận thông báo. */
+    userId: string;
+    actorId: string;
+    /** `true` ⇒ HR_GRANTED, `false` ⇒ HR_REVOKED. */
+    added: boolean;
+    /** id dòng `workspace_members` — `refId` của thông báo. */
+    membershipId: string;
+  }): Promise<void>;
+}
+
 /** `ProjectDto` (contracts) dạng truyền qua socket — ngày là chuỗi ISO. */
 export interface ProjectEventDto {
   id: string;

@@ -12,6 +12,7 @@ import { DefaultWorkspaceProvisioner } from './application/adapters/workspace-pr
 import type {
   ITaskAssignmentCleaner,
   IUserDirectory,
+  IHrGrantNotifier,
   IWorkspaceRealtimeNotifier,
 } from './application/ports/collaborators.port';
 import type { IWorkspaceQueries } from './application/ports/queries.port';
@@ -93,6 +94,8 @@ export interface WorkspaceModuleDeps {
   /** Tra user theo email/id — composition root bọc repository user của auth (ADR-093). */
   users: IUserDirectory;
   notifier: IWorkspaceRealtimeNotifier;
+  /** HR_GRANTED / HR_REVOKED bền (ADR-123) — composition nối vào module notifications. */
+  hrNotifier: IHrGrantNotifier;
   cleaner: ITaskAssignmentCleaner;
   uow: IUnitOfWork;
   ids: IIdGenerator;
@@ -150,6 +153,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       cleaner,
       notifier,
       audit,
+      hrNotifier: d.hrNotifier,
       uow,
       clock,
       logger,
@@ -190,6 +194,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
             users,
             audit,
             notifier,
+            hrNotifier: d.hrNotifier,
             uow,
             clock,
             logger,

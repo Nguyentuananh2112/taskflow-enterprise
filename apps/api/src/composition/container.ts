@@ -32,6 +32,7 @@ import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
 import { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
+import { hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
 
 export interface ContainerConfig extends AppConfig {
@@ -115,20 +116,7 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
   });
-  const workspace = createWorkspaceModule({
-    repos: persistence.workspace,
-    users: new AuthUserDirectory(persistence.auth.users),
-    notifier: realtime,
-    cleaner: task.cleaner,
-    uow: persistence.uow,
-    ids,
-    clock,
-    random,
-    logger,
-    responder,
-    limit,
-  });
-  workspaceRef.current = workspace;
+  // Trước Workspace: publisher là port ghi thông báo (cùng UoW) cho Workspace / leave / attendance.
   const notifications = createNotificationsModule({
     repos: persistence.notifications,
     // B-H3b: quyền hiệu lực role ∪ grants đọc từ DB mỗi lần (audience), cùng ma trận với contracts.
@@ -140,6 +128,21 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
   });
+  const workspace = createWorkspaceModule({
+    repos: persistence.workspace,
+    users: new AuthUserDirectory(persistence.auth.users),
+    notifier: realtime,
+    hrNotifier: hrGrantNotifierFrom(notifications.publisher),
+    cleaner: task.cleaner,
+    uow: persistence.uow,
+    ids,
+    clock,
+    random,
+    logger,
+    responder,
+    limit,
+  });
+  workspaceRef.current = workspace;
   const auth = createAuthModule({
     repos: persistence.auth,
     hasher: d.hasher,

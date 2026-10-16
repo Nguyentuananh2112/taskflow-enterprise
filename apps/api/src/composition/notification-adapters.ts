@@ -6,6 +6,7 @@ import type {
   LeaveSummary,
   MemberAccess,
 } from '../modules/notifications/application/ports';
+import type { IHrGrantNotifier } from '../modules/workspace/application/ports/collaborators.port';
 import type { IWorkspaceQueries } from '../modules/workspace/application/ports/queries.port';
 import type { IMembershipRepository } from '../modules/workspace/application/ports/repositories.port';
 
@@ -103,6 +104,20 @@ export function attendanceNotifierFrom(publisher: Publisher): AttendanceNotifier
         refId: eventId,
         actorId,
         recipient: { kind: 'user', userId: recipientId },
+      }),
+  };
+}
+
+/** `IHrGrantNotifier` (Workspace, GR-04 / GR-09): cấp ⇒ HR_GRANTED, thu ⇒ HR_REVOKED; `refId` = membership. */
+export function hrGrantNotifierFrom(publisher: Publisher): IHrGrantNotifier {
+  return {
+    grantsChanged: ({ workspaceId, userId, actorId, added, membershipId }) =>
+      publisher.notify({
+        workspaceId,
+        type: added ? 'HR_GRANTED' : 'HR_REVOKED',
+        refId: membershipId,
+        actorId,
+        recipient: { kind: 'user', userId },
       }),
   };
 }

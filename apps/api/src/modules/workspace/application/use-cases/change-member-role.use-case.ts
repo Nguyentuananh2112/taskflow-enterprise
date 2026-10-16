@@ -5,6 +5,7 @@ import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { HrAuditWriter } from '../hr-audit-writer';
 import { assertWorkspaceLive } from '../workspace-guard';
 import type {
+  IHrGrantNotifier,
   ITaskAssignmentCleaner,
   IUserDirectory,
   IWorkspaceRealtimeNotifier,
@@ -22,6 +23,8 @@ export interface ChangeMemberRoleDeps {
   notifier: IWorkspaceRealtimeNotifier;
   /** ADR-119: đổi role xóa grants (sang OWNER / VIEWER) ⇒ HrAuditLog REVOKE cùng transaction (GR-09). */
   audit: HrAuditWriter;
+  /** GR-09: grants bị xóa theo role ⇒ HR_REVOKED (thông báo bền, cùng transaction — review B M1c). */
+  hrNotifier: IHrGrantNotifier;
   uow: IUnitOfWork;
   clock: IClock;
   logger: ILogger;
@@ -78,6 +81,13 @@ export class ChangeMemberRoleUseCase {
           targetUserId: target.userId,
           before: { grants: grantsBefore, role: previousRole },
           after: { grants: grantsAfter, role },
+        });
+        await this.d.hrNotifier.grantsChanged({
+          workspaceId: actor.workspaceId,
+          userId: target.userId,
+          actorId: actor.userId,
+          added: false,
+          membershipId: target.id,
         });
       }
 

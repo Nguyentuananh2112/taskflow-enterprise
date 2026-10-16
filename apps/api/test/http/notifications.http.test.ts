@@ -55,7 +55,11 @@ beforeEach(async () => {
     .set(alice.auth)
     .send({ grants: ['HR_MANAGE'] });
   expect(granted.status).toBe(200);
+  // Cấp HR ⇒ Hana có HR_GRANTED (ca riêng bên dưới); đánh dấu đã đọc làm mốc 0 cho các ca đếm.
+  expect((await post(hana, '/read-all')).status).toBe(204);
 });
+
+const typesOf = async (by: TestUser) => (await list(by)).map((n) => n.type);
 
 describe('GET /me/notifications', () => {
   it('chưa đăng nhập ⇒ 401 ở cả 4 route', async () => {
@@ -69,13 +73,25 @@ describe('GET /me/notifications', () => {
     }
   });
 
+  it('GR-04 qua route thật: OWNER cấp HR ⇒ Hana có HR_GRANTED (actor = OWNER, không ngữ cảnh đơn)', async () => {
+    const [n] = await list(hana);
+    expect(NotificationDto.strict().parse(n)).toMatchObject({
+      type: 'HR_GRANTED',
+      workspaceId: wsId,
+      actor: { id: alice.id, fullName: 'Alice' },
+      leave: null,
+    });
+    expect(await typesOf(alice)).toEqual([]); // người cấp không tự nhận
+  });
+
   it('fan-out tới OWNER + HR, không tới người gửi; DTO đúng contract, có tên ws + actor, không lý do', async () => {
     await miaSubmits();
     for (const hr of [alice, hana]) {
       const res = await get(hr);
       expect(res.status).toBe(200);
-      const { data, meta } = envelopeOf<NotificationDto[]>(res);
+      const { data: all, meta } = envelopeOf<NotificationDto[]>(res);
       expect(meta?.page).toMatchObject({ hasMore: false, nextCursor: null, limit: 20 });
+      const data = all?.filter((n) => n.type === 'LEAVE_SUBMITTED');
       expect(data).toHaveLength(1);
       expect(NotificationDto.strict().parse(data?.[0])).toMatchObject({
         type: 'LEAVE_SUBMITTED',
@@ -100,12 +116,12 @@ describe('GET /me/notifications', () => {
   it('phân trang cursor: limit=1 ⇒ nextCursor; cursor sai loại / limit ngoài [1,50] ⇒ 400', async () => {
     await miaSubmits();
     await miaSubmits();
-    const first = envelopeOf<NotificationDto[]>(await get(hana, '?limit=1'));
+    const first = envelopeOf<NotificationDto[]>(await get(alice, '?limit=1'));
     expect(first.data).toHaveLength(1);
     const cursor = first.meta?.page?.nextCursor;
     expect(cursor).toBeTruthy();
     const second = envelopeOf<NotificationDto[]>(
-      await get(hana, `?limit=1&cursor=${encodeURIComponent(cursor ?? '')}`),
+      await get(alice, `?limit=1&cursor=${encodeURIComponent(cursor ?? '')}`),
     );
     expect(second.data?.[0]?.id).not.toBe(first.data?.[0]?.id);
     expect(second.meta?.page?.hasMore).toBe(false);
@@ -126,8 +142,9 @@ describe('GET /me/notifications', () => {
       .set(alice.auth)
       .send({ grants: [] });
     expect(revoked.status).toBe(200);
-    expect(await list(hana)).toEqual([]);
-    expect(await count(hana)).toBe(0);
+    // LEAVE_SUBMITTED ẩn; còn lại thông báo về chính quyền của Hana (HR_REVOKED mới, chưa đọc).
+    expect(await typesOf(hana)).toEqual(['HR_REVOKED', 'HR_GRANTED']);
+    expect(await count(hana)).toBe(1);
     expect(await count(alice)).toBe(1);
   });
 
@@ -145,7 +162,7 @@ describe('GET /me/notifications', () => {
 describe('POST /me/notifications/:id/read · /read-all', () => {
   it('SEC-HR-17: id của người khác ⇒ 404 notification (không đổi trạng thái); của mình ⇒ 204, lặp lại vẫn 204', async () => {
     await miaSubmits();
-    const [n] = await list(hana);
+    const n = (await list(hana)).find((x) => x.type === 'LEAVE_SUBMITTED');
     const id = n?.id ?? '';
 
     const foreign = await post(mia, `/${id}/read`);
@@ -159,7 +176,7 @@ describe('POST /me/notifications/:id/read · /read-all', () => {
     expect((await post(hana, `/${id}/read`)).status).toBe(204);
     expect((await post(hana, `/${id}/read`)).status).toBe(204);
     expect(await count(hana)).toBe(0);
-    expect((await list(hana))[0]?.readAt).not.toBeNull();
+    expect((await list(hana)).find((x) => x.id === id)?.readAt).not.toBeNull();
     expect(await count(alice)).toBe(1); // bản của Alice là dòng riêng
   });
 

@@ -11,6 +11,7 @@ import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type {
   IUserDirectory,
   IWorkspacePurger,
+  IHrGrantNotifier,
   IWorkspaceRealtimeNotifier,
   UserSummary,
 } from '../application/ports/collaborators.port';
@@ -107,6 +108,7 @@ export function createWorkspaceHarness(
   const ids = new SequentialIdGenerator();
   const { workspaces, memberships, projects, users, uow } = backend;
   const notifier = createSpy<IWorkspaceRealtimeNotifier>(uow);
+  const hrNotifier = createSpy<IHrGrantNotifier>(uow);
   const cleaner = new SpyTaskAssignmentCleaner(uow);
   const logger = new SpyLogger();
   const creator = new WorkspaceCreator({ workspaces, memberships, ids, clock });
@@ -119,6 +121,7 @@ export function createWorkspaceHarness(
     ids,
     random,
     notifier,
+    hrNotifier,
     cleaner,
     logger,
     creator,
