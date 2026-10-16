@@ -105,7 +105,8 @@ Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now, employed
 | SD-36 | IN và OUT đều trước giờ bắt đầu (A) | IN 00:30 · OUT 01:00 | `early`, **earlyMin 570** (`end − max(OUT, start)`), worked 0 — không phải 990 |
 | SD-37 | trước khi gia nhập (`NOT_EMPLOYED`, TL) | nhiệm kỳ từ `joinedAt` 18/11; ngày 16/11 (T2), không lượt nào | **`NOT_EMPLOYED`** (ưu tiên cao nhất), tính 0 ở mọi tổng |
 | SD-38 | chính ngày gia nhập | `joinedAt` 18/11 10:00; ngày 18/11 đã qua, không lượt nào | tính **bình thường** ⇒ `ABSENT` (không phải `NOT_EMPLOYED`) |
-| SD-39 | sau khi rời | nhiệm kỳ 01/11 → `leftAt` 20/11 (`workspace_member_departures`); ngày 23/11, không lượt nào | `NOT_EMPLOYED`; ngày 20/11 (ngày rời) **xem Q9** |
+| SD-39 | sau khi rời | nhiệm kỳ 01/11 → `leftAt` 20/11 (`workspace_member_departures`); ngày 23/11, không lượt nào | `NOT_EMPLOYED`; ngày 20/11 (ngày của `leftAt` theo múi giờ lịch) tính **bình thường** (Q9) |
+| SD-39b | biên ngày rời theo múi giờ lịch | `leftAt` = 20/11 23:30 VN (= 20/11 16:30Z); ngày 20/11 không lượt; ngày 21/11 | 20/11 bình thường (`ABSENT`); 21/11 `NOT_EMPLOYED`. `leftAt` = 20/11 00:30 VN (= 19/11 17:30Z) ⇒ ngày rời là **20/11** (không phải 19/11 theo UTC) |
 | SD-40 | rời rồi vào lại | nhiệm kỳ 01/11–10/11 và từ 20/11 | 15/11 `NOT_EMPLOYED`; 20/11 tính bình thường; 05/11 tính bình thường |
 | SD-41 | có lượt chấm ngoài nhiệm kỳ | trước `joinedAt`: IN 08:00 · OUT 17:30 ngày 16/11 | tính **như thường** ⇒ `PRESENT`, worked 480 (dữ liệu thật thắng nhiệm kỳ) |
 | SD-42 | ngoài nhiệm kỳ, chỉ có lượt đã hủy | ngày 16/11 trước `joinedAt`: IN 08:00 (`voidedAt`) | `NOT_EMPLOYED` (lượt đã hủy không tính là "có lượt chấm") |
@@ -318,4 +319,4 @@ Repo Prisma vẫn loại khỏi mutation (chỉ integration phủ — F3).
 | Q6 | Route nhân viên có nhận `userId` không, hay luôn là `me`? | **ĐÃ CHỐT (TL):** chỉ `me`, không tham số `userId` — giảm bề mặt IDOR (SEC-HR-03) |
 | Q7 | `grace` áp cho về sớm không? | **ĐÃ CHỐT (TL):** không, `grace` chỉ áp cho muộn (SD-06) |
 | Q8 | Ra sau 00:00 khi ngày hôm sau là ngày làm và người đó lại IN lúc 08:00 | **ĐÃ CHỐT (TL):** OUT 00:30 gắn ngày trước; IN 08:00 mở ngày mới (SD-11b). Cập nhật 3a6c7fe: thay "16 h" bằng giờ chốt ngày công **06:00** (giờ của lịch) — biên SD-12b/12c/12d |
-| Q9 | Ngày của `leftAt` (chính ngày rời, không có lượt chấm) | **CHỜ TL**: đề xuất của F — tính bình thường (đối xứng với ngày gia nhập); `NOT_EMPLOYED` từ ngày kế tiếp (SD-39) |
+| Q9 | Ngày của `leftAt` (chính ngày rời, không có lượt chấm) | **ĐÃ CHỐT (TL):** ngày của `leftAt` (theo múi giờ lịch) tính bình thường, đối xứng ngày gia nhập; `NOT_EMPLOYED` từ ngày kế tiếp; HR muốn khác thì sửa bằng ADJUSTMENT / đơn nghỉ (SD-39, SD-39b) |
