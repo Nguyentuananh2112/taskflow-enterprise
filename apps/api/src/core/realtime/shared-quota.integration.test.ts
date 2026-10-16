@@ -125,7 +125,7 @@ describe.runIf(available)('SharedRealtimeQuota trên Valkey thật (2 instance)'
     }
   });
 
-  it('2 gateway thật cùng Valkey: socket thứ 21 của một user bị từ chối dù nối sang instance kia', async () => {
+  it('2 gateway thật cùng Valkey: socket thứ 21 của một user bị từ chối dù nối sang instance kia; ngắt một socket ⇒ nhận lại được', async () => {
     const shared = () =>
       new SharedRealtimeQuota({
         valkey,
@@ -141,14 +141,26 @@ describe.runIf(available)('SharedRealtimeQuota trên Valkey thật (2 instance)'
       await Promise.all([qa.heartbeat(), qb.heartbeat()]);
       const id = randomUUID();
       const token = `user:${id}:s1`;
+      const sockets = [];
       for (let i = 0; i < MAX_SOCKETS_PER_USER; i++) {
-        await connected((i % 2 ? b : a).client({ token }));
+        const socket = (i % 2 ? b : a).client({ token });
+        await connected(socket);
+        sockets.push(socket);
       }
       const extra = b.client({ token });
       const err = await new Promise<{ message: string }>((resolve) =>
         extra.once('connect_error', resolve),
       );
       expect(err.message).toBe('RATE_LIMITED');
+      // Socket ở A ngắt ⇒ gateway A trả suất (Lua RELEASE) ⇒ B nhận được socket mới.
+      sockets[0]!.disconnect();
+      const total = async () =>
+        (await valkey.sendCommand<string[]>(['HVALS', SOCKET_KEY(id)])).reduce(
+          (sum, n) => sum + Number(n),
+          0,
+        );
+      await expect.poll(total, { timeout: 3_000 }).toBe(MAX_SOCKETS_PER_USER - 1);
+      await connected(b.client({ token }));
     } finally {
       await a.close();
       await b.close();
