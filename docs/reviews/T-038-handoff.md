@@ -4,6 +4,9 @@
 > T-037, T-037b, T-040). Worktree `D:\TaskFlow_wt\T-024` (dùng lại theo ADR-107). Mọi commit đã qua hook đầy đủ.
 > Báo cáo chi tiết (phạm vi, quyết định, review B): `docs/reviews/T-038-report.md`. Việc còn lại: mục 4.
 
+> **CẬP NHẬT: T-038 ĐÃ VÀO MAIN** (`0fb023f` → `f9cdcc7`, mọi cổng exit 0 — `T-038-report.md` mục "Lệnh đã chạy").
+> Việc còn lại của A chỉ là hỗ trợ D nối lịch / đơn nghỉ khi T-039 rebase (mục 4, bước 4).
+
 ## 1. Trạng thái ngắn
 
 - Code T-038 ĐỦ phạm vi ticket: domain, check-in/out, me/*, HR today/month/events/ADJUSTMENT/void, lịch + ngày lễ,
