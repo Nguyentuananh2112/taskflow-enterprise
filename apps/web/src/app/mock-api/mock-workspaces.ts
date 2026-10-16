@@ -1,4 +1,4 @@
-import type { WorkspaceRole } from '@taskflow/contracts/rbac';
+import type { MemberGrant, WorkspaceRole } from '@taskflow/contracts/rbac';
 
 // Workspace + thành viên của mock API (T-034). Một nguồn dữ liệu duy nhất: đổi tên/slug, xóa mềm,
 // khôi phục thấy ngay ở mọi thành viên (trước T-034 mỗi membership giữ bản sao tên/slug).
@@ -16,6 +16,8 @@ export type MemberRow = {
   workspaceId: string;
   userId: string;
   role: WorkspaceRole;
+  /** ADR-119: OWNER / VIEWER luôn `[]` (đổi role sang 2 vai trò này xóa grants — B-M2). */
+  grants: MemberGrant[];
   joinedAt: string;
 };
 
@@ -136,10 +138,19 @@ export class MockWorkspaces {
 
   setMember(workspaceId: string, userId: string, role: WorkspaceRole): MemberRow {
     const existing = this.member(workspaceId, userId);
-    if (existing) return Object.assign(existing, { role });
-    const row: MemberRow = { workspaceId, userId, role, joinedAt: this.iso() };
+    if (existing) {
+      const keep = role !== 'OWNER' && role !== 'VIEWER';
+      return Object.assign(existing, { role, grants: keep ? existing.grants : [] });
+    }
+    const row: MemberRow = { workspaceId, userId, role, grants: [], joinedAt: this.iso() };
     this.members.push(row);
     return row;
+  }
+
+  /** `PUT members/:userId/grants` — đặt toàn bộ tập grant (bên gọi đã kiểm role đích). */
+  setGrants(workspaceId: string, userId: string, grants: readonly MemberGrant[]): void {
+    const row = this.member(workspaceId, userId);
+    if (row) row.grants = [...new Set(grants)];
   }
 
   removeMember(workspaceId: string, userId: string): void {

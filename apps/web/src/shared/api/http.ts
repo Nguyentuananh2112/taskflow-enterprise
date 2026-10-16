@@ -37,7 +37,7 @@ const ErrorEnvelopeAnyCode = ApiErrorEnvelope.extend({
   error: ApiErrorBody.extend({ code: z.string().min(1) }),
 });
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 type Query = Readonly<Record<string, string | number | boolean | null | undefined>>;
 
 export type RequestOptions<S extends z.ZodType> = Readonly<{
@@ -51,7 +51,12 @@ export type RequestOptions<S extends z.ZodType> = Readonly<{
    * lại sau lỗi mạng thì gửi lại CÙNG key ⇒ server trả kết quả cũ, không tạo lượt thứ hai.
    */
   idempotencyKey?: string;
+  /** Mặc định `application/json`; tải file (CSV) đặt kiểu file. */
+  accept?: string;
 }>;
+
+/** File tải về (`download`): tên lấy từ `Content-Disposition`, không có ⇒ `null`. */
+export type DownloadResult = { blob: Blob; filename: string | null };
 
 export type ApiResult<T> = { data: T; page: PageMeta | undefined; requestId: string | undefined };
 
@@ -71,11 +76,11 @@ export function createHttpClient(deps: HttpDeps) {
   async function send(method: Method, path: string, opts: RequestOptions<z.ZodType>) {
     await refresh?.inflight()?.catch(() => undefined); // hàng đợi: chờ refresh đang chạy
     const token = deps.auth?.getAccessToken() ?? null;
-    const headers = new Headers({ Accept: 'application/json' });
+    const headers = new Headers({ Accept: opts.accept ?? 'application/json' });
     // T-029 H2: API bắt buộc Content-Type JSON cho MỌI POST/PATCH, kể cả không có body (ép trình
     // duyệt preflight — một lớp chống CSRF, security.md §6.3). Thiếu ⇒ 415: refresh/logout/logout-all
     // hỏng mà UI vẫn tưởng thành công. Không có body ⇒ gửi `{}`.
-    const hasBodyMethod = method === 'POST' || method === 'PATCH';
+    const hasBodyMethod = method === 'POST' || method === 'PUT' || method === 'PATCH';
     const body = opts.body === undefined ? (hasBodyMethod ? {} : undefined) : opts.body;
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -170,15 +175,24 @@ export function createHttpClient(deps: HttpDeps) {
           cause,
         });
 
-  async function request<S extends z.ZodType>(
+  /** File (CSV) thành công ⇒ Blob; lỗi vẫn là envelope JSON ⇒ `parse` ném ApiError như mọi request. */
+  async function readFile(response: Response): Promise<DownloadResult> {
+    if (!response.ok) await parse(response, z.never());
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? null;
+    return { blob: await response.blob(), filename };
+  }
+
+  async function request<S extends z.ZodType, T = ApiResult<z.output<S>>>(
     method: Method,
     path: string,
     opts: RequestOptions<S>,
     retried = false,
-  ): Promise<ApiResult<z.output<S>>> {
+    read: (response: Response) => Promise<T> = (r) => parse(r, opts.schema) as Promise<T>,
+  ): Promise<T> {
     const { response, sentToken } = await send(method, path, opts);
     try {
-      return await parse(response, opts.schema);
+      return await read(response);
     } catch (error) {
       if (!(error instanceof ApiError) || !deps.auth || !refresh) throw error;
       // Chỉ TOKEN_EXPIRED mới tự refresh (security.md §2.5) — và chỉ thử lại 1 lần.
@@ -187,7 +201,7 @@ export function createHttpClient(deps: HttpDeps) {
           const ok = await renewed(sentToken).catch((cause: unknown) => {
             throw refreshUnavailable(cause);
           });
-          if (ok) return request(method, path, opts, true);
+          if (ok) return request(method, path, opts, true, read);
         }
         deps.auth.onSessionEnded('expired');
       } else if (error.code === 'UNAUTHORIZED' && sentToken !== null) {
@@ -206,11 +220,15 @@ export function createHttpClient(deps: HttpDeps) {
   return {
     get: call('GET'),
     post: call('POST'),
+    put: call('PUT'),
     patch: call('PATCH'),
     delete: call('DELETE'),
     /** Khi cần `meta.page` (danh sách phân trang cursor) hoặc `requestId`. */
     request: <S extends z.ZodType>(method: Method, path: string, opts: RequestOptions<S>) =>
       request(method, path, opts),
+    /** GET một file (CSV — attendance-leave §5): Bearer + tự refresh như mọi request, trả Blob. */
+    download: (path: string, opts: Readonly<{ query?: Query; accept: string }>) =>
+      request('GET', path, { schema: z.never(), ...opts }, false, readFile),
   };
 }
 
