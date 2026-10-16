@@ -2,7 +2,10 @@
 
 Nhánh `feat/T-039-leave`. Nguồn: `docs/design/attendance-leave.md` §2 (ADR-122), §4, §5, §9 · `docs/design/test-spec-hr.md` §2–§4, §8.
 
-> Trạng thái: code xong, composition nối adapter THẬT (lịch ← T-038, thông báo ← T-040, quyền/audit ← T-037), không còn adapter tạm. Chờ verify đầy đủ của TL + cổng hộp đen F (`SEC_RUN_PENDING=T-039`).
+> **TRẠNG THÁI: ĐÃ MERGE** — `main` 35e4589 (merge `feat/T-039-leave` @ 87255e8). Cổng TL đều exit 0: verify 8/8,
+> integration 747/747, security, web build, e2e-tsc. Hộp đen F (`SEC_RUN_PENDING=T-039`) 37/37 — gồm SEC-HR-10 / CC-HR-11
+> (thu grant ‖ approve, FOR SHARE thật). Review: B APPROVE (bảo mật), A OK (phần chạm attendance + composition).
+> Dời (không chặn): k6 cặp đảo, Stryker leave-domain — xem `T-039-handoff.md` §3.
 
 ## 1. Đã làm
 
@@ -32,14 +35,15 @@ Nhánh `feat/T-039-leave`. Nguồn: `docs/design/attendance-leave.md` §2 (ADR-1
 
 | Tầng | Nội dung | Kết quả |
 |---|---|---|
-| U/A (in-memory) | domain + LV-01..25, LB-04..08, LD-06/09, read side, preview, ApprovedLeave, reason, DTO parity | 112 xanh (api) · contracts 128 xanh |
+| U/A (in-memory) | domain + LV-01..25, LB-04..08, LD-06/09, phía đọc, preview, ApprovedLeave, reason, DTO parity | xanh (trong verify 8/8) |
+| HTTP | luồng chính, preview, số dư, thông báo thật (T-040), liên module attendance (ON_LEAVE, leaveDays, ngày lễ), SEC-HR-01/02/03/05/06/07/15/25, LV-20, audit không chứa reason | 14 ca xanh |
 | Mutant tay | bỏ khóa advisory ⇒ CC-HR-04/05 đỏ 5/5; 3 mutant domain ⇒ bị bắt | bị bắt |
-| I (Postgres) | persistence 12 + read model 5 (mới) | 12 xanh lần trước; read model **chưa chạy** |
-| C (×20) | CC-HR-03..12 | 03..10 xanh ×20 (lần trước); 07/08 (siết theo F), 11, 12 **chưa chạy** |
+| I (Postgres) | persistence 12 + read model 6 (NULL reason + CHECK, keyset, listApproved, leaveSummaries, danh bạ nhân viên) | xanh (trong integration 747/747) |
+| C (×20) | CC-HR-03..12 (07/08 chứng minh thứ tự bằng chuỗi audit + số dư cuối) | xanh ×20 (lượt D 217/217 + integration TL) |
+| Hộp đen F | SEC-HR-04/05/07/10/12/25, CC-HR-03..12 ×20, CC-HR-11 thật | 37/37 |
 
-Điểm yếu đã biết: CC-HR-11 hiện ở mức **fake** (thu grant không qua DB) — bản thật cần `HrAccess` + Postgres (FOR SHARE) sau khi nối composition. CC-HR-07/08 chứng minh tuần tự bằng thứ tự audit của spy (ghi trong khóa).
+Ghi chú: CC-HR-11 trong suite của D chỉ ở mức fake; bằng chứng FOR SHARE thật là SEC-HR-10/CC-HR-11 hộp đen của F.
 
-## 4. Còn lại trước `DONE T-039`
+## 4. Kết quả
 
-1. TL: `pnpm verify` + integration (gồm tầng I/C leave ×20) + security exit 0.
-2. F: cổng hộp đen `SEC_RUN_PENDING=T-039` (SEC-HR-04/05/07/10/12/25, CC-HR-03..12 ×20 — gồm CC-HR-11 thật với FOR SHARE).
+`DONE T-039` — việc còn mở và bị dời: `docs/reviews/T-039-handoff.md`.
