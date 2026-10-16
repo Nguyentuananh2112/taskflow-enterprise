@@ -67,6 +67,9 @@ export default defineConfig({
         NODE_ENV: 'test',
         APP_ENV: 'test',
         PORT: String(API_PORT),
+        // Cổng metrics nội bộ do OS chọn: mặc định 9464 trùng dev API (4000) đang chạy ⇒ một trong hai
+        // EADDRINUSE (2026-10-16: dev API của người dùng khởi động lại thất bại vì E2E giữ 9464).
+        METRICS_PORT: '0',
         DATABASE_URL: postgresUrl(db, 'app'),
         REDIS_URL: E2E_REDIS_URL,
         JWT_ACCESS_SECRET: E2E_JWT_SECRET,
