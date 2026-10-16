@@ -9,7 +9,6 @@ import {
   ForbiddenError,
   ResourceConflictError,
   ResourceNotFoundError,
-  type ResourceKind,
 } from '../../../../core/errors';
 import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
 import { effectiveSchedule } from '../../domain/work-schedule';
@@ -35,12 +34,6 @@ export interface HrActor {
   userId: string;
   isOwner: boolean;
 }
-
-/**
- * TẠM: B thêm `'attendance_event'` vào `ResourceKind` (core) + `NotFoundDetails` (contracts) trong T-037
- * (TL giao, tránh 2 người cùng sửa) ⇒ bỏ ép kiểu khi có hash của B.
- */
-const ATTENDANCE_EVENT = 'attendance_event' as ResourceKind;
 
 /** Nhân viên được chấm công: OWNER, PM, MEMBER — VIEWER là khách, không phải nhân viên (§1). */
 const EMPLOYEE_ROLES = new Set(['OWNER', 'PM', 'MEMBER']);
@@ -143,7 +136,7 @@ export class AttendanceEventsUseCases {
     const { d } = this;
     await d.uow.run(async () => {
       const event = await d.events.findById(workspaceId, q.id);
-      if (!event) throw new ResourceNotFoundError(ATTENDANCE_EVENT);
+      if (!event) throw new ResourceNotFoundError('attendance_event');
       this.#assertNotSelf(actor, event.userId);
       const ok = await d.events.void({
         workspaceId,

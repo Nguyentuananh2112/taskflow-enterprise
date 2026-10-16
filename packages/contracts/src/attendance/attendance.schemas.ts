@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { UserRefDto } from '../auth/auth.schemas';
 import { DateOnly, IsoDateTime, Uuid } from '../common/primitives';
+import { AttendanceKind, AttendanceSource } from '../hr/hr.schemas';
 
 // Chấm công (T-038, thiết kế attendance-leave.md §4–§5, hợp đồng web chốt với E cho T-041a).
 // Giờ trả về là ISO UTC; web hiển thị theo `timezone` của LỊCH hiệu lực (ADR-120), không theo máy.
@@ -98,10 +99,8 @@ export type AttendanceMonthDto = z.infer<typeof AttendanceMonthDto>;
 
 // ---------- Lượt chấm thô (§5, TL duyệt kèm góp ý E): HR xem/thêm/hủy, nhân viên xem của mình ----------
 
-export const AttendanceKind = z.enum(['IN', 'OUT']);
-export type AttendanceKind = z.infer<typeof AttendanceKind>;
-export const AttendanceSource = z.enum(['WEB', 'DEVICE', 'ADJUSTMENT']);
-export type AttendanceSource = z.infer<typeof AttendanceSource>;
+// `AttendanceKind` / `AttendanceSource`: định nghĩa DUY NHẤT ở `hr/hr.schemas.ts` (T-037, khớp enum Postgres
+// của migration 3 — TL chốt), import lại ở đây.
 
 /**
  * Một lượt chấm, gồm cả lượt ĐÃ HỦY (log bất biến — ADR-121). IP/UA chỉ có ở route HR (`hr:manage`) và
