@@ -12,4 +12,5 @@ export * from './attendance';
 export * from './audit/audit.schemas';
 export * from './realtime/events';
 export * from './hr/hr.schemas';
+export * from './leave';
 export * from './system/healthz.schemas';
