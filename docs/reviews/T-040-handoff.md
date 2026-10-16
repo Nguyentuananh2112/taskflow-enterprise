@@ -2,7 +2,9 @@
 
 > **TRẠNG THÁI: ĐÃ MERGE** — `main` 6fcdce4 (merge `feat/T-040-notifications` @ 8ea3f7c). Cổng của TL đều exit 0:
 > verify 8/8, integration 474/474, security 125 pass + 37 pending (khai báo), web build, e2e-tsc. B review: APPROVE.
-> T-040 xong; B KHÔNG cần làm lại phần nào. Việc còn mở (không chặn, phần lớn chờ T-038 / T-039): **mục 6**.
+> T-040 xong; B KHÔNG cần làm lại phần nào. **T-040b (L2 của G + L3 của B) cũng đã merge** — `main` 3958f3d
+> (merge `feat/T-040b-l2-readers` @ b45b843; integration 751/751, security, build exit 0; B approve). Báo cáo L2:
+> `docs/reviews/T-040b-l2-report.md`. Việc còn mở thật sự lúc G nghỉ (01:0x 17/10): **mục 6, dòng 3 và 4**.
 
 ## 1. Đã làm
 
@@ -69,15 +71,15 @@ Script G dùng: `scratchpad/run-int.sh` (DROP/CREATE `taskflow_t040` bằng `tas
 
 ## 6. Việc còn mở (sau merge)
 
-| # | Việc | Ai | Trạng thái lúc G bàn giao |
+| # | Việc | Ai | Trạng thái (main e330783) |
 |---|---|---|---|
-| 1 | Nối `attendanceNotifierFrom(notifications.publisher)` vào attendance khi rebase T-038 | A | đã báo A (T-040 vào main); thứ tự merge **T-038 → T-039** |
-| 2 | Nối `leaveNotifierFrom(notifications.publisher)`, xóa `noLeaveNotifications`, đổi `LeaveNotifierPort` → `ILeaveNotifier` | D | đã báo D; D thêm ca HTTP "HR tự gửi đơn ⇒ chỉ OWNER nhận" |
-| 3 | Gỡ pending SEC-HR-15, 17, 18, 19, 20 (`apps/api/test/security/harness/pending.ts` — ghi ticket T-040 nhưng thực ra cần route của T-038 / T-039) | F | sau khi 1 + 2 merge; G đã đọc `hr.sec.ts` — kỳ vọng khớp API |
-| 4 | E2E-HR-02 (chuông realtime < 2 s) | F / E | sau T-039 + T-041a |
-| 5 | L2: chuyển `PrismaNotificationAudience` (đọc `workspace_members`) sang reader do Workspace cung cấp; tương tự context đọc `leave_requests` | B | chờ TL quyết |
-| 6 | L3: lọc `createdAt ≥ joinedAt` của nhiệm kỳ hiện tại (bị xóa rồi mời lại ⇒ không thấy thông báo nhiệm kỳ cũ) — dùng `workspace_member_departures` của T-037b | B | chờ TL quyết |
-| 7 | LOW (b): `InMemoryNotificationAudience.membersOf` gọi `find` N lần | — | chấp nhận (chỉ chế độ bộ nhớ) |
+| 1 | Nối `attendanceNotifierFrom(notifications.publisher)` vào attendance | A | ✅ xong — `container.ts` (T-038) |
+| 2 | Nối `leaveNotifierFrom(notifications.publisher)`, bỏ `noLeaveNotifications`, kiểu `ILeaveNotifier` thật | D | ✅ xong — `leave-wiring.ts` (T-039) |
+| 3 | Gỡ pending **SEC-HR-15, 17, 18, 19, 20** (`apps/api/test/security/harness/pending.ts` vẫn ghi ticket T-040, lý do "chưa có module notifications" — đã lỗi thời) | F | ⏳ MỞ — mọi điều kiện đã có trên main (route leave + attendance + notifier thật); G đã đọc `hr.sec.ts`: kỳ vọng khớp API |
+| 4 | E2E-HR-02 (chuông realtime < 2 s) — `e2e/specs/hr.e2e.ts` đang `test.fixme` | F / E | ⏳ MỞ — chờ web chuông (T-041a/b) |
+| 5 | L2: notifications chỉ đọc qua reader của module sở hữu | G | ✅ xong — T-040b (main 3958f3d) |
+| 6 | L3: chỉ thông báo của nhiệm kỳ hiện tại (`createdAt ≥ joinedAt`) | B | ✅ xong — T-040b |
+| 7 | LOW (b): `membersOf` N lần `find` (bộ nhớ) | — | ✅ đóng — `listMemberAccess` một truy vấn (T-040b) |
 
 File này thay cho `T-040-report.md` (TL đã merge dựa trên nó).
 
@@ -85,3 +87,4 @@ File này thay cho `T-040-report.md` (TL đã merge dựa trên nó).
 - 22:38 nhận vé; 22:50 WIP đầu (B review: không HIGH) · 22:58 HR_GRANTED/REVOKED (M1) · 23:00 rebase main 0ec3bb4 · 23:06 LOW (a) (B APPROVE) · rebase main f78acf6 (sau T-037b) · integration 2 phần xanh (mục 5).
 - `harness.ts` của Workspace 215 dòng sau rebase nhưng `max-lines` không đếm dòng trống/comment ⇒ eslint exit 0, không tách.
 - TL verify f316db6 xanh ⇒ merge 8ea3f7c vào main 6fcdce4. G báo A, D rebase + nối notifier; DB `taskflow_t040` đã DROP, Valkey 6380/12 trống.
+- 00:2x 17/10: T-040b rebase lên T-039 (35e4589), nối `leave.readModel`, xóa reader tạm; TL verify ⇒ merge 3958f3d (main e330783). G nghỉ ~01:0x.
