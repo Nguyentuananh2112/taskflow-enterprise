@@ -24,6 +24,7 @@ export class CancelLeaveUseCase {
   ): Promise<LeaveRequestDto> {
     const { workspaceId, actorId } = scope;
     const d = this.kit.d;
+    // Kiểm chủ đơn ngoài transaction — cùng giả định `userId` của đơn bất biến như decide (B review LOW-2).
     const found = await d.requests.find(workspaceId, input.requestId);
     if (!found || found.userId !== actorId) throw new ResourceNotFoundError('leave_request');
 

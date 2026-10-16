@@ -42,6 +42,8 @@ export class DecideLeaveUseCase {
     const d = this.kit.d;
     if (action === 'revoke') this.kit.requireNote(note, 'Thu hồi đơn đã duyệt phải có lý do.');
     await this.kit.requireActor(workspaceId, actorId, PERMISSION_HR_MANAGE);
+    // Đọc NGOÀI transaction chỉ để biết khóa của AI: giả định `userId` của đơn BẤT BIẾN (không lệnh nào đổi chủ đơn) —
+    // trạng thái / version đọc lại trong khóa (`reload`). Nếu sau này cho đổi chủ đơn thì phải khóa lại (B review LOW-2).
     const found = await d.requests.find(workspaceId, requestId);
     if (!found) throw new ResourceNotFoundError('leave_request');
 

@@ -24,6 +24,8 @@ export class AdjustBalanceUseCase {
     const d = this.kit.d;
     const note = input.note ?? null;
     const guard = { workspaceId, actorId, targetUserId: input.userId, reason: note };
+    // Lần 1 NGOÀI transaction: CHỈ để thất bại sớm (403 / 422 trước 400 năm, 404 user) — FOR SHARE ở đây không giữ
+    // khóa nào. Lần chốt là lần thứ hai, trong `uow.run` sau `lockUser` (B review LOW-1).
     await d.membership.authorizeHrWrite(guard);
     const currentYear = yearOf(await this.kit.today(workspaceId));
     if (Math.abs(input.year - currentYear) > 1) {
