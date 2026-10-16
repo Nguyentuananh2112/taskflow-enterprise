@@ -162,6 +162,20 @@ describe('CreateTaskUseCase', () => {
     ).rejects.toBeInstanceOf(ProjectArchivedError);
   });
 
+  it('F3 T-23: project BIẾN MẤT giữa lúc đọc và lúc cấp số ⇒ 404 `details.resource = project` (không 422, không 500)', async () => {
+    const h = await createTaskHarness();
+    const find = h.deps.projects.findInWorkspace.bind(h.deps.projects);
+    let allocating = false;
+    h.deps.projects.allocateTaskNumber = () => {
+      allocating = true;
+      return Promise.resolve(null);
+    };
+    h.deps.projects.findInWorkspace = (key) => (allocating ? Promise.resolve(null) : find(key));
+    await expect(
+      h.create.execute({ ...h.scope('Mia'), input: { title: 'Đua' } }),
+    ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'project' } });
+  });
+
   it('trùng rank (unique partial) ⇒ thử lại cả transaction, quá 3 lần ⇒ 409 RESOURCE_CONFLICT', async () => {
     const h = await createTaskHarness();
     let attempts = 0;
