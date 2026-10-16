@@ -5,13 +5,18 @@
 // Dùng DB riêng `taskflow_f2gate` (ADR-106) + Valkey db 9 riêng. Đỏ trên main 06ed261 (trước fix của D).
 //
 //   node e2e/scripts/integration-isolation-gate.mjs a|b|ab   (chạy từ gốc repo; cần pnpm trên PATH)
+//   Env: F2_GATE_PG (gốc kết nối migrator, không tên DB), F2_GATE_DB, F2_GATE_VALKEY, F2_GATE_OUT.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const MODE = process.argv[2] ?? 'ab';
 const DB = process.env.F2_GATE_DB ?? 'taskflow_f2gate';
-const PG = 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434';
+// Gốc kết nối (không kèm tên DB, role có CREATEDB). Mặc định = postgres-test local (runbook local-dev §5);
+// CI đặt F2_GATE_PG trỏ service container. Bỏ `/` cuối để ghép `${PG}/${DB}`.
+const PG = (
+  process.env.F2_GATE_PG ?? 'postgresql://taskflow_migrator:migrator_local_only@127.0.0.1:5434'
+).replace(/\/+$/, '');
 const OUT = process.env.F2_GATE_OUT ?? join(process.cwd(), 'e2e', 'test-results', 'f2-gate');
 mkdirSync(OUT, { recursive: true });
 
