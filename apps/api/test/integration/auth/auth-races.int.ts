@@ -120,7 +120,7 @@ describe('SEC-23b: login ‖ change-password (A4)', () => {
   );
 });
 
-describe('SEC-23c: đổi mật khẩu commit TRONG cửa sổ verify của login (G1 auth M1, tất định)', () => {
+describe('SEC-23e: đổi mật khẩu commit TRONG cửa sổ verify của login (G1 auth M1, tất định)', () => {
   for (const rehash of [false, true]) {
     it(`login bằng mật khẩu cũ ⇒ 401, không có refresh token sống (rehash=${rehash})`, async () => {
       const { h, alice } = await fresh();
