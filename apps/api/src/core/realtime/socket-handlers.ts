@@ -21,6 +21,7 @@ import {
   type SocketData,
 } from './events';
 import type { IProjectAccessChecker, ISocketAuthenticator } from './ports';
+import type { IRealtimeQuota } from './quota';
 import { SlidingWindow } from '../http/rate-limit/sliding-window';
 
 export type AppSocket = Socket<
@@ -36,10 +37,11 @@ export interface SocketHandlerDeps {
   logger: ILogger;
   clock: IClock;
   ids: IIdGenerator;
-  /** Hạn mức `auth:renew` theo user — DÙNG CHUNG mọi socket của instance (gateway giữ). */
-  renewsByUser: SlidingWindow;
-  /** Hạn mức `project:join` theo user — dùng chung mọi socket của instance (review B M2). */
-  joinsByUser: SlidingWindow;
+  /**
+   * Hạn mức `project:join` / `auth:renew` theo user — gộp mọi socket của user (review B M2), dùng
+   * chung giữa các instance khi bật (ADR-115). Gateway giữ.
+   */
+  quota: IRealtimeQuota;
   /**
    * `true` khi phiên đã được xác thực LẠI sau khi socket vào phòng user/session (review B M1) —
    * `project:join` chờ kết quả này: phiên bị thu hồi giữa handshake ⇒ không vào được phòng nào.
@@ -87,12 +89,13 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
     const now = deps.clock.now().getTime();
     while (joinHits.length && (joinHits[0] ?? 0) <= now - PROJECT_JOIN_LIMIT.windowMs)
       joinHits.shift();
-    if (
-      joinHits.length >= PROJECT_JOIN_LIMIT.limit ||
-      !deps.joinsByUser.tryHit(socket.data.userId, now)
-    )
+    if (joinHits.length >= PROJECT_JOIN_LIMIT.limit)
       return ack({ ok: false, code: 'RATE_LIMITED' });
     joinHits.push(now);
+    // Theo user SAU theo socket (socket đã hết suất thì không tiêu suất của user). Từ đây tới
+    // `pendingJoins.set` không còn `await` ⇒ kiểm số phòng + giữ suất vẫn nguyên tử (review B L1).
+    if (!(await deps.quota.tryJoin(socket.data.userId)))
+      return ack({ ok: false, code: 'RATE_LIMITED' });
 
     const parsed = ProjectJoinPayload.safeParse(payload);
     if (!parsed.success) return ack({ ok: false, code: 'VALIDATION_ERROR' });
@@ -181,8 +184,10 @@ export function registerSocketHandlers(socket: AppSocket, deps: SocketHandlerDep
     };
     // Mỗi lần renew tốn tới ~20 truy vấn DB ⇒ giới hạn TRƯỚC mọi việc khác (T-028 Medium).
     // Không ngắt: client thử lại sau; token hết hạn thì timer `auth:expired` tự ngắt.
-    const now = deps.clock.now().getTime();
-    if (!renews.tryHit(socket.id, now) || !deps.renewsByUser.tryHit(socket.data.userId, now)) {
+    if (
+      !renews.tryHit(socket.id, deps.clock.now().getTime()) ||
+      !(await deps.quota.tryRenew(socket.data.userId))
+    ) {
       return ack({ ok: false, code: 'RATE_LIMITED' });
     }
     const parsed = AuthRenewPayload.safeParse(payload);

@@ -97,6 +97,17 @@ describe('metrics HTTP (T-035 mục 3)', () => {
     );
     expect(text).toContain('socketio_connected_clients 5');
   });
+
+  it('counter() một nhãn (ADR-115: realtime_quota_fallback_total{kind})', async () => {
+    const metrics = new AppMetrics({ defaultMetrics: false });
+    const inc = metrics.counter('realtime_quota_fallback_total', 'fallback', 'kind');
+    inc('socket');
+    inc('socket');
+    inc('join');
+    const text = await metrics.registry.metrics();
+    expect(text).toContain('realtime_quota_fallback_total{kind="socket"} 2');
+    expect(text).toContain('realtime_quota_fallback_total{kind="join"} 1');
+  });
 });
 
 describe('cổng metrics nội bộ', () => {

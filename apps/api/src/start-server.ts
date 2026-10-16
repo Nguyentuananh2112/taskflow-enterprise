@@ -24,6 +24,7 @@ import { RATE_LIMIT_RULES } from './core/http/rate-limit/rules';
 import { createValkeyStore } from './core/http/rate-limit/store';
 import { CryptoRandom, SystemClock, UuidV7Generator } from './core/infrastructure/system';
 import { connectInBackground, createValkeyClient } from './core/infrastructure/valkey';
+import { createRealtimeQuota } from './core/realtime/shared-quota';
 import { createGracefulShutdown, type GracefulShutdown } from './core/lifecycle/graceful-shutdown';
 import { createPgPool, createPrismaClient } from './core/persistence/database';
 import { RealtimeGateway } from './core/realtime/gateway';
@@ -95,6 +96,14 @@ export async function startServer(
 
   const server = createHttpServer(container.app);
   const adapter = env.SOCKET_REDIS_ADAPTER ? await createValkeyAdapter(valkey, logger) : undefined;
+  // ADR-115: > 1 instance ⇒ hạn mức realtime theo user đếm chung qua Valkey (Local vẫn luôn kiểm).
+  const quota = createRealtimeQuota({
+    shared: env.SOCKET_REDIS_ADAPTER,
+    valkey,
+    clock,
+    logger,
+    metrics,
+  });
   const gateway = new RealtimeGateway(server, {
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
@@ -108,6 +117,7 @@ export async function startServer(
     clock,
     ids,
     ...(adapter ? { adapter: adapter.adapter } : {}),
+    quota,
   });
   container.realtime.bind(gateway);
   metrics.gauge(
