@@ -81,19 +81,37 @@ Trên cây cuối cùng (base main `0339da1`, gồm sửa F2), sau `pnpm install
 
 Lịch sử: trước khi sửa F2, integration 128/129 vì F2 vượt timeout 30 s do máy bận (xem mục 3).
 
-## 5. Số đo sơ bộ (KHÔNG thay cho slot k6)
+## 5. Số đo
 
-Bench tạm (đã xóa, không commit): cột 500 task rank 75 ký tự trên Postgres test (5434), đo `durationMs`
-của log `task.rank_rebalanced` + thời gian từng port:
+### 5.1 Chính thức — k6, máy yên (D, T-027c)
 
-| Bản | durationMs (3 lượt) | Phần lớn nhất |
-|---|---|---|
-| Lô v1 (`VALUES` + Prisma `createMany`) | 289 / 361 / 807; 407 / 449 / 274 | `createMany` audit 145–279 ms |
-| Lô v2 (`unnest` cả hai câu) | **138** / 334 / 2064 | lượt 2–3 chạy lúc máy 100% CPU (audit 1796 ms ở lượt 3) |
+Image từ `feat/A3-batch-rebalance` @`2667f6d`, đo 2026-10-16 10:03–10:46. Chi tiết:
+`docs/reviews/T-027c-report.md` (`feat/T-027c` @`9e0648b`).
 
-Trước A3 (T-027b, k6, máy rảnh): P50 812 ms. Số trên đo lúc máy bận, dao động lớn ⇒ **cần slot "máy
-rảnh"** (Q3): `load/single-rebalance-and-cpu.sh` (1 rebalance) + kịch bản §4 (40 đồng thời), gộp
-`node --cpu-prof` ở 150 RPS (mục f).
+| Kịch bản | Trước A3 (T-027/T-027b) | Sau A3 | |
+|---|---|---|---|
+| Rebalance **đơn lẻ** cột 500 task (nền board 50 RPS) — move kích hoạt | P50 812 · P95 874 · max 893 ms | P50 **65,5** · P95 **79,9** · max 88 ms | ~11×, **đạt NFR ghi < 300 ms** |
+| **40 rebalance đồng thời** — move kích hoạt | P50 5636 · P95 7906 · max 8087 ms | P50 832 · P95 982 · max 1029 ms | ~8×; vẫn > 300 ms ở kịch bản xấu nhất (dự kiến) |
+| 40 đồng thời — move thường ngay sau | P95 6792 ms, 29/40 mẫu | P95 344 ms, **40/40 mẫu** | mất mẫu cũ là do xếp hàng |
+| Board 150 RPS (1 bản, gọi thẳng) | đọc/ghi P95 272/335 ms ❌ | 72/111 ms ✅ | API CPU TB 92 % |
+| 1 → 2 bản API sau LB Caddy (adapter Valkey bật) | điểm gãy 150 RPS, trần ~188 req/s | điểm gãy **300 RPS**, trần ~265 req/s | ×1,4 trên VM dev (nhiễu); Postgres đỉnh 113 % ⇒ nút cổ chai kế tiếp khi N > 1 |
+
+**Tỉ trọng emit (điều kiện mở lại ADR-116):** 500 emit đo được 5–10 ms (phòng 0 socket) / 10–15 ms (20
+socket), adapter cục bộ. So với rebalance đơn lẻ P50 65,5 ms ⇒ **8–15 %** khi không ai mở board,
+**15–23 %** với 20 socket trong phòng — **chạm ngưỡng 20 %** ở trường hợp có nhiều client; phần Redis
+adapter chưa đo riêng. Kết luận cho Tech Lead: quyết định `column:rebalanced` nên dựa trên bộ đo phía
+client của E (`perf/board-500`) — lợi ích lớn nhất nằm ở client, phía server vẫn nhỏ về tuyệt đối (≤ 15 ms
+cho sự kiện hiếm).
+
+**cpu-prof (1 bản, 10 → 300 RPS):** self-time `@prisma/client` 18,9 % tổng (~33 % thời gian bận), native
+(writev, utf8) 10 %, node-internal 7,3 %, pg + adapter 5,6 %, Express stringify 2,4 %, `toDto` 1,7 %,
+GC 3 % ⇒ trần CPU chủ yếu ở lớp Prisma của đường đọc board, không ở rebalance (ngoài phạm vi A3).
+
+### 5.2 Sơ bộ lúc code (máy bận — chỉ để lịch sử)
+
+Bench tạm (đã xóa, không commit): cột 500 task rank 75 ký tự trên Postgres test (5434), `durationMs` của
+log `task.rank_rebalanced`. Lô v1 (`VALUES` + Prisma `createMany`): 274–807 ms, `createMany` audit
+145–279 ms ⇒ chuyển sang `unnest`. Lô v2 (`unnest`): 138 ms lúc máy nhẹ nhất; 334 / 2064 ms lúc CPU 100 %.
 
 ## 6. Hướng mở rộng CPU (thiết kế — không code trong A3)
 
