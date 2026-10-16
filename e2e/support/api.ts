@@ -97,13 +97,14 @@ export function apiCreateTask(
   request: APIRequestContext,
   owner: Seeded,
   title: string,
+  description?: string,
 ): Promise<TaskRef> {
   return call<TaskRef>(
     request,
     'POST',
     `/workspaces/${owner.workspaceId}/projects/${owner.projectId}/tasks`,
     owner.accessToken,
-    { title },
+    description === undefined ? { title } : { title, description },
     201,
   );
 }
