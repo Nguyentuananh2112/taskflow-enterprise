@@ -125,6 +125,37 @@ describe('leave HTTP — luồng chính', () => {
   });
 });
 
+describe('leave HTTP — thông báo bền (T-040, adapter thật)', () => {
+  interface Note {
+    type: string;
+    refId: string;
+    leave: { type: string; startDate: string } | null;
+  }
+  const inbox = async (u: TestUser) =>
+    envelopeOf<Note[]>(await request(t.app).get('/api/v1/me/notifications').set(u.auth)).data ?? [];
+
+  it('Mia gửi ⇒ HR (Olivia, Hana) nhận LEAVE_SUBMITTED kèm loại + ngày, không reason; Hana duyệt ⇒ Mia nhận LEAVE_APPROVED', async () => {
+    const dto = envelopeOf<LeaveDto>(
+      await post(mia, '/leave-requests', { ...twoDays, reason: 'sốt cao' }),
+    ).data;
+    for (const hr of [olivia, hana]) {
+      const notes = (await inbox(hr)).filter((n) => n.type === 'LEAVE_SUBMITTED');
+      expect(notes.map((n) => n.refId)).toEqual([dto?.id]);
+      expect(notes[0]?.leave).toMatchObject({ type: 'ANNUAL', startDate: '2026-11-23' });
+      expect(JSON.stringify(notes)).not.toContain('sốt cao');
+    }
+    expect((await inbox(max)).filter((n) => n.type.startsWith('LEAVE_'))).toEqual([]);
+    await post(hana, `/leave-requests/${dto?.id}/approve`, { expectedVersion: 1 });
+    expect((await inbox(mia)).map((n) => n.type)).toContain('LEAVE_APPROVED');
+  });
+
+  it('Hana (HR) tự gửi đơn ⇒ chỉ HR KHÁC (Olivia) nhận — không tự báo cho chính mình', async () => {
+    await post(hana, '/leave-requests', twoDays);
+    expect((await inbox(olivia)).map((n) => n.type)).toContain('LEAVE_SUBMITTED');
+    expect((await inbox(hana)).filter((n) => n.type === 'LEAVE_SUBMITTED')).toEqual([]);
+  });
+});
+
 describe('leave HTTP — thứ tự lỗi & bảo mật', () => {
   it('SEC-HR-01: Otto (ws khác) gọi route leave của W1 ⇒ 404 workspace', async () => {
     for (const res of [

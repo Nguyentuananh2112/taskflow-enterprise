@@ -19,9 +19,6 @@ import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
-import { PrismaLeaveEmployeeDirectory } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-employee-directory';
-import { PrismaLeaveReadModel } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
-import { PrismaLeaveRepository } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave.repository';
 import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
 import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
 import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
@@ -58,7 +55,7 @@ import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persi
 import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
-import { MemberListEmployeeDirectory } from './leave-adapters';
+import { memoryLeaveRepositories, prismaLeaveRepositories } from './leave-adapters';
 import {
   InMemoryNotificationAudience,
   InMemoryNotificationContextReader,
@@ -70,7 +67,9 @@ import {
 } from './task-mirrors';
 import { MirroringUserRepository } from './users';
 
-export type StorageKind = 'memory' | 'prisma';
+import type { StorageKind } from './persistence-guard';
+
+export { assertPersistenceAllowed, type StorageKind } from './persistence-guard';
 
 /** Mọi module cùng một loại lưu trữ (T-020: không chạy lai). */
 const allModules = (kind: StorageKind) =>
@@ -160,14 +159,10 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
         queries: ws.queries,
         memberships: ws.memberships,
       }),
-      context: new InMemoryNotificationContextReader(users),
+      context: new InMemoryNotificationContextReader(users, leaveStore),
     },
     attendance,
-    leave: {
-      requests: leaveStore,
-      readModel: leaveStore,
-      employees: new MemberListEmployeeDirectory(ws.queries),
-    },
+    leave: memoryLeaveRepositories(leaveStore, ws.queries),
     uow,
   };
 }
@@ -226,35 +221,9 @@ export function createPrismaPersistence(d: {
       context: new PrismaNotificationContextReader(db),
     },
     attendance: createPrismaAttendanceRepositories(db),
-    leave: {
-      requests: new PrismaLeaveRepository(db),
-      readModel: new PrismaLeaveReadModel(db),
-      employees: new PrismaLeaveEmployeeDirectory(db),
-    },
+    leave: prismaLeaveRepositories(db),
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),
     uow,
   };
-}
-
-/**
- * Quyết định Tech Lead (T-020): staging/production từ chối khởi động nếu BẤT KỲ module nào chạy
- * bộ nhớ (kể cả trạng thái "lai"). Local/test: trả danh sách module đang chạy bộ nhớ để cảnh báo.
- * Kiểm theo module THỰC SỰ đã wire (không chỉ theo biến môi trường) — module mới (Task — T-024)
- * phải khai `modules.task`.
- */
-export function assertPersistenceAllowed(
-  appEnv: 'local' | 'test' | 'staging' | 'production',
-  modules: Readonly<Record<string, StorageKind>>,
-): string[] {
-  const inMemory = Object.entries(modules)
-    .filter(([, kind]) => kind === 'memory')
-    .map(([name]) => name)
-    .sort();
-  if (inMemory.length > 0 && (appEnv === 'staging' || appEnv === 'production')) {
-    throw new Error(
-      `Lưu trữ bộ nhớ không được dùng ở ${appEnv} (module: ${inMemory.join(', ')}) — cần repository Prisma.`,
-    );
-  }
-  return inMemory;
 }

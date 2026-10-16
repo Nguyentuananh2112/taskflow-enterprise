@@ -39,14 +39,13 @@ import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
 import { attendanceMembership, noApprovedLeaves } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
-import {
-  defaultLeaveCalendar,
-  leaveAudit,
-  leaveMembership,
-  noLeaveNotifications,
-} from './leave-adapters';
+import { defaultLeaveCalendar, leaveAudit, leaveMembership } from './leave-adapters';
 import type { Persistence } from './persistence';
-import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
+import {
+  attendanceNotifierFrom,
+  hrGrantNotifierFrom,
+  leaveNotifierFrom,
+} from './notification-adapters';
 import { AuthUserDirectory } from './users';
 
 export interface ContainerConfig extends AppConfig {
@@ -201,7 +200,7 @@ export function createContainer(d: ContainerDeps): Container {
     ...persistence.leave,
     users: persistence.task.users,
     calendar: defaultLeaveCalendar, // TODO(T-038): adapter WorkCalendarPort của attendance (A)
-    notifier: noLeaveNotifications, // TODO(T-040): adapter thông báo bền (G)
+    notifier: leaveNotifierFrom(notifications.publisher),
     membership: leaveMembership(() => workspace),
     audit: leaveAudit(() => workspace),
     uow: persistence.uow,

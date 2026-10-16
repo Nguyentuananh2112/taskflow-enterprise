@@ -8,11 +8,16 @@ import type {
 import type {
   IHrAudit,
   ILeaveMembership,
-  ILeaveNotifier,
   IWorkCalendarPort,
   LeaveActor,
   WorkCalendarDay,
 } from '../modules/leave/application/ports/leave.ports';
+import type { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
+import type { DbProvider } from '../modules/leave/infrastructure/persistence/prisma/db';
+import { PrismaLeaveEmployeeDirectory } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-employee-directory';
+import { PrismaLeaveReadModel } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
+import { PrismaLeaveRepository } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave.repository';
+import type { LeaveRepositories } from '../modules/leave/leave.module';
 import type { IWorkspaceQueries } from '../modules/workspace/application/ports/queries.port';
 import type { WorkspaceModule } from '../modules/workspace/workspace.module';
 
@@ -91,9 +96,6 @@ export const defaultLeaveCalendar: IWorkCalendarPort = {
   },
 };
 
-/** TẠM tới khi T-040 (G) có adapter thông báo bền: không gửi gì. */
-export const noLeaveNotifications: ILeaveNotifier = { notify: () => Promise.resolve() };
-
 /**
  * Danh bạ nhân viên cho chế độ BỘ NHỚ (local/test) — đọc hết thành viên qua `IWorkspaceQueries.listMembers` rồi lọc
  * VIEWER, sắp (tên, id). Prisma dùng `PrismaLeaveEmployeeDirectory` (một truy vấn keyset).
@@ -130,4 +132,21 @@ export class MemberListEmployeeDirectory implements ILeaveEmployeeDirectory {
       .filter((u) => after === null || cmp(u, after) > 0)
       .slice(0, limit);
   }
+}
+
+/** Lưu trữ leave chế độ bộ nhớ: một repo làm cả ghi lẫn đọc; nhân viên đọc qua truy vấn workspace. */
+export function memoryLeaveRepositories(
+  store: InMemoryLeaveRepository,
+  queries: Pick<IWorkspaceQueries, 'listMembers'>,
+): LeaveRepositories {
+  return { requests: store, readModel: store, employees: new MemberListEmployeeDirectory(queries) };
+}
+
+/** Lưu trữ leave Prisma — cùng `db` (một transaction) với các module khác. */
+export function prismaLeaveRepositories(db: DbProvider): LeaveRepositories {
+  return {
+    requests: new PrismaLeaveRepository(db),
+    readModel: new PrismaLeaveReadModel(db),
+    employees: new PrismaLeaveEmployeeDirectory(db),
+  };
 }
