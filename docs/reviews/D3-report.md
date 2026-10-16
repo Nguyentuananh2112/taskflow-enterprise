@@ -32,7 +32,7 @@ Không tạo tài khoản, không push image, không gọi API DigitalOcean/GitH
 | Render spec App Platform bằng **đúng biểu thức yq của deploy.yml** (mikefarah/yq:4) | exit 0; 4 digest + 2 `GIT_SHA` được thay, không còn placeholder ngoài comment |
 | `ci-entry.sh` thử tay (`TASKFLOW_DIR` tạm, `deploy.sh` giả) — sau M1 vòng 2 | hash khớp (có/không backup) ⇒ chuyển đúng `<sha> <digests…>` cho deploy.sh, rc 0; hash lệch 1 hoặc 2 file ⇒ rc 3 kèm tên file + commit; `receive`, `bash -i`, `…;id`, thiếu tham số ⇒ rc 2; `rollback` rc 0, `rollback x` rc 2. `compose.prod.yml`/`Caddyfile` ghim `eol=lf` ⇒ sha256 giống nhau trên runner/máy admin |
 | `caddy validate`, `bootstrap.sh` (sinh `.env`/cert Valkey) | xanh (lần kiểm trước rebase) |
-| Lát cắt VPS chạy thật trên máy dev (project `taskflow-d3-slice`, Caddy 127.0.0.1:18080/18443) | Postgres + Valkey TLS healthy; **job migrate (`migrate.mjs`) + grant exit 0**. API image cũ (t022) crashloop vì env.ts cũ bắt `SENTRY_DSN` ⇒ **chưa chạy lại** với image mới — việc mở bên dưới |
+| Lát cắt VPS chạy thật trên máy dev (project `taskflow-d3-slice`, Caddy 127.0.0.1:18080/18443) — lần đầu 2026-10-15 | Postgres + Valkey TLS healthy; job migrate + grant exit 0; API image cũ crashloop (env.ts cũ bắt `SENTRY_DSN`) ⇒ chạy lại ở mục **Lát cắt VPS — chạy lại** bên dưới |
 
 ## Người dùng phải làm khi chốt hosting (ADR-070)
 1. Chọn phương án (App Platform hay VPS) + domain (ADR-071).
@@ -75,6 +75,26 @@ Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted
 - **3 volume Docker của lát cắt VPS còn trên máy dev — NGƯỜI DÙNG tự quyết** (luật không xóa dữ liệu ⇒ D không xóa): `taskflow-d3-slice_pgdata` (Postgres lát cắt: chỉ schema + dữ liệu thử, không có dữ liệu thật), `taskflow-d3-slice_caddy_data`, `taskflow-d3-slice_caddy_config` (chứng chỉ nội bộ `localhost`). Không container nào dùng. Xóa nếu muốn: `docker volume rm taskflow-d3-slice_pgdata taskflow-d3-slice_caddy_data taskflow-d3-slice_caddy_config`; giữ nếu còn định chạy lại lát cắt VPS (mục dưới).
 - B APPROVE M1 + M2 vòng 2 (@8155ea0). Không chặn merge: lần deploy staging đầu tiên phải kiểm bước "Ghi nhận staging xanh" xanh + `deployments?task=deploy:smoke-ok` có bản ghi — GitHub có thể từ chối deployment REST `ref`=SHA khi Deployment branches = `main`; phương án dự phòng (environment `staging-smoke`) ghi ở runbook deploy §1.
 - B2 (`docker/backup/`) đã vào main ⇒ release build image backup (bước `hashFiles` không còn bỏ qua).
-- Lát cắt VPS: chạy lại api/web với image build từ main hiện tại (migrate đã xanh) — làm khi máy rảnh.
+- ~~Lát cắt VPS: chạy lại api/web với image mới~~ — **xong 2026-10-16**, mục dưới.
+
+## Lát cắt VPS — chạy lại (2026-10-16, 16:06–16:08, máy yên theo Tech Lead; A nhường lượt)
+**Đầu vào:** image `taskflow-api|taskflow-api-migrate|taskflow-web:slice-c852` build từ main `c852be9`; `compose.prod.yml` + `deploy.sh` của `fix/vps-pin-app-env` (NODE_ENV cứng, APP_ENV từ `.env`); `.env`/`.env.api`/cert Valkey của lần dựng đầu (khớp mật khẩu đã khởi tạo trong volume `pgdata`), thêm `APP_ENV`. Override cục bộ: image theo tag, Caddy chỉ nghe 127.0.0.1:18080/18443. Volume cũ dùng lại, **không `down -v`**; cuối lượt `down` thường ⇒ 0 container.
+**Smoke** đi qua Caddy + TLS như từ Internet: script Node 24 chạy trong một container trên network của project, `api.localhost`/`app.localhost` → IP Caddy, tin CA nội bộ của Caddy (`NODE_EXTRA_CA_CERTS`). Cổng RAM: trước mỗi bước RAM trống < 3 GB ⇒ tự `down` + dừng (lần thử 15:59 bị dừng vì RAM 2,4 GB — trước khi có cổng tự chặn, migrate đã chạy dưới ngưỡng; ghi lại để minh bạch).
+
+| Kiểm | `APP_ENV=production` | `APP_ENV=staging` |
+|---|---|---|
+| env thật trong container api (`NODE_ENV APP_ENV`) / web (`APP_ENV`) | `production production` / `production` | `production staging` / `staging` |
+| log khởi động api `appEnv` | `production` (5 dòng) | `staging` (5 dòng) |
+| job migrate (migrate deploy + grant DML) | exit 0 | exit 0 |
+| `/healthz`, `/readyz` (db + valkey TLS) qua Caddy HTTPS · web `/api/healthz` · HTTP→HTTPS 308 | ✅ | ✅ |
+| Header: HSTS (api + web), `nosniff`, không `X-Powered-By`, `no-store` trên `/auth`, CSP web có nonce + `strict-dynamic`, không `unsafe-inline` cho script, chống frame | ✅ | ✅ |
+| Đăng ký 201 · đăng nhập 200 · cookie `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/`, không `Domain` | ✅ | ✅ |
+| `refresh` (Origin hợp lệ + cookie) 200 · Origin lạ ⇒ 403 | ✅ | ✅ |
+| Tạo project + 2 task · move · **1 event `task:moved` nhận qua `wss://` (Caddy)** | ✅ | ✅ |
+| **Tổng** | **20/20** | **20/20** |
+
+Lượt chạy trước đó 18/20: 2 kiểm `refresh` trả 415 do **script smoke** gửi POST không `Content-Type` — API đúng thiết kế (web client thật luôn gửi `Content-Type: application/json` + `{}`, T-029 H2); đã sửa script, chạy lại 20/20.
+
+**Info:** image migrate in cảnh báo Prisma `failed to detect the libssl/openssl version … Defaulting to "openssl-1.1.x"` — migrate vẫn chạy đúng ở cả 2 lượt (đã quan sát; chưa kiểm vì sao Prisma không cần openssl ở bước này), nhưng có thể vỡ khi nâng Prisma. Đề xuất (chủ Dockerfile quyết): cài `openssl` trong stage `migrate` hoặc kiểm lại khi nâng Prisma.
 - Domain chưa có (ADR-071) ⇒ `example.com` trong spec/runbook.
 - Trước Phase 5: PoC App Platform (WebSocket qua ingress, PRE_DEPLOY, grace period) theo devops.md §1.3 — cần tài khoản thật ⇒ người dùng quyết.

@@ -88,10 +88,10 @@ sha256sum /opt/taskflow/compose.prod.yml /opt/taskflow/Caddyfile   # khớp hash
 ```
 Lần đầu, tiếp:
 ```bash
-cd /opt/taskflow && APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=<email> GHCR_OWNER=<owner> bash bootstrap.sh
+cd /opt/taskflow && APP_ENV=production APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=<email> GHCR_OWNER=<owner> bash bootstrap.sh   # VPS staging: APP_ENV=staging
 ```
 Sinh `.env` + `.env.api` (mật khẩu/secret ngẫu nhiên, quyền 600) và CA/cert TLS cho Valkey (env.ts bắt buộc `rediss://` ở production). Điền `SENTRY_DSN` vào `.env.api` nếu dùng.
-`.env.api` **không** chứa `NODE_ENV`/`APP_ENV`: `compose.prod.yml` đặt cứng `production` cho `api` (environment thắng env_file) — có ghi trong `.env.api` cũng bị bỏ qua. App Platform: hai biến là giá trị literal trong spec; khi sửa spec trên console **không** đổi chúng. Kiểm sau deploy: log khởi động có `appEnv: production` (`docker compose -f compose.prod.yml logs api | grep -m1 appEnv`).
+`.env.api` **không** chứa `NODE_ENV`/`APP_ENV`: `compose.prod.yml` đặt cứng `NODE_ENV=production` cho `api` (environment thắng env_file; env.ts từ chối `NODE_ENV=production` + `APP_ENV` ngoài staging|production) và lấy `APP_ENV` từ `.env` gốc cho cả `api` lẫn `web` — chỉ admin sửa, `bootstrap.sh` ghi, `deploy.sh` kiểm giá trị trước khi rollout. **VPS cài trước khi có `APP_ENV`:** thêm `APP_ENV=production` (hoặc `staging`) vào `.env` **và** `.env.previous` trước lần deploy/rollback kế tiếp — `deploy.sh` từ chối (exit 2) file thiếu dòng này. App Platform: hai biến là giá trị literal trong spec; khi sửa spec trên console **không** đổi chúng. Kiểm sau deploy: log khởi động có `appEnv: production` (`docker compose -f compose.prod.yml logs api | grep -m1 appEnv`).
 
 Sau lần `up` đầu (và sau mỗi lần admin cài lại `compose.prod.yml`) — **kiểm Valkey không evict** (`compose.prod.yml` đặt `--maxmemory 256mb --maxmemory-policy noeviction`). Valkey giữ khóa thu hồi phiên (`auth:sid-revoked:*`, `auth:tv:*`) và bộ đếm rate limit. Authenticator tin `tv` trong cache mà không hỏi DB về `sid` (G1-auth I2) ⇒ nếu Valkey **evict** khóa `sid-revoked` thì access token của phiên đã đăng xuất lại được chấp nhận tới khi hết hạn; evict bộ đếm ⇒ rate limit mất tác dụng mà không ai thấy. Mọi khóa đều có TTL nên bộ nhớ có giới hạn; đầy bộ nhớ với `noeviction` ⇒ lệnh ghi lỗi ⇒ thu hồi/login **fail-closed 503** (an toàn), không âm thầm mở cửa.
 ```bash
