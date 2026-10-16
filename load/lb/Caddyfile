@@ -1,0 +1,20 @@
+# LB cho đo tải nhiều bản API (T-027c) — CHỈ trong network `load` của compose `taskflow-load`, không map cổng ra host.
+# UPSTREAMS: "api:4000" (1 bản) hoặc "api:4000 api2:4000" (2 bản) — run.sh đặt theo INSTANCES.
+{
+	admin off
+	auto_https off
+	servers {
+		# k6 mô phỏng IP từng user bằng X-Forwarded-For (lib/common.js). Caddy chỉ GIỮ XFF đến từ proxy tin cậy
+		# rồi nối IP của k6 vào; không có dòng này Caddy thay XFF bằng IP k6 ⇒ mọi user dồn về 1 IP ⇒ chỉ đo
+		# được rate limiter theo IP. Vì vậy API chạy TRUST_PROXY_HOPS=2 (k6 + Caddy) khi đứng sau LB.
+		trusted_proxies static private_ranges
+	}
+}
+
+:4000 {
+	# Không health check chủ động: /readyz có hạn mức theo IP trong RAM (core/http/health.ts) — compose đã
+	# chờ healthcheck của từng bản API trước khi dựng LB. WebSocket (realtime) đi qua reverse_proxy bình thường.
+	reverse_proxy {$UPSTREAMS} {
+		lb_policy round_robin
+	}
+}

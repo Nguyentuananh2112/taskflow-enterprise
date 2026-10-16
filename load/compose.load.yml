@@ -77,9 +77,17 @@ services:
       CORS_ORIGINS: http://localhost:3001
       COOKIE_SECURE: 'false'
       TRUST_PROXY_HOPS: '1'
+      # T-027c (A3 mục f): CPU_PROF=1 (run.sh) ⇒ `--cpu-prof`; file .cpuprofile ghi khi tiến trình thoát êm.
+      NODE_OPTIONS: ${API_NODE_OPTIONS:-}
+    volumes:
+      - ${PROF_DIR:-./results/prof}/api:/prof
     healthcheck:
+      # `env NODE_OPTIONS=`: healthcheck thừa hưởng env của container — không xóa thì mỗi lần kiểm (2 s) cũng
+      # chạy --cpu-prof (đo T-027c: ~680 file profile rác + CPU thêm làm méo số đo).
       test:
         - CMD
+        - env
+        - NODE_OPTIONS=
         - node
         - -e
         - "fetch('http://127.0.0.1:4000/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
