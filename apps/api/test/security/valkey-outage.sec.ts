@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect } from 'vitest';
 
 import { Actors, refreshCookieOf } from './harness/actors';
 import { errorEnvelope } from './harness/http-client';
@@ -32,16 +32,43 @@ const api = useApi(env);
 const actors = new Actors(api);
 const me = (token: string) => actors.json('GET', '/auth/me', token);
 
-/** Chờ API nối lại Valkey (backoff ≤ 5s) — `/readyz` báo `valkey` hết `degraded`. */
-async function waitValkeyReconnected(timeoutMs = 30_000): Promise<void> {
+/**
+ * Chờ tới khi API DÙNG ĐƯỢC Valkey thật trên đường fail-closed (backoff reconnect ≤ 5s). KHÔNG dựa vào
+ * `/readyz`: nó dùng chung kết quả probe trong `READINESS_CACHE_MS` (1s) ⇒ ngay sau kill / restart có thể
+ * trả "ok" cũ (CI chạy SEC-24 + các ca kế trong < 1s ⇒ SEC-28b / 24e / 24f 503 ở `register`). Phép thử:
+ * `POST /auth/refresh` không cookie — limiter `refresh-ip` fail-closed chạy TRƯỚC handler ⇒ 503 khi Valkey
+ * chưa dùng được, 401 khi đã dùng được; không cache, cùng client + `disableOfflineQueue` như register.
+ * Cần 2 lần 401 liên tiếp. Quá hạn ⇒ lỗi HẠ TẦNG (không phải assertion của ca).
+ */
+async function waitValkeyReconnected(timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  let ok = 0;
   for (;;) {
-    const res = await api.request({ method: 'GET', path: '/readyz' });
-    if (res.status === 200 && !res.text.includes('degraded')) return;
-    if (Date.now() > deadline) throw new Error(`API chưa nối lại Valkey: ${res.text}`);
-    await new Promise((r) => setTimeout(r, 250));
+    const res = await actors.refresh('');
+    if (res.status === 401) {
+      ok += 1;
+      if (ok >= 2) return;
+    } else if (res.status === 503) {
+      ok = 0;
+    } else {
+      throw new Error(
+        `[hạ tầng test] phép thử Valkey trả ${res.status} (mong 401/503): ${res.text.slice(0, 200)}`,
+      );
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `[hạ tầng test] API chưa dùng lại được Valkey sau ${timeoutMs}ms (lần cuối: ${res.status} ${res.text.slice(0, 120)})`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 100));
   }
 }
+
+// Mọi ca của file bắt đầu khi API đã dùng lại được Valkey — kể cả khi ca trước đỏ giữa chừng (không chạy
+// tới `restart` / chờ trong finally) hoặc container vừa được bật lại.
+beforeEach(async () => {
+  if (valkey) await waitValkeyReconnected();
+}, RESTART_TIMEOUT_MS);
 
 describe('Valkey sự cố', () => {
   secCase(
