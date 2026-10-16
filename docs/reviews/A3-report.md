@@ -122,6 +122,14 @@ replicas + Caddy), không `node:cluster`. Điều kiện trước khi N > 1:
 > cửa sổ và event `column:rebalanced` để sau, chỉ khi số đo cần. `RANK_REBALANCE_MAX_TASKS` đổi theo số đo.
 > **Mở rộng CPU:** N container × 1 tiến trình Node sau LB, không `node:cluster`; điều kiện: Valkey adapter,
 > đếm hạn mức realtime dùng chung (ADR-115), ngân sách kết nối PG, rà limiter chỉ trong RAM.
+> **Phát N `task:moved` sau commit: GIỮ NGUYÊN (có điều kiện).** Hook vẫn được `await` trước response,
+> nhưng `emitToProject` là CPU đồng bộ (không chờ I/O): đo 500 emit = 5–10 ms (phòng 0 socket) /
+> 10–15 ms (20 socket), adapter cục bộ — cỡ 5–10 % rebalance theo lô. **Bác** chạy hook sau response
+> (setImmediate): cùng event loop ⇒ không tăng thông lượng, chỉ dời ≤ 15 ms cho một request; phải drain
+> khi shutdown và phá thứ tự hook "xong trước response" mà auth dựa vào (ADR-105). Event gom
+> `column:rebalanced` (đổi contract, FE phát hành 2 bước vì FE cũ lặng lẽ bỏ type lạ — ADR-102) quyết
+> theo bộ đo phía client của E (`perf/board-500`). **Mở lại** nếu số đo của D cho thấy phần emit (kể cả
+> Redis adapter) > 20 % thời gian một rebalance đơn lẻ, hoặc khi nâng `RANK_REBALANCE_MAX_TASKS`.
 
 ## 8. Rủi ro / câu hỏi mở
 
