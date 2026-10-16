@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect } from 'vitest';
 
 import { Actors, refreshCookieOf } from './harness/actors';
 import { errorEnvelope } from './harness/http-client';
-import { pendingRoute, runPending, useApi } from './harness/suite';
+import { caseRuns, secCase, useApi } from './harness/suite';
 import { startTempValkey, type TempValkey } from './harness/valkey-container';
 
 // Valkey sự cố (security.md §2.4, ADR-105 / findings A3). File riêng vì process API trỏ vào một container
@@ -18,7 +18,8 @@ const env: Record<string, string> = {};
 let valkey: TempValkey | undefined;
 
 beforeAll(async () => {
-  if (!runPending(T020) && !runPending(T032)) return; // case bị skip ⇒ không dựng container cho tốn RAM
+  // Mọi ca của file bị skip (đều khai báo pending) ⇒ không dựng container cho tốn RAM.
+  if (!['SEC-24b', 'SEC-24e', 'SEC-24f'].some(caseRuns)) return;
   valkey = await startTempValkey();
   env.REDIS_URL = valkey.url;
 }, 120_000);
@@ -43,7 +44,7 @@ async function waitValkeyReconnected(timeoutMs = 30_000): Promise<void> {
 }
 
 describe('Valkey sự cố', () => {
-  pendingRoute(
+  secCase(
     'SEC-24b',
     'Valkey lỗi khi ghi thu hồi TRƯỚC commit ⇒ 503, rollback (tv/mật khẩu không đổi trong DB)',
     T020,
@@ -85,7 +86,7 @@ describe('Valkey sự cố', () => {
 
   // Cổng T-032 (đọc chéo T-028 X3): `sid-revoked` chỉ sống trong Valkey (không persistence). Cache miss
   // `tv` sau restart không được coi phiên đã thu hồi là sống — phải hỏi DB (`isSessionRevoked`).
-  pendingRoute(
+  secCase(
     'SEC-24e',
     'Logout 1 thiết bị ⇒ Valkey restart (mất sid-revoked) ⇒ access token của phiên đó vẫn 401 (đọc DB)',
     T032,
@@ -122,7 +123,7 @@ describe('Valkey sự cố', () => {
     RESTART_TIMEOUT_MS,
   );
 
-  pendingRoute(
+  secCase(
     'SEC-24f',
     'Hai phiên S1, S2; logout S1 ⇒ Valkey restart ⇒ S2 gọi TRƯỚC (nạp lại tv) ⇒ S1 vẫn 401',
     T032,

@@ -4,7 +4,7 @@ import { describe, expect } from 'vitest';
 
 import { Actors, seedTasks, seedTenants, type Actor, type Role } from './harness/actors';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { pendingRoute, useApi } from './harness/suite';
+import { secCase, useApi } from './harness/suite';
 
 // Task: IDOR, RBAC/Policy, archived, VERSION_CONFLICT, bỏ gán khi hạ VIEWER (security.md §8,
 // data-and-api §2.7). Case CÓ ghi dữ liệu tự tạo task/project/member riêng — không làm bẩn fixture
@@ -48,7 +48,7 @@ async function newMember(owner: Actor, wsId: string, role: Role) {
 }
 
 describe('IDOR task', () => {
-  pendingRoute('SEC-02', 'URL ws B + project/task của A ⇒ 404, DB không đổi', TASK, async () => {
+  secCase('SEC-02', 'URL ws B + project/task của A ⇒ 404, DB không đổi', TASK, async () => {
     const t = await fixture();
     const base = tasksPath(t.wsB, t.projectA.id);
     const attempts = await Promise.all([
@@ -81,7 +81,7 @@ describe('IDOR task', () => {
     });
   });
 
-  pendingRoute(
+  secCase(
     'SEC-03',
     'taskId của project khác (cùng ws) dưới URL project hiện tại ⇒ 404',
     TASK,
@@ -106,7 +106,7 @@ describe('IDOR task', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'TASK-LIST',
     'Danh sách task của project A không chứa task của ws B; assigneeId lạ không lộ gì',
     TASK,
@@ -128,7 +128,7 @@ describe('IDOR task', () => {
 });
 
 describe('Mass assignment task', () => {
-  pendingRoute('SEC-04', 'Field lạ khi tạo/sửa task ⇒ 400, không ghi', TASK, async () => {
+  secCase('SEC-04', 'Field lạ khi tạo/sửa task ⇒ 400, không ghi', TASK, async () => {
     const t = await fixture();
     const base = tasksPath(t.wsA, t.projectA.id);
     const create = await actors.json('POST', base, t.mia.accessToken, {
@@ -158,7 +158,7 @@ describe('Mass assignment task', () => {
 });
 
 describe('RBAC & Policy', () => {
-  pendingRoute('SEC-05', 'VIEWER tạo/sửa/move/assign/xóa ⇒ 403 cả 5', TASK, async () => {
+  secCase('SEC-05', 'VIEWER tạo/sửa/move/assign/xóa ⇒ 403 cả 5', TASK, async () => {
     const t = await fixture();
     const base = tasksPath(t.wsA, t.projectA.id);
     const v = t.pamTask.version;
@@ -184,7 +184,7 @@ describe('RBAC & Policy', () => {
     }
   });
 
-  pendingRoute('SEC-06', 'MEMBER xóa task do PM tạo ⇒ 403, task còn nguyên', TASK, async () => {
+  secCase('SEC-06', 'MEMBER xóa task do PM tạo ⇒ 403, task còn nguyên', TASK, async () => {
     const t = await fixture();
     const base = tasksPath(t.wsA, t.projectA.id);
     const res = await actors.json('DELETE', `${base}/${t.pamTask.id}`, t.mia.accessToken);
@@ -194,7 +194,7 @@ describe('RBAC & Policy', () => {
     );
   });
 
-  pendingRoute('SEC-07', 'MEMBER xóa task của chính mình ⇒ 200 { id, version }', TASK, async () => {
+  secCase('SEC-07', 'MEMBER xóa task của chính mình ⇒ 200 { id, version }', TASK, async () => {
     const t = await fixture();
     const base = tasksPath(t.wsA, t.projectA.id);
     const own = await newTask(t.mia, t.wsA, t.projectA.id);
@@ -205,7 +205,7 @@ describe('RBAC & Policy', () => {
     expect((await actors.json('GET', `${base}/${own.id}`, t.mia.accessToken)).status).toBe(404);
   });
 
-  pendingRoute('SEC-08', 'PM xóa task của MEMBER; OWNER xóa task bất kỳ ⇒ 200', TASK, async () => {
+  secCase('SEC-08', 'PM xóa task của MEMBER; OWNER xóa task bất kỳ ⇒ 200', TASK, async () => {
     const t = await fixture();
     const base = tasksPath(t.wsA, t.projectA.id);
     const miaTask = await newTask(t.mia, t.wsA, t.projectA.id);
@@ -218,13 +218,13 @@ describe('RBAC & Policy', () => {
     );
   });
 
-  pendingRoute(
+  secCase(
     'SEC-09',
     'Task createdById = null: MEMBER 403 / PM 200 (cần xóa user tạo task — chưa có API)',
     TASK,
   );
 
-  pendingRoute(
+  secCase(
     'SEC-10',
     'Project archived: tạo/sửa/move/xóa ⇒ 422 PROJECT_ARCHIVED; VIEWER ⇒ 403 (thứ tự kiểm tra)',
     TASK,
@@ -269,7 +269,7 @@ describe('RBAC & Policy', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-11',
     'MEMBER gán task cho người ngoài ws ⇒ 422, lỗi giống hệt uuid không tồn tại',
     TASK,
@@ -291,7 +291,7 @@ describe('RBAC & Policy', () => {
     },
   );
 
-  pendingRoute('SEC-12', 'MEMBER đổi assignee task do PM tạo ⇒ 403', TASK, async () => {
+  secCase('SEC-12', 'MEMBER đổi assignee task do PM tạo ⇒ 403', TASK, async () => {
     const t = await fixture();
     const res = await actors.json(
       'PATCH',
@@ -302,7 +302,7 @@ describe('RBAC & Policy', () => {
     expect(res.status).toBe(403);
   });
 
-  pendingRoute(
+  secCase(
     'SEC-12b',
     'MEMBER tạo task gán người khác / gán chính mình ⇒ 403 / 201',
     TASK,
@@ -324,25 +324,20 @@ describe('RBAC & Policy', () => {
     },
   );
 
-  pendingRoute(
-    'SEC-12c',
-    'PM tạo task gán người ngoài ws ⇒ 422, không tạo task',
-    TASK,
-    async () => {
-      const t = await fixture();
-      const base = tasksPath(t.wsA, t.projectA.id);
-      const marker = `ghost-${randomUUID()}`;
-      const res = await actors.json('POST', base, t.pam.accessToken, {
-        title: marker,
-        assigneeId: t.bob.userId,
-      });
-      expect(res.status).toBe(422);
-      const all = dataOf<TaskDto[]>(await actors.json('GET', base, t.alice.accessToken));
-      expect(all.map((x) => x.title)).not.toContain(marker);
-    },
-  );
+  secCase('SEC-12c', 'PM tạo task gán người ngoài ws ⇒ 422, không tạo task', TASK, async () => {
+    const t = await fixture();
+    const base = tasksPath(t.wsA, t.projectA.id);
+    const marker = `ghost-${randomUUID()}`;
+    const res = await actors.json('POST', base, t.pam.accessToken, {
+      title: marker,
+      assigneeId: t.bob.userId,
+    });
+    expect(res.status).toBe(422);
+    const all = dataOf<TaskDto[]>(await actors.json('GET', base, t.alice.accessToken));
+    expect(all.map((x) => x.title)).not.toContain(marker);
+  });
 
-  pendingRoute(
+  secCase(
     'SEC-42',
     'VIEWER PATCH với version cũ ⇒ 403 (không 409, không lộ details.current)',
     TASK,
@@ -360,7 +355,7 @@ describe('RBAC & Policy', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-43',
     'PM gán VIEWER (khi tạo + PATCH assignee) ⇒ 422 ASSIGNEE_NOT_MEMBER, cùng lỗi với người ngoài ws',
     TASK,
@@ -390,7 +385,7 @@ describe('RBAC & Policy', () => {
 });
 
 describe('Optimistic locking (ADR-010/091)', () => {
-  pendingRoute(
+  secCase(
     'TASK-VC',
     'PATCH version cũ ⇒ 409 VERSION_CONFLICT + currentVersion; no-op với version cũ vẫn 409',
     TASK,
@@ -423,7 +418,7 @@ describe('Optimistic locking (ADR-010/091)', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'TASK-VC-RACE',
     '10 PATCH song song cùng expectedVersion ⇒ đúng 1 cái 200, còn lại 409',
     TASK,
@@ -446,7 +441,7 @@ describe('Optimistic locking (ADR-010/091)', () => {
 });
 
 describe('Bỏ gán khi mất quyền (ADR-044)', () => {
-  pendingRoute(
+  secCase(
     'SEC-44',
     'Hạ member xuống VIEWER ⇒ task chưa xóa bị bỏ gán (version+1), task đã xóa giữ nguyên',
     TASK,
@@ -480,7 +475,7 @@ describe('Bỏ gán khi mất quyền (ADR-044)', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-45',
     'Race gán task cho member ‖ hạ member xuống VIEWER (20 vòng) ⇒ không bao giờ VIEWER được gán',
     TASK,

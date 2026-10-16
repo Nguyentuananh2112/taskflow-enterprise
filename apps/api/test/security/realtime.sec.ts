@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http';
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { pendingRoute, useApi } from './harness/suite';
+import { secCase, useApi } from './harness/suite';
 
 // Socket.io (ADR-027, ADR-074, security.md §5). Handshake websocket được thử bằng HTTP Upgrade thô
 // (không cần socket.io-client): chỉ kiểm lớp `allowRequest` — Origin và transport — trước xác thực.
@@ -60,7 +60,7 @@ beforeAll(async () => {
 
 describe('SEC-56 — handshake websocket kiểm Origin (chống CSWSH)', () => {
   beforeEach((ctx) => {
-    if (!gatewayLive) ctx.skip('[PENDING-ROUTE T-016] build này chưa có gateway Socket.io');
+    if (!gatewayLive) ctx.skip('[BUILD-PROBE T-016] build này chưa có gateway Socket.io');
   });
 
   it('đối chứng: Origin trong whitelist ⇒ 101 (để các case từ chối bên dưới có nghĩa)', async () => {
@@ -97,32 +97,32 @@ describe('SEC-56 — handshake websocket kiểm Origin (chống CSWSH)', () => {
 
 describe('Xác thực & phòng (cần auth + workspace wiring Phase 3)', () => {
   const blocked = 'socket auth wiring (Phase 3)';
-  pendingRoute(
+  secCase(
     'SEC-35',
     'Handshake không token / token sai / tv cũ ⇒ connect_error data.code tương ứng',
     blocked,
   );
-  pendingRoute(
+  secCase(
     'SEC-36',
     'Bob project:join project của ws A ⇒ ack RESOURCE_NOT_FOUND, không nhận event',
     blocked,
   );
-  pendingRoute(
+  secCase(
     'SEC-37',
     'Mia bị xóa khỏi ws khi đang trong phòng ⇒ rời phòng + workspace:access-revoked',
     blocked,
   );
-  pendingRoute(
+  secCase(
     'SEC-37b',
     'CỔNG T-016 (TOCTOU): xóa Mia ĐÚNG LÚC project:join đang kiểm quyền (lặp 50 lần) ⇒ không lần nào Mia còn trong phòng',
     blocked,
   );
-  pendingRoute('SEC-38', 'Không auth:renew quá exp ⇒ auth:expired rồi bị ngắt', blocked);
-  pendingRoute('SEC-39', 'auth:renew bằng token của user khác ⇒ bị ngắt', blocked);
-  pendingRoute(
+  secCase('SEC-38', 'Không auth:renew quá exp ⇒ auth:expired rồi bị ngắt', blocked);
+  secCase('SEC-39', 'auth:renew bằng token của user khác ⇒ bị ngắt', blocked);
+  secCase(
     'SEC-41',
     'X-Client-Id của tab khác / không phải uuid ⇒ không ảnh hưởng quyền, bị bỏ qua',
     blocked,
   );
-  pendingRoute('SEC-21b', 'Logout-all ⇒ socket của user bị ngắt', blocked);
+  secCase('SEC-21b', 'Logout-all ⇒ socket của user bị ngắt', blocked);
 });

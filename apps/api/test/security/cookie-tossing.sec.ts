@@ -3,7 +3,7 @@ import { describe, expect } from 'vitest';
 
 import { Actors, refreshCookieOf, type Actor } from './harness/actors';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { pendingRoute, useApi } from './harness/suite';
+import { secCase, useApi } from './harness/suite';
 
 // Cookie tossing / login CSRF (T-028 X1, ADR-109). Subdomain anh em đặt được cookie `Domain=<cha>` với
 // tên `tf_rt` / `__Secure-tf_rt` nhưng KHÔNG đặt được `__Host-` (trình duyệt cấm Domain + bắt Path=/).
@@ -28,7 +28,7 @@ function expectInvalid(res: RawResponse, ctx: string) {
 }
 
 describe('Cookie tossing / login CSRF', () => {
-  pendingRoute(
+  secCase(
     'SEC-34',
     'Cookie refresh ở staging/prod: __Host-tf_rt; HttpOnly; Secure; SameSite=Strict; Path=/; không Domain (ADR-109)',
     ADR109,
@@ -48,7 +48,7 @@ describe('Cookie tossing / login CSRF', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-34b',
     'Cookie tossing: jar có __Host-tf_rt của nạn nhân + tf_rt/__Secure-tf_rt (Domain=) của kẻ tấn công ⇒ 200 vào phiên NẠN NHÂN, cookie lạ bị bỏ qua',
     ADR109,
@@ -68,7 +68,7 @@ describe('Cookie tossing / login CSRF', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-34c',
     'Login CSRF: nạn nhân KHÔNG có cookie, chỉ có tf_rt/__Secure-tf_rt hợp lệ do kẻ tấn công ném ⇒ 401, không vào phiên kẻ tấn công',
     ADR109,
@@ -81,7 +81,7 @@ describe('Cookie tossing / login CSRF', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-34d',
     '__Host-tf_rt trùng tên 2–4 giá trị ⇒ 401 + thu hồi tất cả; > 4 giá trị ⇒ 401, không thu hồi; 30 giá trị rác ⇒ 401 nhanh, không 500',
     ADR109,
@@ -114,7 +114,7 @@ describe('Cookie tossing / login CSRF', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'SEC-34e',
     'Logout với cookie lạ đi kèm ⇒ 204 và phiên nạn nhân THẬT SỰ bị thu hồi phía server',
     ADR109,

@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 
 import { Actors } from './harness/actors';
 import { errorEnvelope } from './harness/http-client';
-import { pendingRoute, useApi } from './harness/suite';
+import { secCase, useApi } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
 
 // Cổng nghiệm thu T-032 (đọc chéo T-028 của F: X2, X5, X8; ADR-110). Chỉ kiểm TRẠNG THÁI CUỐI — không phụ
@@ -16,7 +16,7 @@ const actors = new Actors(api);
 const ok = (status: number) => status >= 200 && status < 300;
 
 describe('Lost update workspace / project', () => {
-  pendingRoute(
+  secCase(
     'X2',
     `PATCH ‖ DELETE workspace ×${String(ROUNDS)} ⇒ DELETE thành công thì workspace KHÔNG BAO GIỜ sống lại`,
     T032,
@@ -52,7 +52,7 @@ describe('Lost update workspace / project', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'X8',
     `Đổi tên ‖ archive project ×${String(ROUNDS)} ⇒ archive thành công thì project vẫn archived`,
     T032,
@@ -81,7 +81,7 @@ describe('Lost update workspace / project', () => {
     },
   );
 
-  pendingRoute(
+  secCase(
     'X5',
     'Cursor tự chế (after không phải uuid / kind sai) ⇒ 400 VALIDATION_ERROR, không 500',
     T032,
