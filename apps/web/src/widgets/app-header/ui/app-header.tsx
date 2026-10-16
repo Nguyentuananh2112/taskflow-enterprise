@@ -25,18 +25,19 @@ export function AppHeader({ actions }: Props) {
         <Link href="/w" className="text-base font-semibold text-text">
           TaskFlow
         </Link>
-        <nav aria-label="Tài khoản" className="ml-auto flex items-center gap-2">
+        <nav aria-label="Tài khoản" className="ml-auto flex items-center gap-1 sm:gap-2">
           <HeaderAttendance />
           {actions}
           {user && (
-            <span className="flex items-center gap-2 text-sm">
+            // Màn hẹp (360) không đủ chỗ cho avatar + chuông + 2 nút ⇒ ẩn avatar (tên vẫn ở trang Tài khoản).
+            <span className="hidden items-center gap-2 text-sm sm:flex">
               <Avatar name={user.fullName} colorKey={user.id} size="sm" decorative />
               <span className="hidden sm:inline">{user.fullName}</span>
             </span>
           )}
           <Link
             href="/account"
-            className="rounded-control px-3 py-1.5 text-sm text-text hover:bg-bg-subtle"
+            className="rounded-control px-2 py-1.5 text-sm whitespace-nowrap text-text hover:bg-bg-subtle sm:px-3"
           >
             Tài khoản
           </Link>

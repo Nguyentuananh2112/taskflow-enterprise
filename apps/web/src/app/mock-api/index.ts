@@ -1,5 +1,7 @@
 import { createAttendanceHandlers } from './attendance-handlers';
 import { createAuthHandlers } from './auth-handlers';
+import { createLeaveHandlers } from './leave-handlers';
+import { MockLeave } from './mock-leave';
 import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
@@ -39,11 +41,13 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const limit = createRateLimiter(options.now ?? Date.now);
   const attendance = new MockAttendance(options.now ?? Date.now);
   const notifications = new MockNotifications(board, options.now ?? Date.now);
+  const leave = new MockLeave(attendance, options.now ?? Date.now);
   return {
     db,
     board,
     attendance,
     notifications,
+    leave,
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins),
@@ -53,6 +57,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createTaskHandlers(baseUrl, db, board),
       ...createAttendanceHandlers(baseUrl, db, attendance),
       ...createNotificationHandlers(baseUrl, db, notifications),
+      ...createLeaveHandlers(baseUrl, db, leave),
     ],
   };
 }

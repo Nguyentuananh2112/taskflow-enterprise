@@ -34,3 +34,11 @@ Nhánh có cherry-pick contracts chưa vào main: T-038 của A (attendance DTO 
 - `pnpm verify` + `next build` chờ lượt máy; E2E-HR-01/03/04/05/07 (phần T-041a) do F chạy.
 - Responsive/sáng-tối kiểm bằng E2E viewport của F (màn mới dùng `PageMain`, token màu).
 - Link trong chuông trỏ `/leave` và `/hr` — hai trang thuộc T-041b/c.
+
+## Rà giao diện trên trình duyệt thật (2026-10-16, next dev :3021 + mock, Playwright Chromium)
+Thẻ Chấm công (`/projects`), `/attendance`, `/leave` × 360 / 768 / 1440 × sáng / tối (18 tổ hợp):
+- Tràn ngang trang: **0** ở cả 18. Bảng tháng tự cuộn ngang trong khung ở 360 (`min-w-[36rem]`).
+- axe WCAG 2.1 A/AA (kể cả độ tương phản — jsdom không đo được): **0** lỗi serious/critical ở cả 18.
+- Thứ tự Tab trên `/leave`: header (TaskFlow → Chấm ra → Thông báo → Tài khoản → Đăng xuất) → form (Loại → Từ ngày → Đến ngày → Buổi → Lý do → Gửi) → Hủy đơn; ô ngày native dừng theo từng phần ngày/tháng/năm (hành vi chuẩn của trình duyệt).
+- **Đã sửa sau lượt đầu:** ở 360 header bị chật sau khi thêm chuông ("Tài khoản"/"Đăng xuất" xuống dòng) và nút/link trên thẻ gãy chữ ⇒ ẩn avatar dưới `sm`, giảm khoảng cách, `whitespace-nowrap` cho `Button` (nút trong app vốn một dòng) và link header, hàng hành động của thẻ tự xuống hàng. Chạy lại: vẫn 0 tràn, 0 lỗi axe.
+- **Phát hiện nghiệp vụ (đã báo A, A xác nhận cả API cũng sai):** ngày trước khi nhân viên gia nhập workspace bị tính "Vắng". A đề xuất `DayStatus = NOT_EMPLOYED` (TL chốt) — web sẽ thêm nhãn khi contracts đổi.

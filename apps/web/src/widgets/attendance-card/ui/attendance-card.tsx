@@ -108,10 +108,13 @@ export function AttendanceCard({ wsId, enabled }: Props) {
             {t.lastOut ? timeOfDay(t.lastOut, t.timezone, t.date) : '—'}
           </dd>
         </dl>
-        <div className="flex items-center gap-3 sm:ml-auto">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 whitespace-nowrap sm:ml-auto">
           <CheckButtons wsId={wsId} today={t} />
           <Link href={`/w/${wsId}/attendance`} className="text-sm text-primary hover:underline">
             Bảng công của tôi
+          </Link>
+          <Link href={`/w/${wsId}/leave`} className="text-sm text-primary hover:underline">
+            Nghỉ phép
           </Link>
         </div>
       </div>
