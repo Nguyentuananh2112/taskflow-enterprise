@@ -43,3 +43,20 @@ export function duration(min: number): string {
 export function serverOffsetMs(serverNow: string, receivedAtMs: number): number {
   return Date.parse(serverNow) - receivedAtMs;
 }
+
+/** '2026-10' ± n tháng. */
+export function shiftMonth(month: string, delta: number): string {
+  const [y = 0, m = 1] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 'YYYY-MM-DD' ⇒ "T5, 15/10" (ngày lịch, không phụ thuộc múi giờ). */
+export function dayLabel(date: string): string {
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  }).format(new Date(`${date}T00:00:00Z`));
+}
