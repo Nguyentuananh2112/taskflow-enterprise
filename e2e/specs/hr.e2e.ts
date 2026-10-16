@@ -91,7 +91,6 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     context,
     request,
   }) => {
-    test.setTimeout(150_000); // có thể chờ tới 60 s sang phút mới trước khi chấm ra
     const w = await seedHrWorld(request, 'hr01');
     await loginViaUi(page, w.mia.user);
     await page.goto(projectsPath(w));
@@ -135,9 +134,8 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     await expect(stale.getByText('Hôm nay bạn đã chấm vào rồi.', { exact: true })).toBeVisible();
     await expect(attendanceCard(stale).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
 
-    // OUT CÙNG PHÚT với IN bị summarizeDay bỏ qua (so theo phút: `at(OUT) > at(IN)`) ⇒ thẻ vẫn "— " dù toast
-    // "Đã chấm ra" (cổng T-041a 2026-10-17, F báo A — LOW, spec chưa có ca). Chờ sang phút mới để kiểm luồng chính.
-    await expect.poll(() => vnHm(), { timeout: 65_000, intervals: [1_000] }).not.toBe(firstIn);
+    // KHÔNG chờ sang phút: vào và ra thường rơi CÙNG phút ⇒ ca này phủ luôn SD-44 ở tầng E2E (A sửa 08e3772 — so
+    // lượt theo occurredAt ms; trước đó OUT cùng phút bị bỏ, thẻ vẫn "— " dù toast "Đã chấm ra", cổng T-041a).
     // Đúng 1 request OUT, lượt đầu ⇒ 201 (200 chỉ là replay cùng Idempotency-Key — A).
     const outs: number[] = [];
     page.on('response', (r) => {
