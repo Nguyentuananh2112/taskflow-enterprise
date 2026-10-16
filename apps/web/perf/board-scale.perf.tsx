@@ -21,6 +21,7 @@ import { KanbanBoard } from '@/widgets/kanban-board';
 const STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const scope = { wsId: WS_ID, projectId: PROJECT_ID };
 const noop = () => undefined;
+const OTHER_TAB = crypto.randomUUID(); // X-Client-Id của tab khác (envelope đòi Uuid)
 const ms = (n: number) => Math.round(n * 10) / 10;
 const rank = (prefix: string, i: number) => `${prefix}${String(i).padStart(4, '0')}`;
 
@@ -44,7 +45,7 @@ function movedEvent(task: TaskDto, to: { status: TaskStatus; rank: string }): un
     type: 'task:moved',
     occurredAt: '2026-10-16T08:00:00.000Z',
     actorId: USER_B.id,
-    originClientId: 'other-tab',
+    originClientId: OTHER_TAB,
     data: { task: moved, from: { status: task.status, rank: task.rank }, to },
   };
 }
