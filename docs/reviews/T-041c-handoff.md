@@ -97,7 +97,7 @@ Script: `scratchpad/ui-review/review.mjs` của phiên H (seed qua mock: OWNER +
 
 ## 7. Việc còn lại cho E
 
-1. Khi T-039 vào main: rebase chuỗi a → b → c (lần cuối H làm: `--onto feat/T-041b-leave-web <gốc b cũ>`); `pnpm install --frozen-lockfile`, `prisma generate`, xóa `apps/web/.next/dev/types` nếu tsc báo route lạ.
+1. Sau khi T-041a merge (TL đang verify) E rebase b lên main; rebase c bằng `git rebase --onto feat/T-041b-leave-web 7817d42 feat/T-041c-hr-web` (`7817d42` = gốc b hiện tại của c). Khi T-039 vào main lặp lại tương tự; `pnpm install --frozen-lockfile`, `prisma generate`, xóa `apps/web/.next/dev/types` nếu tsc báo route lạ.
 2. Chạy lại TOÀN BỘ vitest web + `pnpm verify` (xin lượt TL); viết `docs/reviews/T-041c-report.md` + `DONE T-041c`.
 3. Thử `/hr` với API thật (A/D) — các hàm `*ErrorMessage` đọc `rule`/`reason` bằng schema cục bộ; so khớp câu lỗi.
 4. Mock: lịch HR lưu chỉ để hiển thị — `MockAttendance` vẫn tính theo lịch mặc định; đếm ngày nghỉ của `MockLeave` chưa trừ ngày lễ; gửi/hủy đơn trong mock của E chưa ghi thông báo (duyệt/từ chối/thu hồi của mock HR có ghi); chuông mock lọc thông báo dành cho HR theo role ∪ grants (`b8571b3`). Đủ cho UI; E2E dùng API thật.
