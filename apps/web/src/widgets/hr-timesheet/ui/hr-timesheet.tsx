@@ -58,7 +58,7 @@ export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
       ) : rows.length === 0 ? (
         <p className="text-sm text-text-muted">Chưa có nhân viên nào.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[44rem] border-collapse text-sm">
             <caption className="sr-only">Tổng hợp công {monthTitle(month)} theo nhân viên</caption>
             <thead>
@@ -118,6 +118,7 @@ export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
           wsId={wsId}
           month={month}
           row={person}
+          today={today}
           canEdit={isOwner || person.user.id !== viewerId}
         />
       )}

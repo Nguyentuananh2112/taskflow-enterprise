@@ -56,7 +56,7 @@ export function HrBalances({ wsId, today, isOwner, viewerId }: Props) {
       ) : list.isPending ? (
         <Skeleton className="h-40" />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[40rem] border-collapse text-sm">
             <caption className="sr-only">Số phép năm {year} của từng nhân viên</caption>
             <thead>

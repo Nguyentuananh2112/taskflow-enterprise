@@ -55,7 +55,8 @@ export function HrGrantSwitch({ wsId, member }: Props) {
   });
 
   return (
-    <span className="flex flex-col items-start gap-1">
+    // min-w: ở 360 bảng tự cuộn ngang — không để chú thích bị ép vỡ từng chữ.
+    <span className="flex min-w-40 flex-col items-start gap-1">
       <button
         type="button"
         role="switch"

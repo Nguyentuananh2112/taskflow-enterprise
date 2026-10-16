@@ -10,6 +10,8 @@ type Props = Readonly<{
   wsId: string;
   month: string;
   row: AttendanceMemberMonthDto;
+  /** Ngày theo lịch (server). */
+  today: string;
   canEdit: boolean;
 }>;
 
@@ -18,7 +20,7 @@ type Props = Readonly<{
  * chữ + biểu tượng). Múi giờ: của ngày đầu tháng (A — mỗi ngày mang `timezone` riêng; đổi lịch giữa
  * tháng hiếm, các ô vẫn dùng giờ ISO). Bấm ngày ⇒ lượt thô + sửa.
  */
-export function PersonMonth({ wsId, month, row, canEdit }: Props) {
+export function PersonMonth({ wsId, month, row, today, canEdit }: Props) {
   const [date, setDate] = useState<string | null>(null);
   const timezone = row.days[0]?.timezone ?? 'Asia/Ho_Chi_Minh';
   return (
@@ -36,7 +38,13 @@ export function PersonMonth({ wsId, month, row, canEdit }: Props) {
         user={row.user}
         date={date}
         onClose={() => setDate(null)}
-        canEdit={canEdit}
+        readOnlyReason={
+          !canEdit
+            ? 'Bạn không tự sửa chấm công của mình — nhờ người khác có quyền Quản lý nhân sự.'
+            : date !== null && date > today
+              ? 'Ngày chưa tới — chưa thêm lượt chấm được.'
+              : null
+        }
       />
     </section>
   );

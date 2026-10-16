@@ -51,7 +51,7 @@ export function MemberTable({ wsId, permission, onLeft }: Props) {
       )}
       {rows.length > 0 && (
         // Màn hẹp: email dài + ô vai trò ⇒ cuộn ngang TRONG bảng, không đẩy cả trang (E3).
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-text-muted">
               <tr>

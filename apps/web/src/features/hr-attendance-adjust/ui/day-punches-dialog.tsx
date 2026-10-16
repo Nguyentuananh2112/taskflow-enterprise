@@ -16,8 +16,8 @@ type Props = Readonly<{
   /** `null` = đóng. */
   date: string | null;
   onClose: () => void;
-  /** Không tự sửa chấm công của mình (B-H1) — trừ OWNER. */
-  canEdit: boolean;
+  /** Vì sao chỉ xem (không tự sửa của mình — B-H1, trừ OWNER; ngày chưa tới); `null` = sửa được. */
+  readOnlyReason: string | null;
 }>;
 
 const KIND = { IN: 'Vào', OUT: 'Ra' } as const;
@@ -26,7 +26,8 @@ const KIND = { IN: 'Vào', OUT: 'Ra' } as const;
  * Lượt thô của một nhân viên trong một ngày (HR — gồm lượt đã hủy, IP/thiết bị §9) + hủy lượt + thêm
  * lượt ADJUSTMENT. Mọi chuỗi (ghi chú, lý do, UA) là TEXT — React tự escape.
  */
-export function DayPunchesDialog({ wsId, user, date, onClose, canEdit }: Props) {
+export function DayPunchesDialog({ wsId, user, date, onClose, readOnlyReason }: Props) {
+  const canEdit = readOnlyReason === null;
   const events = useHrEvents(wsId, user.id, date);
   const data = events.data;
   return (
@@ -70,9 +71,7 @@ export function DayPunchesDialog({ wsId, user, date, onClose, canEdit }: Props) 
           {canEdit ? (
             <AddPunchForm wsId={wsId} userId={user.id} date={date} />
           ) : (
-            <p className="text-sm text-text-muted">
-              Bạn không tự sửa chấm công của mình — nhờ người khác có quyền Quản lý nhân sự.
-            </p>
+            <p className="text-sm text-text-muted">{readOnlyReason}</p>
           )}
         </div>
       )}

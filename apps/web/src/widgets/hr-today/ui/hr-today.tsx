@@ -49,7 +49,14 @@ export function HrToday({ data }: Props) {
           <span className="text-xs text-text-muted">Đi muộn</span>
         </li>
       </ul>
-      <div className="overflow-x-auto">
+      {/* Bảng không có phần tử focus được ⇒ khung cuộn tự nhận focus để cuộn bằng bàn phím ở 360
+          (axe scrollable-region-focusable); `relative` giữ `sr-only` bên trong khung (không kéo rộng trang). */}
+      <div
+        role="region"
+        aria-label="Bảng chấm công hôm nay"
+        tabIndex={0}
+        className="relative overflow-x-auto"
+      >
         <table className="w-full min-w-[32rem] border-collapse text-sm">
           <caption className="sr-only">Chấm công từng người hôm nay</caption>
           <thead>
