@@ -33,9 +33,20 @@ Pha 2 đổi sang ghi theo lô:
 - Contract realtime giữ nguyên: 1 audit `MOVED` + 1 `task:moved` cho mỗi task đổi rank (Q2).
 - `RANK_REBALANCE_MAX_TASKS` giữ 500 — chỉ nâng sau khi đo lại.
 
-**Hành vi thay đổi (cải thiện):** task trong cột bị **xóa** song song giữa lúc rebalance — trước: `save`
-false ⇒ `conflictFromStore` không thấy task ⇒ **404 cho người move** (sai đối tượng); nay ⇒ thử lại
-transaction ⇒ thành công.
+### Hành vi mới (cố ý, Tech Lead đã duyệt): task bị xóa song song ⇒ thử lại thay vì 404
+
+Task KHÁC trong cột bị **xóa mềm** (commit) giữa lúc rebalance đọc cột và lúc ghi lô:
+
+- **Trước A3:** `save` của task đó trả `false` ⇒ `conflictFromStore` không tìm thấy task ⇒ ném
+  `ResourceNotFoundError('task')` ⇒ **404 cho người đang move một task khác** — sai đối tượng (task của họ
+  vẫn còn), client hiểu nhầm là thẻ mình kéo đã mất.
+- **Sau A3:** câu UPDATE lô có `deleted_at IS NULL` ⇒ thiếu một dòng ⇒ project vẫn sống, chưa archive ⇒
+  `RankConflictError` ⇒ `inTransactionWithRankRetry` chạy lại; lượt sau `listColumn` không còn task đã
+  xóa ⇒ move **thành công**. Hết 3 lượt (xóa liên tục) ⇒ 409 `RANK_COLLISION` như mọi xung đột rank.
+- **Test:** `rank-rebalance.test.ts` — "A3: task trong cột bị xóa song song giữa lúc rebalance ⇒ thử lại cả
+  transaction (không 404 cho người move)", chạy cả InMemory và Postgres (runner LSP).
+- Không đổi: project/ws mất ⇒ 404 `project`; project archive ⇒ 422 (test "A3: project bị archive song
+  song…"); task của chính người move bị xóa ⇒ use case đọc lại sau khóa cột ⇒ 404 như cũ.
 
 ## 3. File
 
@@ -47,7 +58,13 @@ transaction ⇒ thành công.
 | `apps/api/src/modules/task/infrastructure/persistence/prisma/prisma-task.repository.ts` | `saveRanks` (unnest) |
 | `apps/api/src/modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository.ts` | `appendMany` (unnest) |
 | `apps/api/src/modules/task/infrastructure/persistence/in-memory/*` | bản InMemory cùng ngữ nghĩa (LSP) |
-| `apps/api/src/modules/task/application/use-cases/rank-rebalance.test.ts` | +3 test (chạy cả InMemory và Postgres qua runner LSP) |
+| `apps/api/src/modules/task/application/use-cases/rank-rebalance.test.ts` | +3 test (chạy cả InMemory và Postgres qua runner LSP); F2 seed theo lô |
+| `apps/api/src/modules/task/testing/task-backend.ts`, `task-harness.ts`, `apps/api/test/integration/task/prisma-task-backend.ts` | `insertTasks` / `seedTasks`: seed nhiều task bằng một lệnh (`createMany`) |
+
+**F2 (T-033) chập chờn — đã sửa (Tech Lead duyệt):** F2 seed 497 task bằng `seedTask` tuần tự (~1500 lượt
+đi về DB) ⇒ trên Postgres 1,7 s lúc máy nhẹ, 4–35 s lúc máy bận ⇒ vượt timeout 30 s. Cùng điều kiện máy:
+main 7,7 s / A3 4,1 s ⇒ không do A3. Nay seed bằng `seedTasks` (1 đọc project + 1 `createMany` + 1 patch)
+⇒ **F2 305 ms** trên Postgres; không nâng timeout.
 
 Test mới: (1) một `saveRanks` chứa đúng mọi dòng đã stash (kể cả dòng khóa trùng — version giữ nguyên,
 các dòng khác `version = expected + 1`), một `appendMany` chỉ cho task đổi rank; (2) archive song song
@@ -57,11 +74,14 @@ các dòng khác `version = expected + 1`), một `appendMany` chỉ cho task đ
 
 | Lệnh | Exit | Kết quả |
 |---|---|---|
-| `pnpm lint` (prettier, eslint max-warnings 0, depcruise, check-env-example) | 0 | |
-| `pnpm typecheck` | 0 | |
-| `VITEST_MAX_WORKERS=2 pnpm test` | 0 | 172 file / 1711 test |
-| `pnpm --filter @taskflow/api test:integration test/integration/lsp/task test/integration/task` (DB riêng `taskflow_a3`, Valkey db 14) | 0 | 10 file / 129 test — trước khi chuyển sang `unnest` |
-| `vitest … rank-rebalance` (Postgres) sau `unnest` | 1 → 0 | 10/11 + F2 timeout 30 s **do máy 100% CPU** (CapCut/Chrome/phiên khác); F2 chạy riêng `--testTimeout=180000` **đạt (34,7 s; lúc máy nhẹ 1,7 s)** — F2 đi nhánh bỏ qua rebalance, phần seed 500 task không bị A3 đụng. **Cần chạy lại khi máy nhẹ.** |
+Trên cây cuối cùng (base main `0339da1`, gồm sửa F2), sau `pnpm install --frozen-lockfile` (exit 0):
+
+| Lệnh | Exit | Kết quả |
+|---|---|---|
+| `VITEST_MAX_WORKERS=2 VALKEY_URL_TEST=redis://127.0.0.1:6380/14 REQUIRE_INTEGRATION=1 pnpm verify` | **0** | lint 0 · typecheck 0 · test 0 (1711) · audit 0; migrate/drift bỏ qua (A3 không đổi schema) |
+| `pnpm --filter @taskflow/api test:integration test/integration/lsp/task test/integration/task` (DB riêng `taskflow_a3` trên 5434, Valkey db 14, không `VITEST_MAX_WORKERS`) | **0** | 10 file / 129 test, gồm 11 test rebalance trên Postgres |
+
+Lịch sử: trước khi sửa F2, integration 128/129 vì F2 vượt timeout 30 s do máy bận (xem mục 3).
 
 ## 5. Số đo sơ bộ (KHÔNG thay cho slot k6)
 

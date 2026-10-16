@@ -98,8 +98,12 @@ describe('rebalance rank theo cột (T-033)', () => {
   it('F2 (review B): cột vượt RANK_REBALANCE_MAX_TASKS ⇒ KHÔNG rebalance (giữ khóa dài hợp lệ), log cảnh báo', async () => {
     const h = await createTaskHarness();
     const filler = RANK_REBALANCE_MAX_TASKS - 3; // + A, B, C ⇒ đủ MAX task khác, + X ⇒ vượt
-    for (let i = 0; i < filler; i++)
-      await h.seedTask({ rank: `a${'V'.repeat(RANK_REBALANCE_THRESHOLD + 8)}${i}` });
+    // Một lệnh chèn lô: seed từng task (~1500 lượt đi về DB) từng vượt timeout 30 s khi máy bận (A3).
+    await h.seedTasks(
+      Array.from({ length: filler }, (_, i) => ({
+        rank: `a${'V'.repeat(RANK_REBALANCE_THRESHOLD + 8)}${i}`,
+      })),
+    );
     const t = await crowdedColumn(h);
     const dto = await moveXAfterB(h, t);
     expect(dto.rank.length).toBeGreaterThan(RANK_REBALANCE_THRESHOLD);

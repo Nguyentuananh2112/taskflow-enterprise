@@ -46,6 +46,8 @@ export interface TaskBackend {
   seedProject(project: ProjectRow): Promise<void>;
   /** Chèn thẳng một task (dữ liệu có sẵn) — không audit, không event. */
   insertTask(task: TaskProps): Promise<void>;
+  /** Như `insertTask` cho nhiều task trong một lệnh (seed cột lớn — F2 T-033). */
+  insertTasks(tasks: readonly TaskProps[]): Promise<void>;
 
   taskRows(): Promise<TaskProps[]>;
   patchTask(id: string, patch: Partial<TaskProps>): Promise<void>;
@@ -77,6 +79,10 @@ export function inMemoryTaskBackend(): TaskBackend {
     seedMember: (m) => (db.state.members.push({ ...m }), ok()),
     seedProject: (p) => (db.state.projects.set(p.id, { ...p }), ok()),
     insertTask: (t) => (db.state.tasks.set(t.id, { ...t }), ok()),
+    insertTasks: (ts) => {
+      for (const t of ts) db.state.tasks.set(t.id, { ...t });
+      return ok();
+    },
 
     taskRows: () => Promise.resolve([...db.state.tasks.values()].map((t) => ({ ...t }))),
     patchTask: (id, patch) => (Object.assign(db.state.tasks.get(id)!, patch), ok()),
