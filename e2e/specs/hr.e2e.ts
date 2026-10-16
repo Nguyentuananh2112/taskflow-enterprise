@@ -138,11 +138,22 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     // OUT CÙNG PHÚT với IN bị summarizeDay bỏ qua (so theo phút: `at(OUT) > at(IN)`) ⇒ thẻ vẫn "— " dù toast
     // "Đã chấm ra" (cổng T-041a 2026-10-17, F báo A — LOW, spec chưa có ca). Chờ sang phút mới để kiểm luồng chính.
     await expect.poll(() => vnHm(), { timeout: 65_000, intervals: [1_000] }).not.toBe(firstIn);
+    // Đúng 1 request OUT, lượt đầu ⇒ 201 (200 chỉ là replay cùng Idempotency-Key — A).
+    const outs: number[] = [];
+    page.on('response', (r) => {
+      if (r.request().method() === 'POST' && r.url().endsWith('/attendance/check-out'))
+        outs.push(r.status());
+    });
+    const out = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/attendance/check-out'),
+    );
     await card.getByRole('button', { name: 'Chấm ra' }).click();
+    expect((await out).status(), 'chấm ra lần đầu').toBe(201);
     await expect(page.getByText('Đã chấm ra')).toBeVisible();
     await expect(inOut).toHaveText(/^\d{2}:\d{2} \/ \d{2}:\d{2}$/);
     await expect(cardValue(card, 'Trạng thái')).not.toContainText('Đang làm');
     await expect(card.getByRole('button', { name: 'Chấm ra lại' })).toBeVisible();
+    expect(outs, 'một lần bấm ⇒ đúng một request check-out').toEqual([201]);
 
     const mia = await refreshed(request, w.mia);
     const today = await apiMyToday(request, w.olivia, mia);
