@@ -44,7 +44,8 @@ for n in ${ORDER:-1 2}; do
   bash load/run.sh down # dừng êm API (cpu-prof ghi file) rồi down
 done
 
-node --input-type=module - "$TOP" <<'EOF'
+# MSYS_NO_PATHCONV=1 ⇒ node.exe không tự đổi /d/… ⇒ đưa đường dẫn Windows.
+node --input-type=module - "$(host_path "$TOP")" <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const top = process.argv[2];
 const runs = {};

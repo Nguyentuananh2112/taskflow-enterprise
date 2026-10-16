@@ -51,11 +51,17 @@ else
 fi
 {
   echo "# Môi trường đo $(date -u +%FT%TZ)"
-  echo "- git: $(git -C "$ROOT" rev-parse --short HEAD) ($(git -C "$ROOT" log -1 --format=%s | cut -c1-80))"
+  # MSYS_NO_PATHCONV=1 ⇒ git.exe không tự đổi /d/… ⇒ đưa đường dẫn Windows.
+  echo "- git (script đo): $(git -C "$(host_path "$ROOT")" rev-parse --short HEAD) ($(git -C "$(host_path "$ROOT")" log -1 --format=%s | cut -c1-80))"
+  echo "- image API: ${API_IMAGE:-taskflow-api:load (build từ repo này)} · migrate: ${MIGRATE_IMAGE:-taskflow-api-migrate:load}"
   echo "- docker: $(docker info --format '{{.ServerVersion}} · {{.NCPU}} CPU · {{.MemTotal}} B RAM cho VM')"
   echo "- host: ${OS:-$(uname -s)} · $(nproc 2>/dev/null || echo ?) luồng"
   echo "- container đang chạy (tải nền): $(docker ps -q | wc -l)"
-  echo "- API: ${INSTANCES:-trực tiếp (không LB)} bản${INSTANCES:+ sau LB Caddy (SOCKET_REDIS_ADAPTER=true, TRUST_PROXY_HOPS=2)} · cpu-prof: ${CPU_PROF:-0}"
+  if [ -n "${INSTANCES:-}" ]; then
+    echo "- API: ${INSTANCES} bản sau LB Caddy (SOCKET_REDIS_ADAPTER=true, TRUST_PROXY_HOPS=2) · cpu-prof: ${CPU_PROF:-0}"
+  else
+    echo "- API: 1 bản, k6 gọi trực tiếp (không LB) · cpu-prof: ${CPU_PROF:-0}"
+  fi
 } > "$RESULTS_DIR/environment.md"
 
 if [ -z "${API_IMAGE:-}" ]; then
