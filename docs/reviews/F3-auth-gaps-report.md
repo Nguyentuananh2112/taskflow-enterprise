@@ -16,7 +16,19 @@ Chỉ thêm test, không đổi code sản phẩm.
 
 **B-1** (`login.use-case.ts:65`, `recordLogin` trả null): nhánh này đã được viết lại trong `fix/auth-login-pwchange-race` (G1 auth M1). Test 401 / không phiên cho cả hai trường hợp "mật khẩu vừa đổi" và "rehash thua" đã có ở đó. Ca riêng "user bị xóa giữa verify" sẽ thêm sau khi M1 merge, để tránh xung đột `login.use-case.test.ts`.
 
-**P3 (B-8..B-12)** chưa làm (ưu tiên thấp). Sẽ làm cùng lượt helper unique (`refactor/unique-constraint-helper`) nếu còn thời gian.
+**B-1** đã thêm trên `test/F3-auth-b1` (đã merge `31591ab`).
+
+**P3 (B-8..B-12)** — branch `test/F3-auth-p3` (từ main `19240c5`), chỉ thêm test:
+
+| GAP | Vị trí | Test mới |
+|---|---|---|
+| B-8 | `access-token-authenticator.ts:98` | Biên cửa sổ khôi phục `sid-revoked`: thu hồi đúng 905 s trước (TTL tính ra 0) ⇒ không ghi; 904 s ⇒ ghi TTL 1. Truy vấn `revokedAt >= since` tính cả biên ⇒ test phân biệt được `> 0` / `>= 0` |
+| B-9 | `access-token-authenticator.ts:35` | Chốt hành vi: `"Bearer <token>  "` (khoảng trắng cuối) ⇒ qua |
+| B-10 | `argon2id-password-hasher.ts:71` | Cùng m/t/p, version argon2 cũ (0x10) ⇒ `needsRehash` = true |
+| B-11 | `refresh-cookie.ts:67, 69` | `__Host-tf_rtX` (không `=`) ⇒ `readAll` = `[]` (mutant đếm thành 1 giá trị, lệch ngưỡng flood); `__Host-tf_rt= abc ` ⇒ `['abc']` |
+| B-12 | `refresh-cookie.ts:48` | `clear` gọi `res.cookie(tên, '', { maxAge: 0 })` — giá trị rỗng |
+
+Đột biến tay: cả 6 bị giết (`> 0` → `>= 0`; `\s*$` → `\S*$`; bỏ so sánh `version`; `eq < 0` → `false`; bỏ `.trim()`; giá trị clear `''` → `'x'`).
 
 ## Kiểm (exit code)
 

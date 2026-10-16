@@ -1,4 +1,4 @@
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../../../../test/support';
@@ -26,5 +26,23 @@ describe('RefreshCookie.read (T-028)', () => {
 
   it('cookie tossing: HAI cookie trùng tên (subdomain đặt Domain=, Path hẹp hơn đứng trước) ⇒ undefined, không lấy cái đầu', () => {
     expect(cookie.read(req('__Host-tf_rt=attacker; __Host-tf_rt=victim'))).toBeUndefined();
+  });
+
+  it('F3 B-11: phần cookie không có "=" (vd `__Host-tf_rtX`) ⇒ bỏ qua, không đếm thành một giá trị; giá trị có khoảng trắng ⇒ trim', () => {
+    expect(cookie.readAll(req('__Host-tf_rtX'))).toEqual([]);
+    expect(cookie.readAll(req('a=1; __Host-tf_rtX; b=2'))).toEqual([]);
+    expect(cookie.readAll(req('__Host-tf_rt= abc '))).toEqual(['abc']);
+  });
+});
+
+describe('RefreshCookie.clear', () => {
+  it('F3 B-12: cùng tên, giá trị RỖNG, Max-Age 0 (không để lại giá trị nào trong trình duyệt)', () => {
+    const calls: unknown[][] = [];
+    const res = { cookie: (...args: unknown[]) => calls.push(args) } as unknown as Response;
+    cookie.clear(res);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe('__Host-tf_rt');
+    expect(calls[0]?.[1]).toBe('');
+    expect(calls[0]?.[2]).toMatchObject({ maxAge: 0 });
   });
 });
