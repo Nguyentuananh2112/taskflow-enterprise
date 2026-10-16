@@ -264,8 +264,9 @@ describe('rebalance — biên (F3 mutation)', () => {
     for (const r of await h.backend.taskRows()) expect(r.rank.length).toBeLessThanOrEqual(3);
   });
 
-  it('T-5: `moving` chỉ vào lô ghi khi CÙNG cột và khóa mới TRÙNG rank cũ (khác cột hoặc khác khóa ⇒ use case tự lưu)', async () => {
-    // (a) cùng cột, khóa mới ≠ rank cũ: X cuối cột rank 'a9', move sau B ⇒ khóa spread 'a2'.
+  // T-5 — mỗi ca một harness (Postgres/LSP: DB chỉ làm sạch ở beforeEach).
+  it('T-5a: CÙNG cột, khóa mới ≠ rank cũ ⇒ `moving` KHÔNG vào lô ghi (use case tự lưu)', async () => {
+    // X cuối cột rank 'a9', move sau B ⇒ khóa spread 'a2'.
     const h = await createTaskHarness();
     const t = {
       a: await h.seedTask({ rank: 'a0' }),
@@ -281,22 +282,24 @@ describe('rebalance — biên (F3 mutation)', () => {
     });
     expect(saveRanks.mock.calls[0]![0].map((w) => w.task.id)).not.toContain(t.x.id);
     expect(await h.column('TODO')).toEqual([t.a.id, t.b.id, t.x.id, t.c.id]);
+  });
 
-    // (b) khác cột, khóa mới TRÙNG rank cũ: X ở IN_PROGRESS rank 'a2' vào TODO sau B ⇒ khóa 'a2'.
-    const h2 = await createTaskHarness();
+  it('T-5b: KHÁC cột, khóa mới TRÙNG rank cũ ⇒ `moving` KHÔNG vào lô ghi (use case lưu cả status)', async () => {
+    // X ở IN_PROGRESS rank 'a2' vào TODO sau B ⇒ khóa spread 'a2'.
+    const h = await createTaskHarness();
     const u = {
-      a: await h2.seedTask({ rank: 'a0' }),
-      b: await h2.seedTask({ rank: LONG }),
-      c: await h2.seedTask({ rank: `${LONG}V` }),
-      x: await h2.seedTask({ rank: 'a2', status: 'IN_PROGRESS' }),
+      a: await h.seedTask({ rank: 'a0' }),
+      b: await h.seedTask({ rank: LONG }),
+      c: await h.seedTask({ rank: `${LONG}V` }),
+      x: await h.seedTask({ rank: 'a2', status: 'IN_PROGRESS' }),
     };
-    const saveRanks2 = vi.spyOn(h2.deps.tasks, 'saveRanks');
-    const dto = await h2.move.execute({
-      ...h2.scope('Mia'),
+    const saveRanks = vi.spyOn(h.deps.tasks, 'saveRanks');
+    const dto = await h.move.execute({
+      ...h.scope('Mia'),
       taskId: u.x.id,
       input: { expectedVersion: 1, status: 'TODO', afterId: u.b.id },
     });
-    expect(saveRanks2.mock.calls[0]![0].map((w) => w.task.id)).not.toContain(u.x.id);
+    expect(saveRanks.mock.calls[0]![0].map((w) => w.task.id)).not.toContain(u.x.id);
     expect(dto).toMatchObject({ status: 'TODO', rank: 'a2', version: 2 });
   });
 

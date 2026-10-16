@@ -326,11 +326,13 @@ describe('MoveTaskUseCase — biên (F3 mutation)', () => {
     ).rejects.toMatchObject({ statusCode: 422, code: 'PROJECT_ARCHIVED' });
   });
 
-  it('T-17: ngưỡng rebalance là "dài HƠN 64": rank 64 ký tự ⇒ không rebalance; 65 ⇒ có', async () => {
-    for (const [len, rebalanced] of [
-      [64, false],
-      [65, true],
-    ] as const) {
+  // Mỗi ca một harness: trên Postgres (runner LSP) DB chỉ được làm sạch ở beforeEach.
+  it.each([
+    [64, false],
+    [65, true],
+  ] as const)(
+    'T-17: ngưỡng rebalance là "dài HƠN 64": rank %i ký tự ⇒ rebalance = %s',
+    async (len, rebalanced) => {
       const { h, t } = await board();
       const long = `a0${'V'.repeat(len - 2)}`;
       h.deps.ranks.between = () => long;
@@ -339,11 +341,9 @@ describe('MoveTaskUseCase — biên (F3 mutation)', () => {
         taskId: t.C.id,
         input: { expectedVersion: 1, afterId: t.A.id },
       });
-      expect(h.logger.messages('info').includes('task.rank_rebalanced'), `len ${len}`).toBe(
-        rebalanced,
-      );
-    }
-  });
+      expect(h.logger.messages('info').includes('task.rank_rebalanced')).toBe(rebalanced);
+    },
+  );
 
   it('T-25: chuyển trạng thái sai được báo TRƯỚC anchor sai (TODO → DONE với afterId ở TODO ⇒ INVALID_STATUS_TRANSITION)', async () => {
     const { h, t } = await board();
