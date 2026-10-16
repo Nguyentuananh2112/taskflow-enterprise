@@ -1,10 +1,4 @@
-import type { LeavePart } from '../../../domain/summarize-day';
 import type { WorkSchedule } from '../../../domain/work-schedule';
-import type { ApprovedLeavePort } from '../../../application/ports/approved-leave.port';
-import type {
-  IMembershipTenurePort,
-  MembershipTenure,
-} from '../../../application/ports/membership-tenure.port';
 import {
   AlreadyCheckedInError,
   IdempotencyKeyTakenError,
@@ -104,6 +98,32 @@ export class InMemoryAttendanceEventStore implements IAttendanceEventStore {
     return Promise.resolve(true);
   }
 
+  listForUsers(q: { workspaceId: string; userIds: readonly string[]; from: string; to: string }) {
+    return Promise.resolve(
+      this.rows
+        .filter(
+          (e) =>
+            e.workspaceId === q.workspaceId &&
+            q.userIds.includes(e.userId) &&
+            e.workDate >= q.from &&
+            e.workDate <= q.to,
+        )
+        .map((e) => ({ ...e })),
+    );
+  }
+
+  userIdsWithEvents(q: { workspaceId: string; from: string; to: string }) {
+    return Promise.resolve([
+      ...new Set(
+        this.rows
+          .filter(
+            (e) => e.workspaceId === q.workspaceId && e.workDate >= q.from && e.workDate <= q.to,
+          )
+          .map((e) => e.userId),
+      ),
+    ]);
+  }
+
   hasAnyForUser(workspaceId: string, userId: string) {
     return Promise.resolve(
       this.rows.some((e) => e.workspaceId === workspaceId && e.userId === userId),
@@ -160,56 +180,6 @@ export class InMemoryWorkCalendarStore implements IWorkCalendarStore {
         .filter((h) => h.workspaceId === q.workspaceId && h.date >= q.from && h.date <= q.to)
         .sort((a, b) => (a.date < b.date ? -1 : 1))
         .map(({ date, name }) => ({ date, name })),
-    );
-  }
-}
-
-/** Fake `IMembershipTenurePort` tới khi T-037b (B) có adapter thật — cùng ngữ nghĩa giao `[from, to)`. */
-export class FakeMembershipTenures implements IMembershipTenurePort {
-  readonly rows: (MembershipTenure & { workspaceId: string })[] = [];
-
-  tenuresOf(q: { workspaceId: string; userIds?: readonly string[]; from: Date; to: Date }) {
-    return Promise.resolve(
-      this.rows
-        .filter(
-          (t) =>
-            t.workspaceId === q.workspaceId &&
-            (!q.userIds || q.userIds.includes(t.userId)) &&
-            t.from < q.to &&
-            (t.until === null || t.until >= q.from),
-        )
-        .sort((a, b) =>
-          a.userId === b.userId
-            ? a.from.getTime() - b.from.getTime()
-            : a.userId < b.userId
-              ? -1
-              : 1,
-        )
-        .map(({ userId, from, until }) => ({ userId, from, until })),
-    );
-  }
-}
-
-/** Fake `ApprovedLeavePort` tới khi T-039 (leave) có adapter thật. */
-export class FakeApprovedLeaves implements ApprovedLeavePort {
-  readonly rows: { workspaceId: string; userId: string; date: string; part: LeavePart }[] = [];
-
-  approvedLeaves(q: {
-    workspaceId: string;
-    userIds?: readonly string[];
-    from: string;
-    to: string;
-  }) {
-    return Promise.resolve(
-      this.rows
-        .filter(
-          (l) =>
-            l.workspaceId === q.workspaceId &&
-            (!q.userIds || q.userIds.includes(l.userId)) &&
-            l.date >= q.from &&
-            l.date <= q.to,
-        )
-        .map(({ userId, date, part }) => ({ userId, date, part })),
     );
   }
 }

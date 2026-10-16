@@ -49,6 +49,35 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
     return rows.map(toRecord);
   }
 
+  async listForUsers(q: {
+    workspaceId: string;
+    userIds: readonly string[];
+    from: string;
+    to: string;
+  }) {
+    if (q.userIds.length === 0) return [];
+    const rows = await this.db().attendanceEvent.findMany({
+      where: {
+        workspaceId: q.workspaceId,
+        userId: { in: [...q.userIds] },
+        workDate: { gte: fromDateOnly(q.from), lte: fromDateOnly(q.to) },
+      },
+    });
+    return rows.map(toRecord);
+  }
+
+  async userIdsWithEvents(q: { workspaceId: string; from: string; to: string }) {
+    const rows = await this.db().attendanceEvent.findMany({
+      where: {
+        workspaceId: q.workspaceId,
+        workDate: { gte: fromDateOnly(q.from), lte: fromDateOnly(q.to) },
+      },
+      distinct: ['userId'],
+      select: { userId: true },
+    });
+    return rows.map((r) => r.userId);
+  }
+
   async findByIdempotencyKey(q: {
     workspaceId: string;
     userId: string;

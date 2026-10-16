@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { UserRefDto } from '../auth/auth.schemas';
-import { DateOnly, IsoDateTime, Uuid } from '../common/primitives';
+import { Cursor, DateOnly, IsoDateTime, Uuid, limitQuery } from '../common/primitives';
 import { AttendanceKind, AttendanceSource } from '../hr/hr.schemas';
 
 // Chấm công (T-038, thiết kế attendance-leave.md §4–§5, hợp đồng web chốt với E cho T-041a).
@@ -259,3 +259,51 @@ export type PutHolidayBody = z.infer<typeof PutHolidayBody>;
 /** `DELETE attendance/holidays/:date` ⇒ 204 (idempotent); luật ngày đã qua như PUT. */
 export const DeleteHolidayBody = z.strictObject({ reason: Reason.optional() });
 export type DeleteHolidayBody = z.infer<typeof DeleteHolidayBody>;
+
+// ---------- Bảng công cả công ty (HR, `hr:manage`) — chốt với H (T-041c) ----------
+
+/** Một người trong bảng HR. `left`: không còn là nhân viên nhưng có dữ liệu trong khoảng (R30). */
+const HrMemberRef = { user: UserRefDto, left: z.boolean() };
+
+/** `GET attendance/today` — không phân trang; sắp theo tên (tiếng Việt), rồi id. */
+export const AttendanceCompanyTodayDto = z.object({
+  serverNow: IsoDateTime,
+  date: DateOnly,
+  timezone: z.string().min(1),
+  isWorkday: z.boolean(),
+  isHoliday: z.boolean(),
+  holidayName: z.string().nullable(),
+  schedule: WorkShiftDto.nullable(),
+  members: z.array(z.object({ ...HrMemberRef, day: AttendanceDayDto })),
+});
+export type AttendanceCompanyTodayDto = z.infer<typeof AttendanceCompanyTodayDto>;
+
+const HalfDays = z.number().min(0).multipleOf(0.5);
+
+/** Tổng tháng của một người; NOT_EMPLOYED / OFF / HOLIDAY tính 0. Vắng / nghỉ theo bước 0,5 ngày. */
+export const AttendanceTotalsDto = z.object({
+  workedMin: z.int().min(0),
+  lateDays: z.int().min(0),
+  lateMin: z.int().min(0),
+  earlyDays: z.int().min(0),
+  earlyMin: z.int().min(0),
+  absentDays: HalfDays,
+  leaveDays: HalfDays,
+  missingOutDays: z.int().min(0),
+});
+export type AttendanceTotalsDto = z.infer<typeof AttendanceTotalsDto>;
+
+/** Một dòng của `GET attendance?month=` (envelope `data[]` + `meta.page`). */
+export const AttendanceMemberMonthDto = z.object({
+  ...HrMemberRef,
+  days: z.array(AttendanceDayDto),
+  totals: AttendanceTotalsDto,
+});
+export type AttendanceMemberMonthDto = z.infer<typeof AttendanceMemberMonthDto>;
+
+export const AttendanceCompanyMonthQuery = z.strictObject({
+  month: YearMonth,
+  cursor: Cursor.optional(),
+  limit: limitQuery(50, 50),
+});
+export type AttendanceCompanyMonthQuery = z.infer<typeof AttendanceCompanyMonthQuery>;

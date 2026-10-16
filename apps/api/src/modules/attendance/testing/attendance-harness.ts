@@ -8,6 +8,7 @@ import type { AttendanceDeps } from '../application/attendance-days';
 import type { HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
 import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-case';
+import { HrAttendanceQueries } from '../application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from '../application/use-cases/work-calendar.use-cases';
 import { instantOf } from '../domain/local-time';
@@ -15,7 +16,7 @@ import type { WorkSchedule } from '../domain/work-schedule';
 import {
   FakeApprovedLeaves,
   FakeMembershipTenures,
-} from '../infrastructure/persistence/in-memory/in-memory-attendance';
+} from '../infrastructure/persistence/in-memory/fake-collaborators';
 import { inMemoryAttendanceBackend, type AttendanceBackend } from './attendance-backend';
 
 /**
@@ -147,6 +148,7 @@ export async function createAttendanceHarness(
     queries: new MyAttendanceQueries(deps),
     eventUseCases,
     calendarUseCases,
+    hrQueries: new HrAttendanceQueries({ ...deps, users: collaborators.users }),
     members,
     notified,
     audit,

@@ -59,70 +59,77 @@ export const tenureWindow = (from: LocalDate, to: LocalDate) => ({
 });
 
 /**
- * Bảng công của MỘT người cho các ngày `[from, to]` (gồm cả hai đầu) — tính khi đọc (ADR-121), không lưu
- * bảng tổng hợp. Ngày chưa có phiên bản lịch ⇒ lịch mặc định.
+ * Bảng công của NHIỀU người cho các ngày `[from, to]` (gồm cả hai đầu) — tính khi đọc (ADR-121), không lưu
+ * bảng tổng hợp; đọc theo lô (5 truy vấn cho cả trang). Ngày chưa có phiên bản lịch ⇒ lịch mặc định.
  */
+export async function summarizeUsers(
+  d: AttendanceDeps,
+  q: { workspaceId: string; userIds: readonly string[]; from: LocalDate; to: LocalDate },
+): Promise<Map<string, AttendanceDayDto[]>> {
+  const { workspaceId, userIds, from, to } = q;
+  const [versions, holidays, leaves, events, tenures] = await Promise.all([
+    d.calendar.scheduleVersions(workspaceId),
+    d.calendar.holidays({ workspaceId, from, to }),
+    d.leaves.approvedLeaves({ workspaceId, userIds, from, to }),
+    d.events.listForUsers({ workspaceId, userIds, from, to }),
+    d.tenures.tenuresOf({ workspaceId, userIds, ...tenureWindow(from, to) }),
+  ]);
+  const holidayOf = new Map(holidays.map((h) => [h.date, h.name]));
+  const now = d.clock.now();
+  const dates = Array.from({ length: daysBetween(from, to) + 1 }, (_, i) => addDays(from, i));
+  const schedules = new Map(dates.map((date) => [date, effectiveSchedule(versions, date)]));
+  const result = new Map<string, AttendanceDayDto[]>();
+  for (const userId of userIds) {
+    const leaveOf = new Map<LocalDate, LeavePart>(
+      leaves.filter((l) => l.userId === userId).map((l) => [l.date, l.part]),
+    );
+    const mine = events.filter((e) => e.userId === userId);
+    const myTenures = tenures.filter((t) => t.userId === userId);
+    result.set(
+      userId,
+      dates.map((date) => {
+        const schedule = schedules.get(date)!;
+        const holidayName = holidayOf.get(date) ?? null;
+        const leave = leaveOf.get(date) ?? null;
+        const s = summarizeDay({
+          date,
+          events: mine.filter((e) => e.workDate === date),
+          schedule,
+          holiday: holidayName !== null,
+          leave,
+          employed: employedOn(myTenures, date, schedule.timezone),
+          now,
+        });
+        return {
+          date,
+          timezone: schedule.timezone,
+          isWorkday: isWorkday(schedule, date),
+          holidayName,
+          workedMin: s.workedMin,
+          lateMin: s.lateMin,
+          earlyMin: s.earlyMin,
+          status: s.status,
+          late: s.flags.late,
+          early: s.flags.early,
+          absentHalf: s.flags.absentHalf,
+          inProgress: s.flags.inProgress,
+          firstIn: iso(s.firstIn),
+          lastOut: iso(s.lastOut),
+          leave,
+        };
+      }),
+    );
+  }
+  return result;
+}
+
+/** Bảng công của MỘT người (`me?month=`, ô ngày sau ADJUSTMENT / void). */
 export async function summarizeRange(
   d: AttendanceDeps,
   q: { workspaceId: string; userId: string; from: LocalDate; to: LocalDate },
 ): Promise<AttendanceDayDto[]> {
-  const [versions, holidays, leaves, events, tenures] = await Promise.all([
-    d.calendar.scheduleVersions(q.workspaceId),
-    d.calendar.holidays(q),
-    d.leaves.approvedLeaves({
-      workspaceId: q.workspaceId,
-      userIds: [q.userId],
-      from: q.from,
-      to: q.to,
-    }),
-    d.events.listForUser(q),
-    d.tenures.tenuresOf({
-      workspaceId: q.workspaceId,
-      userIds: [q.userId],
-      ...tenureWindow(q.from, q.to),
-    }),
-  ]);
-  const mine = tenures.filter((t) => t.userId === q.userId);
-  const holidayOf = new Map(holidays.map((h) => [h.date, h.name]));
-  const leaveOf = new Map<LocalDate, LeavePart>(
-    leaves.filter((l) => l.userId === q.userId).map((l) => [l.date, l.part]),
-  );
-  const now = d.clock.now();
-  const days: AttendanceDayDto[] = [];
-  for (let i = 0; i <= daysBetween(q.from, q.to); i += 1) {
-    const date = addDays(q.from, i);
-    const schedule = effectiveSchedule(versions, date);
-    const holidayName = holidayOf.get(date) ?? null;
-    const leave = leaveOf.get(date) ?? null;
-    const dayEvents = events.filter((e) => e.workDate === date);
-    const s = summarizeDay({
-      date,
-      events: dayEvents,
-      schedule,
-      holiday: holidayName !== null,
-      leave,
-      employed: employedOn(mine, date, schedule.timezone),
-      now,
-    });
-    days.push({
-      date,
-      timezone: schedule.timezone,
-      isWorkday: isWorkday(schedule, date),
-      holidayName,
-      workedMin: s.workedMin,
-      lateMin: s.lateMin,
-      earlyMin: s.earlyMin,
-      status: s.status,
-      late: s.flags.late,
-      early: s.flags.early,
-      absentHalf: s.flags.absentHalf,
-      inProgress: s.flags.inProgress,
-      firstIn: iso(s.firstIn),
-      lastOut: iso(s.lastOut),
-      leave,
-    });
-  }
-  return days;
+  const days = await summarizeUsers(d, { ...q, userIds: [q.userId] });
+  return days.get(q.userId)!;
 }
 
 /** Thẻ chấm công hôm nay (`GET attendance/me/today`, cũng là body của check-in/out). */

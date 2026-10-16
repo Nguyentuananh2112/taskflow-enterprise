@@ -50,6 +50,15 @@ export interface IAttendanceEventStore {
     from: LocalDate;
     to: LocalDate;
   }): Promise<AttendanceEventRecord[]>;
+  /** Như `listForUser` cho nhiều người một lần (bảng HR / CSV). */
+  listForUsers(q: {
+    workspaceId: string;
+    userIds: readonly string[];
+    from: LocalDate;
+    to: LocalDate;
+  }): Promise<AttendanceEventRecord[]>;
+  /** Người có lượt chấm (kể cả đã hủy) với `workDate` trong `[from, to]` — gồm người đã rời (R30). */
+  userIdsWithEvents(q: { workspaceId: string; from: LocalDate; to: LocalDate }): Promise<string[]>;
   findByIdempotencyKey(q: {
     workspaceId: string;
     userId: string;
