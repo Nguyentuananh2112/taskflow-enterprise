@@ -2,6 +2,12 @@ import type { ILogger } from '../core/logging/logger';
 import { PrismaUnitOfWork, type TransactionCapable } from '../core/persistence/prisma-unit-of-work';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
+import {
+  createInMemoryAttendanceRepositories,
+  type AttendanceRepositories,
+} from '../modules/attendance/attendance.module';
+import { PrismaAttendanceEventStore } from '../modules/attendance/infrastructure/persistence/prisma/prisma-attendance-event.store';
+import { PrismaWorkCalendarStore } from '../modules/attendance/infrastructure/persistence/prisma/prisma-work-calendar.store';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import {
   ValkeySessionRevocationStore,
@@ -71,6 +77,8 @@ export interface Persistence {
   task: TaskRepositories;
   /** Thông báo bền (ADR-123, T-040) — store ghi trong cùng UoW; audience/context chỉ đọc. */
   notifications: NotificationRepositories;
+  /** Chấm công (T-038): lượt chấm + lịch / ngày lễ. */
+  attendance: AttendanceRepositories;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
   workspacePurger?: IWorkspacePurger;
   /** Dọn refresh token hết hạn (G2 S2) — chỉ có ở Prisma, như `workspacePurger`. */
@@ -83,6 +91,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const auth = createInMemoryAuthRepositories();
   const ws = createInMemoryWorkspaceRepositories();
   const task = createInMemoryTaskRepositories();
+  const attendance = createInMemoryAttendanceRepositories();
 
   // Bản sao của Workspace/Auth trong InMemoryTaskDatabase (Prisma đọc bảng chung nên không cần).
   const users = new MirroringUserRepository(auth.users, ws.directory, (user) => {
@@ -114,12 +123,20 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       ws.departures,
       task.db,
       notificationStore,
+      attendance.events,
+      attendance.calendar,
     ],
     logger,
   );
   return {
     kind: 'memory',
-    modules: { auth: 'memory', workspace: 'memory', task: 'memory', notifications: 'memory' },
+    modules: {
+      auth: 'memory',
+      workspace: 'memory',
+      task: 'memory',
+      notifications: 'memory',
+      attendance: 'memory',
+    },
     auth: { users, refreshTokens: auth.refreshTokens, sessions: auth.sessions },
     workspace,
     task,
@@ -131,6 +148,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       }),
       context: new InMemoryNotificationContextReader(users),
     },
+    attendance,
     uow,
   };
 }
@@ -158,7 +176,13 @@ export function createPrismaPersistence(d: {
   const db = () => uow.db();
   return {
     kind: 'prisma',
-    modules: { auth: 'prisma', workspace: 'prisma', task: 'prisma', notifications: 'prisma' },
+    modules: {
+      auth: 'prisma',
+      workspace: 'prisma',
+      task: 'prisma',
+      notifications: 'prisma',
+      attendance: 'prisma',
+    },
     auth: {
       users: new PrismaUserRepository(db),
       refreshTokens: new PrismaRefreshTokenRepository(db),
@@ -187,6 +211,10 @@ export function createPrismaPersistence(d: {
       store: new PrismaNotificationStore(db),
       audience: new PrismaNotificationAudience(db),
       context: new PrismaNotificationContextReader(db),
+    },
+    attendance: {
+      events: new PrismaAttendanceEventStore(db),
+      calendar: new PrismaWorkCalendarStore(db),
     },
     workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
     refreshTokenPurger: new PrismaRefreshTokenPurger(db),

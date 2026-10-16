@@ -22,10 +22,8 @@ import { CheckInOutUseCase } from './application/use-cases/check-in-out.use-case
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from './application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
-import {
-  InMemoryAttendanceEventStore,
-  InMemoryWorkCalendarStore,
-} from './infrastructure/persistence/in-memory/in-memory-attendance';
+import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
+import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memory/in-memory-work-calendar';
 import type { AttendanceMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
@@ -36,7 +34,7 @@ export interface AttendanceRepositories {
 }
 
 /** Lưu trữ trong bộ nhớ (local/test). Prisma: `composition/persistence.ts`. */
-export function createInMemoryAttendanceRepositories(): AttendanceRepositories {
+export function createInMemoryAttendanceRepositories() {
   return { events: new InMemoryAttendanceEventStore(), calendar: new InMemoryWorkCalendarStore() };
 }
 

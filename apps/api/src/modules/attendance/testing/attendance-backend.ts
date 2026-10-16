@@ -6,10 +6,8 @@ import type {
 } from '../application/ports/attendance-event-store.port';
 import type { IWorkCalendarStore } from '../application/ports/work-calendar-store.port';
 import type { WorkSchedule } from '../domain/work-schedule';
-import {
-  InMemoryAttendanceEventStore,
-  InMemoryWorkCalendarStore,
-} from '../infrastructure/persistence/in-memory/in-memory-attendance';
+import { InMemoryAttendanceEventStore } from '../infrastructure/persistence/in-memory/in-memory-attendance';
+import { InMemoryWorkCalendarStore } from '../infrastructure/persistence/in-memory/in-memory-work-calendar';
 
 /**
  * Phần lưu trữ của harness attendance — đổi được để chạy LẠI cùng bộ test tầng A trên Postgres (runner LSP
