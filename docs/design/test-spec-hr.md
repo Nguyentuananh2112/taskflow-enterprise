@@ -74,7 +74,7 @@ Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now })` ⇒ `
 | SD-12 | OUT mồ côi | IN 08:00 (15/11, không OUT) · OUT 01:00 (17/11) | IN mở là của 15/11, mốc chốt là 16/11 06:00 ⇒ OUT 17/11 01:00 đã quá ⇒ **mồ côi**, thuộc ngày hiện tại 17/11, hiển thị thô; 15/11 `MISSING_OUT`; 17/11 không `PRESENT` từ lượt đó |
 | SD-12b | biên giờ chốt: 05:59 | IN 08:00 (16/11) · OUT 05:59 (17/11) | OUT gắn **16/11** (05:59 < 06:00); 16/11 `PRESENT`, worked 480 |
 | SD-12c | biên giờ chốt: 06:00 | IN 08:00 (16/11) · OUT 06:00 (17/11) | OUT **không** gắn (06:00 không `<` 06:00) ⇒ mồ côi thuộc 17/11; 16/11 `MISSING_OUT`, worked 0 |
-| SD-12d | giờ chốt theo múi giờ của lịch, không theo UTC | lịch `Asia/Ho_Chi_Minh`; IN 08:00 (16/11) · OUT 16/11 22:59Z (= 17/11 05:59 VN) | OUT gắn 16/11 (so 06:00 giờ VN, không phải 06:00Z) |
+| SD-12d | giờ chốt theo múi giờ của lịch, không theo UTC | lịch `Asia/Ho_Chi_Minh`; IN 08:00 (16/11) · OUT 16/11 23:30Z (= 17/11 **06:30** VN) | OUT **mồ côi**, thuộc 17/11 (đã qua 06:00 giờ VN). Nếu code so theo UTC sẽ gắn nhầm 16/11 (23:30Z < 06:00Z hôm sau) ⇒ ca này phân biệt hai cách (ví dụ cũ 22:59Z không phân biệt — rà độ phủ của F) |
 | SD-12e | IN đã đóng rồi lại có OUT sau 00:00 (A) | IN 08:00 · OUT 17:30 (16/11) · OUT 00:30 (17/11) | không còn IN mở ⇒ OUT 00:30 **mồ côi**, thuộc 17/11; 16/11 `lastOut` vẫn 17:30 |
 | SD-13 | nghỉ AM + đi làm PM | leave `AM` · IN 13:25 · OUT 17:30 | `PRESENT`, mốc bắt đầu = `breakEnd` 13:30 ⇒ không `late`, worked 240 |
 | SD-14 | nghỉ AM + vào muộn, `grace 5` | leave `AM` · IN 13:36 · OUT 17:30 | `late`, lateMin **6** (so với 13:30) |
