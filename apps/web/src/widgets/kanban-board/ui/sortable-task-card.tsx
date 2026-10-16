@@ -2,7 +2,7 @@
 
 import { useSortable } from '@dnd-kit/react/sortable';
 import type { TaskDto, TaskStatus } from '@taskflow/contracts/task';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 
 import { TaskCard } from '@/entities/task';
 import { MoveMenu, type ColumnIds, type MoveIntent } from '@/features/task-move';
@@ -54,6 +54,29 @@ export const SortableTaskCard = memo(function SortableTaskCard({
     ...(reducedMotion ? { transition: null } : {}),
   });
 
+  // Dời 1 thẻ làm dịch `index` của mọi thẻ sau nó ⇒ wrapper này render lại (useSortable cần index),
+  // nhưng `handle`/`actions` giữ tham chiếu ⇒ memo của TaskCard không vỡ (perf/board-500 P2).
+  const handle = useMemo(
+    () =>
+      canDrag ? (
+        <button
+          type="button"
+          ref={handleRef}
+          disabled={pending}
+          aria-label={`Kéo ${task.key}`}
+          aria-roledescription="thẻ kéo được"
+          className="inline-flex size-6 cursor-grab touch-none items-center justify-center rounded-control text-text-muted hover:bg-bg-subtle disabled:cursor-not-allowed"
+        >
+          <span aria-hidden="true">⠿</span>
+        </button>
+      ) : undefined,
+    [canDrag, handleRef, pending, task.key],
+  );
+  const actions = useMemo(
+    () => (canDrag ? <MoveMenu task={task} getColumns={getColumns} onMove={onMove} /> : undefined),
+    [canDrag, task, getColumns, onMove],
+  );
+
   return (
     <li>
       <TaskCard
@@ -64,23 +87,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({
         onOpen={onOpen}
         pending={pending}
         dragging={isDragSource}
-        handle={
-          canDrag ? (
-            <button
-              type="button"
-              ref={handleRef}
-              disabled={pending}
-              aria-label={`Kéo ${task.key}`}
-              aria-roledescription="thẻ kéo được"
-              className="inline-flex size-6 cursor-grab touch-none items-center justify-center rounded-control text-text-muted hover:bg-bg-subtle disabled:cursor-not-allowed"
-            >
-              <span aria-hidden="true">⠿</span>
-            </button>
-          ) : undefined
-        }
-        actions={
-          canDrag ? <MoveMenu task={task} getColumns={getColumns} onMove={onMove} /> : undefined
-        }
+        handle={handle}
+        actions={actions}
       />
     </li>
   );

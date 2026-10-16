@@ -18,12 +18,15 @@ const renders = vi.hoisted(() => new Map<string, number>());
 
 vi.mock('@/entities/task', async (importOriginal) => {
   const actual = await importOriginal<typeof EntitiesTask>();
-  const { TaskCard } = actual;
-  function CountingTaskCard(props: ComponentProps<typeof TaskCard>) {
+  const { memo } = await import('react');
+  // Bọc HÀM bên trong memo rồi memo lại bằng so sánh mặc định (như TaskCard thật) ⇒ đếm đúng số lần
+  // TaskCard render, không phải số lần wrapper SortableTaskCard render.
+  const Inner = (actual.TaskCard as unknown as { type: typeof actual.TaskCard }).type;
+  function CountingTaskCard(props: ComponentProps<typeof actual.TaskCard>) {
     renders.set(props.task.id, (renders.get(props.task.id) ?? 0) + 1);
-    return <TaskCard {...props} />;
+    return <Inner {...props} />;
   }
-  return { ...actual, TaskCard: CountingTaskCard };
+  return { ...actual, TaskCard: memo(CountingTaskCard) };
 });
 
 const STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
@@ -61,7 +64,19 @@ function setup(onOpen: () => (taskId: string) => void) {
     });
     return target;
   };
-  return { tasks, mergeOneEvent };
+  /** Thẻ ĐẦU cột Cần làm sang cuối cột Đang làm ⇒ index của mọi thẻ còn lại trong cột dịch đi. */
+  const moveFirstTodo = async () => {
+    const target = tasks[0];
+    if (!target) throw new Error('thiếu task');
+    await act(async () => {
+      updateBoard(client, scope, (b) =>
+        upsertTask(b, { ...target, status: 'IN_PROGRESS', rank: 'zzz', version: 9 }),
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    return target;
+  };
+  return { tasks, mergeOneEvent, moveFirstTodo };
 }
 
 const snapshot = () => new Map(renders);
@@ -81,6 +96,15 @@ describe('board: merge 1 event chỉ render lại đúng 1 thẻ (memo theo tham
     const before = snapshot();
     const target = await mergeOneEvent('Đổi tên');
     expect(screen.getByRole('article', { name: 'Đổi tên' })).toBeTruthy();
+    expect(changed(before)).toEqual([target.id]);
+  });
+
+  it('move 1 thẻ (dịch index cả cột) ⇒ chỉ TaskCard của thẻ đó render lại (perf/board-500 P2)', async () => {
+    const { moveFirstTodo } = setup(() => stableOpen);
+    const before = snapshot();
+    const target = await moveFirstTodo();
+    const inProgress = document.querySelector('section[aria-labelledby="column-IN_PROGRESS"]');
+    expect(inProgress?.textContent).toContain(target.title);
     expect(changed(before)).toEqual([target.id]);
   });
 
