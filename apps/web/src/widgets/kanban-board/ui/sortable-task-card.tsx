@@ -19,6 +19,11 @@ type Props = Readonly<{
   index: number;
   /** Có quyền kéo (`task:move` && project chưa lưu trữ). */
   canDrag: boolean;
+  /**
+   * Board đang mount dần ⇒ tạm chưa kéo được. KHÔNG đưa vào `handle` (giữ memo TaskCard — P2): nút
+   * kéo vẫn hiện, dnd-kit chỉ bỏ qua; vài trăm ms là xong.
+   */
+  dragLocked: boolean;
   /** Đang chờ server ⇒ khóa kéo (tránh 2 move cùng expectedVersion). */
   pending: boolean;
   /** Cột của thẻ đang bị chặn thả (state machine) trong lúc kéo thẻ khác. */
@@ -35,6 +40,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({
   column,
   index,
   canDrag,
+  dragLocked,
   pending,
   blocked,
   reducedMotion,
@@ -50,7 +56,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({
     type: 'task',
     accept: 'task',
     data,
-    disabled: { draggable: !canDrag || pending, droppable: blocked },
+    disabled: { draggable: !canDrag || pending || dragLocked, droppable: blocked },
     ...(reducedMotion ? { transition: null } : {}),
   });
 

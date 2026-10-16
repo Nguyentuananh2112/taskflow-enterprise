@@ -17,6 +17,10 @@ const COLUMN_COLLISION_PRIORITY = 1;
 type Props = Readonly<{
   status: TaskStatus;
   tasks: readonly TaskDto[];
+  /** Thẻ của cột CHƯA mount (mount dần) — đếm vào tiêu đề, cột `aria-busy`. */
+  hiddenCount: number;
+  /** Đang mount dần ⇒ chưa cho kéo (thả vào vị trí chưa mount là không xác định). */
+  dragLocked: boolean;
   /** Đang kéo thẻ từ cột `from` mà cột này không hợp lệ ⇒ mờ + ⊘ + không nhận thả. */
   blockedFrom: TaskStatus | null;
   /** Đích thả hiện tại nằm trong cột này (chính cột hoặc một thẻ của cột) — tô viền vùng thả. */
@@ -50,6 +54,7 @@ function BoardColumnImpl(props: Props) {
     <section
       ref={ref}
       aria-labelledby={headingId}
+      aria-busy={props.hiddenCount > 0 || undefined}
       title={reason}
       className={cn(
         'flex min-h-48 w-72 shrink-0 flex-col gap-2 rounded-card bg-bg-subtle p-2 transition-opacity',
@@ -59,7 +64,7 @@ function BoardColumnImpl(props: Props) {
     >
       <h2 id={headingId} className="flex items-center gap-2 px-1 text-xs font-semibold uppercase">
         <span>{STATUS_LABEL[status]}</span>
-        <span className="font-normal text-text-muted">{tasks.length}</span>
+        <span className="font-normal text-text-muted">{tasks.length + props.hiddenCount}</span>
         {blocked && (
           <span className="ml-auto" aria-hidden="true">
             ⊘
@@ -75,6 +80,7 @@ function BoardColumnImpl(props: Props) {
             column={status}
             index={index}
             canDrag={canDrag}
+            dragLocked={props.dragLocked}
             pending={pendingIds.has(task.id)}
             blocked={blocked}
             reducedMotion={reducedMotion}
