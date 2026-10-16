@@ -228,6 +228,32 @@ describe('đọc — recipient_id = me, ws còn là thành viên, loại HR theo
     expect(await queries.unreadCount(ids.olivia)).toBe(0);
   });
 
+  it('T-040b: xóa rồi mời lại (joined_at mới) ⇒ thông báo nhiệm kỳ cũ ẩn ở list / unread / markRead / read-all', async () => {
+    await miaSubmits();
+    const [old] = (await queries.list(ids.hana, { limit: 20 })).items;
+    clock.advance(60_000);
+    await testPrisma().workspaceMember.deleteMany({ where: { userId: ids.hana } });
+    await testPrisma().workspaceMember.create({
+      data: {
+        workspaceId: ids.w1,
+        userId: ids.hana,
+        role: 'MEMBER',
+        grants: ['HR_MANAGE'],
+        joinedAt: clock.now(),
+      },
+    });
+    expect((await queries.list(ids.hana, { limit: 20 })).items).toEqual([]);
+    expect(await queries.unreadCount(ids.hana)).toBe(0);
+    await expect(queries.markRead(ids.hana, old?.id ?? '')).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await queries.markAllRead(ids.hana);
+    expect((await rows()).find((r) => r.id === old?.id)?.readAt).toBeNull(); // read-all không chạm dòng cũ
+
+    await miaSubmits(); // cùng mili giây với joined_at ⇒ thuộc nhiệm kỳ mới
+    expect(await queries.unreadCount(ids.hana)).toBe(1);
+  });
+
   it('SEC-HR-17: đánh dấu id của người khác ⇒ 404 và dòng không đổi; của mình ⇒ readAt, lặp lại giữ readAt cũ', async () => {
     await miaSubmits();
     const [n] = (await queries.list(ids.hana, { limit: 20 })).items;

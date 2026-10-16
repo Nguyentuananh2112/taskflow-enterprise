@@ -1,4 +1,5 @@
 import type {
+  AudienceWorkspace,
   INotificationAudience,
   INotificationContextReader,
   LeaveSummary,
@@ -15,15 +16,14 @@ const dateOnly = (d: Date) => d.toISOString().slice(0, 10);
 export class PrismaNotificationAudience implements INotificationAudience {
   constructor(private readonly db: DbProvider) {}
 
-  async workspacesOf(
-    userId: string,
-  ): Promise<(MemberAccess & { workspaceId: string; workspaceName: string })[]> {
+  async workspacesOf(userId: string): Promise<AudienceWorkspace[]> {
     const rows = await this.db().workspaceMember.findMany({
       where: { userId, workspace: { deletedAt: null } },
       select: {
         workspaceId: true,
         role: true,
         grants: true,
+        joinedAt: true,
         workspace: { select: { name: true } },
       },
     });
@@ -33,6 +33,7 @@ export class PrismaNotificationAudience implements INotificationAudience {
       workspaceName: r.workspace.name,
       role: r.role,
       grants: r.grants,
+      joinedAt: r.joinedAt,
     }));
   }
 

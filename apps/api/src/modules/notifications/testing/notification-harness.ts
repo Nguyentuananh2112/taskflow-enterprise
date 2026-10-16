@@ -31,7 +31,11 @@ interface Member {
   userId: string;
   role: WorkspaceRole;
   grants: MemberGrant[];
+  joinedAt: Date;
 }
+
+/** Thành viên seed vào từ "thuở đầu" — mọi thông báo của test đều thuộc nhiệm kỳ hiện tại. */
+const EPOCH = new Date(0);
 
 /** Membership HIỆN TẠI có thể đổi giữa các bước (rời ws, thu grant) — như đọc lại DB mỗi request. */
 export class FakeAudience implements INotificationAudience {
@@ -42,9 +46,21 @@ export class FakeAudience implements INotificationAudience {
   ]);
   readonly deleted = new Set<string>();
 
+  /** Đổi role / grants GIỮ nguyên nhiệm kỳ (như UPDATE dòng); thành viên mới vào từ EPOCH. */
   set(workspaceId: string, userId: string, role: WorkspaceRole, grants: MemberGrant[] = []): void {
+    const joinedAt = this.#find(workspaceId, userId)?.joinedAt ?? EPOCH;
     this.remove(workspaceId, userId);
-    this.members.push({ workspaceId, userId, role, grants });
+    this.members.push({ workspaceId, userId, role, grants, joinedAt });
+  }
+
+  /** Bị xóa rồi được mời lại lúc `at` ⇒ nhiệm kỳ MỚI (T-040b). */
+  rejoin(workspaceId: string, userId: string, role: WorkspaceRole, at: Date): void {
+    this.remove(workspaceId, userId);
+    this.members.push({ workspaceId, userId, role, grants: [], joinedAt: at });
+  }
+
+  #find(workspaceId: string, userId: string): Member | undefined {
+    return this.members.find((m) => m.workspaceId === workspaceId && m.userId === userId);
   }
 
   remove(workspaceId: string, userId: string): void {

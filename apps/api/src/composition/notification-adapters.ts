@@ -3,6 +3,7 @@ import type { ILeaveReadModel } from '../modules/leave/application/ports/leave-r
 import type { ILeaveNotifier } from '../modules/leave/application/ports/leave.ports';
 import type { NotificationPublisher } from '../modules/notifications';
 import type {
+  AudienceWorkspace,
   INotificationAudience,
   INotificationContextReader,
   LeaveSummary,
@@ -18,9 +19,7 @@ export class InMemoryNotificationAudience implements INotificationAudience {
     private readonly ws: { queries: IWorkspaceQueries; memberships: IMembershipRepository },
   ) {}
 
-  async workspacesOf(
-    userId: string,
-  ): Promise<(MemberAccess & { workspaceId: string; workspaceName: string })[]> {
+  async workspacesOf(userId: string): Promise<AudienceWorkspace[]> {
     const rows = await this.ws.queries.listActiveForUser(userId);
     return rows.map((r) => ({
       userId,
@@ -28,6 +27,7 @@ export class InMemoryNotificationAudience implements INotificationAudience {
       workspaceName: r.workspace.name,
       role: r.role,
       grants: r.grants,
+      joinedAt: r.joinedAt,
     }));
   }
 

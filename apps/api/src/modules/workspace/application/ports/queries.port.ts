@@ -22,10 +22,15 @@ export interface MemberRow extends MembershipSnapshot {
 
 /** Phía đọc (CQRS-lite, ADR-015): bản Prisma dùng `select` trực tiếp, kể cả JOIN bảng users. */
 export interface IWorkspaceQueries {
-  /** Workspace chưa xóa mà user là thành viên, kèm role. Tối đa 100 (data-and-api 2.5). */
+  /**
+   * Workspace chưa xóa mà user là thành viên, kèm role. Tối đa 100 (data-and-api 2.5). `joinedAt` = đầu
+   * nhiệm kỳ HIỆN TẠI (T-040b: chuông không hiện thông báo của nhiệm kỳ trước).
+   */
   listActiveForUser(
     userId: string,
-  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[] }[]>;
+  ): Promise<
+    { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
+  >;
   /** Đã xóa mềm, `purge_at > now`, user là OWNER (`?deleted=true`, security.md 3.6). */
   listDeletedOwnedBy(userId: string, now: Date): Promise<WorkspaceSnapshot[]>;
   /**

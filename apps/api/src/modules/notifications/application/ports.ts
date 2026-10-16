@@ -33,12 +33,17 @@ export interface MemberAccess {
   grants: readonly MemberGrant[];
 }
 
+export interface AudienceWorkspace extends MemberAccess {
+  workspaceId: string;
+  workspaceName: string;
+  /** `workspace_members.joined_at` — đầu nhiệm kỳ hiện tại (T-040b). */
+  joinedAt: Date;
+}
+
 /** Membership HIỆN TẠI đọc từ DB (B-H3b) — không đọc role/grants trong access token. */
 export interface INotificationAudience {
-  /** Workspace CHƯA xóa mà user đang là thành viên, kèm tên + role + grants. */
-  workspacesOf(
-    userId: string,
-  ): Promise<(MemberAccess & { workspaceId: string; workspaceName: string })[]>;
+  /** Workspace CHƯA xóa mà user đang là thành viên, kèm tên + role + grants + đầu nhiệm kỳ hiện tại. */
+  workspacesOf(userId: string): Promise<AudienceWorkspace[]>;
   /** Mọi thành viên của ws (fan-out tới người có `hr:manage` — lọc ở application bằng cùng hàm quyền). */
   membersOf(workspaceId: string): Promise<MemberAccess[]>;
 }

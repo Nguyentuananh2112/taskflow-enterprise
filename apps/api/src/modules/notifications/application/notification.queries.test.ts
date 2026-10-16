@@ -72,6 +72,40 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     expect(await h.queries.unreadCount(U.mia)).toBe(0);
   });
 
+  it('T-040b: bị xóa rồi mời lại ⇒ thông báo của nhiệm kỳ CŨ ẩn ở list / unread / markRead (404); mới thì thấy', async () => {
+    const h = await seeded();
+    const [old] = (await h.queries.list(U.mia, { limit: 20 })).items;
+    h.clock.advance(60_000);
+    h.audience.rejoin(W1, U.mia, 'MEMBER', h.clock.now());
+
+    expect((await h.queries.list(U.mia, { limit: 20 })).items).toEqual([]);
+    expect(await h.queries.unreadCount(U.mia)).toBe(0);
+    await expect(h.queries.markRead(U.mia, old!.id)).rejects.toBeInstanceOf(ResourceNotFoundError);
+
+    // Thông báo tạo ĐÚNG lúc vào lại (cùng mili giây) thuộc nhiệm kỳ mới.
+    await h.notifyInTx({
+      workspaceId: W1,
+      type: 'LEAVE_REJECTED',
+      refId: REQ,
+      actorId: U.hana,
+      recipient: { kind: 'user', userId: U.mia },
+    });
+    expect((await h.queries.list(U.mia, { limit: 20 })).items.map((n) => n.type)).toEqual([
+      'LEAVE_REJECTED',
+    ]);
+    await h.queries.markAllRead(U.mia);
+    expect(await h.queries.unreadCount(U.mia)).toBe(0);
+  });
+
+  it('T-040b: đổi role / grants KHÔNG mở nhiệm kỳ mới — HR bị thu rồi cấp lại vẫn thấy thông báo cũ', async () => {
+    const h = await seeded();
+    h.audience.set(W1, U.hana, 'MEMBER', []);
+    h.audience.set(W1, U.hana, 'MEMBER', ['HR_MANAGE']);
+    expect((await h.queries.list(U.hana, { limit: 20 })).items.map((n) => n.type)).toEqual([
+      'LEAVE_SUBMITTED',
+    ]);
+  });
+
   it('ws đã xóa mềm ⇒ ẩn (audience chỉ trả ws chưa xóa)', async () => {
     const h = await seeded();
     h.audience.deleted.add(W1);

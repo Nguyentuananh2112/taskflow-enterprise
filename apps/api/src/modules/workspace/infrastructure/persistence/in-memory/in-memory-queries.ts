@@ -54,7 +54,9 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
 
   listActiveForUser(
     userId: string,
-  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[] }[]> {
+  ): Promise<
+    { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
+  > {
     const result = this.memberships
       .rows()
       .filter((m) => m.userId === userId)
@@ -62,7 +64,9 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
         const ws = this.workspaces
           .rows()
           .find((w) => w.id === m.workspaceId && w.deletedAt === null);
-        return ws ? [{ workspace: ws, role: m.role, grants: [...m.grants] }] : [];
+        return ws
+          ? [{ workspace: ws, role: m.role, grants: [...m.grants], joinedAt: m.joinedAt }]
+          : [];
       });
     return Promise.resolve(result.slice(0, 100));
   }
