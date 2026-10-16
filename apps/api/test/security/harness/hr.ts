@@ -8,6 +8,11 @@ import type { ApiUnderTest } from './suite';
  * Mốc 3 (T-042) — helper hộp đen cho chấm công / nghỉ phép / thông báo. Đường dẫn và tên trường lấy
  * theo `docs/design/attendance-leave.md` §5/§9 (contract Zod của T-037…T-040 chưa có lúc viết). Khi
  * contract chốt, chỉ sửa ở file này — các ca `hr*.sec.ts` không lặp chuỗi đường dẫn.
+ *
+ * Đã đối chiếu (2026-10-16): leave = contracts/leave @ ed5b923 (D) — decide/revoke/PATCH balance dùng `note`,
+ * cancel bắt buộc `expectedVersion`, số dư `remainingDays/pendingDays/usedDays`; attendance = contracts/attendance
+ * @ 6c732e4 (A) — query strict, ADJUSTMENT `{ userId, kind, date, time, nextDay?, reason }`, void `{ reason }`;
+ * route attendance = cdd3096 (A, feat/T-038-attendance) — khớp bảng `HR` dưới đây.
  */
 export const HR = {
   meToday: (ws: string) => `/workspaces/${ws}/attendance/me/today`,
@@ -85,7 +90,10 @@ export const setGrants = (
   grants: string[],
 ) => actors.json('PUT', HR.grants(ws, userId), by.accessToken, { grants });
 
-/** Request có `Idempotency-Key` (check-in/out) — `Actors.json` không nhận header tùy biến. */
+/**
+ * Request có `Idempotency-Key` (check-in/out) — `Actors.json` không nhận header tùy biến. Không có body thì gửi
+ * `{}` (A, cdd3096: POST/PUT luôn cần Content-Type JSON — middleware 415 chạy trước auth).
+ */
 export function withKey(
   api: ApiUnderTest,
   method: string,
@@ -104,7 +112,7 @@ export function withKey(
       'idempotency-key': key,
       'x-forwarded-for': randomIp(),
     },
-    body: body === undefined ? '' : JSON.stringify(body),
+    body: JSON.stringify(body ?? {}),
   });
 }
 

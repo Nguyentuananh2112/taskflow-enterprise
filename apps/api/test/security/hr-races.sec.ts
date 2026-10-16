@@ -214,7 +214,7 @@ describe('Đơn nghỉ song song', () => {
           }),
           actors.json('PATCH', HR.balance(t.ws, t.mia.userId, year), t.hana.accessToken, {
             adjustmentDays: -6,
-            reason: 'race',
+            note: 'race',
           }),
         ]);
         // Cùng khóa advisory ⇒ tuần tự hóa: PATCH trước ⇒ còn 6 < ≥9 ngày ⇒ 422; submit trước ⇒ 201 rồi
@@ -252,7 +252,7 @@ describe('Đơn nghỉ song song', () => {
           decide(t.hana, t.ws, l.id, 'approve', l.version),
           actors.json('PATCH', HR.balance(t.ws, t.mia.userId, year), t.olivia.accessToken, {
             adjustmentDays: -6,
-            reason: 'race',
+            note: 'race',
           }),
         ]);
         expect([200, 422], `#${i}: ${ap.status} ${ap.text.slice(0, 120)}`).toContain(ap.status);
@@ -277,7 +277,7 @@ describe('Đơn nghỉ song song', () => {
         );
         const rs = await Promise.all([
           decide(t.hana, t.ws, l.id, 'approve', l.version),
-          decide(t.olivia, t.ws, l.id, 'reject', l.version, { decisionNote: 'race' }),
+          decide(t.olivia, t.ws, l.id, 'reject', l.version, { note: 'race' }),
         ]);
         expect(statuses(rs), `#${i}`).toEqual([200, 409]);
       }
@@ -302,13 +302,13 @@ describe('Đơn nghỉ song song', () => {
         );
         const ap = leaveOf(await decide(t.hana, t.ws, l.id, 'approve', l.version));
         const rs = await Promise.all([
-          decide(t.hana, t.ws, l.id, 'revoke', ap.version, { reason: 'race' }),
+          decide(t.hana, t.ws, l.id, 'revoke', ap.version, { note: 'race' }),
           decide(t.mia, t.ws, l.id, 'cancel', ap.version),
         ]);
         expect(statuses(rs), `#${i}`).toEqual([200, 409]);
         const bal = (await actors.json('GET', HR.myBalance(t.ws, year), t.mia.accessToken))
-          .json as { data: { remaining: number } };
-        expect(bal.data.remaining, `#${i}`).toBe(12);
+          .json as { data: { remainingDays: number } };
+        expect(bal.data.remainingDays, `#${i}`).toBe(12);
       }
     },
     TIMEOUT,
