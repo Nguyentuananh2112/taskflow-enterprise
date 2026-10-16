@@ -75,6 +75,32 @@ describe('trang Nhân sự — quyền', () => {
   });
 });
 
+describe('trang Nhân sự — XSS (E2E-HR-08)', () => {
+  it('lý do đơn và tên ngày lễ chứa HTML ⇒ hiện dạng chữ, không tạo phần tử', async () => {
+    const { f, an, open, submitLeave } = seed();
+    const payload = '<img src=x onerror="window.__hrXss=1">';
+    await submitLeave(an, {
+      type: 'SICK',
+      startDate: '2026-10-21',
+      endDate: '2026-10-21',
+      dayPart: 'FULL',
+      reason: payload,
+    });
+    await f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/attendance/holidays/2026-12-24`, {
+      name: payload,
+    });
+    open(`/w/${f.wsId}/hr?tab=leave`);
+    const item = await screen.findByRole('listitem', { name: 'Đơn của Nguyễn An' });
+    expect(item.textContent).toContain(`Lý do: ${payload}`);
+    expect(item.querySelector('img')).toBeNull();
+    await user().click(screen.getByRole('tab', { name: 'Lịch & ngày lễ' }));
+    const region = await screen.findByRole('region', { name: /Ngày lễ năm 2026/ });
+    expect(await within(region).findByText(new RegExp(`· ${payload.slice(0, 8)}`))).toBeTruthy();
+    expect(document.querySelector('img[src="x"]')).toBeNull();
+    expect((window as { __hrXss?: number }).__hrXss).toBeUndefined();
+  });
+});
+
 describe('trang Nhân sự — thu quyền', () => {
   it('đang mở /hr mà bị thu grant ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
     const { f, an, open, grantHr } = seed();
