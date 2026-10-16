@@ -8,6 +8,7 @@ export * from './auth/auth.schemas';
 export * from './workspace';
 export * from './project/project.schemas';
 export * from './task';
+export * from './attendance';
 export * from './audit/audit.schemas';
 export * from './realtime/events';
 export * from './hr/hr.schemas';
