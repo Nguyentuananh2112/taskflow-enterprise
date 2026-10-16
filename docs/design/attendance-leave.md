@@ -25,9 +25,9 @@
 **ADR-119 — Quyền cấp thêm theo thành viên (grants).** Hiện quyền chỉ suy từ `role`. Thêm cột `WorkspaceMember.grants MemberGrant[] @default([])` (enum Postgres, v1 chỉ có `HR_MANAGE`). Quyền hiệu lực = `ROLE_PERMISSIONS[role] ∪ GRANT_PERMISSIONS[grants]` — một hàm thuần `effectivePermissions(role, grants)` trong `workspace/domain/roles.ts`, bản Zod trong contracts, test parity như ADR-080. `loadMembership` đọc `grants` trong cùng câu truy vấn đang có (không thêm query, không cache). Chỉ OWNER cấp/thu (`hr:grant`); không cấp cho VIEWER (422); đổi role sang VIEWER ⇒ xóa grants trong cùng transaction. Cấp/thu ⇒ audit + event `member:grants-changed` tới `user:{id}` để web làm mới quyền.
 *Bác:* bảng grant riêng (thêm join mỗi request, chưa cần); cờ boolean `isHr` (mỗi quyền mới một cột); role mới `HR` (một người vừa là PM vừa làm HR thì không biểu diễn được).
 
-**ADR-120 — Múi giờ workspace.** Server vẫn không phụ thuộc múi giờ (R4); thêm `Workspace.timezone` (IANA, mặc định `Asia/Ho_Chi_Minh`, Zod kiểm bằng `Intl.supportedValuesOf('timeZone')`). "Ngày công" (`workDate`) = ngày của thời điểm server ghi nhận, quy đổi theo múi giờ workspace bằng `Intl.DateTimeFormat` (không thêm thư viện ngày). Client KHÔNG gửi giờ chấm.
+**ADR-120 — Múi giờ nằm trong phiên bản lịch làm việc.** Server vẫn không phụ thuộc múi giờ (R4). Múi giờ (IANA, mặc định `Asia/Ho_Chi_Minh`, Zod kiểm bằng `Intl.supportedValuesOf('timeZone')`) là một trường của `WorkSchedule` (có phiên bản, ADR-121) — **không** đặt ở `Workspace` — nên đổi múi giờ chỉ áp dụng từ phiên bản mới, không làm sai muộn/sớm tháng cũ (góp ý A#3). "Ngày công" (`workDate`) = ngày của thời điểm server ghi nhận, quy đổi theo múi giờ của lịch đang hiệu lực bằng `Intl.DateTimeFormat` (không thêm thư viện ngày); lưu cứng lúc ghi. Client KHÔNG gửi giờ chấm.
 
-**ADR-121 — Chấm công là log sự kiện bất biến; bảng công tính khi đọc.** Bảng `AttendanceEvent` chỉ thêm, không sửa; sai thì HR **hủy** (`voidedAt/voidedBy/voidReason`) và thêm lượt `ADJUSTMENT`. Bảng công ngày/tháng tính bằng hàm thuần `summarizeDay(events, schedule, holiday, leave)` — không lưu bảng tổng hợp (tránh lệch dữ liệu; 500 người × 31 ngày × 2 sự kiện ≈ 31 nghìn dòng — đọc 1 lần theo index là đủ). Lịch làm việc lưu theo **phiên bản có hiệu lực từ ngày** để đổi lịch không làm sai số liệu tháng cũ.
+**ADR-121 — Chấm công là log sự kiện bất biến; bảng công tính khi đọc.** Bảng `AttendanceEvent` chỉ thêm, không sửa; sai thì HR **hủy** (`voidedAt/voidedBy/voidReason`) và thêm lượt `ADJUSTMENT`. Bảng công ngày/tháng tính bằng hàm thuần `summarizeDay(events, schedule, holiday, leave)` — không lưu bảng tổng hợp (tránh lệch dữ liệu; 500 người × 31 ngày × 2 sự kiện ≈ 31 nghìn dòng — đọc 1 lần theo index là đủ). Lịch làm việc lưu theo **phiên bản có hiệu lực từ ngày** để đổi lịch không làm sai số liệu tháng cũ. Vì tính khi đọc, **quá khứ không được sửa âm thầm**: lịch mới chỉ hiệu lực từ hôm nay; thêm/sửa/xóa ngày lễ có ngày < hôm nay ⇒ 422 với HR, chỉ OWNER làm được và bắt buộc lý do + `HrAuditLog` (góp ý A#4). Về sau: "chốt công tháng" (khóa tháng).
 *Bác:* lưu bảng `AttendanceDay` cập nhật mỗi lần chấm (phải đồng bộ khi đổi lịch/duyệt nghỉ/hủy lượt — nhiều chỗ sai hơn); ngăn chấm trùng bằng code thuần (race) — dùng unique index một phần.
 
 **ADR-122 — Đơn nghỉ và số ngày phép.** Trạng thái `PENDING → APPROVED | REJECTED | CANCELLED` (optimistic lock `version`, xung đột ⇒ 409). Không cho 2 đơn PENDING/APPROVED chồng ngày của cùng người: kiểm trong transaction dưới `pg_advisory_xact_lock(workspace, user)` (không dùng exclusion constraint vì cần extension `btree_gist` — vai trò migrator không tạo được extension). Người duyệt có `hr:manage` và **khác người gửi**; riêng OWNER tự duyệt được đơn của mình (chủ công ty). Phép năm: `LeaveBalance(year, entitledDays mặc định 12, adjustmentDays)`; "đã dùng" tính từ đơn APPROVED loại ANNUAL; gửi đơn ANNUAL vượt "còn lại − đang chờ" ⇒ 422. Không cho đơn vắt qua 2 năm (v1). Số ngày nghỉ = số ngày làm việc trong khoảng theo lịch hiệu lực, trừ ngày lễ; nửa ngày = 0,5.
@@ -45,9 +45,9 @@ enum LeaveStatus        { PENDING APPROVED REJECTED CANCELLED }
 enum NotificationType   { LEAVE_SUBMITTED LEAVE_APPROVED LEAVE_REJECTED LEAVE_CANCELLED ATTENDANCE_ADJUSTED HR_GRANTED HR_REVOKED }
 
 WorkspaceMember  + grants MemberGrant[] @default([])
-Workspace        + timezone String @default("Asia/Ho_Chi_Minh")
 
-WorkSchedule      (id, workspaceId, effectiveFrom Date, workdays Int /*bitmask T2..CN*/,
+WorkSchedule      (id, workspaceId, effectiveFrom Date, timezone String @default("Asia/Ho_Chi_Minh"),
+                   workdays Int /*bitmask T2..CN*/,
                    startMin, endMin, breakStartMin, breakEndMin, graceMin, createdBy, createdAt)
                    @@unique([workspaceId, effectiveFrom])          -- seed: T2–T7, 480/1050/720/810, grace 0
 Holiday           (workspaceId, date Date, name) @@id([workspaceId, date])
@@ -56,7 +56,9 @@ AttendanceEvent   (id, workspaceId, userId, kind, source, occurredAt Timestamptz
                    createdBy, voidedAt?, voidedBy?, voidReason?)
                    @@index([workspaceId, workDate]) @@index([workspaceId, userId, workDate])
                    SQL tay: UNIQUE (workspaceId,userId,workDate) WHERE kind='IN' AND source='WEB' AND voidedAt IS NULL
-                            UNIQUE (workspaceId,source,idempotencyKey) WHERE idempotencyKey IS NOT NULL
+                            UNIQUE (workspaceId,userId,source,idempotencyKey) WHERE idempotencyKey IS NOT NULL
+                   -- key gắn theo user (góp ý A#1): key UUID, ≤ 64 ký tự; trùng key mà khác user/kind ⇒ 422
+                   --   `idempotency_key_reused` (KHÔNG trả lượt của người khác). DEVICE sau này: key theo deviceId.
 LeaveRequest      (id, workspaceId, userId, type, startDate, endDate, dayPart /*≠FULL chỉ khi start=end*/,
                    days Decimal(4,1), reason(≤1000), status, decidedBy?, decidedAt?, decisionNote?(≤500), version, timestamps)
                    CHECK endDate >= startDate; @@index([workspaceId, status]) @@index([workspaceId, userId, startDate])
@@ -68,22 +70,28 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
                    -- như TaskAuditLog: chỉ thêm; action: GRANT/REVOKE, SCHEDULE_SET, HOLIDAY_SET/DELETE,
                    --   EVENT_ADJUST/VOID, LEAVE_DECIDE/REVOKE, BALANCE_ADJUST, EXPORT
 ```
-Mọi FK kèm `workspaceId` (composite như project) để không trỏ chéo tenant. `grant-app.sql` đã cấp DML cho mọi bảng — không cần script mới.
+**FK (góp ý A#2):** `workspaceId` → `workspaces` (cascade theo purge ADR-047); `userId`/`recipientId`/`actorId`/`decidedBy`/`createdBy` → `users` `onDelete: Restrict` như actor của TaskAuditLog — **KHÔNG** FK tới `WorkspaceMember`, để xóa thành viên/nghỉ việc không xóa lịch sử công, đơn, số dư. "Là thành viên" kiểm ở tầng ứng dụng lúc ghi. Tài nguyên con (event/đơn/số dư) luôn truy vấn kèm `workspaceId` của actor nên không trỏ chéo tenant. HR **vẫn xem/xuất được công của người đã rời** workspace (gắn nhãn "đã rời"); `userId` chưa từng có dữ liệu trong workspace ⇒ 404. `grant-app.sql` đã cấp DML cho mọi bảng — không cần script mới.
 
 ## 4. Quy tắc tính công (`summarizeDay`, hàm thuần, Stryker ≥ 90 %)
+- Chữ ký (góp ý A#5): `summarizeDay({ date, events, schedule /*có timezone*/, holiday, leave /*FULL|AM|PM|null*/, now })` — nhận `now` để `PENDING`/`MISSING_OUT` vẫn thuần, test được.
 - Lượt hợp lệ = chưa bị hủy. `firstIn` = IN sớm nhất, `lastOut` = OUT muộn nhất sau `firstIn`.
-- Web: IN chỉ 1 lần/ngày (lần 2 ⇒ 409 `already_checked_in`, lặp request trùng `Idempotency-Key` ⇒ trả kết quả cũ); OUT cần đã IN, bấm OUT lại ⇒ lượt mới, lấy lượt muộn nhất.
+- Web: IN chỉ 1 lần/ngày (lần 2 ⇒ 409 `already_checked_in`, lặp request trùng `Idempotency-Key` của chính mình ⇒ trả kết quả cũ); OUT cần đã IN, bấm OUT lại ⇒ lượt mới, lấy lượt muộn nhất.
+- **Ra sau 00:00** (góp ý A#7): OUT gắn vào `workDate` của lượt IN còn mở trong vòng 16 h; không có IN mở ⇒ OUT thuộc ngày hiện tại (mồ côi, hiển thị thô).
 - Giờ làm = phần giao của `[firstIn, lastOut]` với `[start, end]` trừ phần giao với giờ nghỉ trưa (đơn vị phút). Ngoài giờ chỉ hiển thị thô, không tính OT.
 - Muộn = `firstIn − start` nếu `> graceMin`; về sớm = `end − lastOut` nếu > 0. Nghỉ nửa ngày AM ⇒ mốc bắt đầu = `breakEnd`; PM ⇒ mốc kết thúc = `breakStart`.
-- Trạng thái ngày: `HOLIDAY`, `OFF` (không phải ngày làm), `ON_LEAVE`, `PRESENT` (+ cờ `late`/`early`), `MISSING_OUT` (đã qua giờ kết thúc mà chưa OUT), `ABSENT` (ngày làm đã qua, không IN, không nghỉ), `PENDING` (hôm nay chưa tới giờ / tương lai).
-- Bảng ví dụ bắt buộc trong test: đúng giờ, muộn 1 phút với grace 0/5, IN trong giờ trưa, OUT trước trưa, chỉ có IN, nghỉ nửa ngày + đi làm nửa còn lại, ngày lễ trùng thứ 7, đổi lịch giữa tháng.
+- Trạng thái ngày, **theo thứ tự ưu tiên** (góp ý A#6): `HOLIDAY` > `OFF` (không phải ngày làm) > `ON_LEAVE` (nghỉ cả ngày) > `PRESENT` (+ cờ `late`/`early`) / `MISSING_OUT` (đã qua giờ kết thúc mà chưa OUT) > `ABSENT` (ngày làm đã qua, không IN, không nghỉ) > `PENDING` (hôm nay chưa tới giờ / tương lai).
+  - Nghỉ nửa ngày mà nửa kia không đi làm ⇒ `ABSENT` + cờ `absentHalf` (đếm 0,5 ngày vắng, không phải 1).
+  - Chấm công vào ngày `OFF`/`HOLIDAY` ⇒ vẫn ghi nhận, trạng thái giữ nguyên + giờ thô (không tính OT ở v1).
+- Bảng ví dụ bắt buộc trong test: đúng giờ, muộn 1 phút với grace 0/5, IN trong giờ trưa, OUT trước trưa, chỉ có IN, OUT 2 lần, ra sau 00:00, nghỉ nửa ngày + đi làm nửa còn lại, nghỉ AM + vào muộn sau `breakEnd + grace`, nghỉ nửa ngày + vắng nửa kia, ngày lễ trùng thứ 7, đổi lịch giữa tháng, múi giờ có DST (vd `Europe/Berlin` ngày đổi giờ).
+
+**`WorkCalendarPort`** (T-038 cung cấp, T-039 dùng; góp ý A#12) — chốt sớm để D làm song song bằng fake: `workingDays({ workspaceId, from, to }): Promise<{ date, isWorkday, isHoliday, schedule }[]>`.
 
 ## 5. API (`/api/v1/workspaces/:wsId/…`, contracts Zod + đăng ký OpenAPI A2)
 | Route | Quyền | Ghi chú |
 |---|---|---|
 | `GET attendance/me/today` · `POST attendance/check-in` · `POST attendance/check-out` | `attendance:self` | hạn mức 10/phút/user; header `Idempotency-Key` |
 | `GET attendance/me?month=YYYY-MM` | `attendance:self` | bảng công tháng của mình |
-| `GET attendance/today` · `GET attendance?month=` · `GET attendance/export.csv?month=` | `hr:manage` | CSV: UTF-8 BOM (Excel), chống CSV injection (`= + - @` đầu ô ⇒ thêm `'`), hạn mức, audit EXPORT |
+| `GET attendance/today` · `GET attendance?month=` · `GET attendance/export.csv?month=` | `hr:manage` | `GET attendance?month=` phân trang theo nhân viên (cursor, limit 50). CSV: cả công ty, stream, UTF-8 BOM (Excel), chống CSV injection theo OWASP (ô bắt đầu bằng `= + - @ \t \r` ⇒ thêm `'`; bọc mọi ô bằng `"` và nhân đôi `"`), hạn mức, audit EXPORT |
 | `POST attendance/events` (ADJUSTMENT) · `POST attendance/events/:id/void` | `hr:manage` | bắt buộc lý do; thông báo cho nhân viên |
 | `GET/POST attendance/schedules` · `GET/PUT/DELETE attendance/holidays/:date` | đọc: thành viên · ghi: `hr:manage` | lịch mới chỉ hiệu lực từ hôm nay trở đi |
 | `POST leave-requests` · `GET leave-requests?mine=1` · `POST leave-requests/:id/cancel` | `leave:self` | hủy: của mình, PENDING hoặc APPROVED chưa tới ngày bắt đầu |
@@ -92,7 +100,7 @@ Mọi FK kèm `workspaceId` (composite như project) để không trỏ chéo te
 | `PUT members/:userId/grants` | `hr:grant` (OWNER) | |
 | `GET /api/v1/me/notifications?cursor=` · `GET …/unread-count` · `POST …/:id/read` · `POST …/read-all` | đăng nhập | chỉ của mình; chỉ workspace còn là thành viên |
 
-Id của tài nguyên workspace khác / không tồn tại ⇒ **404** như hiện tại (không 403 lộ tồn tại).
+**Thứ tự lỗi** (góp ý A#11, để F viết SEC khớp): không phải thành viên workspace ⇒ 404 `workspace` (ADR-020); thành viên gọi route `hr:manage` ⇒ **403** (route tồn tại với mọi thành viên, không lộ gì thêm); HR hỏi `userId` chưa từng có dữ liệu trong workspace ⇒ 404; id đơn/lượt chấm của workspace khác hoặc không tồn tại ⇒ 404; thành viên thường hủy đơn của người khác ⇒ 404 (không lộ id đơn tồn tại).
 
 ## 6. Web
 - Trang chủ workspace `/w/[wsId]`: thẻ **Chấm công** (giờ server hiện tại, trạng thái hôm nay, nút Vào/Ra). Header: nút gọn khi đang ở route có `wsId` (`useParams`), và **chuông thông báo** (số chưa đọc, danh sách, đánh dấu đã đọc).
@@ -115,7 +123,7 @@ Id của tài nguyên workspace khác / không tồn tại ⇒ **404** như hi�
 ## 9. Chia việc (sau khi duyệt; nhánh riêng, cổng như mọi việc)
 | Vé | Ai | Nội dung | Phụ thuộc |
 |---|---|---|---|
-| T-037 | B | ADR-119/120: grants + `effectivePermissions` + parity, `Workspace.timezone`, `HrAuditLog`, quyền mới trong ma trận, route grants, migration 3 (gồm toàn bộ bảng §3 để các vé sau không đụng nhau) | — (làm trước, ~½ ngày) |
+| T-037 | B | ADR-119/120: grants + `effectivePermissions` + parity, `HrAuditLog`, quyền mới trong ma trận, route grants, migration 3 (gồm toàn bộ bảng §3 để các vé sau không đụng nhau) | — (làm trước, ~½ ngày) |
 | T-038 | A | Module `attendance`: lịch/ngày lễ, check-in/out, `summarizeDay`, bảng công, điều chỉnh/hủy, xuất CSV; cổng `WorkCalendarPort` cho leave | T-037 |
 | T-039 | D | Module `leave`: đơn, khóa chồng ngày, duyệt/từ chối/hủy/thu hồi, số dư; dùng `WorkCalendarPort` | T-037 (+ hợp đồng port của T-038) |
 | T-040 | B | Module `notifications` + `notification:new` + `member:grants-changed`; leave/attendance gọi qua port | T-037 |
