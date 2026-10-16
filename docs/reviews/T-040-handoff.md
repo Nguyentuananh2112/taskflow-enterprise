@@ -41,12 +41,15 @@
 8. Rate limit: chỉ `authenticated` (300/phút/user) như route đọc khác.
 
 ## 3. Ghi chú review B (đưa vào đây theo yêu cầu)
+B review 3fe6e8e (5 điểm đạt, không HIGH) rồi 8c84d93 **APPROVE**. Đã sửa: M1 (port `IHrGrantNotifier` bắt buộc), L1 (mỗi người nhận một afterCommit), LOW (a) (HR_GRANTED/REVOKED theo chính `HR_MANAGE`, không so số lượng grant — 40fd839). Còn lại, không chặn:
+- **LOW (b)** — `InMemoryNotificationAudience.membersOf` gọi `find` N lần; chỉ chế độ bộ nhớ.
 - **L2** — `PrismaNotificationAudience` đọc thẳng `workspace_members` từ module notifications. B đề xuất Workspace cung cấp reader (như `HrAccess`); B làm nếu TL đồng ý.
 - **L3** — scope chỉ theo membership HIỆN TẠI: bị xóa rồi được mời lại ⇒ thấy lại thông báo nhiệm kỳ cũ. Khi T-037b có `workspace_member_departures`/`joinedAt` (quyết định NOT_EMPLOYED, main 5b18efc) có thể lọc `createdAt ≥ joinedAt`.
 - **L4** — fan-out `hr` đọc `membersOf` không khóa: thu grant đồng thời ⇒ có thể vẫn tạo dòng + event cho HR vừa mất quyền. Lúc đọc bị ẩn (B-H3b); event chỉ chứa id/loại/ws (SEC-HR-20). Chấp nhận.
 
 ## 4. Rủi ro / phụ thuộc
 - **Leave/attendance chưa wire**: hai module chưa có trên nhánh này. Khi merge T-038/T-039, composition phải nối `notifier: leaveNotifierFrom(notifications.publisher)` / `attendanceNotifierFrom(...)` (đổi kiểu cấu trúc `LeaveNotifierPort`/`AttendanceNotifierPort` sang `implements` type thật của họ). Lúc đó F gỡ pending **SEC-HR-15, 17, 18, 19, 20** (`test/T-042-hr: harness/pending.ts`, ticket T-040) — các ca đó gửi đơn / chấm công qua route thật. Đã đọc `hr.sec.ts` của F: kỳ vọng khớp API này (list chứa `workspaceId`, loại HR ẩn sau thu grant, 404 khi đánh dấu của người khác, socket chỉ `user:{id}`).
+- **Đã báo D và A (23:1x)**: D (T-039 @5419dee) thay `notifier: noLeaveNotifications` bằng `notifier: leaveNotifierFrom(notifications.publisher)` trong `container.ts` khi rebase; TL đặt notifier thật làm điều kiện merge T-039 ⇒ thứ tự merge TL chốt **T-037b → T-040 → T-038 → T-039** (A, D nối notifier thật khi rebase; TL làm verify + security T-040 ngay sau lượt integration của G). A (T-038) thay fake bằng `attendanceNotifierFrom(notifications.publisher)`. Khi đó đổi `LeaveNotifierPort` / `AttendanceNotifierPort` (bản sao cấu trúc) sang type thật của leave / attendance.
 - Chế độ bộ nhớ: `leave` trong DTO luôn `null` (không có module leave InMemory). Prisma đúng.
 - Leave context đọc `leave_requests` (bảng của D) — cùng loại vấn đề L2.
 
