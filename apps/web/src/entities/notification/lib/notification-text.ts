@@ -43,7 +43,7 @@ export function notificationHref(n: NotificationDto): string {
   const ws = `/w/${n.workspaceId}`;
   switch (n.type) {
     case 'LEAVE_SUBMITTED':
-      return `${ws}/hr`;
+      return `${ws}/hr?tab=leave`;
     case 'LEAVE_APPROVED':
     case 'LEAVE_REJECTED':
     case 'LEAVE_CANCELLED':
