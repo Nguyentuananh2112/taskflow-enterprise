@@ -40,7 +40,7 @@ async function seed() {
   const prisma = testPrisma();
   const user = (name: string) =>
     prisma.user.create({
-      data: { email: `${name}@example.test`, fullName: name, passwordHash: 'x' },
+      data: { email: `${name.toLowerCase()}@example.test`, fullName: name, passwordHash: 'x' },
     });
   const [olivia, hana, mia, max, otto] = await Promise.all(
     ['Olivia', 'Hana', 'Mia', 'Max', 'Otto'].map(user),
