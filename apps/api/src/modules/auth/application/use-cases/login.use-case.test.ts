@@ -9,7 +9,6 @@ import {
   PASSWORD,
   type AuthHarness,
 } from '../../testing/auth-harness';
-import type { InMemoryUserRepository } from '../../infrastructure/persistence/in-memory/in-memory-user.repository';
 import { FakePasswordHasher } from '../../testing/fakes';
 import { LoginUseCase } from './login.use-case';
 
@@ -139,22 +138,18 @@ describe('LoginUseCase', () => {
     expect(await h.refreshTokens.rows()).toEqual([]);
   });
 
-  it('F3 B-1: user bị xóa mềm trong cửa sổ verify ⇒ 401, không cấp phiên, lastLoginAt không đổi', async () => {
-    const alice = await h.seedUser();
+  it('F3 B-1: user bị xóa mềm trong cửa sổ verify (recordLogin ⇒ null) ⇒ 401, không cấp phiên, lastLoginAt không đổi', async () => {
+    await h.seedUser();
     const verify = h.hasher.verify.bind(h.hasher);
+    let deleted = false;
     h.hasher.verify = async (hashed, password) => {
       const ok = await verify(hashed, password); // user còn sống lúc đọc + verify
-      // Như `UPDATE users SET deleted_at` của request khác (fixture ngoài port — xem in-memory.contract).
-      const users = h.users as unknown as InMemoryUserRepository; // harness mặc định = InMemory
-      users.restore(
-        new Map(
-          users
-            .rows()
-            .map((r) => [r.id, r.id === alice.id ? { ...r, deletedAt: h.clock.now() } : r]),
-        ),
-      );
+      deleted = true; // request khác xóa mềm user ngay sau đó
       return ok;
     };
+    // Như câu UPDATE có `deleted_at IS NULL` (contract repo kiểm phần này): user đã xóa ⇒ null.
+    const recordLogin = h.users.recordLogin.bind(h.users);
+    h.users.recordLogin = (input) => (deleted ? Promise.resolve(null) : recordLogin(input));
     await expect(
       login.execute({ email: 'alice@example.com', password: PASSWORD, meta: META }),
     ).rejects.toBeInstanceOf(InvalidCredentialsError);
