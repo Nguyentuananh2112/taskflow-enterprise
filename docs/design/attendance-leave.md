@@ -82,7 +82,7 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 - **Ra sau 00:00** (góp ý A#7): OUT gắn vào `workDate` của lượt IN còn mở trong vòng 16 h; không có IN mở ⇒ OUT thuộc ngày hiện tại (mồ côi, hiển thị thô).
 - Giờ làm = phần giao của `[firstIn, lastOut]` với `[start, end]` trừ phần giao với giờ nghỉ trưa (đơn vị phút). Ngoài giờ chỉ hiển thị thô, không tính OT.
 - Muộn = `firstIn − start` nếu `> graceMin`; về sớm = `end − lastOut` nếu > 0. Nghỉ nửa ngày AM ⇒ mốc bắt đầu = `breakEnd`; PM ⇒ mốc kết thúc = `breakStart`.
-- Trạng thái ngày, **theo thứ tự ưu tiên** (góp ý A#6): `HOLIDAY` > `OFF` (không phải ngày làm) > `ON_LEAVE` (nghỉ cả ngày) > `PRESENT` (+ cờ `late`/`early`) / `MISSING_OUT` (đã qua giờ kết thúc mà chưa OUT) > `ABSENT` (ngày làm đã qua, không IN, không nghỉ) > `PENDING` (hôm nay chưa tới giờ / tương lai).
+- Trạng thái ngày, **theo thứ tự ưu tiên** (góp ý A#6): `HOLIDAY` > `OFF` (không phải ngày làm) > `ON_LEAVE` (nghỉ cả ngày) > `PRESENT` (+ cờ `late`/`early`; `inProgress` khi `now < end` và chưa OUT) / `MISSING_OUT` (đã qua giờ kết thúc mà chưa OUT) > `ABSENT` (ngày làm đã qua, không IN, không nghỉ) > `PENDING` (hôm nay chưa tới giờ / tương lai).
   - Nghỉ nửa ngày mà nửa kia không đi làm ⇒ `ABSENT` + cờ `absentHalf` (đếm 0,5 ngày vắng, không phải 1).
   - Chấm công vào ngày `OFF`/`HOLIDAY` ⇒ vẫn ghi nhận, trạng thái giữ nguyên + giờ thô (không tính OT ở v1).
 - Bảng ví dụ bắt buộc trong test: đúng giờ, muộn 1 phút với grace 0/5, IN trong giờ trưa, OUT trước trưa, chỉ có IN, OUT 2 lần, ra sau 00:00, nghỉ nửa ngày + đi làm nửa còn lại, nghỉ AM + vào muộn sau `breakEnd + grace`, nghỉ nửa ngày + vắng nửa kia, ngày lễ trùng thứ 7, đổi lịch giữa tháng, múi giờ có DST (vd `Europe/Berlin` ngày đổi giờ).
