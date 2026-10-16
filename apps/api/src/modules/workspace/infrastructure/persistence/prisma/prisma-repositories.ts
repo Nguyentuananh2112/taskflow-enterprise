@@ -128,6 +128,15 @@ export class PrismaMembershipRepository implements IMembershipRepository {
   async remove(workspaceId: string, userId: string): Promise<void> {
     await this.db().workspaceMember.deleteMany({ where: { workspaceId, userId } });
   }
+  async findForShare(workspaceId: string, userId: string): Promise<Membership | null> {
+    // B-H3a: khóa dòng (chặn UPDATE grants / role đến khi transaction này xong) rồi đọc lại qua `find`.
+    const locked = await this.db().$queryRaw<{ id: string }[]>`
+      SELECT id FROM workspace_members
+       WHERE workspace_id = ${workspaceId}::uuid AND user_id = ${userId}::uuid
+       FOR SHARE`;
+    return locked.length > 0 ? this.find(workspaceId, userId) : null;
+  }
+
   /**
    * ADR-046: khóa MỌI dòng OWNER theo thứ tự id (tránh deadlock). Ở READ COMMITTED, transaction thứ
    * hai chờ khóa rồi đánh giá lại `role = 'OWNER'` ⇒ dòng vừa bị hạ không còn được đếm (ROL-05).

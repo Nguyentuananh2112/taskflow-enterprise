@@ -4,6 +4,12 @@ import type {
   IProjectRepository,
   IWorkspaceRepository,
 } from '../../../application/ports/repositories.port';
+import type {
+  HrAuditEntry,
+  HrAuditRow,
+  IHrAuditLog,
+} from '../../../application/ports/hr-audit.port';
+import type { Page, PageRequest } from '../../../application/ports/queries.port';
 import { Membership, type MembershipSnapshot } from '../../../domain/membership';
 import { Project, type ProjectSnapshot } from '../../../domain/project';
 import { Workspace, type WorkspaceSnapshot } from '../../../domain/workspace';
@@ -100,6 +106,10 @@ export class InMemoryMembershipRepository
     this.deleteWhere((r) => r.workspaceId === workspaceId && r.userId === userId);
     return Promise.resolve();
   }
+  /** InMemory không có khóa (transaction tuần tự) — race chỉ chứng minh được ở test I (CC-HR-11). */
+  findForShare(workspaceId: string, userId: string): Promise<Membership | null> {
+    return this.find(workspaceId, userId);
+  }
   /** InMemory không có khóa — race LAST_OWNER chỉ chứng minh được ở test I (ROL-05, REM-07). */
   lockOwners(workspaceId: string): Promise<string[]> {
     const owners = this.rows()
@@ -167,5 +177,32 @@ export class InMemoryProjectRepository
         .filter((r) => r.workspaceId === workspaceId)
         .map((r) => r.id),
     );
+  }
+}
+
+/** HrAuditLog InMemory — chỉ thêm; tên actor lấy qua `nameOf` (directory của composition). */
+export class InMemoryHrAuditLog extends Table<HrAuditEntry> implements IHrAuditLog {
+  constructor(private readonly nameOf: (userId: string) => string | undefined) {
+    super();
+  }
+  append(entry: HrAuditEntry): Promise<void> {
+    this.byId.set(entry.id, { ...entry });
+    return Promise.resolve();
+  }
+  list(workspaceId: string, page: PageRequest): Promise<Page<HrAuditRow>> {
+    const newestFirst = (a: HrAuditEntry, b: HrAuditEntry) =>
+      b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id);
+    const all = this.rows()
+      .filter((r) => r.workspaceId === workspaceId)
+      .sort(newestFirst);
+    const start = page.after ? all.findIndex((r) => r.id === page.after) + 1 : 0;
+    const slice = (start > 0 || !page.after ? all.slice(start) : []).slice(0, page.limit + 1);
+    const items = slice
+      .slice(0, page.limit)
+      .map((r) => ({ ...r, actorName: this.nameOf(r.actorId) ?? '' }));
+    return Promise.resolve({
+      items,
+      nextAfter: slice.length > page.limit ? (items.at(-1)?.id ?? null) : null,
+    });
   }
 }

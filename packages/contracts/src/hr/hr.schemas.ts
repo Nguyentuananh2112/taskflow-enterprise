@@ -1,6 +1,6 @@
 import * as z from 'zod';
 
-import { DateOnly, IsoDateTime, Uuid } from '../common/primitives';
+import { Cursor, DateOnly, IsoDateTime, Uuid, limitQuery } from '../common/primitives';
 
 /**
  * Hợp đồng dùng chung của Mốc 3 (attendance-leave.md §3, §5) — T-037 chốt sớm để T-038 (A),
@@ -91,8 +91,9 @@ export const HrAuditLogDto = z.object({
 });
 export type HrAuditLogDto = z.infer<typeof HrAuditLogDto>;
 
+/** `GET /workspaces/:wsId/hr-audit-logs` — chỉ OWNER (`hr:grant`); mới nhất trước (createdAt, id giảm dần). */
 export const ListHrAuditLogsQuery = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: Cursor.optional(),
+  limit: limitQuery(100, 50),
 });
 export type ListHrAuditLogsQuery = z.infer<typeof ListHrAuditLogsQuery>;

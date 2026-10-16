@@ -182,13 +182,13 @@ describe('Content-Type & body (P1/P2)', () => {
 });
 
 describe('CORS (P2, middleware.ts:77,79)', () => {
-  it('preflight: Allow-Methods = GET,POST,PATCH,DELETE; Max-Age 600', async () => {
+  it('preflight: Allow-Methods = GET,POST,PUT,PATCH,DELETE; Max-Age 600', async () => {
     const a = app((x) => x.get('/r', echo));
     const res = await request(a)
       .options('/r')
       .set('Origin', WEB)
       .set('Access-Control-Request-Method', 'PATCH');
-    expect(res.headers['access-control-allow-methods']).toBe('GET,POST,PATCH,DELETE');
+    expect(res.headers['access-control-allow-methods']).toBe('GET,POST,PUT,PATCH,DELETE');
     expect(res.headers['access-control-max-age']).toBe('600');
   });
 

@@ -71,6 +71,10 @@ export class TaskMirroredMemberships implements IMembershipRepository {
     return this.inner.lockOwners(workspaceId);
   }
 
+  findForShare(workspaceId: string, userId: string) {
+    return this.inner.findForShare(workspaceId, userId);
+  }
+
   listUserIds(workspaceId: string) {
     return this.inner.listUserIds(workspaceId);
   }

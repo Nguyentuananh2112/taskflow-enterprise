@@ -13,6 +13,8 @@ import {
   PrismaUserDirectory,
   PrismaWorkspaceQueries,
 } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-queries';
+import type { HrAuditEntry } from '../../../src/modules/workspace/application/ports/hr-audit.port';
+import { PrismaHrAuditLog } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-hr-audit-log';
 import { PrismaWorkspacePurger } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-workspace.purger';
 import type { WorkspaceBackend } from '../../../src/modules/workspace/testing/harness';
 import { RecordingUnitOfWork, testPrisma } from './prisma-test-kit';
@@ -72,6 +74,20 @@ class TestMembershipRepository extends PrismaMembershipRepository {
     });
   }
 }
+class TestHrAuditLog extends PrismaHrAuditLog {
+  rows() {
+    return testPrisma()
+      .hrAuditLog.findMany({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })
+      .then((rows) =>
+        rows.map((r) => ({
+          ...r,
+          action: r.action as HrAuditEntry['action'],
+          before: (r.before ?? null) as HrAuditEntry['before'],
+          after: (r.after ?? null) as HrAuditEntry['after'],
+        })),
+      );
+  }
+}
 class TestProjectRepository extends PrismaProjectRepository {
   rows() {
     return testPrisma().project.findMany({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
@@ -96,6 +112,7 @@ export function prismaWorkspaceBackend(): WorkspaceBackend & { uow: RecordingUni
     projects: new TestProjectRepository(db),
     users: new TestUserDirectory(db),
     queries: new PrismaWorkspaceQueries(db),
+    hrAudit: new TestHrAuditLog(db),
     purger: new PrismaWorkspacePurger(db),
     uow,
   };
