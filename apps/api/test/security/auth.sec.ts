@@ -1,9 +1,9 @@
 import { SignJWT, decodeJwt, decodeProtectedHeader } from 'jose';
-import pg from 'pg';
 import { describe, expect } from 'vitest';
 
 import { Actors, refreshCookieOf, type Actor } from './harness/actors';
-import { TEST_JWT_SECRET, loadHarnessConfig, postgresUrl } from './harness/config';
+import { TEST_JWT_SECRET } from './harness/config';
+import { backdateRefreshFamily } from './harness/db-clock';
 import { errorEnvelope } from './harness/http-client';
 import { outOfScope, secCase, useApi } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
@@ -38,29 +38,6 @@ const logout = (cookie: string) =>
     headers: { 'content-type': 'application/json', origin: api.webOrigin, cookie },
     body: '',
   });
-
-/**
- * SEC-20 cần token ĐÃ hết hạn (7 ngày / 30 ngày) — API không có đường tua đồng hồ. Ngoại lệ có chủ
- * đích của luật "chỉ dựng qua API" (như `flushRateLimitCounters` chạm Valkey): lùi hạn trong DB của
- * suite bằng migrator, chỉ cột thời gian, chỉ family của chính ca đó.
- */
-async function expireFamily(token: string, column: 'expires_at' | 'family_expires_at') {
-  const config = loadHarnessConfig();
-  const client = new pg.Client({
-    connectionString: postgresUrl(config, 'migrator', config.dbName),
-  });
-  await client.connect();
-  try {
-    const { rowCount } = await client.query(
-      `UPDATE refresh_tokens SET ${column} = now() - interval '1 minute'
-        WHERE family_id = $1 AND revoked_at IS NULL`,
-      [sidOf(token)],
-    );
-    expect(rowCount, 'token sống của family').toBe(1);
-  } finally {
-    await client.end();
-  }
-}
 
 /**
  * Token giả mạo: bắt đầu từ claim VÀ header THẬT của `actor` (gồm `kid` — API từ chối token thiếu
@@ -151,7 +128,8 @@ describe('Refresh token rotation & reuse', () => {
   secCase('SEC-20', 'Refresh quá expiresAt / familyExpiresAt ⇒ 401', AUTH, async () => {
     for (const column of ['expires_at', 'family_expires_at'] as const) {
       const alice = await actors.register(`expired-${column}`);
-      await expireFamily(alice.accessToken, column);
+      // Ngoại lệ có chủ đích: API không có đồng hồ tua được (harness/db-clock.ts).
+      expect(await backdateRefreshFamily(String(sidOf(alice.accessToken)), column), column).toBe(1);
       const res = await actors.refresh(alice.refreshCookie);
       expect(res.status, column).toBe(401);
       expect(errorEnvelope(res).error.code, column).toBe('REFRESH_TOKEN_INVALID');
@@ -235,10 +213,12 @@ describe('Thu hồi phiên', () => {
       }
     },
   );
-  secCase(
+  // Thời điểm tắt Valkey giữa ghi TRƯỚC commit và ghi lại SAU commit không chèn được từ hộp đen ⇒ phủ ở
+  // unit (ghi sau commit là best-effort, giá trị trước commit vẫn còn — ADR-105).
+  outOfScope(
     'SEC-24d',
     'Ghi trước commit thành công, ghi lại sau commit lỗi (Valkey tắt giữa chừng) rồi hồi phục ⇒ access cũ vẫn 401',
-    T020,
+    'unit: logout-all.use-case.test.ts ALL-05 / ADR-105',
   );
 
   // Findings A4 — lost update trên users: login (đọc → argon2 → save) chạy song song với thao tác
