@@ -6,7 +6,7 @@ import {
   byTime,
   type AttendanceBackend,
 } from '../../../src/modules/attendance/testing/attendance-backend';
-import { FIXTURE } from '../../../src/modules/attendance/testing/attendance-harness';
+import { FIXTURE } from '../../../src/modules/attendance/testing/attendance-fixture';
 import { RecordingUnitOfWork, testPrisma } from '../support/prisma-test-kit';
 
 const day = (s: string) => new Date(`${s}T00:00:00.000Z`);

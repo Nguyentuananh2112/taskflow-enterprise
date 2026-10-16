@@ -35,7 +35,10 @@ describe('CheckInOutUseCase', () => {
     });
     expect(AttendanceTodayDto.parse(card)).toEqual(card);
     expect(card).toMatchObject({ status: 'PRESENT', inProgress: true, date: '2026-11-17' });
+  });
 
+  // Ca riêng: mỗi ca một harness (Postgres/LSP chỉ làm sạch DB ở beforeEach).
+  it('AT-01b User-Agent dài hơn 256 ký tự bị cắt (không từ chối)', async () => {
     const t2 = await setup();
     await new CheckInOutUseCase(t2.deps).execute({
       workspaceId: W1,

@@ -14,29 +14,12 @@ import { inMemoryAttendanceBackend, type AttendanceBackend } from './attendance-
  * 12:00–13:30, grace 0), đồng hồ giả theo GIỜ VN. Lưu trữ qua `AttendanceBackend` — in-memory mặc định, Postgres ở
  * runner LSP (application không import infra).
  */
-export const VN = 'Asia/Ho_Chi_Minh';
-export const W1 = '0199e5a2-0000-7000-8000-0000000000a1';
-export const MIA = '0199e5a2-0000-7000-8000-0000000000b1';
-export const MAX = '0199e5a2-0000-7000-8000-0000000000b2';
-/** MEMBER có grant HR_MANAGE (test-spec §0.2). */
-export const HANA = '0199e5a2-0000-7000-8000-0000000000c1';
-export const OLIVIA = '0199e5a2-0000-7000-8000-0000000000c0';
-export const VIC = '0199e5a2-0000-7000-8000-0000000000b9';
-export const W2 = '0199e5a2-0000-7000-8000-0000000000a2';
-const ROLES: Record<string, 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER'> = {
-  [OLIVIA]: 'OWNER',
-  [HANA]: 'MEMBER',
-  [MIA]: 'MEMBER',
-  [MAX]: 'MEMBER',
-  [VIC]: 'VIEWER',
-};
-const NAMES: Record<string, string> = {
-  [OLIVIA]: 'Olivia',
-  [HANA]: 'Hana',
-  [MIA]: 'Mia',
-  [MAX]: 'Max',
-  [VIC]: 'Vic',
-};
+// Hằng fixture ở file riêng: backend Postgres của runner LSP import chúng mà KHÔNG đi qua module harness
+// (module bị `vi.mock` — import ngược lại từ factory của mock làm treo vòng import).
+export { HANA, MAX, MIA, OLIVIA, VIC, VN, W1, W2 } from './attendance-fixture';
+import { FIXTURE, MIA, NAMES, ROLES, VN, W1 } from './attendance-fixture';
+export { FIXTURE };
+
 export const S0: WorkSchedule = {
   effectiveFrom: '2026-01-01',
   timezone: VN,
@@ -56,9 +39,6 @@ export const vnTime = (local: string) => {
 };
 /** Idempotency-Key giả (UUID hợp lệ) theo số thứ tự. */
 export const key = (n: number) => `0199e5a2-0000-7000-8000-${String(n).padStart(12, '0')}`;
-
-/** Người dùng / workspace nền mà backend Postgres phải seed (FK). */
-export const FIXTURE = { workspaces: [W1, W2], users: NAMES } as const;
 
 export async function createAttendanceHarness(
   now = '2026-11-17 07:55',
