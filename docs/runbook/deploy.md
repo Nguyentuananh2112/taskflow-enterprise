@@ -19,6 +19,8 @@
 | Secret environment | App Platform: `DIGITALOCEAN_ACCESS_TOKEN` (token chỉ scope app cần thiết); VPS: `VPS_SSH_KEY` (khóa riêng cho deploy), `VPS_KNOWN_HOSTS` (`ssh-keyscan <host>` rồi **đối chiếu fingerprint**) |
 Thiếu biến/secret ⇒ `deploy.yml` dừng ngay ở bước đầu, in tên thứ còn thiếu.
 
+**Kiểm bắt buộc ở lần deploy staging ĐẦU TIÊN (B, G1 vòng 2 — chưa kiểm chứng được khi chưa có repo thật):** bước "Ghi nhận staging xanh" phải XANH (không chỉ "continue-on-error") và `gh api "repos/<owner>/<repo>/deployments?environment=staging&task=deploy:smoke-ok&sha=<git_sha>"` trả về bản ghi có status `success`. Nếu GitHub từ chối deployment REST với `ref` là SHA vì Deployment branches = `main` ("… not allowed to deploy to staging due to environment protection rules") thì production sẽ luôn bị guard chặn (hỏng theo hướng an toàn) ⇒ sửa: ghi vào environment sổ ghi riêng `staging-smoke` (không secret, không rule) và guard query environment đó.
+
 ## A. DigitalOcean App Platform (phương án C — ứng viên mặc định)
 ### A.1 Tạo hạ tầng (khi người dùng chốt — tốn tiền, devops.md §1.2)
 1. Managed PostgreSQL 18, region **sgp1**, tên cụm `taskflow-pg`; Managed Valkey `taskflow-valkey`. Bật **Trusted sources** chỉ cho app (sau khi app tạo).

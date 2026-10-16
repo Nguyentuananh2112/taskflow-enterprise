@@ -71,6 +71,7 @@ Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted
 5. **Backup:** App Platform job SCHEDULED / VPS systemd timer chạy script B2; cảnh báo độc lập bằng **heartbeat** uptime monitor (không ping > 26 h ⇒ email) — tương đương "không có `.ok` mới trong 26 h" của B, không cần quyền đọc bucket.
 
 ## Việc mở / phụ thuộc
+- B APPROVE M1 + M2 vòng 2 (@8155ea0). Không chặn merge: lần deploy staging đầu tiên phải kiểm bước "Ghi nhận staging xanh" xanh + `deployments?task=deploy:smoke-ok` có bản ghi — GitHub có thể từ chối deployment REST `ref`=SHA khi Deployment branches = `main`; phương án dự phòng (environment `staging-smoke`) ghi ở runbook deploy §1.
 - B2 (`docker/backup/`) đã vào main ⇒ release build image backup (bước `hashFiles` không còn bỏ qua).
 - Lát cắt VPS: chạy lại api/web với image build từ main hiện tại (migrate đã xanh) — làm khi máy rảnh.
 - Domain chưa có (ADR-071) ⇒ `example.com` trong spec/runbook.
