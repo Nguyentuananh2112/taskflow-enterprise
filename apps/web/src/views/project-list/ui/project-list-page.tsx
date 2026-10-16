@@ -11,6 +11,7 @@ import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { PageMain } from '@/shared/ui/page';
 
 import { ProjectListHeader } from './project-list-header';
 
@@ -37,7 +38,7 @@ export function ProjectListPage() {
     );
   }
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
+    <PageMain className="gap-6">
       <ProjectListHeader wsId={wsId} canCreate={can('project:create')} />
       <nav aria-label="Lọc dự án" className="flex gap-2">
         {TABS.map((tab) => (
@@ -100,6 +101,6 @@ export function ProjectListPage() {
           Tải thêm
         </Button>
       )}
-    </main>
+    </PageMain>
   );
 }

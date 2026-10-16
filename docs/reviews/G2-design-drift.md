@@ -20,6 +20,8 @@ Suggestion: add these 5 rows, with a "where it is counted" column (Valkey vs ins
 
 ## frontend.md (owner: E)
 
+> **Trạng thái (2026-10-16, `feat/E-layout-g2`):** F1 đã sửa code trên main (đếm ngược + khóa nút, test `login-form.test.tsx`); F2, F3, F4 đã sửa tài liệu `frontend.md` §6.3, §1.2, §0 — đóng cả 4.
+
 ### F1 — §1.2 "Đăng nhập": `RATE_LIMITED` promises a countdown, code shows a static number
 - Doc: `frontend.md:69` — "`RATE_LIMITED` → \"Thử lại sau N giây\" (đếm ngược từ `retryAfterSec`)"; §8.2 (`:773`) lists "rate limit đếm ngược" as a component test case.
 - Code: `apps/web/src/shared/lib/form-errors.ts:73-77` renders "Bạn thao tác quá nhanh. Thử lại sau {N} giây." once; no timer, the login button stays enabled.

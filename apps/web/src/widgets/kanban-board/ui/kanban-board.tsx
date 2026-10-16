@@ -76,7 +76,8 @@ export function KanbanBoard({ scope, board, canDrag, onOpen }: Props) {
 
   return (
     <DragDropProvider plugins={plugins} {...handlers}>
-      <div className="flex gap-3 overflow-x-auto pb-4">
+      {/* Tràn ra lề của PAGE_CONTAINER: cột cuộn ngang tới sát mép màn, mép trái lúc chưa cuộn vẫn thẳng header. */}
+      <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-4 sm:-mx-6 sm:px-6">
         {TASK_STATUS_ORDER.map((status) => (
           <BoardColumn
             key={status}

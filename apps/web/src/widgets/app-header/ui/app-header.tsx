@@ -4,14 +4,16 @@ import Link from 'next/link';
 
 import { useSession } from '@/entities/session';
 import { LogoutButton } from '@/features/auth-logout';
+import { cn } from '@/shared/lib/cn';
 import { Avatar } from '@/shared/ui/avatar';
+import { PAGE_CONTAINER } from '@/shared/ui/page';
 
 /** Thanh trên của khu đã đăng nhập: logo, người dùng, Tài khoản, Đăng xuất. */
 export function AppHeader() {
   const { user } = useSession();
   return (
     <header className="border-b border-border bg-surface">
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4">
+      <div className={cn(PAGE_CONTAINER, 'flex h-14 items-center gap-4')}>
         <Link href="/w" className="text-base font-semibold text-text">
           TaskFlow
         </Link>

@@ -10,6 +10,7 @@ import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { PageMain } from '@/shared/ui/page';
 import { SettingsTabs } from '@/widgets/settings-tabs';
 
 /** `/w/[wsId]/settings` — tên/slug (OWNER sửa, người khác xem), vùng nguy hiểm (OWNER). */
@@ -28,7 +29,7 @@ export function WorkspaceSettingsPage() {
     );
   }
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
+    <PageMain className="max-w-3xl gap-6">
       <h1 className="text-xl font-semibold">Cài đặt workspace</h1>
       <SettingsTabs wsId={wsId} current="general" />
       {workspace.isPending && (
@@ -58,6 +59,6 @@ export function WorkspaceSettingsPage() {
           )}
         </>
       )}
-    </main>
+    </PageMain>
   );
 }

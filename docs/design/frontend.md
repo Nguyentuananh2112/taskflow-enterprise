@@ -30,7 +30,7 @@
 | P5 | Kiểu dữ liệu & luật validate lấy từ `packages/contracts` — FE **không** tự định nghĩa lại DTO. | ADR-001 |
 | P6 | Giao diện tiếng Việt; FE rẽ nhánh theo `error.code` (+ `details.rule`), không theo `message`. | T-003 §3.1 |
 
-**Hệ quả quan trọng của P1/P2:** cookie refresh có `Path=/api/v1/auth` và host-only trên `api.example.com` (security §2.3) ⇒ server Next (`app.example.com`) **không đọc được** cookie đó. Vì vậy **không có** redirect đăng nhập phía server (không dùng middleware/proxy của Next cho auth); cổng xác thực nằm ở client (`AuthGate`, mục 3.3).
+**Hệ quả quan trọng của P1/P2:** cookie refresh là host-only trên `api.example.com` (không `Domain`, security §2.3, ADR-109): staging/production `__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/`, dev (http://localhost) `tf_rt; HttpOnly; SameSite=Strict; Path=/api/v1/auth` (`apps/api/src/modules/auth/presentation/refresh-cookie.ts`) ⇒ server Next (`app.example.com`) **không đọc được** cookie đó. Vì vậy **không có** redirect đăng nhập phía server (không dùng middleware/proxy của Next cho auth); cổng xác thực nằm ở client (`AuthGate`, mục 3.3).
 
 ---
 
@@ -73,7 +73,7 @@
 | **Board** | 4 cột, kéo thả, lọc theo người phụ trách/ưu tiên, tạo nhanh task | Skeleton 4 cột × 3 thẻ | Cột rỗng: vùng thả viền đứt "Thả task vào đây"; cả board rỗng: "Chưa có task" + Tạo task (nếu có quyền) | 404 → Không tìm thấy; mất socket → chấm trạng thái vàng "Đang kết nối lại…" (board vẫn dùng được); lỗi tải → Thử lại |
 | **Drawer task** | Xem/sửa tiêu đề, mô tả, ưu tiên, hạn, người phụ trách; xóa; tab Lịch sử | Skeleton trong drawer | Lịch sử rỗng không xảy ra (luôn có CREATED) | 404 (task bị xóa) → "Task không còn tồn tại", đóng drawer; 409 → khối hòa giải (mục 4.6) |
 | Cài đặt project | Sửa tên/mô tả, lưu trữ/khôi phục | Skeleton form | — | `PROJECT_ARCHIVED` khi sửa → báo "Khôi phục trước khi sửa" |
-| Cài đặt workspace | Sửa tên/slug (slug: chữ thường/số/gạch nối 3–50, FE **không** tự lowercase — khớp R19); vùng nguy hiểm: xóa (gõ lại slug). Dialog nói rõ: "Workspace sẽ bị ẩn với mọi thành viên và xóa vĩnh viễn sau 30 ngày. Chủ sở hữu có thể khôi phục trong thời gian này." (ADR-047) | Skeleton form | — | `RESOURCE_CONFLICT field=slug` → lỗi tại slug ("đã được dùng hoặc là tên dành riêng"); xóa thành công ⇒ về `/w` |
+| Cài đặt workspace | Sửa tên/slug (slug: chữ thường/số/gạch nối 3–50, FE **không** tự lowercase — khớp R19); vùng nguy hiểm: xóa (gõ lại slug). Vùng nguy hiểm và dialog nói rõ: "Workspace sẽ biến mất ngay với mọi thành viên và bị xóa vĩnh viễn sau 30 ngày. Trong thời gian này chỉ Chủ sở hữu khôi phục được." (ADR-047; `features/workspace-delete`) | Skeleton form | — | `RESOURCE_CONFLICT field=slug` → lỗi tại slug ("đã được dùng hoặc là tên dành riêng"); xóa thành công ⇒ toast "Đã xóa …" + về `/w`; xóa `404` (đã bị xóa ở tab khác) ⇒ toast "Workspace không còn tồn tại" + về `/w`; xóa `400`/`409` (slug vừa đổi / không khớp) ⇒ refetch workspace, xóa ô nhập, báo "Slug vừa thay đổi hoặc không khớp. Gõ lại slug ở trên." |
 | **Thành viên** | Danh sách, thêm theo email, đổi role, xóa, tự rời | Skeleton bảng 5 dòng | Không xảy ra (luôn có ≥1 OWNER) | `LAST_OWNER` → "Workspace phải còn ít nhất một Chủ sở hữu"; thêm user không hợp lệ → thông báo chung (security §6.5) |
 | Tài khoản | Xem email; sửa họ tên (`PATCH /auth/me`, ADR-083); đổi mật khẩu; đăng xuất mọi thiết bị | Skeleton | — | `INVALID_CURRENT_PASSWORD` → lỗi tại trường mật khẩu hiện tại |
 
@@ -693,12 +693,36 @@ Chế độ tối: người dùng chọn Sáng/Tối/Hệ thống (lưu localSto
 
 - Font: **Inter** qua `next/font/google`: `Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-inter', display: 'swap' })`. Đã kiểm (V3): Inter có subset `vietnamese` (font-data.json của Next); CSS + file font **tải lúc build và tự host**, trình duyệt không gửi request tới Google — hợp CSP, không lộ IP người dùng. ⚠️ Build cần mạng ra Google Fonts (CI/Docker build stage).
 - Thang chữ: 12 / 14 (mặc định UI) / 16 / 20 / 24 px; `line-height` ≥ 1.5 cho chữ thân (dấu tiếng Việt chồng tầng cần khoảng thở). Đậm: 400/500/600.
+- **Khung ngang (container) — một cho cả khu đã đăng nhập:** `PAGE_CONTAINER` = `mx-auto w-full max-w-7xl px-4 sm:px-6` (`shared/ui/page`), dùng cho `AppHeader` và mọi màn qua `PageMain` ⇒ logo, tiêu đề màn và cột đầu của board thẳng một mép trái ở 360/768/1440 (mép 16 / 24 / 104 px). Màn form giới hạn bề ngang nội dung (`PageMain className="max-w-3xl …"`) nhưng **căn trái** trong khung, không `mx-auto` riêng. Board: vùng cuộn ngang tràn ra lề khung (`-mx-4 px-4 sm:-mx-6 sm:px-6`) để cột cuộn tới sát mép màn trên mobile; trang không bao giờ cuộn ngang. Ngoại lệ: màn khách (`AuthCard`, landing) và khối lỗi/404 toàn màn (`max-w-md` căn giữa).
 - Khoảng cách: thang 4px (4, 8, 12, 16, 24, 32, 48). Bo góc: 6px (input, nút), 10px (thẻ, dialog). Bóng: 2 mức (thẻ, nổi khi kéo).
 - Ngày: `Intl.DateTimeFormat('vi-VN')` → `15/10/2026`; thời gian tương đối "2 phút trước" bằng `Intl.RelativeTimeFormat('vi')`. `dueDate` là chuỗi `YYYY-MM-DD` — **không** `new Date('YYYY-MM-DD')` (bị hiểu là UTC); so quá hạn bằng so sánh chuỗi với ngày hôm nay theo giờ địa phương (`shared/lib/date-only.ts`).
 
 ### 6.3. Component `shared/ui`
 
-`Button` (primary/secondary/ghost/danger, loading) · `IconButton` · `Input` · `Textarea` (đếm ký tự) · `Select` · `Combobox` (picker người phụ trách có tìm) · `Checkbox` · `Field` (label + mô tả + lỗi, gắn `aria-describedby`) · `Badge` · `Avatar` (chữ cái đầu, màu theo hash id) · `Dialog` · `ConfirmDialog` · `Drawer` · `DropdownMenu` · `Tooltip` · `Popover` · `DatePicker` (đơn giản: `<input type="date">` bọc style — ĐỀ XUẤT, tránh thêm thư viện lịch) · `Toast` (+ `toast()` API) · `Skeleton` · `Spinner` · `EmptyState` · `ErrorState` · `Banner` · `Tabs` · `ConnectionDot`.
+Danh sách **đúng với code** (`apps/web/src/shared/ui/`, G2 F2). Màn mới dùng những gì có ở đây; cần primitive mới ⇒ thêm vào `shared/ui` kèm test, cập nhật bảng.
+
+| Component | Ghi chú |
+|---|---|
+| `Button` | variant primary/secondary/ghost/danger, size, `loading`, `asChild` (bọc `Link`) |
+| `Input` (+ `controlClass`) · `Textarea` · `Select` | label + hint + lỗi gắn `aria-describedby` có sẵn trong từng control (không có `Field` riêng); `Select` là `<select>` gốc |
+| `Combobox` | picker có tìm (người phụ trách) |
+| `ClientForm` | `<form method="post">` khóa mọi ô tới khi hydrate (không submit GET gốc đưa mật khẩu lên URL — T-029) |
+| `Alert` · `AuthCard` | khối thông báo theo tone · khung màn khách (một `main`, một `h1`) |
+| `Avatar` · `Badge` · `ConnectionDot` | |
+| `Dialog` (+ `DialogClose`) · `Drawer` · `DropdownMenu` | Radix (6.4) |
+| `Toast` (`toast()`, `Toaster`) · `Skeleton` · `Spinner` · `EmptyState` | |
+| `PageMain` · `PAGE_CONTAINER` | khung ngang chung của khu đã đăng nhập (6.2) |
+
+Không có — dùng thay thế:
+
+| Trong bản thiết kế cũ | Dùng thay |
+|---|---|
+| `ConfirmDialog` | `Dialog` + `footer` (Hủy = `DialogClose`, nút hành động `variant="danger"`) — vd `features/workspace-delete` |
+| `ErrorState` | `EmptyState` + nút "Thử lại" (`refetch`) |
+| `Banner` | `Alert`, hoặc khối viền trái `border-l-4` (board lưu trữ — `widgets/board-toolbar`) |
+| `DatePicker` | `Input type="date"` gốc (`features/task-edit/ui/edit-task-form.tsx`) |
+| `Tabs` | danh sách link có `aria-current="page"` (`widgets/settings-tabs`, tab lưu trữ ở danh sách dự án) |
+| `Field`, `Checkbox`, `IconButton`, `Tooltip`, `Popover` | chưa màn nào cần: label/lỗi nằm trong control; nút chỉ có icon = `Button variant="ghost"` + `aria-label`; giải thích ngắn = thuộc tính `title`/text hint |
 
 ### 6.4. Headless library — ĐỀ XUẤT: **Radix primitives, theo cách shadcn/ui (copy code vào repo)**
 

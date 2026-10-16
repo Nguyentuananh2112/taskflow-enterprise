@@ -8,6 +8,7 @@ import { ThemeSelect } from '@/features/theme-switch';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { PageMain } from '@/shared/ui/page';
 
 const CARD = 'flex flex-col gap-4 rounded-card border border-border bg-surface p-6 shadow-card';
 
@@ -15,7 +16,7 @@ const CARD = 'flex flex-col gap-4 rounded-card border border-border bg-surface p
 export function AccountPage() {
   const me = useMe();
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8">
+    <PageMain className="max-w-2xl gap-6">
       <h1 className="text-xl font-semibold">Tài khoản</h1>
       <section aria-labelledby="profile-heading" className={CARD}>
         <h2 id="profile-heading" className="text-base font-semibold">
@@ -51,6 +52,6 @@ export function AccountPage() {
       <div className={CARD}>
         <LogoutAllSection />
       </div>
-    </main>
+    </PageMain>
   );
 }

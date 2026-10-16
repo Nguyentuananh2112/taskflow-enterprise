@@ -12,6 +12,7 @@ import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { PageMain } from '@/shared/ui/page';
 
 /** `/w/[wsId]/p/[projectId]/settings` — PM+ sửa/lưu trữ; VIEWER/MEMBER xem chỉ đọc (frontend.md §1.1). */
 export function ProjectSettingsPage() {
@@ -29,7 +30,7 @@ export function ProjectSettingsPage() {
   }
   const data = project.data;
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
+    <PageMain className="max-w-3xl gap-6">
       <nav aria-label="Vị trí" className="text-xs text-text-muted">
         <Link href={`/w/${wsId}/projects`} className="hover:underline">
           Dự án
@@ -71,6 +72,6 @@ export function ProjectSettingsPage() {
           )}
         </>
       )}
-    </main>
+    </PageMain>
   );
 }
