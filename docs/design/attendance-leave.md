@@ -99,6 +99,8 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 | `GET attendance/me?month=YYYY-MM` | `attendance:self` | bảng công tháng của mình |
 | `GET attendance/today` · `GET attendance?month=` · `GET attendance/export.csv?month=` | `hr:manage` | `GET attendance?month=` phân trang theo nhân viên (cursor, limit 50). CSV: cả công ty, stream, UTF-8 BOM (Excel), chống CSV injection theo OWASP (ô bắt đầu bằng `= + - @ \t \r` ⇒ thêm `'`; bọc mọi ô bằng `"` và nhân đôi `"`), hạn mức, audit EXPORT |
 | `POST attendance/events` (ADJUSTMENT) · `POST attendance/events/:id/void` | `hr:manage` | bắt buộc lý do; thông báo cho nhân viên |
+| `GET attendance/events?userId=&date=YYYY-MM-DD` | `hr:manage` | lượt thô theo `workDate` của một người, gồm lượt đã hủy (`AttendanceEventDto` có id, IP/UA); `userId` chưa từng có dữ liệu ⇒ 404. ADJUSTMENT ⇒ 201, void ⇒ 200, cùng trả `AttendanceEventDto` (A, TL duyệt) |
+| `GET attendance/me/events?date=YYYY-MM-DD` | `attendance:self` | lượt của chính mình kèm IP/UA (NĐ 13 Đ.14, §9) |
 | `GET/POST attendance/schedules` · `GET/PUT/DELETE attendance/holidays/:date` | đọc: thành viên · ghi: `hr:manage` | lịch mới chỉ hiệu lực từ hôm nay trở đi |
 | `POST leave-requests` · `GET leave-requests?mine=1` · `POST leave-requests/:id/cancel` | `leave:self` | hủy: của mình, PENDING hoặc APPROVED chưa tới ngày bắt đầu |
 | `GET leave-requests?status=` · `POST leave-requests/:id/approve` · `…/reject` · `…/revoke` | `hr:manage` | gửi `expectedVersion`; không tự duyệt (trừ OWNER) |
