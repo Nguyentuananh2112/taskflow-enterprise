@@ -106,6 +106,7 @@ describe('WorkspaceAccess (lõi của middleware loadMembership) + ProjectAccess
       userId: uid('pam'),
       workspaceId: A,
       role: 'PM',
+      grants: [], // GR-11: đọc cùng dòng membership
     });
     const errs = [
       await caught(access.resolveActor(A, uid('bob'))),

@@ -1,6 +1,6 @@
 import type { MembershipSnapshot } from '../../domain/membership';
 import type { ProjectSnapshot } from '../../domain/project';
-import type { WorkspaceRole } from '../../domain/roles';
+import type { MemberGrant, WorkspaceRole } from '../../domain/roles';
 import type { WorkspaceSnapshot } from '../../domain/workspace';
 
 /** Phân trang keyset: `after` = id của phần tử cuối trang trước (presentation mã hóa thành cursor). */
@@ -25,7 +25,7 @@ export interface IWorkspaceQueries {
   /** Workspace chưa xóa mà user là thành viên, kèm role. Tối đa 100 (data-and-api 2.5). */
   listActiveForUser(
     userId: string,
-  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole }[]>;
+  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[] }[]>;
   /** Đã xóa mềm, `purge_at > now`, user là OWNER (`?deleted=true`, security.md 3.6). */
   listDeletedOwnedBy(userId: string, now: Date): Promise<WorkspaceSnapshot[]>;
   /**

@@ -19,6 +19,7 @@ export class WorkspaceAccess {
     ]);
     if (!workspace || workspace.isDeleted || !membership)
       throw new ResourceNotFoundError('workspace');
-    return { userId, workspaceId, role: membership.role };
+    // ADR-119 / GR-11: grants đến từ CÙNG dòng membership vừa đọc — không thêm truy vấn, không cache.
+    return { userId, workspaceId, role: membership.role, grants: [...membership.grants] };
   }
 }

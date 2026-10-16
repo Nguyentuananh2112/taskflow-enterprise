@@ -10,7 +10,7 @@ import type {
   PageRequest,
 } from '../../../application/ports/queries.port';
 import type { ProjectSnapshot } from '../../../domain/project';
-import type { WorkspaceRole } from '../../../domain/roles';
+import type { MemberGrant, WorkspaceRole } from '../../../domain/roles';
 import type { WorkspaceSnapshot } from '../../../domain/workspace';
 import type {
   InMemoryMembershipRepository,
@@ -54,7 +54,7 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
 
   listActiveForUser(
     userId: string,
-  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole }[]> {
+  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[] }[]> {
     const result = this.memberships
       .rows()
       .filter((m) => m.userId === userId)
@@ -62,7 +62,7 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
         const ws = this.workspaces
           .rows()
           .find((w) => w.id === m.workspaceId && w.deletedAt === null);
-        return ws ? [{ workspace: ws, role: m.role }] : [];
+        return ws ? [{ workspace: ws, role: m.role, grants: [...m.grants] }] : [];
       });
     return Promise.resolve(result.slice(0, 100));
   }

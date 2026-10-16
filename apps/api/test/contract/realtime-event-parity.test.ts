@@ -27,6 +27,8 @@ const SERVER_EVENTS_RECORD: Record<keyof ServerToClientEvents, true> = {
   'workspace:access-revoked': true,
   'auth:expired': true,
   'member:role-changed': true,
+  'member:grants-changed': true,
+  'notification:new': true,
 };
 const SERVER_EVENTS = new Set<string>(Object.keys(SERVER_EVENTS_RECORD));
 const CLIENT_EVENTS = new Set(['project:join', 'project:leave', 'auth:renew']);

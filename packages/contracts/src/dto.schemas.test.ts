@@ -51,7 +51,7 @@ describe('DTO auth/workspace/member', () => {
   });
 
   it('WorkspaceDto có myRole hợp lệ; DeletedWorkspaceDto bắt buộc deletedAt/purgeAt', () => {
-    const ws = { id: ID, name: 'W', slug: 'w-one', createdAt: NOW, updatedAt: NOW };
+    const ws = { id: ID, name: 'W', slug: 'w-one', myGrants: [], createdAt: NOW, updatedAt: NOW };
     expect(WorkspaceDto.safeParse({ ...ws, myRole: 'PM' }).success).toBe(true);
     expect(WorkspaceDto.safeParse({ ...ws, myRole: 'ADMIN' }).success).toBe(false);
     const deleted = { id: ID, name: 'W', slug: 'w-one', deletedAt: NOW, purgeAt: NOW };
@@ -60,7 +60,14 @@ describe('DTO auth/workspace/member', () => {
   });
 
   it('ChangeMemberRoleResponse/RemoveMemberResponse: unassignedTaskCount nguyên ≥ 0', () => {
-    const member = { userId: ID, email: 'a@b.vn', fullName: 'A', role: 'VIEWER', joinedAt: NOW };
+    const member = {
+      userId: ID,
+      email: 'a@b.vn',
+      fullName: 'A',
+      role: 'VIEWER',
+      grants: [],
+      joinedAt: NOW,
+    };
     expect(MemberDto.safeParse(member).success).toBe(true);
     expect(ChangeMemberRoleResponse.safeParse({ member, unassignedTaskCount: 3 }).success).toBe(
       true,

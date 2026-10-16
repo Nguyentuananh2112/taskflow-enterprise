@@ -38,6 +38,7 @@ describe('AddMemberUseCase', () => {
       email: 'nina@example.com',
       fullName: 'Nina',
       role: 'PM',
+      grants: [],
       joinedAt: h.clock.now(),
     });
     expect(await h.roleOf(ctx.A, 'Nina')).toBe('PM');

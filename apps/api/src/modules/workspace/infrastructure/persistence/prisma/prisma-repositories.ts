@@ -96,6 +96,7 @@ const MEMBER = {
   workspaceId: true,
   userId: true,
   role: true,
+  grants: true,
   joinedAt: true,
   updatedAt: true,
 } as const;
@@ -116,10 +117,11 @@ export class PrismaMembershipRepository implements IMembershipRepository {
     );
   }
   async save(membership: Membership): Promise<void> {
-    const { id, role, updatedAt } = membership.toSnapshot();
+    const { id, role, grants, updatedAt } = membership.toSnapshot();
     await this.db().workspaceMember.update({
       where: { id },
-      data: { role, updatedAt },
+      // role + grants trong CÙNG câu UPDATE (CHECK grants theo role — ADR-119)
+      data: { role, grants: { set: grants }, updatedAt },
       select: { id: true },
     });
   }

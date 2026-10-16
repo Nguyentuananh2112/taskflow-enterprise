@@ -65,6 +65,7 @@ class TestMembershipRepository extends PrismaMembershipRepository {
         workspaceId: true,
         userId: true,
         role: true,
+        grants: true,
         joinedAt: true,
         updatedAt: true,
       },

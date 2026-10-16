@@ -26,7 +26,7 @@ export class ListMyWorkspacesQuery {
       return rows.map(toDeletedWorkspaceView);
     }
     const rows = await this.d.queries.listActiveForUser(input.userId);
-    return rows.map(({ workspace, role }) => toWorkspaceView(workspace, role));
+    return rows.map(({ workspace, role, grants }) => toWorkspaceView(workspace, role, grants));
   }
 }
 
@@ -38,6 +38,6 @@ export class GetWorkspaceQuery {
     requirePermission(actor, 'workspace:read');
     const ws = await this.d.workspaces.findById(actor.workspaceId);
     if (!ws || ws.isDeleted) throw new ResourceNotFoundError('workspace');
-    return toWorkspaceView(ws.toSnapshot(), actor.role);
+    return toWorkspaceView(ws.toSnapshot(), actor.role, actor.grants);
   }
 }

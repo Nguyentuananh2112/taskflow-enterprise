@@ -82,7 +82,17 @@ export class OriginNotAllowedError extends ForbiddenError {
   }
 }
 
-export type ResourceKind = 'task' | 'project' | 'workspace' | 'user' | 'route';
+export type ResourceKind =
+  | 'task'
+  | 'project'
+  | 'workspace'
+  | 'user'
+  | 'route'
+  // Mốc 3 (T-038 / T-039)
+  | 'leave_request'
+  | 'attendance_event'
+  | 'holiday'
+  | 'work_schedule';
 
 /** 404 — không tồn tại **hoặc** thuộc tenant khác (ADR-020): cùng một hình dạng cho cả hai. */
 export class ResourceNotFoundError extends AppError {

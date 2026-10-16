@@ -28,6 +28,7 @@ import {
   userSocketCounts,
 } from './local-rooms';
 import { LocalRealtimeQuota, type IRealtimeQuota } from './quota';
+import { UserNotifications } from './user-notifications';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
 export interface RealtimeGatewayOptions {
@@ -176,6 +177,15 @@ export class RealtimeGateway {
     this.#emit(rooms.user(userId), 'member:role-changed', { workspaceId, role }, meta);
     return Promise.resolve();
   }
+
+  // Mốc 3 — event tới `user:{id}` (user-notifications.ts).
+  readonly #users = new UserNotifications((room, type, data, meta) =>
+    this.#emit(room, type, data, meta),
+  );
+  readonly notifyGrantsChanged: UserNotifications['grantsChanged'] = (i, m) =>
+    this.#users.grantsChanged(i, m);
+  readonly notifyNotification: UserNotifications['notification'] = (i, m) =>
+    this.#users.notification(i, m);
 
   /** Workspace xóa mềm: báo từng thành viên qua phòng user, rồi rời mọi phòng project (data-and-api §1.7). */
   closeWorkspace(

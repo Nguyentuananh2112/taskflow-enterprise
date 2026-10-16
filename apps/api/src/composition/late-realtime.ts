@@ -1,5 +1,5 @@
 import type { RealtimeGateway } from '../core/realtime/gateway';
-import type { RealtimeEventMeta, WorkspaceRole } from '../core/realtime/ports';
+import type { MemberGrant, RealtimeEventMeta, WorkspaceRole } from '../core/realtime/ports';
 
 type Notifications = Pick<
   RealtimeGateway,
@@ -7,6 +7,8 @@ type Notifications = Pick<
   | 'disconnectUser'
   | 'revokeWorkspaceAccess'
   | 'notifyRoleChanged'
+  | 'notifyGrantsChanged'
+  | 'notifyNotification'
   | 'closeWorkspace'
   | 'emitToProject'
 >;
@@ -43,6 +45,20 @@ export class LateBoundRealtime implements Notifications {
     meta: RealtimeEventMeta,
   ): Promise<void> {
     return this.#target?.notifyRoleChanged(input, meta) ?? Promise.resolve();
+  }
+
+  notifyGrantsChanged(
+    input: { userId: string; workspaceId: string; grants: readonly MemberGrant[] },
+    meta: RealtimeEventMeta,
+  ): Promise<void> {
+    return this.#target?.notifyGrantsChanged(input, meta) ?? Promise.resolve();
+  }
+
+  notifyNotification(
+    input: { recipientId: string; notificationId: string; type: string; workspaceId: string },
+    meta: RealtimeEventMeta,
+  ): Promise<void> {
+    return this.#target?.notifyNotification(input, meta) ?? Promise.resolve();
   }
 
   /** Event `task:*` (port `ITaskRealtimeNotifier` của Task) — payload do use case dựng sẵn. */
