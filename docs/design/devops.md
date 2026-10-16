@@ -333,6 +333,7 @@ Repo public → file backup, dump và dữ liệu thật **không bao giờ** n�
 - Giai đoạn 1–2 instance: **kết nối thẳng**, không dùng pooler.
 - Khi vượt ngân sách: bật PgBouncer ở chế độ transaction cho container app; job migrate vẫn kết nối thẳng. ⚠ Trước khi bật phải kiểm interactive transaction và UoW dùng `AsyncLocalStorage` (ADR-012) chạy đúng qua pooler.
 - `ALTER ROLE taskflow_app SET statement_timeout = '10s'` để chặn query chạy quá lâu giữ connection.
+- Khi nào tăng N / bật PgBouncer / nâng gói, cách đo giới hạn kết nối thật của cụm: `docs/runbook/scaling.md` §1, §4.
 
 ---
 
@@ -472,6 +473,7 @@ Phase 1–4 chỉ cần expose endpoint. Việc scrape (vd Grafana Cloud gói mi
 | Bảo mật | `auth_refresh_reuse_detected_total` tăng · `rate_limit_blocked_total{rule="login"}` > 50/5 phút | Cảnh báo | metrics/log |
 | Chứng chỉ TLS | hết hạn < 14 ngày | Cảnh báo | uptime monitor |
 | Crash loop | instance restart > 3 lần/10 phút | Gấp | nền tảng |
+| Sức chứa | CPU API > 70 % hoặc `nodejs_eventloop_lag_p99_seconds` > 0,1 s liên tục (≥ 30 phút giờ cao điểm) · CPU Postgres > 70 % liên tục | Thông báo (lập kế hoạch scale) | nền tảng + metrics — `docs/runbook/scaling.md` |
 | Sentry | issue mới ở prod | Thông báo | Sentry email |
 
 Email gửi tới hộp thư của người dùng + Tech Lead. Mỗi cảnh báo "Gấp" phải trỏ tới 1 runbook. Rủi ro đã chấp nhận: email không đánh thức ai lúc nửa đêm, nên không có cam kết phản hồi ngoài giờ ở v1.
@@ -491,6 +493,8 @@ Email gửi tới hộp thư của người dùng + Tech Lead. Mỗi cảnh báo
 - Valkey đặt `maxmemory-policy noeviction` + cảnh báo memory. Lý do: nếu Valkey tự xóa bộ đếm rate-limit thì thành lỗ hổng bảo mật mà không ai thấy. Mọi key đều có TTL nên bộ nhớ có giới hạn.
 
 ### 7.2 Khi lên ≥ 2 instance
+**Khi nào** (ngưỡng theo số đo T-027/T-027c) và **cách làm** từng nền tảng: `docs/runbook/scaling.md`. Đo trên máy dev: 2 bản ≈ ×1,4 thông lượng, Postgres thành nút cổ chai kế tiếp.
+
 | Việc | Chi tiết |
 |---|---|
 | Bật `SOCKET_REDIS_ADAPTER=true` | `@socket.io/redis-adapter` 8.3.0 với node-redis, **2 connection Valkey riêng** cho pub/sub. Adapter sharded cần lệnh `SSUBSCRIBE` (Redis ≥ 7) — Valkey 9 có; ⚠ KIỂM CHỨNG Phase 5 với bản managed |
@@ -651,6 +655,7 @@ Mỗi mục phải có người ký xác nhận và bằng chứng (link log/ả
 29. ☐ Đã diễn tập rollback: deploy SHA cũ trên staging trong < 10 phút.
 30. ☐ Job dọn token và purge workspace chạy đúng 1 lần mỗi chu kỳ (log + advisory lock + metric).
 31. ☐ Có runbook cho: restore DB, rollback, xoay secret, thu hồi mọi phiên, Valkey sập, sự cố bảo mật, khôi phục workspace bị purge nhầm (bằng PITR).
+32. ☐ Ngưỡng scale (`docs/runbook/scaling.md` §1) đã có cảnh báo tương ứng; giới hạn kết nối thật của cụm PG đã đo (§4.1) và ghi cùng `DATABASE_POOL_MAX` đang dùng.
 
 ---
 
