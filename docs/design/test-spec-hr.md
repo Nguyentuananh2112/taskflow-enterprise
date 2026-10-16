@@ -57,7 +57,7 @@ Ký hiệu giờ trong bảng = **giờ địa phương theo múi giờ của l�
 
 ## 1. `summarizeDay` (tầng U, M ≥ 90 %)
 
-Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now, employed })` (`employed` = ngày nằm trong một nhiệm kỳ — `joinedAt` của membership/departures của B T-037b; tên tham số do A chốt) ⇒ `{ status, firstIn, lastOut, workedMin, lateMin, earlyMin, flags: { late, early, absentHalf, inProgress } }`. Mặc định `schedule = S0`, `leave = null`, `holiday = null`, `now` = sau ngày đang xét (ngày đã qua) trừ khi ghi khác.
+Chữ ký: `summarizeDay({ date, events, schedule, holiday, leave, now, employed })` (`employed: boolean` — A chốt, giữ hàm thuần). Quy đổi nhiệm kỳ → ngày ở hàm thuần riêng `employedOn(tenures: { from, until | null }[], date, timezone)` (`attendance/domain/tenure.ts`): ngày địa phương của `joinedAt` ≤ `date` ≤ ngày địa phương của `leftAt` (ngày rời tính bình thường — Q9), quy ngày theo múi giờ của lịch hiệu lực NGÀY ĐÓ. Nhiệm kỳ lấy qua port `IMembershipTenurePort.tenuresOf({ workspaceId, userIds?, from, to })` (adapter: B T-037b). Phân bổ: SD-37/38/39/39b/40 test trên `employedOn` (+ 1 ca qua `summarizeRange`); SD-41/42/43 trên `summarizeDay`; AT-22/23 ở tầng use case. `tenure.ts` nằm trong nhóm Stryker `attendance-domain` ⇒ `{ status, firstIn, lastOut, workedMin, lateMin, earlyMin, flags: { late, early, absentHalf, inProgress } }`. Mặc định `schedule = S0`, `leave = null`, `holiday = null`, `now` = sau ngày đang xét (ngày đã qua) trừ khi ghi khác.
 
 | ID | Ngày / bối cảnh | Lượt chấm (giờ địa phương) | Kỳ vọng |
 |---|---|---|---|
