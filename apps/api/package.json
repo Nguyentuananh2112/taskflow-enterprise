@@ -21,6 +21,15 @@
     "mutation:auth-domain": "stryker run stryker/auth-domain.config.mjs",
     "mutation:auth-application": "stryker run stryker/auth-application.config.mjs",
     "mutation:auth-infrastructure": "stryker run stryker/auth-infrastructure.config.mjs",
+    "mutation:auth-presentation": "stryker run stryker/auth-presentation.config.mjs",
+    "mutation:workspace-domain": "stryker run stryker/workspace-domain.config.mjs",
+    "mutation:workspace-application": "stryker run stryker/workspace-application.config.mjs",
+    "mutation:workspace-infrastructure": "stryker run stryker/workspace-infrastructure.config.mjs",
+    "mutation:workspace-presentation": "stryker run stryker/workspace-presentation.config.mjs",
+    "mutation:task-domain": "stryker run stryker/task-domain.config.mjs",
+    "mutation:task-application": "stryker run stryker/task-application.config.mjs",
+    "mutation:task-infrastructure": "stryker run stryker/task-infrastructure.config.mjs",
+    "mutation:task-presentation": "stryker run stryker/task-presentation.config.mjs",
     "test:security": "prisma generate --no-hints && vitest run --config test/security/vitest.config.ts"
   },
   "dependencies": {

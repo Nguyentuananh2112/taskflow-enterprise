@@ -38,7 +38,7 @@ Mỗi việc vẫn theo `docs/TEAM.md`: worktree/branch riêng (dùng lại work
 |---|---|---|---|
 | F1 | T-026 E2E toàn bộ + cổng T-034, fix bàn phím | đang giao | F |
 | F2 | E2E viewport mobile + Firefox cho luồng chính; săn test chập chờn (chạy lặp 20× bộ E2E, liệt kê flake + nguyên nhân) | | |
-| F3 | Chạy mutation hằng tuần (Stryker) lên toàn bộ module auth/workspace/task hiện tại khi Tech Lead báo "máy rảnh"; findings theo chủ module | | |
+| F3 | Chạy mutation hằng tuần (Stryker) lên toàn bộ module auth/workspace/task hiện tại khi Tech Lead báo "máy rảnh"; findings theo chủ module | | F — 2026-10-16 (feat/F3) |
 
 ## Chung (ai hết hàng thì lấy)
 | # | Việc | Đang làm |
