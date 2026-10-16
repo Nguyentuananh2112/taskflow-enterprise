@@ -29,6 +29,12 @@ const api = useApi();
 const actors = new Actors(api);
 let seeded: Promise<HrTenant> | undefined;
 const hr = () => (seeded ??= seedHr(actors));
+/** Thành viên MỚI của ws chung — ca cần "chưa chấm vào hôm nay" không phụ thuộc thứ tự ca khác đã check-in. */
+async function newcomer(t: HrTenant, label: string) {
+  const who = await actors.register(`hr-${label}`);
+  await actors.addMember(t.olivia, t.ws, who, 'MEMBER');
+  return who;
+}
 
 const NIL_WS = '00000000-0000-7000-8000-000000000000';
 const AREA = 'Mốc 3 HR';
@@ -76,11 +82,6 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
         ['GET', HR.exportCsv(t.ws, thisMonth())],
         ['GET', HR.today(t.ws)],
         ['POST', HR.events(t.ws), { bogus: true }],
-        [
-          'PATCH',
-          HR.balance(t.ws, t.max.userId, new Date().getUTCFullYear()),
-          { adjustmentDays: 'x' },
-        ],
       ];
       for (const [method, path, body] of calls) {
         expect(
@@ -88,6 +89,19 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
           `${method} ${path}`,
         ).toBe(403);
       }
+    },
+  );
+
+  // Vế leave của SEC-HR-02 — tách riêng vì route leave-balances thuộc T-039 (gate T-038: 404 khi chưa mount).
+  secCase(
+    'SEC-HR-02b',
+    'Mia gọi PATCH leave-balances (hr:manage) với body sai ⇒ 403, không 400',
+    AREA,
+    async () => {
+      const t = await hr();
+      const path = HR.balance(t.ws, t.max.userId, new Date().getUTCFullYear());
+      const res = await actors.json('PATCH', path, t.mia.accessToken, { adjustmentDays: 'x' });
+      expect(res.status, `PATCH ${path}`).toBe(403);
     },
   );
 
@@ -596,12 +610,23 @@ describe('Biên HTTP', () => {
     AREA,
     async () => {
       const t = await hr();
-      const res = await withKey(api, 'POST', HR.checkIn(t.ws), t.max.accessToken, undefined, {
+      const nora = await newcomer(t, 'nora');
+      const res = await withKey(api, 'POST', HR.checkIn(t.ws), nora.accessToken, undefined, {
         occurredAt: '2000-01-01T00:00:00Z',
         source: 'DEVICE',
         workDate: '2000-01-01',
       });
-      expect(res.status).toBe(400);
+      // Spec: 400 strict HOẶC bị bỏ qua (A, cdd3096: check-in không có schema body ⇒ bỏ qua). Bỏ qua thì
+      // lượt ghi phải là WEB, ngày công hôm nay, giờ server — không lấy gì từ body.
+      expect([400, 201], `status ${String(res.status)}`).toContain(res.status);
+      if (res.status === 201) {
+        const own = eventsOf(
+          await actors.json('GET', HR.myEvents(t.ws, todayVn()), nora.accessToken),
+        );
+        expect(own).toHaveLength(1);
+        expect(own[0]).toMatchObject({ kind: 'IN', source: 'WEB', workDate: todayVn() });
+        expect(own.some((e) => e.workDate === '2000-01-01')).toBe(false);
+      }
       // HR cũng không gửi được thời điểm UTC: ADJUSTMENT nhận date + time theo lịch, `occurredAt` ⇒ 400 (aac6aaa).
       const adj = await actors.json('POST', HR.events(t.ws), t.hana.accessToken, {
         userId: t.max.userId,
@@ -623,12 +648,13 @@ describe('Biên HTTP', () => {
 
   secCase('SEC-HR-24', 'User-Agent 10 KB ⇒ cắt ≤ 256, không 500', AREA, async () => {
     const t = await hr();
+    const uma = await newcomer(t, 'uma');
     const res = await api.request({
       method: 'POST',
       path: `/api/v1${HR.checkIn(t.ws)}`,
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${t.pam.accessToken}`,
+        authorization: `Bearer ${uma.accessToken}`,
         origin: api.webOrigin,
         'idempotency-key': randomUUID(),
         'user-agent': 'U'.repeat(10_000),
@@ -644,9 +670,10 @@ describe('Biên HTTP', () => {
     AREA,
     async () => {
       const t = await hr();
+      const [ann, ben] = await Promise.all([newcomer(t, 'ann'), newcomer(t, 'ben')]);
       const key = randomUUID();
-      const a = await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken, key);
-      const b = await withKey(api, 'POST', HR.checkIn(t.ws), t.olivia.accessToken, key);
+      const a = await withKey(api, 'POST', HR.checkIn(t.ws), ann.accessToken, key);
+      const b = await withKey(api, 'POST', HR.checkIn(t.ws), ben.accessToken, key);
       expect([a.status, b.status]).toEqual([201, 201]);
       const firstIn = (r: typeof a) =>
         (r.json as { data: { firstIn: string | null } }).data.firstIn;

@@ -24,6 +24,11 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
     ticket: 'T-038',
     reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
+  'SEC-HR-02b': {
+    ticket: 'T-039',
+    reason:
+      'Vế leave-balances của SEC-HR-02 — route PATCH leave-balances thuộc T-039 (gate T-038: 404)',
+  },
   'SEC-HR-03': {
     ticket: 'T-038',
     reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
