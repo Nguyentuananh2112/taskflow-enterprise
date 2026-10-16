@@ -376,7 +376,7 @@ Workflow riêng `mutation.yml` (T-022): Stryker **hằng tuần** (thứ Hai 02:
   - `docker buildx build` cả 3 target, cache `type=gha`, **không push** trên PR
   - **smoke argon2 trong image** (§3.2)
   - `trivy image --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed` (T-011 ghim `aquasec/trivy:0.75.0` + digest — bỏ qua 0.76.0 vì mới phát hành < 24h; quét cả `vuln,secret`)
-- **e2e (Phase 4+):** dựng `docker-compose.prodlike.yml` từ image vừa build, seed, chạy Playwright 1.64.1 trong image `mcr.microsoft.com/playwright:v1.64.1-*`. PR chạy Chromium; nightly chạy Chromium + WebKit + Firefox. Upload trace/video khi lỗi.
+- **e2e** (`.github/workflows/e2e.yml`, gọi từ `ci.yml` + lịch hằng đêm 19:00 UTC): **hiện dùng harness T-026** — API `src/main.ts` + web build production (standalone) trên service Postgres/Valkey, DB `taskflow_e2e`, Valkey db 14. **PR: chỉ Chromium; push `main` + nightly: Chromium + Firefox + mobile** (Pixel 7, luồng `@main`) — project chỉ định tường minh, không dựa vào `CI=true`. Upload report/trace/video khi lỗi. **Mục tiêu sau khi chốt hosting (ADR-070):** chạy trên `docker-compose.prodlike.yml` từ image vừa build (Caddy TLS nội bộ — cookie `__Host-`), Playwright trong image `mcr.microsoft.com/playwright:v1.64.1-*`; WebKit chưa có trong config.
 - **`pnpm audit --prod --audit-level high` chạy trong job `static` và chặn merge** (Tech Lead, bổ sung T-011). Ngoại lệ chỉ qua `auditConfig.ignoreGhsas` trong `pnpm-workspace.yaml`, mỗi mục ghi lý do + ngày xét lại.
 - **Nightly:** E2E 3 trình duyệt, test 2 instance (§7.2).
 - **Dependabot:** cho npm, Docker digest, GitHub Actions. Lưu ý `minimumReleaseAge: 1440` của pnpm 11 (T-001) làm bản vừa publish chưa cài được ngay — đây là cố ý, để chống tấn công supply-chain.
@@ -596,7 +596,7 @@ Coverage không thay được việc kiểm tra test có assert ý nghĩa; PR re
 
 ### 8.5 Playwright & k6
 **Playwright** chạy ở 3 nơi:
-1. CI, trên stack `docker-compose.prodlike.yml` (đúng image prod, Caddy TLS nội bộ để test cookie `__Host-tf_rt` — ADR-109). ⚠ KIỂM CHỨNG Phase 4: tin cậy CA tự ký trong container Playwright.
+1. CI (`e2e.yml`): **hiện tại** harness T-026 (API `src/main.ts` + web standalone, không TLS) — PR chỉ Chromium, push `main` + nightly đủ Chromium + Firefox + mobile. **Mục tiêu sau khi chốt hosting:** stack `docker-compose.prodlike.yml` (đúng image prod, Caddy TLS nội bộ để test cookie `__Host-tf_rt` — ADR-109). ⚠ KIỂM CHỨNG khi chuyển: tin cậy CA tự ký trong container Playwright.
 2. Staging sau mỗi deploy (`@smoke`).
 3. Prod sau deploy: chỉ `@smoke-readonly` với tài khoản canary.
 
