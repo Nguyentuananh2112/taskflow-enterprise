@@ -40,9 +40,10 @@ export class InMemoryUserRepository implements IUserRepository {
 
   // Các lệnh intent (ADR-104): mỗi lệnh đọc-kiểm-ghi đồng bộ trên một dòng ⇒ nguyên tử như 1 câu UPDATE.
 
-  recordLogin(id: string, at: Date): Promise<number | null> {
+  recordLogin(input: { id: string; expectedHash: string; at: Date }): Promise<number | null> {
+    const { id, at } = input;
     const row = this.#live(id);
-    if (!row) return Promise.resolve(null);
+    if (!row || row.passwordHash !== input.expectedHash) return Promise.resolve(null);
     this.#rows.set(id, { ...row, lastLoginAt: at, updatedAt: at });
     return Promise.resolve(row.tokenVersion);
   }

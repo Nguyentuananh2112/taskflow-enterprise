@@ -86,16 +86,17 @@ export class RefreshSessionUseCase {
   async #revokeReusedFamily(token: RefreshToken, now: Date, meta: SessionMeta): Promise<void> {
     const { familyId, userId } = token;
     await this.d.uow.run(async () => {
-      await this.d.refreshTokens.revokeFamily(familyId, 'REUSE_DETECTED', now);
+      // 0 token còn sống ⇒ family đã chết vì lý do khác (LOGOUT / LOGOUT_ALL / PASSWORD_CHANGED / reuse trước đó):
+      // thường là client gửi lại cookie cũ sau khi mất response xoay — KHÔNG báo động reuse (G1 auth L1, nhiễu X9).
+      const revoked = await this.d.refreshTokens.revokeFamily(familyId, 'REUSE_DETECTED', now);
       // ADR-105: chặn access token của family bị lộ TRƯỚC commit; lỗi ⇒ 503 + rollback.
       await writeRevocationOrFail(() =>
         this.d.store.revokeSession(familyId, SESSION_REVOCATION_TTL_SECONDS),
       );
       this.d.uow.afterCommit(async () => {
-        this.d.logger.warn(
-          { userId, familyId, ip: meta.ip, userAgent: meta.userAgent },
-          'refresh.reuse_detected',
-        );
+        const event = { userId, familyId, ip: meta.ip, userAgent: meta.userAgent };
+        if (revoked > 0) this.d.logger.warn(event, 'refresh.reuse_detected');
+        else this.d.logger.info(event, 'refresh.replay_after_revocation');
         await bestEffort(this.d.logger, 'auth.session_cache_write_failed', { familyId }, () =>
           this.d.store.revokeSession(familyId, SESSION_REVOCATION_TTL_SECONDS),
         );

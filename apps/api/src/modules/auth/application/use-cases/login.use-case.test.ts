@@ -114,7 +114,7 @@ describe('LoginUseCase', () => {
     expect((await h.users.rows())[0]?.passwordHash).toBe('h2:rehashed');
   });
 
-  it('ADR-104: mật khẩu bị đổi trong lúc login verify ⇒ rehash KHÔNG hồi sinh hash cũ; tv mới nhất được ký', async () => {
+  it('ADR-104 + G1 auth M1: mật khẩu bị đổi trong lúc login băm lại ⇒ không hồi sinh hash cũ, login 401, không cấp phiên', async () => {
     const alice = await h.seedUser();
     h.hasher.rehashNeeded = true;
     h.hasher.hash = async () => {
@@ -127,16 +127,35 @@ describe('LoginUseCase', () => {
       });
       return 'h2:rehash-of-old-password';
     };
-    const { session } = await login.execute({
-      email: 'alice@example.com',
-      password: PASSWORD,
-      meta: META,
-    });
+    await expect(
+      login.execute({ email: 'alice@example.com', password: PASSWORD, meta: META }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
     expect((await h.users.rows())[0]).toMatchObject({
       passwordHash: 'h:new-pass-123',
       tokenVersion: 1,
+      lastLoginAt: null,
     });
-    expect(decodeJwt(session.accessToken).tv).toBe(1); // token cũ tv=0 không được cấp lại
+    expect(await h.refreshTokens.rows()).toEqual([]);
+  });
+
+  it('G1 auth M1: đổi mật khẩu commit trong cửa sổ verify (không rehash) ⇒ mật khẩu cũ KHÔNG nhận phiên', async () => {
+    const alice = await h.seedUser();
+    const verify = h.hasher.verify.bind(h.hasher);
+    h.hasher.verify = async (hashed, password) => {
+      const ok = await verify(hashed, password); // mật khẩu cũ đúng tại thời điểm đọc
+      await h.users.changePassword({
+        id: alice.id,
+        oldHash: `h:${PASSWORD}`,
+        newHash: 'h:new-pass-123',
+        at: h.clock.now(),
+      });
+      return ok;
+    };
+    await expect(
+      login.execute({ email: 'alice@example.com', password: PASSWORD, meta: META }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+    expect(await h.refreshTokens.rows()).toEqual([]);
+    expect((await h.users.rows())[0]?.lastLoginAt).toBeNull();
   });
 
   it('LOG-07: payload access token đúng claims, TTL 900, không role/workspace/email', async () => {

@@ -45,10 +45,13 @@ export class PrismaUserRepository implements IUserRepository {
 
   // ---- Lệnh intent (ADR-104): mỗi lệnh là MỘT câu UPDATE có điều kiện, không đọc-rồi-ghi. ----
 
-  async recordLogin(id: string, at: Date): Promise<number | null> {
+  // READ COMMITTED: UPDATE chờ khóa dòng của change-password rồi đánh giá lại WHERE trên bản đã commit
+  // ⇒ hash đã đổi thì 0 dòng (null). Login đi trước ⇒ change-password chờ ta commit, revokeAll thấy phiên mới.
+  async recordLogin(input: { id: string; expectedHash: string; at: Date }): Promise<number | null> {
+    const { id, expectedHash, at } = input;
     const rows = await this.db().$queryRaw<{ token_version: number }[]>`
       UPDATE users SET last_login_at = ${at}, updated_at = ${at}
-       WHERE id = ${id}::uuid AND deleted_at IS NULL
+       WHERE id = ${id}::uuid AND deleted_at IS NULL AND password_hash = ${expectedHash}
       RETURNING token_version`;
     return rows[0]?.token_version ?? null;
   }

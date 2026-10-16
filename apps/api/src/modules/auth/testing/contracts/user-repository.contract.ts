@@ -38,14 +38,25 @@ export function describeUserRepositoryContract(
       const u = newUser();
       await p.users.add(u);
       await p.users.bumpTokenVersion(u.id, T0);
-      expect(await p.users.recordLogin(u.id, T1)).toBe(1);
+      expect(await p.users.recordLogin({ id: u.id, expectedHash: 'h:old', at: T1 })).toBe(1);
       expect((await p.users.findById(u.id))?.toSnapshot()).toMatchObject({
         lastLoginAt: T1,
         passwordHash: 'h:old',
         tokenVersion: 1,
       });
       await p.markDeleted(u.id);
-      expect(await p.users.recordLogin(u.id, T1)).toBeNull();
+      expect(await p.users.recordLogin({ id: u.id, expectedHash: 'h:old', at: T1 })).toBeNull();
+    });
+
+    it('recordLogin có điều kiện password_hash (G1 auth M1): hash đã đổi ⇒ null, không ghi gì', async () => {
+      const u = newUser();
+      await p.users.add(u);
+      expect(
+        await p.users.changePassword({ id: u.id, oldHash: 'h:old', newHash: 'h:new', at: T0 }),
+      ).toBe(1);
+      expect(await p.users.recordLogin({ id: u.id, expectedHash: 'h:old', at: T1 })).toBeNull();
+      expect((await p.users.findById(u.id))?.toSnapshot().lastLoginAt).toBeNull();
+      expect(await p.users.recordLogin({ id: u.id, expectedHash: 'h:new', at: T1 })).toBe(1);
     });
 
     it('rehashPassword có điều kiện: oldHash khớp ⇒ true + đổi; không khớp ⇒ false, không đổi', async () => {

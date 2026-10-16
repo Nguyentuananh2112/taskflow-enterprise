@@ -86,6 +86,26 @@ describe('RefreshSessionUseCase (security.md 1.4)', () => {
     expect(JSON.stringify(h.logger.entries)).not.toContain(s1.refreshToken);
   });
 
+  it('REF-04b (G1 auth L1): dùng lại T1 sau > 10s khi family ĐÃ bị thu hồi vì lý do khác ⇒ 401, không báo động reuse', async () => {
+    const { alice, s1 } = await seeded();
+    await refresh.execute({ refreshToken: s1.refreshToken, meta: META });
+    await h.refreshTokens.revokeAllForUser(alice.id, 'LOGOUT_ALL', h.clock.now());
+    h.clock.advance(11_000);
+    await expect(
+      refresh.execute({ refreshToken: s1.refreshToken, meta: META }),
+    ).rejects.toBeInstanceOf(RefreshTokenInvalidError);
+    const t2 = (await h.refreshTokens.rows()).find((r) => r.replacedById === null);
+    expect(t2).toMatchObject({ revokedReason: 'LOGOUT_ALL' }); // lý do gốc giữ nguyên
+    expect(h.logger.entries.map((e) => e.msg)).not.toContain('refresh.reuse_detected');
+    expect(h.logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'info',
+        msg: 'refresh.replay_after_revocation',
+        data: expect.objectContaining({ userId: alice.id, familyId: s1.familyId }) as unknown,
+      }),
+    );
+  });
+
   it('REF-05: dùng lại T1 trong < 10s ⇒ 409, T2 vẫn hợp lệ, không cấp token mới', async () => {
     const { s1 } = await seeded();
     const { session: s2 } = await refresh.execute({ refreshToken: s1.refreshToken, meta: META });
