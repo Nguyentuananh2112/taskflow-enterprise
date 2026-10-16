@@ -60,22 +60,25 @@ export class SetMemberGrantsUseCase {
       }
       await this.d.memberships.save(target);
       const after = [...target.grants];
-      const added = after.length > before.length;
       await this.d.audit.record({
         workspaceId: actor.workspaceId,
         actorId: fresh.userId,
-        action: added ? 'GRANT' : 'REVOKE',
+        action: after.length > before.length ? 'GRANT' : 'REVOKE',
         targetUserId: target.userId,
         before: { grants: before },
         after: { grants: after },
       });
-      await this.d.hrNotifier.grantsChanged({
-        workspaceId: actor.workspaceId,
-        userId: target.userId,
-        actorId: fresh.userId,
-        added,
-        membershipId: target.id,
-      });
+      // Theo ĐÚNG grant HR_MANAGE (không so độ dài — review B (a)): chỉ báo khi nó được thêm / bị bỏ.
+      const hrAfter = after.includes('HR_MANAGE');
+      if (before.includes('HR_MANAGE') !== hrAfter) {
+        await this.d.hrNotifier.grantsChanged({
+          workspaceId: actor.workspaceId,
+          userId: target.userId,
+          actorId: fresh.userId,
+          added: hrAfter,
+          membershipId: target.id,
+        });
+      }
 
       const meta = { actorId: fresh.userId, originClientId: input.originClientId ?? null };
       this.d.uow.afterCommit(() => {

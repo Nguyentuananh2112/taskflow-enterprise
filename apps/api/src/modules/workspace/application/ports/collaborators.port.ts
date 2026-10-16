@@ -72,7 +72,8 @@ export interface IWorkspaceRealtimeNotifier {
 }
 
 /**
- * Thông báo bền HR_GRANTED / HR_REVOKED tới người được cấp / bị thu (ADR-123, GR-04, GR-09). Gọi TRONG
+ * Thông báo bền HR_GRANTED / HR_REVOKED khi grant `HR_MANAGE` của một người được thêm / bị bỏ (ADR-123,
+ * GR-04, GR-09) — chỉ gọi khi CHÍNH grant đó đổi (grant khác sau này không kích hoạt). Gọi TRONG
  * `uow.run` — module notifications ghi cùng transaction (rollback ⇒ không còn dòng) và tự phát
  * `notification:new` sau commit. Adapter ở composition root (ADR-093: Workspace không import notifications).
  */
@@ -82,7 +83,7 @@ export interface IHrGrantNotifier {
     /** Người được cấp / bị thu — người nhận thông báo. */
     userId: string;
     actorId: string;
-    /** `true` ⇒ HR_GRANTED, `false` ⇒ HR_REVOKED. */
+    /** `true` ⇒ HR_MANAGE vừa được thêm (HR_GRANTED), `false` ⇒ vừa bị bỏ (HR_REVOKED). */
     added: boolean;
     /** id dòng `workspace_members` — `refId` của thông báo. */
     membershipId: string;

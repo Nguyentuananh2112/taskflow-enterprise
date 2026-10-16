@@ -82,13 +82,15 @@ export class ChangeMemberRoleUseCase {
           before: { grants: grantsBefore, role: previousRole },
           after: { grants: grantsAfter, role },
         });
-        await this.d.hrNotifier.grantsChanged({
-          workspaceId: actor.workspaceId,
-          userId: target.userId,
-          actorId: actor.userId,
-          added: false,
-          membershipId: target.id,
-        });
+        if (grantsBefore.includes('HR_MANAGE')) {
+          await this.d.hrNotifier.grantsChanged({
+            workspaceId: actor.workspaceId,
+            userId: target.userId,
+            actorId: actor.userId,
+            added: false,
+            membershipId: target.id,
+          });
+        }
       }
 
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };
