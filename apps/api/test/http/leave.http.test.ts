@@ -189,6 +189,24 @@ describe('leave HTTP — thứ tự lỗi & bảo mật', () => {
     expect(revoke.status).toBe(400);
   });
 
+  it('audit duyệt / thu hồi: KHÔNG chứa reason của đơn; note quản trị (trim) nằm ở after.note (B, B-H2)', async () => {
+    const dto = envelopeOf<LeaveDto>(
+      await post(mia, '/leave-requests', { ...twoDays, reason: 'sốt cao' }),
+    ).data;
+    await post(hana, `/leave-requests/${dto?.id}/approve`, { expectedVersion: 1 });
+    await post(hana, `/leave-requests/${dto?.id}/revoke`, {
+      expectedVersion: 2,
+      note: '  thiếu người  ',
+    });
+    const audit = envelopeOf<{ action: string; after: Record<string, unknown> | null }[]>(
+      await get(olivia, '/hr-audit-logs'),
+    ).data;
+    expect(JSON.stringify(audit)).not.toContain('sốt cao');
+    const revoke = audit?.find((a) => a.action === 'LEAVE_REVOKE');
+    expect(revoke?.after).toMatchObject({ status: 'REVOKED', note: 'thiếu người' });
+    expect(audit?.find((a) => a.action === 'LEAVE_DECIDE')?.after).not.toHaveProperty('note');
+  });
+
   it('SEC-HR-25: PATCH số dư cho user của workspace khác ⇒ 404; năm ngoài ±1 ⇒ 400', async () => {
     const other = await patch(hana, `/leave-balances/${otto.id}/2026`, { adjustmentDays: 1 });
     expect(other.status).toBe(404);

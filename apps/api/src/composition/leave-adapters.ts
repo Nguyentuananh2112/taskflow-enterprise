@@ -55,11 +55,15 @@ export function leaveMembership(ws: () => HrPorts): ILeaveMembership {
  */
 export function leaveAudit(ws: () => HrPorts): IHrAudit {
   return {
-    record: ({ note, after, ...rest }) =>
-      ws().hrAudit.record({
+    record: ({ note, after, ...rest }) => {
+      // `note` CHỈ là lý do của người quản trị trong lệnh này (B) — không bao giờ là `reason` của đơn. Trim; rỗng ⇒
+      // không ghi khóa. Độ dài ≤ 500 đã chặn ở contracts (như decision_note).
+      const adminNote = note?.trim() ?? '';
+      return ws().hrAudit.record({
         ...rest,
-        after: note ? { ...(after ?? {}), note } : after,
-      }),
+        after: adminNote === '' ? after : { ...(after ?? {}), note: adminNote },
+      });
+    },
   };
 }
 
