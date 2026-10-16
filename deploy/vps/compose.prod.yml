@@ -29,6 +29,10 @@ services:
     image: ghcr.io/${GHCR_OWNER:?}/taskflow-api@${API_DIGEST:?}
     env_file: .env.api # khớp apps/api/src/config/env.ts; NODE_ENV=production ⇒ app tự kiểm cấu hình
     environment:
+      # Đặt cứng (environment THẮNG env_file): sửa nhầm .env.api thành NODE_ENV/APP_ENV=test sẽ tắt mọi hardening
+      # (env.ts chỉ ép khi APP_ENV ∈ staging|production) và bật observer kiểm thử của hasher (review F4).
+      NODE_ENV: production
+      APP_ENV: production
       GIT_SHA: ${GIT_SHA:?}
       # Valkey TLS tự ký (env.ts bắt buộc rediss:// ở production) — CA do bootstrap.sh sinh.
       NODE_EXTRA_CA_CERTS: /run/valkey-tls/ca.crt
