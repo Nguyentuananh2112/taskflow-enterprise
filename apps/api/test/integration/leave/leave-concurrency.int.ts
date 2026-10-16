@@ -3,7 +3,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createLeaveHarness, U, W1 } from '../../../src/modules/leave/testing/leave-harness';
-import { disconnectTestPrisma, resetDatabase } from '../support/prisma-test-kit';
+import { disconnectTestPrisma, resetDatabase, testPrisma } from '../support/prisma-test-kit';
 import { prismaLeaveBackend } from './prisma-leave-backend';
 
 const REPEAT = Number(process.env.LEAVE_CC_REPEAT ?? '20');
@@ -44,6 +44,12 @@ describe.each(rounds)('leave — đồng thời (lượt %i)', () => {
     expect(loser.ok ? null : loser.error.statusCode).toBe(409);
     const [row] = await h.rows();
     expect(row).toMatchObject({ status: a.ok ? 'APPROVED' : 'CANCELLED', version: 2 });
+    // Số dư khớp bên thắng: duyệt ⇒ dùng 1 ngày; hủy ⇒ trả hết.
+    expect(await h.queries.myBalance(h.as(U.Mia), 2026)).toMatchObject(
+      a.ok
+        ? { usedDays: 1, pendingDays: 0, remainingDays: 11 }
+        : { usedDays: 0, pendingDays: 0, remainingDays: 12 },
+    );
   });
 
   it('CC-HR-04: 2 đơn ANNUAL song song, tổng vượt số dư ⇒ 1 × thành công, 1 × 422 INSUFFICIENT_BALANCE', async () => {
@@ -84,39 +90,58 @@ describe.each(rounds)('leave — đồng thời (lượt %i)', () => {
     expect(await h.rows()).toHaveLength(2);
   });
 
-  it('CC-HR-07: submit ‖ HR giảm số dư ⇒ kết quả như một thứ tự tuần tự (cùng khóa)', async () => {
+  it('CC-HR-07: submit ‖ HR giảm số dư ⇒ tuần tự dưới cùng khóa, chứng minh bằng thứ tự audit; số dư cuối khớp thứ tự', async () => {
     const h = await harness();
-    // Còn 24; giảm 22 ⇒ còn 2 nửa ngày. Đơn 2 ngày (4 nửa ngày).
-    const [s] = await Promise.all([
+    // Còn 24 nửa ngày; giảm 22 ⇒ còn 2. Đơn 2 ngày = 4 nửa ngày.
+    const [s, p] = await Promise.all([
       settle(h.leave.submit(h.as(U.Mia), day('2026-11-23', '2026-11-24'))),
-      h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -22 }),
+      settle(h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -22 })),
     ]);
-    // PATCH trước ⇒ submit 422; submit trước ⇒ submit thành công rồi số dư âm do ADJUSTMENT (Q4) — cả hai tuần tự hóa được.
-    if (!s.ok) expect(s.error.details).toMatchObject({ rule: 'INSUFFICIENT_BALANCE' });
-    expect(await h.requests.getOrCreateBalance(W1, U.Mia, 2026)).toEqual({
-      entitled: 24,
-      adjustment: -22,
-    });
+    expect(p.ok).toBe(true); // PATCH luôn 200, kể cả khi remaining − pending < 0 (TL chốt (a))
+    const order = h.audit.entries.map((e) => e.action);
+    const balance = await h.queries.myBalance(h.as(U.Mia), 2026);
+    if (order[0] === 'BALANCE_ADJUST') {
+      expect(order).toEqual(['BALANCE_ADJUST']);
+      expect(s.ok ? null : s.error.details).toMatchObject({ rule: 'INSUFFICIENT_BALANCE' });
+      expect(await h.rows()).toHaveLength(0);
+      expect(balance).toMatchObject({ adjustmentDays: -11, pendingDays: 0, remainingDays: 1 });
+    } else {
+      expect(order).toEqual(['LEAVE_SUBMIT', 'BALANCE_ADJUST']);
+      expect(s.ok).toBe(true);
+      expect(await h.rows()).toHaveLength(1);
+      expect(balance).toMatchObject({ adjustmentDays: -11, pendingDays: 2, remainingDays: -1 });
+    }
     expect(h.locks.filter((l) => l.endsWith(U.Mia))).toHaveLength(2); // cả hai lệnh lấy CÙNG khóa
   });
 
-  it('CC-HR-08: approve ‖ HR giảm số dư ⇒ approve 422 hoặc giảm sau khi đã duyệt; không duyệt dựa trên số dư cũ', async () => {
+  it('CC-HR-08: approve ‖ HR giảm số dư ⇒ [LEAVE_DECIDE, BALANCE_ADJUST] ⇒ APPROVED; [BALANCE_ADJUST] trước ⇒ approve BẮT BUỘC 422', async () => {
     const h = await harness();
     await h.seed({ id: R1, startDate: '2026-11-23', endDate: '2026-11-24' }); // 4 nửa ngày đang chờ
-    const [a] = await Promise.all([
+    const [a, p] = await Promise.all([
       settle(h.leave.approve(h.as(U.Hana), R1, 1)),
-      h.leave.adjustBalance(h.as(U.Olivia), {
-        userId: U.Mia,
-        year: 2026,
-        adjustment: -22,
-        note: 'x',
-      }),
+      settle(
+        h.leave.adjustBalance(h.as(U.Olivia), {
+          userId: U.Mia,
+          year: 2026,
+          adjustment: -22,
+          note: 'x',
+        }),
+      ),
     ]);
+    expect(p.ok).toBe(true);
+    const order = h.audit.entries.map((e) => e.action);
     const [row] = await h.rows();
-    if (a.ok) expect(row?.status).toBe('APPROVED');
-    else {
-      expect(a.error.details).toMatchObject({ rule: 'INSUFFICIENT_BALANCE' });
+    const balance = await h.queries.myBalance(h.as(U.Mia), 2026);
+    if (order[0] === 'BALANCE_ADJUST') {
+      expect(order).toEqual(['BALANCE_ADJUST']);
+      expect(a.ok ? null : a.error.details).toMatchObject({ rule: 'INSUFFICIENT_BALANCE' });
       expect(row?.status).toBe('PENDING');
+      expect(balance).toMatchObject({ usedDays: 0, pendingDays: 2, remainingDays: -1 });
+    } else {
+      expect(order).toEqual(['LEAVE_DECIDE', 'BALANCE_ADJUST']);
+      expect(a.ok).toBe(true);
+      expect(row?.status).toBe('APPROVED');
+      expect(balance).toMatchObject({ usedDays: 2, pendingDays: 0, remainingDays: -1 }); // âm — Q4
     }
   });
 
@@ -153,5 +178,47 @@ describe.each(rounds)('leave — đồng thời (lượt %i)', () => {
     await expect(
       h.leave.submit(h.as(U.Mia), day('2026-11-30', '2026-12-01')),
     ).resolves.toMatchObject({ status: 'PENDING' });
+  });
+
+  it('CC-HR-11 (mức fake, bản thật khi có adapter T-037): thu grant ‖ approve ⇒ approve chỉ thành công nếu đọc lại quyền TRƯỚC khi thu', async () => {
+    const h = await harness();
+    await h.seed({ id: R1, startDate: '2026-11-23', endDate: '2026-11-23' });
+    const events: string[] = [];
+    const reload = h.membership.reloadActor.bind(h.membership);
+    h.membership.reloadActor = async (ws, user) => {
+      const actor = await reload(ws, user);
+      if (user === U.Hana)
+        events.push(actor?.permissions.has('hr:manage') ? 'reload:hr' : 'reload:-');
+      return actor;
+    };
+    const revoke = async () => {
+      await new Promise((r) => setImmediate(r));
+      h.membership.revokeGrant(W1, U.Hana, 'HR_MANAGE');
+      events.push('revoke');
+    };
+    const [a] = await Promise.all([settle(h.leave.approve(h.as(U.Hana), R1, 1)), revoke()]);
+    const [row] = await h.rows();
+    if (a.ok) {
+      // Mọi lần đọc quyền (trước khóa + SAU khóa — B-H3) đều trước khi thu.
+      expect(events).not.toContain('reload:-');
+      expect(events.lastIndexOf('reload:hr')).toBeLessThan(events.indexOf('revoke'));
+      expect(row?.status).toBe('APPROVED');
+    } else {
+      expect(a.error.statusCode).toBe(403);
+      expect(events.indexOf('revoke')).toBeLessThan(events.lastIndexOf('reload:-'));
+      expect(row?.status).toBe('PENDING');
+    }
+  });
+
+  it('CC-HR-12: tạo lười LeaveBalance song song (2 transaction lần đầu) ⇒ đúng 1 dòng, không lỗi trùng khóa', async () => {
+    const h = await harness();
+    const results = await Promise.all([
+      settle(h.uow.run(() => h.requests.getOrCreateBalance(W1, U.Mia, 2026))),
+      settle(h.uow.run(() => h.requests.getOrCreateBalance(W1, U.Mia, 2026))),
+    ]);
+    expect(results.every((r) => r.ok)).toBe(true);
+    expect(
+      await testPrisma().leaveBalance.count({ where: { workspaceId: W1, userId: U.Mia } }),
+    ).toBe(1);
   });
 });

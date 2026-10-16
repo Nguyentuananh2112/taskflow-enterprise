@@ -96,7 +96,7 @@ describe('LeaveCommands.submit (test-spec §2, §3)', () => {
     await g.seed({ id: 'full', startDate: '2026-11-23', endDate: '2026-11-23' });
     await expect(
       g.leave.submit(g.as(U.Mia), { ...mia2days, endDate: '2026-11-23', dayPart: 'AM' }),
-    ).rejects.toMatchObject({ details: { reason: 'overlapping_leave' } });
+    ).rejects.toMatchObject({ statusCode: 409, details: { reason: 'overlapping_leave' } });
   });
 
   it('LV-05: đơn chết (REJECTED/CANCELLED/REVOKED) không chặn; đơn của NGƯỜI KHÁC cũng không', async () => {
@@ -181,6 +181,20 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
       statusCode: 403,
     });
     expect((await h.rows())[0]).toMatchObject({ status: 'PENDING', version: 1 });
+    await expect(h.leave.reject(h.as(U.Hana), 'own', 1, 'không')).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    await h.seed({
+      id: 'own2',
+      userId: U.Hana,
+      status: 'APPROVED',
+      startDate: '2026-11-30',
+      endDate: '2026-11-30',
+    });
+    await expect(h.leave.revoke(h.as(U.Hana), 'own2', 1, 'tự thu')).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(h.audit.entries).toEqual([]);
   });
 
   it('LV-10: Olivia (OWNER) tự duyệt ⇒ thiếu lý do 422 REASON_REQUIRED (quy ước B), có lý do ⇒ 200 + audit note (R26)', async () => {
@@ -223,6 +237,7 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     }); // 11 ngày
     await h.seed({ id: 'r1', startDate: '2026-11-23', endDate: '2026-11-24' }); // 2 ngày, chỉ còn 1
     await expect(h.leave.approve(h.as(U.Hana), 'r1', 1)).rejects.toMatchObject({
+      statusCode: 422,
       details: { rule: 'INSUFFICIENT_BALANCE' },
     });
   });
@@ -257,7 +272,13 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
   it('LV-14: từ chối có ghi chú ⇒ REJECTED, thông báo LEAVE_REJECTED, số dư trả lại', async () => {
     const h = await createLeaveHarness();
     await h.seed({ id: 'r1', startDate: '2026-11-02', endDate: '2026-11-13' }); // 11 ngày đang chờ
-    await h.leave.reject(h.as(U.Hana), 'r1', 1, 'trùng đợt cao điểm');
+    await expect(
+      h.leave.reject(h.as(U.Hana), 'r1', 1, 'trùng đợt cao điểm'),
+    ).resolves.toMatchObject({
+      status: 'REJECTED',
+      decisionNote: 'trùng đợt cao điểm',
+      decidedBy: { id: U.Hana, fullName: 'Hana' },
+    });
     expect(h.notifier.sent.at(-1)).toMatchObject({
       type: 'LEAVE_REJECTED',
       recipient: { kind: 'user', userId: U.Mia },
@@ -285,6 +306,26 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     };
     await expect(h.leave.approve(h.as(U.Hana), 'r1', 1)).rejects.toMatchObject({ statusCode: 403 });
     expect((await h.rows())[0]).toMatchObject({ status: 'PENDING' });
+  });
+
+  it('LV-25 (revoke + PATCH balance): mất grant khi đang chờ khóa ⇒ 403, không ghi gì', async () => {
+    const h = await createLeaveHarness();
+    await h.seed({ id: 'r1', status: 'APPROVED', startDate: '2026-11-30', endDate: '2026-11-30' });
+    const lock = h.requests.lockUser.bind(h.requests);
+    h.requests.lockUser = async (ws, user) => {
+      h.membership.revokeGrant(W1, U.Hana, 'HR_MANAGE');
+      return lock(ws, user);
+    };
+    await expect(h.leave.revoke(h.as(U.Hana), 'r1', 1, 'thiếu người')).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    h.membership.set(W1, U.Hana, 'MEMBER', ['HR_MANAGE']);
+    await expect(
+      h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -2 }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect((await h.rows())[0]).toMatchObject({ status: 'APPROVED', version: 1 });
+    expect(await h.queries.myBalance(h.as(U.Mia), 2026)).toMatchObject({ adjustmentDays: 0 });
+    expect(h.audit.entries).toEqual([]);
   });
 
   it('thứ tự §0.3: thành viên thường gọi duyệt id KHÔNG tồn tại ⇒ 403 (không lộ id); HR gọi ⇒ 404 leave_request', async () => {
@@ -339,9 +380,14 @@ describe('LeaveCommands — hủy / thu hồi (test-spec §3)', () => {
       startDate: '2026-11-18',
       endDate: '2026-11-18',
     });
+    expect(await h.queries.myBalance(h.as(U.Mia), 2026)).toMatchObject({ usedDays: 1 });
     await expect(h.leave.cancel(h.as(U.Mia), 'future', 1)).resolves.toMatchObject({
       status: 'CANCELLED',
     });
+    expect(await h.queries.myBalance(h.as(U.Mia), 2026)).toMatchObject({
+      usedDays: 0,
+      remainingDays: 12,
+    }); // số dư được trả lại
     await h.seed({
       id: 'today',
       status: 'APPROVED',
