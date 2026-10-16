@@ -24,6 +24,15 @@ export function localSocketCount(nsp: AppNamespace, room: string): number {
   return nsp.adapter.rooms.get(room)?.size ?? 0;
 }
 
+/** Số socket theo user trên instance này — phòng `user:<id>` của adapter LOCAL (ADR-115 heartbeat). */
+export function userSocketCounts(nsp: AppNamespace): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [room, members] of nsp.adapter.rooms) {
+    if (room.startsWith('user:')) counts.set(room.slice('user:'.length), members.size);
+  }
+  return counts;
+}
+
 /**
  * Review B M1: logout / logout-all / đổi mật khẩu / refresh-reuse commit TRONG LÚC handshake đang ở
  * `authenticate()` thì `disconnectSession`/`disconnectUser` không thấy socket (chưa ở phòng user/

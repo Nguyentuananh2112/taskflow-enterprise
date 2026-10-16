@@ -22,12 +22,12 @@ import type {
   WorkspaceRole,
 } from './ports';
 import {
-  AUTH_RENEW_LIMIT,
-  MAX_SOCKETS_PER_USER,
-  PROJECT_JOIN_LIMIT_PER_USER,
-} from '../http/rate-limit/rules';
-import { SlidingWindow } from '../http/rate-limit/sliding-window';
-import { joinPersonalRooms, leaveWorkspaceRoomsLocal, localSocketCount } from './local-rooms';
+  joinPersonalRooms,
+  leaveWorkspaceRoomsLocal,
+  localSocketCount,
+  userSocketCounts,
+} from './local-rooms';
+import { LocalRealtimeQuota, type IRealtimeQuota } from './quota';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
 export interface RealtimeGatewayOptions {
@@ -42,6 +42,8 @@ export interface RealtimeGatewayOptions {
   ids: IIdGenerator;
   /** `@socket.io/redis-adapter` khi `SOCKET_REDIS_ADAPTER=true` (ADR-027). */
   adapter?: ServerOptions['adapter'];
+  /** Hạn mức theo user (ADR-115). Mặc định: chỉ đếm trong instance (`LocalRealtimeQuota`). */
+  quota?: IRealtimeQuota;
 }
 
 /** IP client sau `TRUST_PROXY_HOPS` proxy tin cậy (cùng quy tắc `trust proxy` của Express). */
@@ -64,13 +66,13 @@ export function clientIp(req: IncomingMessage, trustProxyHops: number): string {
 export class RealtimeGateway {
   readonly io: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
-  readonly #renewsByUser = new SlidingWindow(AUTH_RENEW_LIMIT.user);
-  readonly #joinsByUser = new SlidingWindow(PROJECT_JOIN_LIMIT_PER_USER);
+  readonly quota: IRealtimeQuota;
 
   constructor(
     httpServer: HttpServer,
     private readonly o: RealtimeGatewayOptions,
   ) {
+    this.quota = o.quota ?? new LocalRealtimeQuota(o.clock);
     const allowed = new Set(o.corsOrigins);
     this.io = new Server(httpServer, {
       transports: ['websocket'],
@@ -95,6 +97,7 @@ export class RealtimeGateway {
     this.io.on('workspace:leave-rooms', (input) =>
       leaveWorkspaceRoomsLocal(this.io.of('/'), input),
     );
+    this.quota.start(() => userSocketCounts(this.io.of('/')));
   }
 
   async #authenticate(socket: AppSocket, next: (err?: Error) => void): Promise<void> {
@@ -103,12 +106,16 @@ export class RealtimeGateway {
       if (typeof auth.token !== 'string' || !auth.token) throw new Error('missing token');
       const principal = await this.o.authenticator.authenticate(auth.token);
       // Review B M2: chặn một user mở hàng loạt socket (mỗi socket có hạn mức join/renew riêng) làm
-      // cạn pool DB dùng chung. Đếm LOCAL theo phòng user — handshake song song có thể lọt vài socket.
-      if (localSocketCount(this.io.of('/'), rooms.user(principal.userId)) >= MAX_SOCKETS_PER_USER) {
+      // cạn pool DB dùng chung. Local đếm theo phòng user — handshake song song có thể lọt vài socket;
+      // > 1 instance thì đếm thêm dùng chung qua Valkey (ADR-115).
+      const local = localSocketCount(this.io.of('/'), rooms.user(principal.userId));
+      if (!(await this.quota.acquireSocket(principal.userId, local))) {
         this.o.logger.warn({ userId: principal.userId }, 'realtime.socket_cap_reached');
         return next(Object.assign(new Error('RATE_LIMITED'), { data: { code: 'RATE_LIMITED' } }));
       }
       socket.data = { ...principal, clientId: ClientId.parse(auth.clientId), joined: new Map() };
+      // Suất được trả khi socket ngắt (`#onConnection`); socket bỏ đi trước khi `connection` chạy thì
+      // heartbeat của bản dùng chung tự sửa số đếm.
       next();
     } catch (err) {
       const code = err instanceof AppError ? err.code : 'UNAUTHORIZED';
@@ -125,10 +132,11 @@ export class RealtimeGateway {
   #onConnection(socket: AppSocket): void {
     // Đăng ký handler ĐỒNG BỘ (event client gửi ngay sau connect không bị rơi); `project:join` chờ
     // `verified` nên không vào được phòng nào trước khi phiên được xác thực lại.
+    const { userId } = socket.data;
+    socket.on('disconnect', () => void this.quota.releaseSocket(userId));
     registerSocketHandlers(socket, {
       ...this.o,
-      renewsByUser: this.#renewsByUser,
-      joinsByUser: this.#joinsByUser,
+      quota: this.quota,
       verified: joinPersonalRooms(socket, this.o),
     });
   }
@@ -194,10 +202,10 @@ export class RealtimeGateway {
   }
 
   /** Graceful shutdown: chỉ ngắt socket của instance này (client nối sang instance khác). */
-  close(): Promise<void> {
+  async close(): Promise<void> {
     this.io.local.disconnectSockets(true);
     this.io.engine.close();
-    return Promise.resolve();
+    await this.quota.close();
   }
 
   #disconnect(room: string): void {

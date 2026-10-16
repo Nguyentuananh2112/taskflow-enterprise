@@ -84,6 +84,15 @@ export class AppMetrics {
     if (ok) this.#jobLastSuccess.set({ job }, Math.floor(at.getTime() / 1000));
   }
 
+  /**
+   * Counter một nhãn (vd `realtime_quota_fallback_total{kind}` — ADR-115). Chỉ dùng nhãn có tập giá
+   * trị CỐ ĐỊNH, nhỏ (không id, không URL) để cardinality không tăng theo dữ liệu.
+   */
+  counter<L extends string>(name: string, help: string, label: L): (value: string) => void {
+    const c = new Counter({ name, help, labelNames: [label], registers: [this.registry] });
+    return (value) => c.inc({ [label]: value } as Partial<Record<L, string>>);
+  }
+
   /** Gauge đọc lúc scrape (pool DB, số socket…) — `read` không được ném. */
   gauge(name: string, help: string, read: () => number): void {
     new Gauge({
