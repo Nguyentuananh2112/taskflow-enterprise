@@ -95,6 +95,6 @@ Còn mở từ G1 (Low): token DO có scope + hạn; smoke HSTS cho web; trusted
 
 Lượt chạy trước đó 18/20: 2 kiểm `refresh` trả 415 do **script smoke** gửi POST không `Content-Type` — API đúng thiết kế (web client thật luôn gửi `Content-Type: application/json` + `{}`, T-029 H2); đã sửa script, chạy lại 20/20.
 
-**Info:** image migrate in cảnh báo Prisma `failed to detect the libssl/openssl version … Defaulting to "openssl-1.1.x"` — migrate vẫn chạy đúng (Prisma 7 dùng query compiler JS, không cần engine native cho `migrate deploy` ở bản này), nhưng nếu Prisma đổi engine thì có thể vỡ. Đề xuất (chủ Dockerfile quyết): cài `openssl` trong stage `migrate` hoặc kiểm lại khi nâng Prisma.
+**Info:** image migrate in cảnh báo Prisma `failed to detect the libssl/openssl version … Defaulting to "openssl-1.1.x"` — migrate vẫn chạy đúng ở cả 2 lượt (đã quan sát; chưa kiểm vì sao Prisma không cần openssl ở bước này), nhưng có thể vỡ khi nâng Prisma. Đề xuất (chủ Dockerfile quyết): cài `openssl` trong stage `migrate` hoặc kiểm lại khi nâng Prisma.
 - Domain chưa có (ADR-071) ⇒ `example.com` trong spec/runbook.
 - Trước Phase 5: PoC App Platform (WebSocket qua ingress, PRE_DEPLOY, grace period) theo devops.md §1.3 — cần tài khoản thật ⇒ người dùng quyết.
