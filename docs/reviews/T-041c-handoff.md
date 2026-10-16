@@ -32,6 +32,10 @@
 | `e0c1955` | Link "Nhân sự" trên header (E2E-HR-03) |
 | `5d1d4b6` | Test XSS mức tích hợp (E2E-HR-08) |
 | `bd77821` | Đổi tên DTO tạm cho trùng tên contracts của A |
+| `8165eb0` | handoff (bản đầu) |
+| `946506b` | Realtime phía HR: đơn mới/hủy ⇒ hàng đợi `/hr` cập nhật; mất `HR_MANAGE` ⇒ xóa cache HR ở mọi trang |
+| `8f55111` | Realtime phía nhân viên (E nhờ): `LEAVE_APPROVED/REJECTED/REVOKED/CANCELLED`, `ATTENDANCE_ADJUSTED` ⇒ làm mới `/leave` + chấm công |
+| `c2ec0c9` | `DELETE holidays/:date` không gửi body trừ khi cần `{ reason }` (A) |
 | *(cuối)* | handoff này — hash cuối gửi TL qua tin nhắn |
 
 ## 3. Bản đồ file
@@ -42,11 +46,11 @@
 - **Features:** `member-grants` (công tắc), `hr-leave-decide`, `hr-attendance-adjust` (dialog lượt thô + hủy + thêm), `hr-export-csv`, `hr-balance-adjust`, `hr-schedule-edit`, `hr-holiday-edit`.
 - **Shared:** `shared/api/http.ts` (+`put`, `download`, `accept`), `shared/lib/save-blob.ts`.
 - **Mock:** `mock-hr.ts`, `hr-attendance-handlers.ts`, `hr-calendar-handlers.ts`, `hr-leave-handlers.ts` (đăng ký TRƯỚC `leave-handlers` của E: `GET leave-requests?mine=1` trả `undefined` ⇒ MSW chuyển sang handler của E); thêm `grants` vào `mock-workspaces`, `PUT members/:userId/grants`, `forbiddenUnlessGranted`; thêm `adjust/locate/usersWithPunches/serverNow` vào `MockAttendance`, `adjustments` vào `MockLeave`.
-- **Test:** `test/hr-page.test.tsx` (10), `test/hr-grants.test.tsx` (3), `src/app/mock-api/hr-api.test.ts` (8), `src/entities/hr/lib/timesheet-cache.test.ts` (3), `src/features/hr-leave-decide/model/decide-errors.test.ts` (8), thêm ca vào `src/shared/api/http.test.ts`; route `/hr` trong `test/app-harness.tsx`.
+- **Test:** `test/hr-page.test.tsx` (11), `test/hr-grants.test.tsx` (3), `src/app/mock-api/hr-api.test.ts` (8), `src/entities/hr/lib/timesheet-cache.test.ts` (3), `src/features/hr-leave-decide/model/decide-errors.test.ts` (8), thêm ca vào `src/shared/api/http.test.ts`; route `/hr` trong `test/app-harness.tsx`.
 
 ## 4. Thay `m3-provisional` khi T-038 (A) vào main — VIỆC ĐẦU TIÊN
 
-Nghỉ phép phía HR đã dùng contracts THẬT (`@taskflow/contracts/leave`, D). Chỉ còn DTO chấm công phía HR ở `src/shared/api/m3-provisional/hr.ts`; tên đã TRÙNG với contracts của A (`feat/T-038-attendance`, `packages/contracts/src/attendance/attendance.schemas.ts`):
+Nghỉ phép phía HR đã dùng contracts THẬT (`@taskflow/contracts/leave`, D). Chỉ còn DTO chấm công phía HR ở `src/shared/api/m3-provisional/hr.ts`; tên đã TRÙNG với contracts của A (`feat/T-038-attendance` @ `cdd3096` — A báo "không khác bản chốt", có routes thật; `packages/contracts/src/attendance/attendance.schemas.ts`). H KHÔNG cherry-pick vào nhánh c (sẽ đụng mock/nhãn của E ở a/b — để lượt rebase của E):
 
 | Tạm (`@/shared/api/m3-provisional`) | Thật (`@taskflow/contracts/attendance`) |
 |---|---|
@@ -57,14 +61,16 @@ Nghỉ phép phía HR đã dùng contracts THẬT (`@taskflow/contracts/leave`, 
 
 File import tạm (10): `app/mock-api/{hr-attendance-handlers,hr-calendar-handlers,mock-hr}.ts`, `entities/hr/api/hr.api.ts`, `entities/hr/lib/timesheet-cache{,.test}.ts`, `features/hr-holiday-edit/ui/delete-holiday-button.tsx`, `features/hr-schedule-edit/ui/schedule-form.tsx`, `widgets/hr-timesheet/ui/person-month.tsx`, `widgets/hr-today/ui/hr-today.tsx`.
 
-Các bước: đổi import + `HrDayDto` → `AttendanceDayDto`; xóa thư mục `m3-provisional`; khi `AttendanceDayDto` có `timezone`, `MockAttendance.summarize` (file của E) phải trả thêm `timezone: MOCK_TZ` (hiện `MockHr.day` tự thêm); query `GET attendance?month` có thể dùng `AttendanceCompanyMonthQuery` trong mock; `hr-calendar-handlers.ts` có thể dùng `HolidayListQuery`/`HolidayDateParams`. Sau đó chạy `tsc` — `Record<DayStatus,…>` sẽ báo nếu thiếu nhãn `NOT_EMPLOYED` (E thêm ở `entities/attendance/lib/labels.ts`; `/hr` chỉ import `DAY_STATUS`, không có nhãn riêng).
+Các bước: đổi import + `HrDayDto` → `AttendanceDayDto`; xóa thư mục `m3-provisional`; khi `AttendanceDayDto` có `timezone`, `MockAttendance.summarize` (file của E) phải trả thêm `timezone: MOCK_TZ` (hiện `MockHr.day` tự thêm); query `GET attendance?month` có thể dùng `AttendanceCompanyMonthQuery` trong mock; `hr-calendar-handlers.ts` có thể dùng `HolidayListQuery`/`HolidayDateParams`. Sau đó chạy `tsc` — `Record<DayStatus,…>` sẽ báo nếu thiếu nhãn `NOT_EMPLOYED` (E thêm ở `entities/attendance/lib/labels.ts`; `/hr` chỉ import `DAY_STATUS`, không có nhãn riêng; ô tổng ở tab Hôm nay không đếm `NOT_EMPLOYED`, `totalsOf` cũng không — khớp A "NOT_EMPLOYED tính 0").
+
+Ghi chú API thật của A: mọi POST/PUT/PATCH phải có `Content-Type: application/json` + `{}` (http client đã làm), `GET attendance?month` tối đa `limit=50` (web gửi 50), `DELETE holidays/:date` không body trừ ngày đã qua (đã sửa `c2ec0c9`).
 
 ## 5. Lệnh đã chạy (exit 0) và chưa chạy
 
 Trong worktree H, `pnpm` qua shim corepack, `--maxWorkers=2`:
 - `pnpm exec tsc --noEmit -p apps/web` — sạch.
 - `eslint` + `prettier --check` trên mọi file đổi — sạch; mọi commit qua hook lefthook (gitleaks + prettier + eslint) ✔.
-- `vitest run` từng file: hr-page 10/10, hr-grants 3/3, hr-api 8/8, timesheet-cache 3/3, decide-errors 8/8, http 33/33; liên quan: admin-screens, admin-g1, mock-api, admin-api, leave-page, attendance-page, attendance-card, notification-bell, structure — xanh.
+- `vitest run` từng file: hr-page 11/11, hr-grants 3/3, hr-api 8/8, timesheet-cache 3/3, decide-errors 8/8, http 33/33; liên quan: admin-screens, admin-g1, mock-api, admin-api, leave-page, attendance-page, attendance-card, notification-bell, structure — xanh.
 - **CHƯA:** toàn bộ vitest apps/web, `pnpm verify`, E2E (F), xem tay responsive/tối — chờ lượt TL.
 
 ## 6. Quyết định H tự đưa ra (TL/E xem lại được)
