@@ -77,6 +77,10 @@ services:
       CORS_ORIGINS: http://localhost:3001
       COOKIE_SECURE: 'false'
       TRUST_PROXY_HOPS: '1'
+      # T-027c (A3 mục f): CPU_PROF=1 (run.sh) ⇒ `--cpu-prof`; file .cpuprofile ghi khi tiến trình thoát êm.
+      NODE_OPTIONS: ${API_NODE_OPTIONS:-}
+    volumes:
+      - ${PROF_DIR:-./results/prof}/api:/prof
     healthcheck:
       test:
         - CMD

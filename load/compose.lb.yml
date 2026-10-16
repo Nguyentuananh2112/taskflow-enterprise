@@ -1,0 +1,39 @@
+# Lớp phủ cho compose.load.yml (T-027c, A3 §6 mục 6): N bản API sau LB Caddy, cùng Postgres/Valkey tmpfs.
+#   docker compose -p taskflow-load -f load/compose.load.yml -f load/compose.lb.yml …   (run.sh gọi khi đặt INSTANCES)
+# Không map cổng ra host, không volume (Caddy /data, /config trên tmpfs) — `down` thường đã dọn sạch.
+services:
+  api:
+    environment: &multi
+      # ≥ 2 bản ⇒ phát realtime qua Valkey (ADR-074, websocket-only ⇒ không cần sticky). Bật cả khi 1 bản để
+      # hai lượt so sánh khác nhau đúng MỘT biến: số bản API.
+      SOCKET_REDIS_ADAPTER: 'true'
+      # k6 (XFF giả theo user) → Caddy (nối IP k6) → API: 2 hop tin cậy. Xem lb/Caddyfile.
+      TRUST_PROXY_HOPS: '2'
+
+  api2:
+    extends: { file: compose.load.yml, service: api }
+    environment: *multi
+    volumes:
+      # cùng đích /prof ⇒ thay mount của api (cpu-prof: hai bản đều là PID 1 — thư mục riêng tránh trùng tên file)
+      - ${PROF_DIR:-./results/prof}/api2:/prof
+    # `extends` không chép depends_on.
+    depends_on:
+      pg: { condition: service_healthy }
+      valkey: { condition: service_started }
+
+  lb:
+    image: caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
+    environment:
+      UPSTREAMS: ${UPSTREAMS:-api:4000 api2:4000}
+    volumes:
+      - ./lb/Caddyfile:/etc/caddy/Caddyfile:ro
+    tmpfs:
+      - /data
+      - /config
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [load]
+
+  k6:
+    environment:
+      BASE_URL: http://lb:4000
