@@ -72,8 +72,6 @@ các dòng khác `version = expected + 1`), một `appendMany` chỉ cho task đ
 
 ## 4. Kết quả lệnh (worktree `D:\TaskFlow_wt\T-024`, exit code)
 
-| Lệnh | Exit | Kết quả |
-|---|---|---|
 Trên cây cuối cùng (base main `0339da1`, gồm sửa F2), sau `pnpm install --frozen-lockfile` (exit 0):
 
 | Lệnh | Exit | Kết quả |
