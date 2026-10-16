@@ -9,6 +9,14 @@ cd "$(dirname "$0")"
 COMPOSE=(docker compose -f compose.prod.yml)
 log() { echo "[deploy $(date -u +%FT%TZ)] $*"; }
 
+# APP_ENV (admin đặt trong .env, bootstrap.sh ghi) quyết nhãn môi trường của api + web. Web không có kiểm như
+# env.ts của api; compose chỉ báo THIẾU, không kiểm giá trị ⇒ kiểm ở đây TRƯỚC mọi rollout/rollback.
+app_env=$(sed -n 's/^APP_ENV=//p' .env | tail -1)
+case "$app_env" in
+  staging | production) ;;
+  *) echo "APP_ENV trong .env phải là staging|production (nhận: '$app_env')" >&2; exit 2 ;;
+esac
+
 set_digests() { # sha api web migrate
   sed -i -e "s|^GIT_SHA=.*|GIT_SHA=$1|" -e "s|^API_DIGEST=.*|API_DIGEST=$2|" \
     -e "s|^WEB_DIGEST=.*|WEB_DIGEST=$3|" -e "s|^MIGRATE_DIGEST=.*|MIGRATE_DIGEST=$4|" .env

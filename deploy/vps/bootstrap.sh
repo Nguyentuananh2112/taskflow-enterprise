@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Chạy MỘT LẦN trên VPS mới, trong /opt/taskflow (đã copy deploy/vps/* + docker/postgres/init/01-roles.sh vào
 # postgres-init/). Sinh .env + .env.api với secret ngẫu nhiên và CA/cert TLS cho Valkey. Không đè file đã có.
-#   APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=… GHCR_OWNER=… bash bootstrap.sh
+#   APP_ENV=production|staging APP_DOMAIN=app.<domain> API_DOMAIN=api.<domain> ACME_EMAIL=… GHCR_OWNER=… bash bootstrap.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-: "${APP_DOMAIN:?}" "${API_DOMAIN:?}" "${ACME_EMAIL:?}" "${GHCR_OWNER:?}"
+: "${APP_ENV:?}" "${APP_DOMAIN:?}" "${API_DOMAIN:?}" "${ACME_EMAIL:?}" "${GHCR_OWNER:?}"
+case "$APP_ENV" in staging | production) ;; *) echo "APP_ENV phải là staging|production (nhận: $APP_ENV)" >&2; exit 2 ;; esac
 command -v openssl >/dev/null || { echo 'Cần openssl' >&2; exit 1; }
 [ -f postgres-init/01-roles.sh ] || { echo 'Thiếu postgres-init/01-roles.sh (copy từ docker/postgres/init/)' >&2; exit 1; }
 
@@ -12,7 +13,7 @@ rand() { openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-"${1:-40}"; }
 umask 077
 
 if [ ! -f .env ]; then
-  sed -e "s|^APP_DOMAIN=.*|APP_DOMAIN=$APP_DOMAIN|" -e "s|^API_DOMAIN=.*|API_DOMAIN=$API_DOMAIN|" \
+  sed -e "s|^APP_ENV=.*|APP_ENV=$APP_ENV|" -e "s|^APP_DOMAIN=.*|APP_DOMAIN=$APP_DOMAIN|" -e "s|^API_DOMAIN=.*|API_DOMAIN=$API_DOMAIN|" \
     -e "s|^ACME_EMAIL=.*|ACME_EMAIL=$ACME_EMAIL|" -e "s|^GHCR_OWNER=.*|GHCR_OWNER=$GHCR_OWNER|" \
     -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(rand)|" \
     -e "s|^TASKFLOW_MIGRATOR_PASSWORD=.*|TASKFLOW_MIGRATOR_PASSWORD=$(rand)|" \

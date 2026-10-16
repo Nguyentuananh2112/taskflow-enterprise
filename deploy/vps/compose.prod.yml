@@ -29,10 +29,12 @@ services:
     image: ghcr.io/${GHCR_OWNER:?}/taskflow-api@${API_DIGEST:?}
     env_file: .env.api # khớp apps/api/src/config/env.ts; NODE_ENV=production ⇒ app tự kiểm cấu hình
     environment:
-      # Đặt cứng (environment THẮNG env_file): sửa nhầm .env.api thành NODE_ENV/APP_ENV=test sẽ tắt mọi hardening
-      # (env.ts chỉ ép khi APP_ENV ∈ staging|production) và bật observer kiểm thử của hasher (review F4).
+      # NODE_ENV đặt cứng (environment THẮNG env_file): env.ts từ chối NODE_ENV=production đi với APP_ENV ngoài
+      # staging|production ⇒ .env.api ghi nhầm test không thể tắt hardening / gắn observer kiểm thử (review F4).
+      # APP_ENV lấy từ .env gốc (admin sở hữu, bootstrap.sh ghi, deploy.sh kiểm, KHÔNG ghi) ⇒ một VPS staging dùng
+      # chung file này vẫn mang đúng nhãn staging (Sentry environment, log) — B, review c63dcd1.
       NODE_ENV: production
-      APP_ENV: production
+      APP_ENV: ${APP_ENV:?staging|production trong .env}
       GIT_SHA: ${GIT_SHA:?}
       # Valkey TLS tự ký (env.ts bắt buộc rediss:// ở production) — CA do bootstrap.sh sinh.
       NODE_EXTRA_CA_CERTS: /run/valkey-tls/ca.crt
@@ -46,7 +48,7 @@ services:
     <<: *restart
     image: ghcr.io/${GHCR_OWNER:?}/taskflow-web@${WEB_DIGEST:?}
     environment:
-      APP_ENV: production
+      APP_ENV: ${APP_ENV:?staging|production trong .env} # như api — deploy.sh kiểm giá trị
       API_URL: https://${API_DOMAIN}/api/v1
       WS_URL: https://${API_DOMAIN}
       TRUST_PROXY_HOPS: 1 # sau đúng 1 proxy (Caddy) — hạn mức tunnel Sentry /monitoring
