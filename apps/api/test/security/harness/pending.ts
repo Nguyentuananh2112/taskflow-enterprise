@@ -37,8 +37,6 @@ export const TODO_BUDGET: Readonly<Record<string, string>> = {
   'SEC-26': 'auth.sec.ts',
   'SEC-27': 'auth.sec.ts',
   'SEC-32': 'auth.sec.ts',
-  // outOfScope('E2E Playwright') nhưng CHƯA có E2E nào kiểm XSS title/description ⇒ nợ thật (F).
-  'SEC-49': 'auth.sec.ts',
   'GATE-T016-401': 'rate-limit.sec.ts',
   'SEC-28': 'rate-limit.sec.ts',
   'SEC-28b': 'rate-limit.sec.ts',
@@ -79,6 +77,11 @@ export interface OutOfScopeCase {
  * ở đây không còn là ca `outOfScope` trong file đã chạy.
  */
 export const OUT_OF_SCOPE: Readonly<Record<string, OutOfScopeCase>> = {
+  'SEC-49': {
+    file: 'auth.sec.ts',
+    coveredBy: 'E2E Playwright',
+    ref: 'e2e/specs/xss.e2e.ts',
+  },
   'SEC-48': {
     file: 'auth.sec.ts',
     coveredBy: 'E2E Playwright',
