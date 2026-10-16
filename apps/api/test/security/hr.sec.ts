@@ -19,7 +19,7 @@ import {
   type HrTenant,
 } from './harness/hr';
 import { errorEnvelope } from './harness/http-client';
-import { openSocket, connected, collect } from './harness/socket';
+import { openSocket, connected } from './harness/socket';
 import { secCase, useApi } from './harness/suite';
 
 // SEC-HR-* (docs/design/test-spec-hr.md §7, T-042). Viết TRƯỚC khi có route: mọi ca khai báo pending
@@ -564,17 +564,31 @@ describe('Thông báo (ADR-123, B-M3)', () => {
       const hanaSock = openSocket(api, t.hana.accessToken);
       const maxSock = openSocket(api, t.max.accessToken);
       await Promise.all([connected(hanaSock), connected(maxSock)]);
-      const hanaGot = collect<Record<string, unknown>>(hanaSock, 'notification:new');
-      const maxGot = collect<Record<string, unknown>>(maxSock, 'notification:new');
+      // Mảng nghe trực tiếp (collect() trả về HÀM dừng-và-lấy — `.length` của nó là 0, gate T-040b).
+      const hanaGot: Record<string, unknown>[] = [];
+      const maxGot: Record<string, unknown>[] = [];
+      hanaSock.on('notification:new', (p: Record<string, unknown>) => hanaGot.push(p));
+      maxSock.on('notification:new', (p: Record<string, unknown>) => maxGot.push(p));
       const secret = `RT-${Date.now()}`;
-      await submitLeave(actors, t.mia, t.ws, {
+      const sent = await submitLeave(actors, t.mia, t.ws, {
         type: 'SICK',
         startDate: workday(48),
         endDate: workday(48),
         reason: secret,
       });
+      expect(sent.status, sent.text.slice(0, 200)).toBe(201);
       await expect.poll(() => hanaGot.length, { timeout: 5_000 }).toBeGreaterThan(0);
       expect(JSON.stringify(hanaGot)).not.toContain(secret);
+      // Vỏ realtime chung (eventId, type, occurredAt, actorId, originClientId, data); `data` CHỈ id + loại + ws
+      // (contracts NotificationNewEvent, ADR-123).
+      const event = hanaGot[0] as { type?: string; data?: Record<string, unknown> };
+      expect(event.type).toBe('notification:new');
+      expect(Object.keys(event.data ?? {}).sort()).toEqual([
+        'notificationId',
+        'type',
+        'workspaceId',
+      ]);
+      expect(event.data).toMatchObject({ type: 'LEAVE_SUBMITTED', workspaceId: t.ws });
       expect(maxGot).toHaveLength(0);
       hanaSock.close();
       maxSock.close();

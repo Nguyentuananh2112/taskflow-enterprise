@@ -23,6 +23,13 @@ const TIMEOUT = 180_000;
  * (12 ngày lịch có ≤ 2 Chủ nhật ⇒ 10–12 ngày làm việc S0, ws mới không có ngày lễ) ⇒ tổng ≥ 20 > 12, mỗi đơn ≤ 12.
  */
 const NEXT_YEAR = String(new Date().getUTCFullYear() + 1);
+/** CC-HR-13: thứ Hai đầu tiên của tháng 6 năm sau và 2 ngày kế (T2, T3, T4 — đều là ngày làm việc S0). */
+function mondaySpan(): [string, string, string] {
+  const d = new Date(`${NEXT_YEAR}-06-01T00:00:00Z`);
+  while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+  const at = (n: number) => new Date(d.getTime() + n * 86_400_000).toISOString().slice(0, 10);
+  return [at(0), at(1), at(2)];
+}
 const statuses = (rs: RawResponse[]) => rs.map((r) => r.status).sort((a, b) => a - b);
 /** Mã lỗi (test-spec-hr §0.2b): 409 RESOURCE_CONFLICT + reason (thường); 422 BUSINESS_RULE_VIOLATION + rule (HOA). */
 function expectLoser(rs: RawResponse[], status: 409 | 422, detail: string, tag: string) {
@@ -409,6 +416,39 @@ describe('Đơn nghỉ song song', () => {
     'CC-HR-13',
     'thêm ngày lễ ‖ approve đơn chứa ngày đó ⇒ số ngày đọc lại khớp lịch sau cùng',
     AREA,
+    async () => {
+      // Đơn ANNUAL T2–T4 (3 ngày công S0) của năm sau; HR thêm lễ vào T3 ĐÚNG lúc duyệt. `days` không lưu mà
+      // tính khi đọc (D-H3a) ⇒ dù bên nào commit trước, đọc lại luôn là 2 ngày và số dư đã dùng là 2.
+      const [mon, tue, wed] = mondaySpan();
+      for (let i = 0; i < RUNS; i += 1) {
+        const t = await freshPair();
+        const l = leaveOf(
+          await submitLeave(actors, t.mia, t.ws, { type: 'ANNUAL', startDate: mon, endDate: wed }),
+        );
+        expect(l.status, `#${i}`).toBe('PENDING');
+        const [holiday, approve] = await Promise.all([
+          actors.json('PUT', HR.holiday(t.ws, tue), t.hana.accessToken, {
+            name: `Lễ CC-HR-13 #${String(i)}`,
+          }),
+          decide(t.hana, t.ws, l.id, 'approve', l.version),
+        ]);
+        expect(
+          [holiday.status, approve.status],
+          `#${i}: ${holiday.text.slice(0, 120)} | ${approve.text.slice(0, 120)}`,
+        ).toEqual([200, 200]);
+        const mine = (await actors.json('GET', HR.myLeaveRequests(t.ws), t.mia.accessToken))
+          .json as { data: { id: string; status: string; days: number }[] };
+        expect(
+          mine.data.find((r) => r.id === l.id),
+          `#${i}`,
+        ).toMatchObject({ status: 'APPROVED', days: 2 });
+        const bal = (
+          await actors.json('GET', HR.myBalance(t.ws, Number(NEXT_YEAR)), t.mia.accessToken)
+        ).json as { data: { usedDays: number; pendingDays: number; remainingDays: number } };
+        expect(bal.data, `#${i}`).toMatchObject({ usedDays: 2, pendingDays: 0, remainingDays: 10 });
+      }
+    },
+    TIMEOUT,
   );
 
   secCase(
