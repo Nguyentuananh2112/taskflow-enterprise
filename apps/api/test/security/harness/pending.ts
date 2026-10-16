@@ -26,19 +26,7 @@ export const PENDING_PREFIX = '[PENDING ';
  * vẫn xanh — review B), hoặc (b) id ở đây không còn là todo trong file đã chạy (viết thân xong ⇒ xóa mục
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
-export const TODO_BUDGET: Readonly<Record<string, string>> = {
-  'SEC-35': 'realtime.sec.ts',
-  'SEC-36': 'realtime.sec.ts',
-  'SEC-37': 'realtime.sec.ts',
-  'SEC-37b': 'realtime.sec.ts',
-  'SEC-38': 'realtime.sec.ts',
-  'SEC-39': 'realtime.sec.ts',
-  'SEC-41': 'realtime.sec.ts',
-  'SEC-21b': 'realtime.sec.ts',
-  'SEC-09': 'task.sec.ts',
-  // Phần socket của SEC-47 (WSD-07) — chưa có test nào ở mọi tầng; nhóm socket của A (F4).
-  'SEC-47b': 'tenant.sec.ts',
-};
+export const TODO_BUDGET: Readonly<Record<string, string>> = {};
 
 export interface OutOfScopeCase {
   /** File `.sec.ts` khai báo ca (`outOfScope(id, title, coveredBy)`). */
@@ -72,6 +60,13 @@ export const OUT_OF_SCOPE: Readonly<Record<string, OutOfScopeCase>> = {
     file: 'auth.sec.ts',
     coveredBy: 'E2E Playwright',
     ref: 'e2e/specs/xss.e2e.ts',
+  },
+  // Không có API làm created_by_id NULL (cần xóa cứng user — sau v1). Chuyển về hộp đen khi có API xóa
+  // tài khoản. Tech Lead duyệt 2026-10-16; B review.
+  'SEC-09': {
+    file: 'task.sec.ts',
+    coveredBy: 'tầng I (LSP use case)',
+    ref: 'apps/api/src/modules/task/application/use-cases/update-delete-task.use-case.test.ts',
   },
   'SEC-48': {
     file: 'auth.sec.ts',
