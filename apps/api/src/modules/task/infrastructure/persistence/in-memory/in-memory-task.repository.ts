@@ -1,6 +1,7 @@
 import {
   RankConflictError,
   type ITaskRepository,
+  type RankWrite,
   type SaveOptions,
 } from '../../../application/ports/task-repository.port';
 import { Task, type TaskProps } from '../../../domain/task';
@@ -97,6 +98,16 @@ export class InMemoryTaskRepository implements ITaskRepository {
     if (this.rankTaken(row)) return Promise.reject(new RankConflictError());
     this.db.state.tasks.set(row.id, row);
     return Promise.resolve(true);
+  }
+
+  /** Cùng ngữ nghĩa bản Prisma: dòng không khớp điều kiện bị bỏ qua, trả số dòng đã ghi. */
+  async saveRanks(writes: readonly RankWrite[]): Promise<number> {
+    let written = 0;
+    for (const { task, expectedVersion } of writes) {
+      if (this.db.state.tasks.get(task.id)?.deletedAt !== null) continue;
+      if (await this.save(task, expectedVersion)) written += 1;
+    }
+    return written;
   }
 
   private rankTaken(row: TaskProps): boolean {

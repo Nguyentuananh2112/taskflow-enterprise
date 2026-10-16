@@ -52,6 +52,18 @@ export interface ITaskRepository {
    * `allowArchivedProject` chỉ cho bỏ gán do hệ thống (ADR-092).
    */
   save(task: Task, expectedVersion: number, opts?: SaveOptions): Promise<boolean>;
+  /**
+   * Pha 2 của rebalance (A3): ghi `rank`/`version`/`updatedAt` của nhiều task trong MỘT câu UPDATE
+   * theo lô. Mỗi dòng giữ đủ điều kiện của `save` (tenant, `version = expectedVersion` — ADR-010/110,
+   * task sống, project chưa archive, ws chưa xóa). Trả số dòng đã ghi; dòng không khớp điều kiện bị
+   * bỏ qua ⇒ caller so với số dòng gửi lên rồi hủy transaction. Trùng rank ⇒ `RankConflictError`.
+   */
+  saveRanks(writes: readonly RankWrite[]): Promise<number>;
+}
+
+export interface RankWrite {
+  task: Task;
+  expectedVersion: number;
 }
 
 export interface SaveOptions {

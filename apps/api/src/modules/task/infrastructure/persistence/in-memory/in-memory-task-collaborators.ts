@@ -75,4 +75,9 @@ export class InMemoryTaskAuditLogRepository implements ITaskAuditLogRepository {
     this.db.state.audit.push({ ...entry });
     return Promise.resolve();
   }
+
+  appendMany(entries: readonly TaskAuditEntry[]): Promise<void> {
+    for (const entry of entries) this.db.state.audit.push({ ...entry });
+    return Promise.resolve();
+  }
 }
