@@ -281,7 +281,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | CC-HR-12 | tạo lười `LeaveBalance` song song (2 request đọc lần đầu) | đúng 1 dòng, không 500 (`ON CONFLICT DO NOTHING`) |
 | CC-HR-13 | thêm ngày lễ ‖ approve đơn chứa ngày đó | số ngày đọc lại nhất quán với lịch sau cùng (tính khi đọc) |
 | CC-HR-14 | đổi role Hana → VIEWER ‖ cấp grant cho Hana | không bao giờ VIEWER còn grant |
-| CC-HR-15 | xóa thành viên bị rollback không để lại departure (B, T-037b) | (I) lỗi sau khi ghi `workspace_member_departures` nhưng trước commit (fake lỗi trong transaction) ⇒ 0 dòng departure, membership còn; lệnh xóa bị từ chối (LAST_OWNER 422) ⇒ 0 departure; (C) 2 lệnh xóa cùng thành viên song song ×20 ⇒ đúng 1 × 200 và đúng 1 dòng departure |
+| CC-HR-15 | xóa thành viên bị rollback không để lại departure (B, T-037b) | (I) lỗi sau khi ghi `workspace_member_departures` nhưng trước commit (fake lỗi trong transaction) ⇒ 0 dòng departure, membership còn; lệnh xóa bị từ chối (LAST_OWNER 422) ⇒ 0 departure; (C) 2 lệnh xóa cùng thành viên song song ×20 ⇒ đúng 1 × 200 và đúng 1 dòng departure · Phủ: vế tuần tự (rollback, LAST_OWNER) ở `member-tenure.test.ts` + runner LSP (B, T-037b); vế song song ở `test/integration/hr/member-departure-races.int.ts` (F) — 2 OWNER cùng xóa ⇒ 1 thắng + 404, 1 departure REMOVED; tự rời ‖ OWNER xóa ⇒ 1 departure, reason khớp bên thắng (×20) |
 
 ## 9. E2E — `E2E-HR-*` (tầng E)
 
