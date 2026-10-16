@@ -51,10 +51,13 @@ export class CheckInOutUseCase {
     try {
       replayed = await this.d.uow.run(() => this.#record(input));
     } catch (err) {
-      if (err instanceof AlreadyCheckedInError) throw alreadyCheckedIn();
-      // Hai request cùng key chạy song song: bên thua bị unique chặn (Postgres đã hủy tx) ⇒ đọc lại bằng
-      // transaction mới — lúc này lượt của bên thắng đã commit nên nhánh "đã có key" xử lý đúng.
-      if (err instanceof IdempotencyKeyTakenError && !retried) return this.execute(input, true);
+      // Bên thua của hai request song song bị MỘT trong hai unique chặn — Postgres không cam kết kiểm cái nào
+      // trước (CC-HR-02) — và tx đã hủy ⇒ chạy lại bằng transaction mới, lúc này lượt của bên thắng đã commit:
+      // cùng key + cùng loại ⇒ replay 200; cùng key khác loại ⇒ 422; key khác ⇒ 409 `already_checked_in`.
+      if (err instanceof AlreadyCheckedInError || err instanceof IdempotencyKeyTakenError) {
+        if (!retried) return this.execute(input, true);
+        if (err instanceof AlreadyCheckedInError) throw alreadyCheckedIn();
+      }
       throw err;
     }
     return { card: await todayCard(this.d, input), replayed };

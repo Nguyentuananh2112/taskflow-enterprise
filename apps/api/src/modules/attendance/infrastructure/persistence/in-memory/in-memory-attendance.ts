@@ -51,10 +51,16 @@ export class InMemoryAttendanceEventStore implements IAttendanceEventStore {
     return Promise.resolve(row ? { ...row } : null);
   }
 
+  /**
+   * Thứ tự kiểm hai unique khi một lượt vi phạm CẢ HAI — Postgres không cam kết thứ tự nào, nên test chạy cả hai
+   * (CC-HR-02: hai check-in song song cùng key).
+   */
+  uniqueCheckOrder: 'in-once-first' | 'key-first' = 'in-once-first';
+
   add(event: AttendanceEventRecord): Promise<void> {
     const same = (e: AttendanceEventRecord) =>
       e.workspaceId === event.workspaceId && e.userId === event.userId;
-    if (
+    const inOnce =
       event.kind === 'IN' &&
       event.source === 'WEB' &&
       event.voidedAt === null &&
@@ -65,18 +71,18 @@ export class InMemoryAttendanceEventStore implements IAttendanceEventStore {
           e.source === 'WEB' &&
           e.voidedAt === null &&
           e.workDate === event.workDate,
-      )
-    ) {
-      return Promise.reject(new AlreadyCheckedInError());
-    }
-    if (
+      );
+    const keyTaken =
       event.idempotencyKey !== null &&
       this.rows.some(
         (e) => same(e) && e.source === event.source && e.idempotencyKey === event.idempotencyKey,
-      )
-    ) {
-      return Promise.reject(new IdempotencyKeyTakenError());
-    }
+      );
+    const violations = [
+      ...(inOnce ? [new AlreadyCheckedInError()] : []),
+      ...(keyTaken ? [new IdempotencyKeyTakenError()] : []),
+    ];
+    if (this.uniqueCheckOrder === 'key-first') violations.reverse();
+    if (violations[0]) return Promise.reject(violations[0]);
     this.rows.push({ ...event });
     return Promise.resolve();
   }

@@ -134,6 +134,95 @@ describe('CheckInOutUseCase', () => {
   });
 });
 
+type Harness = Awaited<ReturnType<typeof setup>>;
+
+/**
+ * Mô phỏng request thứ hai đọc TRƯỚC khi request thứ nhất commit (CC-HR-02): lần đọc đầu không thấy key (và lượt
+ * IN nếu `staleList`), nên nó đi tới `add` và bị unique chặn; từ lần `add` đó trở đi đọc thấy dữ liệu thật.
+ */
+function raceAfterFirst(t: Harness, staleList: boolean, staleAdds = 1) {
+  const store = t.deps.events;
+  const find = store.findByIdempotencyKey.bind(store);
+  const list = store.listForUser.bind(store);
+  const add = store.add.bind(store);
+  let adds = 0;
+  const stale = () => adds < staleAdds;
+  store.findByIdempotencyKey = (q) => (stale() ? Promise.resolve(null) : find(q));
+  store.listForUser = (q) => (stale() && staleList ? Promise.resolve([]) : list(q));
+  store.add = (e) => {
+    adds += 1;
+    return add(e);
+  };
+}
+
+/** Thứ tự kiểm hai unique của store in-memory; Postgres (runner LSP) tự quyết — không có thuộc tính này. */
+function uniqueOrder(t: Harness, order: 'in-once-first' | 'key-first') {
+  const store = t.deps.events as { uniqueCheckOrder?: string };
+  if ('uniqueCheckOrder' in store) store.uniqueCheckOrder = order;
+}
+
+const IN_KEY1 = {
+  workspaceId: W1,
+  userId: MIA,
+  kind: 'IN' as const,
+  idempotencyKey: key(1),
+  ip: null,
+  userAgent: null,
+};
+
+describe.each(['in-once-first', 'key-first'] as const)(
+  'CheckInOutUseCase — hai request song song (CC-HR-02), unique kiểm %s',
+  (order) => {
+    it('cùng key + cùng loại ⇒ bên thua replay (200), không thêm dòng, cùng firstIn', async () => {
+      const t = await setup();
+      uniqueOrder(t, order);
+      const first = await t.checkInOut.execute(IN_KEY1);
+      raceAfterFirst(t, true);
+      const second = await t.checkInOut.execute(IN_KEY1);
+      expect(second.replayed).toBe(true);
+      expect(second.card.firstIn).toBe(first.card.firstIn);
+      expect(await t.backend.eventRows()).toHaveLength(1);
+    });
+
+    it('key KHÁC (thật sự chấm 2 lần) ⇒ 409 already_checked_in, không thêm dòng', async () => {
+      const t = await setup();
+      uniqueOrder(t, order);
+      await t.checkInOut.execute(IN_KEY1);
+      raceAfterFirst(t, true);
+      await expect(
+        t.checkInOut.execute({ ...IN_KEY1, idempotencyKey: key(2) }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'RESOURCE_CONFLICT',
+        details: { reason: 'already_checked_in' },
+      });
+      expect(await t.backend.eventRows()).toHaveLength(1);
+    });
+
+    it('đua kéo dài (lần thử lại cũng đọc cũ, lại bị unique chặn) ⇒ vẫn 409 đã map, không lộ lỗi store (500)', async () => {
+      const t = await setup();
+      uniqueOrder(t, order);
+      await t.checkInOut.execute(IN_KEY1);
+      raceAfterFirst(t, true, 2);
+      await expect(
+        t.checkInOut.execute({ ...IN_KEY1, idempotencyKey: key(2) }),
+      ).rejects.toMatchObject({ statusCode: 409, details: { reason: 'already_checked_in' } });
+    });
+
+    it('cùng key nhưng KHÁC loại (IN rồi OUT) ⇒ 422 IDEMPOTENCY_KEY_REUSED, không thêm dòng', async () => {
+      const t = await setup();
+      uniqueOrder(t, order);
+      await t.checkInOut.execute(IN_KEY1);
+      raceAfterFirst(t, false);
+      await expect(t.checkInOut.execute({ ...IN_KEY1, kind: 'OUT' })).rejects.toMatchObject({
+        statusCode: 422,
+        details: { rule: 'IDEMPOTENCY_KEY_REUSED' },
+      });
+      expect(await t.backend.eventRows()).toHaveLength(1);
+    });
+  },
+);
+
 describe('CheckInOutUseCase — qua nửa đêm (SD-11b, SD-12e) qua luồng chấm thật', () => {
   it('SD-11b OUT 00:30 gắn 16/11, sáng 17/11 IN mở ngày mới ⇒ cả hai ngày PRESENT 480', async () => {
     const t = await setup('2026-11-16 08:00');
