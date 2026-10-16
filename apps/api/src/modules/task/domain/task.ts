@@ -70,9 +70,6 @@ export class Task extends AggregateRoot<TaskEvent> {
   get projectId(): string {
     return this.props.projectId;
   }
-  get number(): number {
-    return this.props.number;
-  }
   get status(): TaskStatus {
     return this.props.status;
   }

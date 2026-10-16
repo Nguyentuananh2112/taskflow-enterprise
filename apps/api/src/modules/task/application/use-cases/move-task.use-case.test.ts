@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   BusinessRuleViolationError,
@@ -270,5 +270,103 @@ describe('MoveTaskUseCase', () => {
     );
     expect((err as VersionConflictError).details).toMatchObject({ currentVersion: 5 });
     expect(await h.auditOf(t.A.id)).toHaveLength(0);
+  });
+});
+
+// F3 (mutation, report §4.2) — biên của move mà mutant còn sống.
+describe('MoveTaskUseCase — biên (F3 mutation)', () => {
+  it('T-3: no-op R15 trên cột có KHE giữa các rank (không tính lại ra đúng rank cũ); đổi cột thì luôn tính rank mới', async () => {
+    const h = await createTaskHarness();
+    const a = await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: 'a3' });
+    const c = await h.seedTask({ rank: 'a7' });
+    const cases = [
+      [b.id, { afterId: a.id }],
+      [a.id, { beforeId: b.id }],
+      [c.id, {}],
+    ] as const;
+    for (const [taskId, anchors] of cases) {
+      const dto = await h.move.execute({
+        ...h.scope('Mia'),
+        taskId,
+        input: { expectedVersion: 1, ...anchors },
+      });
+      expect(dto.version).toBe(1);
+    }
+    expect((await h.row(b.id)).rank).toBe('a3');
+    expect(await h.auditOf(b.id)).toEqual([]);
+    // X ở cột khác, rank 'a6' tình cờ nằm trong khe (B, C) — vẫn phải nhận rank mới của cột đích
+    // (`between('a3','a7')` = 'a4', khác 'a6' ⇒ phân biệt được).
+    const x = await h.seedTask({ rank: 'a6', status: 'IN_PROGRESS' });
+    const dto = await h.move.execute({
+      ...h.scope('Mia'),
+      taskId: x.id,
+      input: { expectedVersion: 1, status: 'TODO', afterId: b.id },
+    });
+    expect(dto).toMatchObject({
+      status: 'TODO',
+      version: 2,
+      rank: h.deps.ranks.between('a3', 'a7'),
+    });
+  });
+
+  it('T-4: project bị archive trong lúc CHỜ khóa cột ⇒ 422 PROJECT_ARCHIVED (không phải 409)', async () => {
+    const { h, t } = await board();
+    const lock = h.deps.tasks.lockColumn.bind(h.deps.tasks);
+    h.deps.tasks.lockColumn = async (projectId, status) => {
+      await h.backend.patchProject(projectId, { archivedAt: new Date() });
+      return lock(projectId, status);
+    };
+    await expect(
+      h.move.execute({
+        ...h.scope('Mia'),
+        taskId: t.C.id,
+        input: { expectedVersion: 1, afterId: t.A.id },
+      }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'PROJECT_ARCHIVED' });
+  });
+
+  // Mỗi ca một harness: trên Postgres (runner LSP) DB chỉ được làm sạch ở beforeEach.
+  it.each([
+    [64, false],
+    [65, true],
+  ] as const)(
+    'T-17: ngưỡng rebalance là "dài HƠN 64": rank %i ký tự ⇒ rebalance = %s',
+    async (len, rebalanced) => {
+      const { h, t } = await board();
+      const long = `a0${'V'.repeat(len - 2)}`;
+      h.deps.ranks.between = () => long;
+      await h.move.execute({
+        ...h.scope('Mia'),
+        taskId: t.C.id,
+        input: { expectedVersion: 1, afterId: t.A.id },
+      });
+      expect(h.logger.messages('info').includes('task.rank_rebalanced')).toBe(rebalanced);
+    },
+  );
+
+  it('T-25: chuyển trạng thái sai được báo TRƯỚC anchor sai (TODO → DONE với afterId ở TODO ⇒ INVALID_STATUS_TRANSITION)', async () => {
+    const { h, t } = await board();
+    await expect(
+      h.move.execute({
+        ...h.scope('Mia'),
+        taskId: t.C.id,
+        input: { expectedVersion: 1, status: 'DONE', afterId: t.A.id },
+      }),
+    ).rejects.toBeInstanceOf(InvalidStatusTransitionError);
+  });
+
+  it('T-22/T-23/T-26: 403 mang quyền thiếu; 404 mang loại tài nguyên; no-op không ghi DB', async () => {
+    const { h, t } = await board();
+    await expect(
+      h.move.execute({ ...h.scope('Vic'), taskId: t.C.id, input: { expectedVersion: 1 } }),
+    ).rejects.toMatchObject({ statusCode: 403, details: { required: 'task:move' } });
+    const f = await h.seedTask({ rank: 'a0', projectId: P3 });
+    await expect(
+      h.move.execute({ ...h.scope('Mia'), taskId: f.id, input: { expectedVersion: 1 } }),
+    ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'task' } });
+    const save = vi.spyOn(h.deps.tasks, 'save');
+    await h.move.execute({ ...h.scope('Mia'), taskId: t.C.id, input: { expectedVersion: 1 } });
+    expect(save).not.toHaveBeenCalled();
   });
 });

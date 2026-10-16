@@ -192,6 +192,25 @@ describe('audit T-028 (B) — F1/F2/F3 và thứ tự 404 trước 400 body', ()
     expect(errorOf(viewer)).toMatchObject({ details: { required: 'task:assign:own' } });
   });
 
+  it('F3 mutation T-14: người CÓ quyền gửi input sai ở MỌI route ⇒ 400 (không 403); VIEWER sửa ⇒ 403 đúng quyền thiếu', async () => {
+    const { task } = await createTask(mia);
+    const as = (u: { auth: Record<string, string> }) => ({
+      get: (path: string) => request(t.app).get(path).set(u.auth),
+      patch: (path: string, body: object) => request(t.app).patch(path).set(u.auth).send(body),
+      del: (path: string) => request(t.app).delete(path).set(u.auth),
+    });
+    const m = as(mia);
+    expect((await m.get(`${inA()}?limit=abc`)).status).toBe(400);
+    expect((await m.patch(`${inA()}/${task.id}`, { bogus: 1 })).status).toBe(400);
+    expect((await m.patch(`${inA()}/${task.id}/move`, { bogus: 1 })).status).toBe(400);
+    expect((await m.del(`${inA()}/${task.id}?expectedVersion=abc`)).status).toBe(400);
+    expect((await m.get(`${inA()}/${task.id}/audit-logs?limit=abc`)).status).toBe(400);
+    expect(errorOf(await as(vic).patch(`${inA()}/${task.id}`, { bogus: 1 }))).toMatchObject({
+      code: 'FORBIDDEN_ACCESS',
+      details: { required: 'task:update' },
+    });
+  });
+
   it('F3: response task (thành công lẫn lỗi) có Cache-Control: no-store', async () => {
     expect((await request(t.app).get(inA()).set(alice.auth)).headers['cache-control']).toBe(
       'no-store',

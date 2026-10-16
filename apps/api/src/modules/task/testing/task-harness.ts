@@ -170,6 +170,8 @@ export async function createTaskHarness(backend: TaskBackend = inMemoryTaskBacke
     logger,
     clock,
     policy,
+    /** F3 T-18: gọi thẳng `TaskRankRebalancer` cho ca biên không dựng được qua move. */
+    commands,
     create: new CreateTaskUseCase(commands),
     move: new MoveTaskUseCase(commands),
     assign: new AssignTaskUseCase(commands),

@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { Rank } from '../../domain/rank';
-import { createTaskHarness, U, type TaskHarness } from '../../testing/task-harness';
+import { requestContext } from '../../../../core/context/request-context';
+import { createTaskHarness, P1, U, W1, type TaskHarness } from '../../testing/task-harness';
 import { RankConflictError } from '../ports/task-repository.port';
-import { RANK_REBALANCE_MAX_TASKS, RANK_REBALANCE_THRESHOLD } from '../task-rank-rebalancer';
+import {
+  RANK_REBALANCE_MAX_TASKS,
+  RANK_REBALANCE_THRESHOLD,
+  TaskRankRebalancer,
+} from '../task-rank-rebalancer';
 
 // T-033: cân bằng lại rank theo cột khi move sinh rank quá dài (ADR-011 mở rộng). Chạy trên cả
 // InMemory và Postgres (runner LSP).
@@ -240,5 +245,128 @@ describe('rebalance rank theo cột (T-033)', () => {
     await expect(moveXAfterB(h, t)).resolves.toMatchObject({ status: 'TODO' });
     expect(h.logger.messages('warn')).toContain('task.rank_conflict_retry');
     for (const r of await h.backend.taskRows()) expect(r.rank.startsWith('~')).toBe(false);
+  });
+});
+
+// F3 (mutation, report §4.2) — các biên của rebalance mà mutant còn sống.
+describe('rebalance — biên (F3 mutation)', () => {
+  it('T-1: chèn ở CHỈ SỐ 1 (sau phần tử đầu) ⇒ đúng chỗ [A, X, B], không bị đẩy xuống cuối cột', async () => {
+    const h = await createTaskHarness();
+    const a = await h.seedTask({ rank: LONG });
+    const b = await h.seedTask({ rank: `${LONG}V` });
+    const x = await h.seedTask({ rank: 'a0', status: 'IN_PROGRESS' });
+    await h.move.execute({
+      ...h.scope('Mia'),
+      taskId: x.id,
+      input: { expectedVersion: 1, status: 'TODO', afterId: a.id },
+    });
+    expect(await h.column('TODO')).toEqual([a.id, x.id, b.id]);
+    for (const r of await h.backend.taskRows()) expect(r.rank.length).toBeLessThanOrEqual(3);
+  });
+
+  // T-5 — mỗi ca một harness (Postgres/LSP: DB chỉ làm sạch ở beforeEach).
+  it('T-5a: CÙNG cột, khóa mới ≠ rank cũ ⇒ `moving` KHÔNG vào lô ghi (use case tự lưu)', async () => {
+    // X cuối cột rank 'a9', move sau B ⇒ khóa spread 'a2'.
+    const h = await createTaskHarness();
+    const t = {
+      a: await h.seedTask({ rank: 'a0' }),
+      b: await h.seedTask({ rank: LONG }),
+      c: await h.seedTask({ rank: `${LONG}V` }),
+      x: await h.seedTask({ rank: 'a9' }),
+    };
+    const saveRanks = vi.spyOn(h.deps.tasks, 'saveRanks');
+    await h.move.execute({
+      ...h.scope('Mia'),
+      taskId: t.x.id,
+      input: { expectedVersion: 1, afterId: t.b.id },
+    });
+    expect(saveRanks.mock.calls[0]![0].map((w) => w.task.id)).not.toContain(t.x.id);
+    expect(await h.column('TODO')).toEqual([t.a.id, t.b.id, t.x.id, t.c.id]);
+  });
+
+  it('T-5b: KHÁC cột, khóa mới TRÙNG rank cũ ⇒ `moving` KHÔNG vào lô ghi (use case lưu cả status)', async () => {
+    // X ở IN_PROGRESS rank 'a2' vào TODO sau B ⇒ khóa spread 'a2'.
+    const h = await createTaskHarness();
+    const u = {
+      a: await h.seedTask({ rank: 'a0' }),
+      b: await h.seedTask({ rank: LONG }),
+      c: await h.seedTask({ rank: `${LONG}V` }),
+      x: await h.seedTask({ rank: 'a2', status: 'IN_PROGRESS' }),
+    };
+    const saveRanks = vi.spyOn(h.deps.tasks, 'saveRanks');
+    const dto = await h.move.execute({
+      ...h.scope('Mia'),
+      taskId: u.x.id,
+      input: { expectedVersion: 1, status: 'TODO', afterId: u.b.id },
+    });
+    expect(saveRanks.mock.calls[0]![0].map((w) => w.task.id)).not.toContain(u.x.id);
+    expect(dto).toMatchObject({ status: 'TODO', rank: 'a2', version: 2 });
+  });
+
+  it('T-6: tổng ĐÚNG RANK_REBALANCE_MAX_TASKS task ⇒ VẪN rebalance (ngưỡng là "lớn hơn"), không cảnh báo bỏ qua', async () => {
+    const h = await createTaskHarness();
+    // filler + A, B, C + X = MAX
+    await h.seedTasks(
+      Array.from({ length: RANK_REBALANCE_MAX_TASKS - 4 }, (_, i) => ({
+        rank: `a${'V'.repeat(RANK_REBALANCE_THRESHOLD + 8)}${i}`,
+      })),
+    );
+    const t = await crowdedColumn(h);
+    await moveXAfterB(h, t);
+    expect(h.logger.messages('info')).toContain('task.rank_rebalanced');
+    expect(h.logger.messages('warn')).not.toContain('task.rank_rebalance_skipped_large_column');
+  });
+
+  it('T-7/T-8: domain event của MỌI task đổi rank được publish; DTO realtime có createdBy/assignee thật, findRefs không nhận null', async () => {
+    const h = await createTaskHarness();
+    const t = await crowdedColumn(h);
+    const findRefs = vi.spyOn(h.deps.users, 'findRefs');
+    await moveXAfterB(h, t);
+    const published = h.events.published.map((e) => [e.type, e.aggregateId]);
+    expect(published).toEqual(
+      expect.arrayContaining([
+        ['TaskMoved', t.b.id],
+        ['TaskMoved', t.c.id],
+        ['TaskStatusChanged', t.x.id],
+      ]),
+    );
+    expect(published).toHaveLength(3);
+    for (const [ids] of findRefs.mock.calls) expect(ids).not.toContain(null);
+    const cMoved = h
+      .emitted()
+      .map((c) => c.args[0] as { data: { task: { id: string; createdBy: unknown } } })
+      .find((e) => e.data.task.id === t.c.id);
+    expect(cMoved?.data.task.createdBy).toEqual(expect.objectContaining({ id: U.Pam }));
+  });
+
+  it('T-18: `wanted` lớn hơn mọi rank của cột ⇒ `moving` nhận khóa CUỐI', async () => {
+    const h = await createTaskHarness();
+    const a = await h.seedTask({ rank: 'a0' });
+    const b = await h.seedTask({ rank: LONG });
+    const x = await h.seedTask({ rank: 'a0', status: 'IN_PROGRESS' });
+    const rank = await h.uow.run(async () => {
+      const project = (await h.deps.projects.findInWorkspace({ workspaceId: W1, projectId: P1 }))!;
+      const moving = (await h.deps.tasks.findLive(W1, P1, x.id))!;
+      return new TaskRankRebalancer(h.commands).rebalance({
+        project,
+        target: 'TODO',
+        moving,
+        wanted: `z${'z'.repeat(RANK_REBALANCE_THRESHOLD)}`,
+        meta: { actorId: U.Mia, originClientId: null },
+      });
+    });
+    const keys = [(await h.row(a.id)).rank, (await h.row(b.id)).rank];
+    expect(keys.every((k) => k < rank)).toBe(true);
+  });
+
+  it('T-19: audit MOVED của các task bị đổi rank mang requestId của request', async () => {
+    const h = await createTaskHarness();
+    const t = await crowdedColumn(h);
+    await requestContext.run({ requestId: 'req-7' }, () => moveXAfterB(h, t));
+    for (const other of [t.b, t.c]) {
+      expect(await h.auditOf(other.id)).toEqual([
+        expect.objectContaining({ action: 'MOVED', requestId: 'req-7' }),
+      ]);
+    }
   });
 });
