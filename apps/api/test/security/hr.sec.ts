@@ -155,8 +155,11 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
       }),
     );
     expect(
-      (await actors.json('POST', HR.leaveAction(t.ws, own.id, 'cancel'), t.max.accessToken, {}))
-        .status,
+      (
+        await actors.json('POST', HR.leaveAction(t.ws, own.id, 'cancel'), t.max.accessToken, {
+          expectedVersion: own.version,
+        })
+      ).status,
     ).toBe(404);
   });
 
@@ -180,7 +183,7 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
       'PATCH',
       HR.balance(t.ws, t.otto.userId, new Date().getUTCFullYear()),
       t.hana.accessToken,
-      { adjustmentDays: 1, reason: 'idor' },
+      { adjustmentDays: 1, note: 'idor' },
     );
     expect(res.status).toBe(404);
   });
@@ -212,7 +215,7 @@ describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
           'PATCH',
           HR.balance(t.ws, t.hana.userId, new Date().getUTCFullYear()),
           t.hana.accessToken,
-          { adjustmentDays: 5, reason: 'tự cộng' },
+          { adjustmentDays: 5, note: 'tự cộng' },
         )
       ).status,
     ).toBe(403);

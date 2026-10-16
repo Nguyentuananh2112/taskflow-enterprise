@@ -8,6 +8,10 @@ import type { ApiUnderTest } from './suite';
  * Mốc 3 (T-042) — helper hộp đen cho chấm công / nghỉ phép / thông báo. Đường dẫn và tên trường lấy
  * theo `docs/design/attendance-leave.md` §5/§9 (contract Zod của T-037…T-040 chưa có lúc viết). Khi
  * contract chốt, chỉ sửa ở file này — các ca `hr*.sec.ts` không lặp chuỗi đường dẫn.
+ *
+ * Đã đối chiếu (2026-10-16): leave = contracts/leave @ ed5b923 (D) — decide/revoke/PATCH balance dùng `note`,
+ * cancel bắt buộc `expectedVersion`, số dư `remainingDays/pendingDays/usedDays`; attendance = contracts/attendance
+ * @ 6c732e4 (A) — query strict, ADJUSTMENT `{ userId, kind, date, time, nextDay?, reason }`, void `{ reason }`.
  */
 export const HR = {
   meToday: (ws: string) => `/workspaces/${ws}/attendance/me/today`,
