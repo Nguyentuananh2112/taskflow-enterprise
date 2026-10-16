@@ -31,7 +31,7 @@
 | `Vic` | VIEWER của W1 |
 | `Rex` | Từng là MEMBER của W1, **đã rời** (membership xóa), còn dữ liệu công + đơn trong W1 |
 | `Otto` | OWNER của W2 (workspace khác), có dữ liệu riêng trong W2 |
-| `S0` | `WorkSchedule` seed: hiệu lực từ 2026-01-01, `Asia/Ho_Chi_Minh`, T2–T7, `start 480` (08:00), `end 1050` (17:30), `break 720–810` (12:00–13:30), `grace 0` ⇒ 480 phút làm/ngày |
+| `S0` | **Lịch mặc định hằng số của domain attendance** (A sở hữu) — dùng khi workspace CHƯA có dòng `work_schedules` nào (migration 3 không seed, không trigger — TL/B): `Asia/Ho_Chi_Minh`, T2–T7, `start 480` (08:00), `end 1050` (17:30), `break 720–810` (12:00–13:30), `grace 0` ⇒ 480 phút làm/ngày. Dòng chỉ xuất hiện khi HR lưu lịch (`created_by_id` NOT NULL) |
 | `clock` | `FakeClock` = `2026-11-17T03:00:00Z` (thứ Ba 10:00 giờ VN); tiến tay khi cần |
 | Ngày mẫu | 2026-11-16 thứ Hai · 11-14 thứ Bảy · 11-15 Chủ Nhật · 2026-03-29 / 10-25 Chủ Nhật đổi giờ ở `Europe/Berlin` |
 
@@ -190,6 +190,8 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-15 | void lượt của ws khác | 404 |
 | AT-16 | sau void IN WEB, check-in lại cùng ngày | 201 (unique index một phần loại `voidedAt IS NOT NULL`) |
 | AT-17 | lịch mới `effectiveFrom` < hôm nay | 422 `BUSINESS_RULE_VIOLATION` (`rule: SCHEDULE_IN_PAST`); = hôm nay ⇒ 201 |
+| AT-17b | workspace mới, chưa ai lưu lịch | (I) 0 dòng `work_schedules`; `me/today` và tính công dùng `S0` (hằng số domain); DB không tự sinh dòng khi đọc |
+| AT-17c | HR lưu lịch đầu tiên (`effectiveFrom` = hôm nay) | 201, đúng 1 dòng, `created_by_id` = HR; ngày trước đó vẫn tính theo `S0` (SD-29) |
 | AT-18 | ngày lễ ngày quá khứ, Hana | 422 `BUSINESS_RULE_VIOLATION` (`rule: HOLIDAY_IN_PAST`); Olivia thiếu lý do ⇒ 422 `BUSINESS_RULE_VIOLATION` (`rule: REASON_REQUIRED`); Olivia + lý do ⇒ 200 + HrAuditLog (A#4) |
 | AT-19 | `timezone` không hợp lệ (`Mars/Base`) | 400 (`Intl.supportedValuesOf('timeZone')`) |
 | AT-20 | HR xem công của Rex (đã rời) | 200, gắn "đã rời" (R30); `userId` chưa từng có dữ liệu ⇒ 404 |
