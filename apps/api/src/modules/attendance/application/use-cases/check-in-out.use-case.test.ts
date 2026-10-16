@@ -2,7 +2,15 @@ import { AttendanceMonthDto, AttendanceTodayDto } from '@taskflow/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { instantOf } from '../../domain/local-time';
-import { createAttendanceHarness, key, MAX, MIA, VN, W1 } from '../../testing/attendance-harness';
+import {
+  createAttendanceHarness,
+  key,
+  MAX,
+  MIA,
+  S0,
+  VN,
+  W1,
+} from '../../testing/attendance-harness';
 import { CheckInOutUseCase } from './check-in-out.use-case';
 import { lastDayOf } from './my-attendance.queries';
 
@@ -140,10 +148,15 @@ describe('MyAttendanceQueries', () => {
     expect(lastDayOf('2028-02')).toBe('2028-02-29');
   });
 
-  it('workspace chưa có phiên bản lịch ⇒ múi giờ mặc định, mọi ngày OFF (không ném)', async () => {
+  it('workspace chưa lưu lịch nào ⇒ dùng DEFAULT_SCHEDULE (TL: không seed); HR lưu phiên bản mới thì theo phiên bản đó', async () => {
     const t = setup();
-    t.calendar.versions.length = 0;
-    const card = await t.queries.today({ workspaceId: W1, userId: MIA });
-    expect(card).toMatchObject({ timezone: VN, schedule: null, status: 'OFF', isWorkday: false });
+    expect(t.calendar.versions).toEqual([]);
+    expect(await t.queries.today({ workspaceId: W1, userId: MIA })).toMatchObject({
+      timezone: VN,
+      isWorkday: true,
+      schedule: { startMin: 480, endMin: 1050, breakStartMin: 720, breakEndMin: 810, graceMin: 0 },
+    });
+    t.calendar.versions.push({ ...S0, effectiveFrom: '2026-11-17', startMin: 540 });
+    expect((await t.queries.today({ workspaceId: W1, userId: MIA })).schedule?.startMin).toBe(540);
   });
 });

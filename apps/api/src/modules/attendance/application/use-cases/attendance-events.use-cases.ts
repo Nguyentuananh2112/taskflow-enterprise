@@ -12,9 +12,9 @@ import {
   type ResourceKind,
 } from '../../../../core/errors';
 import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
-import { scheduleFor } from '../../domain/work-schedule';
+import { effectiveSchedule } from '../../domain/work-schedule';
 import { toEventDtos } from '../attendance-event-dto';
-import { DEFAULT_TIMEZONE, summarizeRange, type AttendanceDeps } from '../attendance-days';
+import { summarizeRange, type AttendanceDeps } from '../attendance-days';
 import type { AttendanceEventRecord } from '../ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
@@ -84,7 +84,7 @@ export class AttendanceEventsUseCases {
       const role = await d.members.roleOf({ workspaceId, userId: body.userId });
       if (role === null || !EMPLOYEE_ROLES.has(role)) throw new ResourceNotFoundError('user');
       const versions = await d.calendar.scheduleVersions(workspaceId);
-      const timezone = scheduleFor(versions, body.date)?.timezone ?? DEFAULT_TIMEZONE;
+      const { timezone } = effectiveSchedule(versions, body.date);
       const [h, m] = body.time.split(':').map(Number) as [number, number];
       const occurredAt = instantOf(
         body.nextDay ? addDays(body.date, 1) : body.date,
@@ -193,7 +193,7 @@ export class AttendanceEventsUseCases {
     ]);
     events.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
     return {
-      timezone: scheduleFor(versions, q.date)?.timezone ?? DEFAULT_TIMEZONE,
+      timezone: effectiveSchedule(versions, q.date).timezone,
       events: await this.#toDtos(events),
     };
   }

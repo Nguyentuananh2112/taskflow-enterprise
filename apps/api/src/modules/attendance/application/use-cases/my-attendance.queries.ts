@@ -1,12 +1,7 @@
 import type { AttendanceMonthDto, AttendanceTodayDto, YearMonth } from '@taskflow/contracts';
 
-import { scheduleFor } from '../../domain/work-schedule';
-import {
-  DEFAULT_TIMEZONE,
-  summarizeRange,
-  todayCard,
-  type AttendanceDeps,
-} from '../attendance-days';
+import { effectiveSchedule } from '../../domain/work-schedule';
+import { summarizeRange, todayCard, type AttendanceDeps } from '../attendance-days';
 
 /** Ngày cuối của tháng `YYYY-MM`. */
 export function lastDayOf(month: YearMonth): string {
@@ -33,7 +28,7 @@ export class MyAttendanceQueries {
     // Múi giờ hiển thị: của lịch hiệu lực ở ngày cuối tháng (từng ngày đã tính theo múi giờ của phiên bản
     // hiệu lực ở chính ngày đó — đổi múi giờ giữa tháng hiếm).
     const versions = await this.d.calendar.scheduleVersions(q.workspaceId);
-    const timezone = scheduleFor(versions, to)?.timezone ?? DEFAULT_TIMEZONE;
+    const { timezone } = effectiveSchedule(versions, to);
     return { month: q.month, timezone, days };
   }
 }

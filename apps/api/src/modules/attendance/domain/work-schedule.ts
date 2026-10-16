@@ -21,6 +21,30 @@ export function isWorkday(schedule: WorkSchedule, date: LocalDate): boolean {
   return (schedule.workdays & (1 << weekdayOf(date))) !== 0;
 }
 
+/**
+ * Lịch MẶC ĐỊNH (TL chốt với B): migration KHÔNG seed / trigger dòng `work_schedules` — chưa có phiên bản nào
+ * hiệu lực ở một ngày ⇒ dùng hằng số này (Prisma lẫn in-memory, cả `WorkCalendarPort` của leave). Chỉ khi
+ * HR lưu lịch mới sinh dòng. T2–T7, 08:00–17:30, nghỉ trưa 12:00–13:30 (BLLĐ 2019 Đ.105: 8 h/ngày, 48 h/tuần).
+ */
+export const DEFAULT_SCHEDULE: WorkSchedule = Object.freeze({
+  effectiveFrom: '1970-01-01',
+  timezone: 'Asia/Ho_Chi_Minh',
+  workdays: 0b0111111,
+  startMin: 480,
+  endMin: 1050,
+  breakStartMin: 720,
+  breakEndMin: 810,
+  graceMin: 0,
+});
+
+/** Lịch dùng để tính ngày `date`: phiên bản hiệu lực, không có ⇒ `DEFAULT_SCHEDULE`. */
+export function effectiveSchedule(
+  versions: readonly WorkSchedule[],
+  date: LocalDate,
+): WorkSchedule {
+  return scheduleFor(versions, date) ?? DEFAULT_SCHEDULE;
+}
+
 /** Phiên bản hiệu lực cho `date` = phiên bản có `effectiveFrom` lớn nhất ≤ `date`; chưa có ⇒ null. */
 export function scheduleFor(
   versions: readonly WorkSchedule[],

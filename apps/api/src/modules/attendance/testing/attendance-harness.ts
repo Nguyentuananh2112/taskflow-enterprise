@@ -62,8 +62,8 @@ export const key = (n: number) => `0199e5a2-0000-7000-8000-${String(n).padStart(
 export function createAttendanceHarness(now = '2026-11-17 07:55') {
   const clock = new FakeClock(vnTime(now));
   const events = new InMemoryAttendanceEventStore();
+  // Không seed phiên bản nào (TL): workspace chưa lưu lịch ⇒ DEFAULT_SCHEDULE (= nội dung S0).
   const calendar = new InMemoryWorkCalendarStore(W1);
-  calendar.versions.push(S0);
   const leaves = new FakeApprovedLeaves();
   const deps: AttendanceDeps = {
     events,

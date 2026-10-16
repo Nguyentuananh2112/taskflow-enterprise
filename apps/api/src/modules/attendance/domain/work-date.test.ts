@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { addDays, daysBetween, instantOf, minutesFrom, toLocal, weekdayOf } from './local-time';
 import { DAY_ROLLOVER_MIN, workDateFor, type PlacedEvent } from './work-date';
-import { isWorkday, scheduleFor, type WorkSchedule } from './work-schedule';
+import {
+  DEFAULT_SCHEDULE,
+  effectiveSchedule,
+  isWorkday,
+  scheduleFor,
+  type WorkSchedule,
+} from './work-schedule';
 
 // test-spec-hr §1: phần gán `workDate` (SD-11, SD-11b, SD-12, SD-32) + quy đổi múi giờ + phiên bản lịch.
 // Giờ chốt ngày công 06:00 (giờ của lịch) — TL chốt phương án (b), thiết kế §4 @3a6c7fe.
@@ -128,5 +134,21 @@ describe('work-schedule — ngày làm + phiên bản hiệu lực (SD-29)', () 
     expect(scheduleFor([S1, S0], MON)).toBe(S1);
     expect(scheduleFor([S0, S1], '2026-12-01')).toBe(S1);
     expect(scheduleFor([S0, S1], '2025-12-31')).toBeNull();
+  });
+
+  it('DEFAULT_SCHEDULE: chưa có phiên bản nào ≤ ngày ⇒ lịch mặc định T2–T7 08:00–17:30, nghỉ 12:00–13:30, grace 0, VN', () => {
+    expect(effectiveSchedule([], MON)).toBe(DEFAULT_SCHEDULE);
+    expect(effectiveSchedule([S1], '2026-11-13')).toBe(DEFAULT_SCHEDULE);
+    expect(effectiveSchedule([S1], MON)).toBe(S1);
+    expect(DEFAULT_SCHEDULE).toMatchObject({
+      timezone: VN,
+      workdays: 0b0111111,
+      startMin: 480,
+      endMin: 1050,
+      breakStartMin: 720,
+      breakEndMin: 810,
+      graceMin: 0,
+    });
+    expect(Object.isFrozen(DEFAULT_SCHEDULE)).toBe(true);
   });
 });
