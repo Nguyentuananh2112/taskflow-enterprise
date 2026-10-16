@@ -12,10 +12,17 @@ import { Cursor, limitQuery } from '@taskflow/contracts/common';
 import { HttpResponse, http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
-import { DAY_STATUS } from '@/entities/attendance';
 import { MOCK_SCHEDULE, MOCK_TZ } from './mock-attendance';
 import { forbiddenUnlessGranted, requireMember, type MemberContext } from './mock-guard';
-import { conflictFail, csvCell, localToEpoch, monthDays, totalsOf, type MockHr } from './mock-hr';
+import {
+  CSV_STATUS,
+  conflictFail,
+  csvCell,
+  localToEpoch,
+  monthDays,
+  totalsOf,
+  type MockHr,
+} from './mock-hr';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 
 // Chấm công phía HR (attendance-leave.md §5, DTO A chốt): mọi route `hr:manage` — kiểm quyền TRƯỚC
@@ -95,7 +102,7 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
           [
             csvCell(r.user.fullName),
             csvCell(d.date, false),
-            csvCell(DAY_STATUS[d.status].label),
+            csvCell(CSV_STATUS[d.status]),
             csvCell(d.firstIn ?? '', false),
             csvCell(d.lastOut ?? '', false),
             csvCell(d.workedMin, false),
