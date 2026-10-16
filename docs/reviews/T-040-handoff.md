@@ -1,9 +1,8 @@
 # T-040 — Bàn giao (Engineer G → Engineer B)
 
-> Nhánh `feat/T-040-notifications` (rebase trên `main` 0ec3bb4 — đã có T-037). Worktree của G:
-> `C:\Users\Padoma1\AppData\Local\Temp\claude\d--TaskFlow-Enterprise\64565369-4a39-4933-8eff-976ec691436d\scratchpad\g040`
-> (scratchpad của phiên G — B nên tự tạo worktree từ nhánh). Mọi commit là `wip(T-040)`, đã qua hook đầy đủ.
-> Trạng thái chi tiết + kết quả lệnh: mục 5. Việc còn lại: mục 6.
+> **TRẠNG THÁI: ĐÃ MERGE** — `main` 6fcdce4 (merge `feat/T-040-notifications` @ 8ea3f7c). Cổng của TL đều exit 0:
+> verify 8/8, integration 474/474, security 125 pass + 37 pending (khai báo), web build, e2e-tsc. B review: APPROVE.
+> T-040 xong; B KHÔNG cần làm lại phần nào. Việc còn mở (không chặn, phần lớn chờ T-038 / T-039): **mục 6**.
 
 ## 1. Đã làm
 
@@ -64,16 +63,25 @@ Mọi bước đọc **exit code**, không grep "passed".
 | Unit API | `vitest run --maxWorkers=2` (apps/api) | exit 0 — 123 file / 1292 test |
 | Integration 1 | `test/integration/notifications` — DB `taskflow_t040` tạo mới, Valkey `6380/12`, `REQUIRE_INTEGRATION=1`, KHÔNG `VITEST_MAX_WORKERS` | exit 0 — 11/11 (lần đầu đỏ do fixture email chữ hoa — sửa ở f316db6) |
 | Integration 2 | `test/integration/lsp/workspace.*` + `test/integration/workspace` | exit 0 — 14 file / 146 test |
-| Chưa chạy | `pnpm verify`, integration đầy đủ, `test:security` | TL chạy sau lượt của G (đã hẹn) |
+| Cổng TL (f316db6; 8ea3f7c chỉ khác docs) | verify · integration đầy đủ · security · web build · e2e-tsc | exit 0 — 8/8 · 474/474 · 125 + 37 pending · OK · OK ⇒ merge 6fcdce4 |
 
 Script G dùng: `scratchpad/run-int.sh` (DROP/CREATE `taskflow_t040` bằng `taskflow_migrator` trên postgres-test rồi `pnpm test:integration <đường dẫn>`).
 
-## 6. Việc còn lại cho B
-1. Chạy cổng: `pnpm verify` + integration đầy đủ + security (xin lượt TL) — xem mục 7 cái nào đã chạy.
-2. Wire leave/attendance khi T-038/T-039 merge (mục 4) + E2E-HR-02 (chuông realtime).
-3. L2 / L3 nếu TL đồng ý.
-4. Báo cáo `docs/reviews/T-040-report.md` + `DONE T-040` cho TL.
+## 6. Việc còn mở (sau merge)
+
+| # | Việc | Ai | Trạng thái lúc G bàn giao |
+|---|---|---|---|
+| 1 | Nối `attendanceNotifierFrom(notifications.publisher)` vào attendance khi rebase T-038 | A | đã báo A (T-040 vào main); thứ tự merge **T-038 → T-039** |
+| 2 | Nối `leaveNotifierFrom(notifications.publisher)`, xóa `noLeaveNotifications`, đổi `LeaveNotifierPort` → `ILeaveNotifier` | D | đã báo D; D thêm ca HTTP "HR tự gửi đơn ⇒ chỉ OWNER nhận" |
+| 3 | Gỡ pending SEC-HR-15, 17, 18, 19, 20 (`apps/api/test/security/harness/pending.ts` — ghi ticket T-040 nhưng thực ra cần route của T-038 / T-039) | F | sau khi 1 + 2 merge; G đã đọc `hr.sec.ts` — kỳ vọng khớp API |
+| 4 | E2E-HR-02 (chuông realtime < 2 s) | F / E | sau T-039 + T-041a |
+| 5 | L2: chuyển `PrismaNotificationAudience` (đọc `workspace_members`) sang reader do Workspace cung cấp; tương tự context đọc `leave_requests` | B | chờ TL quyết |
+| 6 | L3: lọc `createdAt ≥ joinedAt` của nhiệm kỳ hiện tại (bị xóa rồi mời lại ⇒ không thấy thông báo nhiệm kỳ cũ) — dùng `workspace_member_departures` của T-037b | B | chờ TL quyết |
+| 7 | LOW (b): `InMemoryNotificationAudience.membersOf` gọi `find` N lần | — | chấp nhận (chỉ chế độ bộ nhớ) |
+
+File này thay cho `T-040-report.md` (TL đã merge dựa trên nó).
 
 ## 7. Nhật ký chạy
 - 22:38 nhận vé; 22:50 WIP đầu (B review: không HIGH) · 22:58 HR_GRANTED/REVOKED (M1) · 23:00 rebase main 0ec3bb4 · 23:06 LOW (a) (B APPROVE) · rebase main f78acf6 (sau T-037b) · integration 2 phần xanh (mục 5).
 - `harness.ts` của Workspace 215 dòng sau rebase nhưng `max-lines` không đếm dòng trống/comment ⇒ eslint exit 0, không tách.
+- TL verify f316db6 xanh ⇒ merge 8ea3f7c vào main 6fcdce4. G báo A, D rebase + nối notifier; DB `taskflow_t040` đã DROP, Valkey 6380/12 trống.
