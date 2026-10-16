@@ -87,6 +87,17 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
     );
   }
 
+  listMemberAccess(
+    workspaceId: string,
+  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]> {
+    return Promise.resolve(
+      this.memberships
+        .rows()
+        .filter((m) => m.workspaceId === workspaceId)
+        .map((m) => ({ userId: m.userId, role: m.role, grants: [...m.grants] })),
+    );
+  }
+
   listMembers(workspaceId: string, q: string | null, page: PageRequest): Promise<Page<MemberRow>> {
     // InMemory so khớp theo nghĩa đen (includes) — bản Prisma phải escape %/_/\ (security.md 6.7).
     const needle = q?.toLowerCase() ?? null;

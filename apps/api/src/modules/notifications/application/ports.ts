@@ -55,6 +55,16 @@ export interface LeaveSummary {
   endDate: string;
 }
 
+/**
+ * Port do module LEAVE hiện thực (T-040b L2 — notifications không đọc thẳng `leave_requests`): tra theo cặp
+ * (ws, id), chỉ loại + khoảng ngày, KHÔNG BAO GIỜ `reason` (B-H2). `refs` rỗng ⇒ Map rỗng, không query.
+ */
+export interface ILeaveSummaryReader {
+  leaveSummaries(
+    refs: readonly { workspaceId: string; refId: string }[],
+  ): Promise<ReadonlyMap<string, LeaveSummary>>;
+}
+
 /** Ngữ cảnh tối thiểu cho DTO (góp ý E). KHÔNG BAO GIỜ đọc `reason` / `decisionNote` (B-H2). */
 export interface INotificationContextReader {
   actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;

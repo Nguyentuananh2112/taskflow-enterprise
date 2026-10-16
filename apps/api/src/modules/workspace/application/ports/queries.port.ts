@@ -31,6 +31,13 @@ export interface IWorkspaceQueries {
   ): Promise<
     { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
   >;
+  /**
+   * Role + grants HIỆN TẠI của mọi thành viên ws (một query) — notifications fan-out thông báo "dành cho
+   * HR" tới người có `hr:manage` (T-040b L2: notifications không đọc thẳng `workspace_members`).
+   */
+  listMemberAccess(
+    workspaceId: string,
+  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]>;
   /** Đã xóa mềm, `purge_at > now`, user là OWNER (`?deleted=true`, security.md 3.6). */
   listDeletedOwnedBy(userId: string, now: Date): Promise<WorkspaceSnapshot[]>;
   /**

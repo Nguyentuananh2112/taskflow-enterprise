@@ -10,10 +10,11 @@ import {
   NotificationPublisher,
 } from '../../../src/modules/notifications/application/notification-publisher';
 import { NotificationQueries } from '../../../src/modules/notifications/application/notification.queries';
-import {
-  PrismaNotificationAudience,
-  PrismaNotificationContextReader,
-} from '../../../src/modules/notifications/infrastructure/prisma/prisma-notification-readers';
+import { notificationContextFrom } from '../../../src/composition/notification-adapters';
+import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
+import { PrismaUserRefReader } from '../../../src/modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
+import { WorkspaceNotificationAudience } from '../../../src/modules/workspace/application/adapters/notification-audience';
+import { PrismaWorkspaceQueries } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-queries';
 import { PrismaNotificationStore } from '../../../src/modules/notifications/infrastructure/prisma/prisma-notification.store';
 import { SpyRealtime } from '../../../src/modules/notifications/testing/notification-harness';
 import { FakeClock } from '../../support';
@@ -97,7 +98,7 @@ beforeEach(async () => {
   realtime = new SpyRealtime();
   const db = () => uow.db();
   const store = new PrismaNotificationStore(db);
-  const audience = new PrismaNotificationAudience(db);
+  const audience = new WorkspaceNotificationAudience({ queries: new PrismaWorkspaceQueries(db) });
   const canManageHr = (role: Parameters<typeof hasPermission>[0], grants: readonly 'HR_MANAGE'[]) =>
     hasPermission(role, grants, 'hr:manage');
   publisher = new NotificationPublisher({
@@ -112,7 +113,10 @@ beforeEach(async () => {
   queries = new NotificationQueries({
     store,
     audience,
-    context: new PrismaNotificationContextReader(db),
+    context: notificationContextFrom({
+      users: new PrismaUserRefReader(db),
+      leaves: new PrismaLeaveReadModel(db), // = `leave.summaries` nối ở persistence.ts (production)
+    }),
     canManageHr,
     clock,
   });

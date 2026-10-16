@@ -1,70 +1,26 @@
-import type { IUserRepository } from '../modules/auth/application/ports/user-repository.port';
-import type { ILeaveReadModel } from '../modules/leave/application/ports/leave-read-model.port';
 import type { ILeaveNotifier } from '../modules/leave/application/ports/leave.ports';
-import type { NotificationPublisher } from '../modules/notifications';
-import type {
-  AudienceWorkspace,
-  INotificationAudience,
-  INotificationContextReader,
-  LeaveSummary,
-  MemberAccess,
-} from '../modules/notifications/application/ports';
+import type { ILeaveSummaryReader, NotificationPublisher } from '../modules/notifications';
+import type { INotificationContextReader } from '../modules/notifications/application/ports';
 import type { IHrGrantNotifier } from '../modules/workspace/application/ports/collaborators.port';
-import type { IWorkspaceQueries } from '../modules/workspace/application/ports/queries.port';
-import type { IMembershipRepository } from '../modules/workspace/application/ports/repositories.port';
 
-/** Chế độ bộ nhớ (dev/test): membership hiện tại từ repository InMemory của Workspace. */
-export class InMemoryNotificationAudience implements INotificationAudience {
-  constructor(
-    private readonly ws: { queries: IWorkspaceQueries; memberships: IMembershipRepository },
-  ) {}
-
-  async workspacesOf(userId: string): Promise<AudienceWorkspace[]> {
-    const rows = await this.ws.queries.listActiveForUser(userId);
-    return rows.map((r) => ({
-      userId,
-      workspaceId: r.workspace.id,
-      workspaceName: r.workspace.name,
-      role: r.role,
-      grants: r.grants,
-      joinedAt: r.joinedAt,
-    }));
-  }
-
-  async membersOf(workspaceId: string): Promise<MemberAccess[]> {
-    const out: MemberAccess[] = [];
-    for (const userId of await this.ws.memberships.listUserIds(workspaceId)) {
-      const m = await this.ws.memberships.find(workspaceId, userId);
-      if (m) out.push({ userId, role: m.role, grants: [...m.grants] });
-    }
-    return out;
-  }
+/** Tên người dùng theo id — `IUserRefReader` (auth Prisma / bản sao InMemory của Task) dùng chung. */
+export interface UserRefs {
+  findRefs(ids: readonly string[]): Promise<ReadonlyMap<string, { id: string; fullName: string }>>;
 }
 
 /**
- * Chế độ bộ nhớ: tên actor từ repository user của auth; tóm tắt đơn nghỉ qua reader của leave (T-039 —
- * `leaveSummaries`, chỉ loại + ngày, không `reason`). T-040b (G) sẽ thay cả lớp này bằng reader của module.
+ * Ngữ cảnh DTO thông báo (T-040b L2): notifications không đọc bảng của module khác — tên actor qua reader
+ * user có sẵn, tóm tắt đơn nghỉ qua `ILeaveSummaryReader` = `readModel` của module leave (`leave.summaries`).
  */
-export class InMemoryNotificationContextReader implements INotificationContextReader {
-  constructor(
-    private readonly users: IUserRepository,
-    private readonly leaves: Pick<ILeaveReadModel, 'leaveSummaries'>,
-  ) {}
-
-  async actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
-    const out = new Map<string, string>();
-    for (const id of new Set(ids)) {
-      const user = await this.users.findById(id);
-      if (user) out.set(id, user.fullName);
-    }
-    return out;
-  }
-
-  leaveSummaries(
-    refs: readonly { workspaceId: string; refId: string }[],
-  ): Promise<ReadonlyMap<string, LeaveSummary>> {
-    return this.leaves.leaveSummaries(refs);
-  }
+export function notificationContextFrom(d: {
+  users: UserRefs;
+  leaves: ILeaveSummaryReader;
+}): INotificationContextReader {
+  return {
+    actorNames: async (ids) =>
+      new Map([...(await d.users.findRefs(ids))].map(([id, ref]) => [id, ref.fullName])),
+    leaveSummaries: (refs) => d.leaves.leaveSummaries(refs),
+  };
 }
 
 // ---------------------------------------------------------------- port của module dùng (ADR-093)

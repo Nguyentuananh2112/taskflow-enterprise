@@ -77,6 +77,15 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
     });
   }
 
+  listMemberAccess(
+    workspaceId: string,
+  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]> {
+    return this.db().workspaceMember.findMany({
+      where: { workspaceId },
+      select: { userId: true, role: true, grants: true },
+    });
+  }
+
   async listMembers(
     workspaceId: string,
     q: string | null,
