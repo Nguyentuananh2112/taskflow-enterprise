@@ -15,85 +15,62 @@ export interface DeclaredPending {
 }
 
 export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
-  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu).
+  // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 đã merge (e0b0fc9) — mục của nó đã gỡ.
   'SEC-HR-01': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-02': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-03': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-04': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-05': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-06': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-07': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
-  },
-  'SEC-HR-08': {
-    ticket: 'T-037',
-    reason:
-      'Mốc 3 chưa có grants + quyền hr:* + migration 3 (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-09': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-10': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-11': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-12': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-13': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-14': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-15': {
     ticket: 'T-040',
-    reason:
-      'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
-  },
-  'SEC-HR-16': {
-    ticket: 'T-037',
-    reason: 'Mốc 3 chưa có route GET hr-audit-logs (T-037, B chốt đường dẫn + quyền hr:grant)',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-28': {
     ticket: 'T-038',
@@ -105,118 +82,87 @@ export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
   },
   'SEC-HR-17': {
     ticket: 'T-040',
-    reason:
-      'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-18': {
     ticket: 'T-040',
-    reason:
-      'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-19': {
     ticket: 'T-040',
-    reason:
-      'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-20': {
     ticket: 'T-040',
-    reason:
-      'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module notifications (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-21': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-22': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-24': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-25': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'SEC-HR-26': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
-  },
-  'SEC-HR-27': {
-    ticket: 'T-037',
-    reason:
-      'Mốc 3 chưa có grants + quyền hr:* + migration 3 (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-01': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-02': {
     ticket: 'T-038',
-    reason:
-      'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module attendance (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-03': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-04': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-05': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-06': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-07': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-08': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-09': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-10': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-11': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
   'CC-HR-12': {
     ticket: 'T-039',
-    reason:
-      'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
-  },
-  'CC-HR-14': {
-    ticket: 'T-037',
-    reason:
-      'Mốc 3 chưa có grants + quyền hr:* + migration 3 (viết trước theo attendance-leave.md §5/§9; mọi ca HR cần T-037 cho seedHr)',
+    reason: 'Mốc 3 chưa có module leave (viết trước theo attendance-leave.md §5/§9)',
   },
 };
 
