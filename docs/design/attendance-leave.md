@@ -30,7 +30,7 @@
 **ADR-121 — Chấm công là log sự kiện bất biến; bảng công tính khi đọc.** Bảng `AttendanceEvent` chỉ thêm, không sửa; sai thì HR **hủy** (`voidedAt/voidedBy/voidReason`) và thêm lượt `ADJUSTMENT`. Bảng công ngày/tháng tính bằng hàm thuần `summarizeDay(events, schedule, holiday, leave)` — không lưu bảng tổng hợp (tránh lệch dữ liệu; 500 người × 31 ngày × 2 sự kiện ≈ 31 nghìn dòng — đọc 1 lần theo index là đủ). Lịch làm việc lưu theo **phiên bản có hiệu lực từ ngày** để đổi lịch không làm sai số liệu tháng cũ. Vì tính khi đọc, **quá khứ không được sửa âm thầm**: lịch mới chỉ hiệu lực từ hôm nay; thêm/sửa/xóa ngày lễ có ngày < hôm nay ⇒ 422 với HR, chỉ OWNER làm được và bắt buộc lý do + `HrAuditLog` (góp ý A#4). Về sau: "chốt công tháng" (khóa tháng).
 *Bác:* lưu bảng `AttendanceDay` cập nhật mỗi lần chấm (phải đồng bộ khi đổi lịch/duyệt nghỉ/hủy lượt — nhiều chỗ sai hơn); ngăn chấm trùng bằng code thuần (race) — dùng unique index một phần.
 
-**ADR-122 — Đơn nghỉ và số ngày phép.** Trạng thái `PENDING → APPROVED | REJECTED | CANCELLED`, `APPROVED → CANCELLED | REVOKED` (bảng chuyển đầy đủ ở §10; optimistic lock `version`, xung đột ⇒ 409). Không cho 2 đơn PENDING/APPROVED chồng ngày của cùng người: kiểm trong transaction dưới `pg_advisory_xact_lock(workspace, user)` (không dùng exclusion constraint vì cần extension `btree_gist` — vai trò migrator không tạo được extension). Người duyệt có `hr:manage` và **khác người gửi**; riêng OWNER tự duyệt được đơn của mình (chủ công ty). Phép năm: `LeaveBalance(year, entitledDays mặc định 12, adjustmentDays)`; "đã dùng" tính khi đọc từ đơn APPROVED loại ANNUAL; gửi và duyệt đơn ANNUAL vượt "còn lại − đang chờ" ⇒ 422, kiểm trong khóa (§10). Không cho đơn vắt qua 2 năm (v1). Số ngày nghỉ = số ngày làm việc trong khoảng theo lịch hiệu lực, trừ ngày lễ; nửa ngày = 0,5.
+**ADR-122 — Đơn nghỉ và số ngày phép.** Trạng thái `PENDING → APPROVED | REJECTED | CANCELLED`, `APPROVED → CANCELLED | REVOKED` (bảng chuyển đầy đủ ở §9; optimistic lock `version`, xung đột ⇒ 409). Không cho 2 đơn PENDING/APPROVED chồng ngày của cùng người: kiểm trong transaction dưới `pg_advisory_xact_lock(workspace, user)` (không dùng exclusion constraint vì cần extension `btree_gist` — vai trò migrator không tạo được extension). Người duyệt có `hr:manage` và **khác người gửi**; riêng OWNER tự duyệt được đơn của mình (chủ công ty). Phép năm: `LeaveBalance(year, entitledDays mặc định 12, adjustmentDays)`; "đã dùng" tính khi đọc từ đơn APPROVED loại ANNUAL; đơn ANNUAL chỉ hợp lệ khi `entitled + adjustment − used − pending_khác ≥ days(đơn này)` (`pending_khác` loại chính đơn đang xét), kiểm cả lúc gửi lẫn lúc duyệt, trong khóa (§9); vượt ⇒ 422. Không cho đơn vắt qua 2 năm (v1). Số ngày nghỉ = số ngày làm việc trong khoảng theo lịch hiệu lực, trừ ngày lễ; nửa ngày = 0,5.
 
 **ADR-123 — Thông báo bền trong app.** Bảng `Notification` ghi **trong cùng transaction** với thay đổi nghiệp vụ (không mất khi rớt socket); sau commit phát `notification:new` tới `user:{id}` (best-effort như hiện nay — client tải lại danh sách khi kết nối lại). Payload chỉ chứa id + loại (không chép lý do nghỉ/ghi chú vào thông báo); web dựng câu chữ. Danh sách chỉ trả thông báo của workspace người dùng còn là thành viên.
 
@@ -42,7 +42,7 @@ enum AttendanceSource   { WEB DEVICE ADJUSTMENT }
 enum LeaveType          { ANNUAL SICK PERSONAL_PAID UNPAID OTHER }
 enum LeaveDayPart       { FULL AM PM }
 enum LeaveStatus        { PENDING APPROVED REJECTED CANCELLED REVOKED }
-enum NotificationType   { LEAVE_SUBMITTED LEAVE_APPROVED LEAVE_REJECTED LEAVE_CANCELLED ATTENDANCE_ADJUSTED HR_GRANTED HR_REVOKED }
+enum NotificationType   { LEAVE_SUBMITTED LEAVE_APPROVED LEAVE_REJECTED LEAVE_CANCELLED LEAVE_REVOKED ATTENDANCE_ADJUSTED HR_GRANTED HR_REVOKED }
 
 WorkspaceMember  + grants MemberGrant[] @default([])
 
@@ -132,9 +132,39 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 - SEC: thành viên thường đọc công/đơn người khác ⇒ 404/403 đúng thứ tự; IDOR id đơn của workspace khác ⇒ 404; VIEWER chấm công ⇒ 403; HR tự duyệt ⇒ 403; PM không cấp được grant; thu grant xong request kế tiếp mất quyền ngay; CSV injection; IP/UA chỉ HR thấy.
 - Đồng thời (CC): 2 check-in song song ⇒ đúng 1 IN; approve vs cancel song song ⇒ 1 thắng, 1 nhận 409; 2 đơn ANNUAL song song vượt số dư ⇒ 1 bị 422; 2 đơn chồng ngày song song ⇒ 1 bị 409.
 - E2E: nhân viên chấm vào/ra; gửi đơn ⇒ HR thấy chuông realtime ⇒ duyệt ⇒ nhân viên thấy chuông + lịch đổi "Nghỉ phép"; OWNER cấp quyền HR cho MEMBER.
-- Riêng tư: IP/UA là dữ liệu cá nhân, lý do nghỉ ốm là dữ liệu sức khỏe (nhạy cảm) — xem §10; **thời hạn lưu PHẢI chốt trước deploy** (R27).
+- Riêng tư: IP/UA là dữ liệu cá nhân, lý do nghỉ ốm là dữ liệu sức khỏe (nhạy cảm) — xem §9; **thời hạn lưu PHẢI chốt trước deploy** (R27).
 
 ## 10. Chốt sau review bảo mật (B) và nghỉ phép (D)
+
+**Máy trạng thái đơn nghỉ** (D-H1) — thêm `REVOKED` vào `LeaveStatus`. "Hôm nay" = ngày theo múi giờ lịch hiệu lực (D-M5). Mọi chuyển khác ⇒ 409 `invalid_transition`.
+
+| Từ → Đến | Ai | Điều kiện | Số dư | Thông báo · Audit |
+|---|---|---|---|---|
+| (mới) → PENDING | người gửi | ≥ 1 ngày làm việc (0 ⇒ 422 `no_working_days`); không chồng (theo ngày + phần: AM + PM cùng ngày hợp lệ, AM/PM + FULL là chồng — D-M2); ANNUAL không vượt "còn − đang chờ" | giữ chỗ | HR · LEAVE_SUBMIT |
+| PENDING → APPROVED / REJECTED | `hr:manage`, khác người gửi (trừ OWNER) | người gửi vẫn là thành viên đủ điều kiện (không thì 409 `requester_not_member`, HR chỉ từ chối được — D-M4); approve kiểm LẠI số dư trong khóa (⇒ 422 `insufficient_balance` — D-H2) | trừ / trả | người gửi · LEAVE_DECIDE |
+| PENDING → CANCELLED | người gửi | — | trả | HR · LEAVE_CANCEL |
+| APPROVED → CANCELLED | người gửi | `startDate` > hôm nay | trả | HR · LEAVE_CANCEL |
+| APPROVED → REVOKED | `hr:manage`, khác người gửi (trừ OWNER) | `startDate` > hôm nay; bắt buộc lý do | trả | người gửi · LEAVE_REVOKE |
+
+Đơn đã bắt đầu: v1 không hủy/thu một phần. Không cộng dồn phép sang năm sau (v1). Người vào giữa năm: HR tự chỉnh `adjustmentDays` (BLLĐ tính theo tỷ lệ tháng).
+
+**Khóa & số học (D-H2, M3, M6):** submit / approve / cancel / revoke / PATCH balance của cùng (ws, user, năm) lấy CÙNG `pg_advisory_xact_lock(hashtextextended('taskflow:leave:<ws>:<user>', 0))` và tính lại số dư trong khóa; `version` giữ cho xung đột trạng thái. Tạo `LeaveBalance` lười bằng `INSERT … ON CONFLICT DO NOTHING`. Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thập phân ở biên DTO/DB. Giả định v1: mọi ngày làm cùng một hình dạng ca (D-M7).
+
+**Luật "không tự xử lý dữ liệu của mình"** (B-H1): mọi lệnh ghi cần `hr:manage` có `targetUserId === actor` (adjust, void, PATCH balance, approve, reject, revoke) ⇒ **403**, trừ OWNER; OWNER tự làm ⇒ bắt buộc lý do + HrAuditLog (rủi ro chấp nhận R26).
+
+**Thu quyền tức thì** (B-H3): lệnh ghi `hr:manage` đọc lại membership + grants **sau khi lấy khóa** trong transaction (như `lockOwnersAndReloadActor`), mất quyền ⇒ 403; có test stale-actor. Danh sách chuông lọc thông báo "dành cho HR" theo quyền **hiện tại**, không chỉ "còn là thành viên".
+
+**Grants (B-M1, M2):** `GRANT_PERMISSIONS[HR_MANAGE]` liệt kê tường minh; test parity chứng minh KHÔNG gồm `hr:grant`, `member:*`, `workspace:*`, `project:*`; grant mới phải qua ADR. OWNER không lưu grant tường minh (cấp cho OWNER ⇒ 422); hạ role ⇒ response + audit hiện grants còn lại; hạ VIEWER ⇒ xóa grants.
+
+**Dữ liệu nhạy cảm (B-H2, M5, L2–L4):** lý do nghỉ chỉ người gửi + `hr:manage` đọc; không vào CSV, thông báo, log, audit; form gợi ý "không cần ghi bệnh". CSV KHÔNG xuất IP/UA; `Content-Disposition` dựng từ `month` đã validate; `Cache-Control: no-store`; chống injection chỉ áp cho ô CHỮ (ô số/ngày do server sinh giữ nguyên); hạn mức theo user + ws. Nhân viên xem được IP/UA của chính mình (NĐ 13 Đ.14). IP lấy theo `TRUST_PROXY_HOPS`, chỉ để đối chiếu, không dùng ra quyết định. Ẩn danh hóa user phải xóa IP/UA trong `AttendanceEvent`.
+
+**API bổ sung (B-M3, M4):** mọi truy vấn notifications có `recipientId = me` trong WHERE (id người khác ⇒ 404). `PATCH leave-balances/:userId/:year`: `userId` có lịch sử trong ws (không thì 404), `year` trong ±1 năm. Route `hr:manage`: `permit` chạy TRƯỚC validate body/query ⇒ thành viên thường gửi body sai nhận 403, không 400.
+
+**Threat-model §6 thêm (B):** R25 không chống gian lận vị trí (người dùng chốt) · R26 OWNER tự duyệt/tự chỉnh của mình · R27 IP/UA + lý do nghỉ là dữ liệu cá nhân/nhạy cảm — thời hạn lưu, job xóa/ẩn danh, thông báo xử lý dữ liệu cho nhân viên phải chốt TRƯỚC deploy · R28 CSV đã tải ra ngoài tầm kiểm soát (chỉ audit EXPORT) · R29 realtime best-effort (có bảng bền) · R30 giữ lịch sử của người đã rời (gắn R27).
+
+**CC bổ sung cho F (D-L3, L4):** submit ‖ PATCH balance; approve ‖ HR giảm số dư; 2 đơn nửa ngày AM ‖ PM (cả 2 thành công); thêm ngày lễ trùng đơn APPROVED (số ngày tính lại khi đọc); HR mất quyền giữa lúc mở và bấm duyệt. Không thêm `Idempotency-Key` cho gửi đơn (bấm 2 lần ⇒ 409 chồng ngày là đủ — D-L2).
+
+## 9. Chốt sau review bảo mật (B) và nghỉ phép (D)
 
 **Máy trạng thái đơn nghỉ** (D-H1) — thêm `REVOKED` vào `LeaveStatus`. "Hôm nay" = ngày theo múi giờ lịch hiệu lực (D-M5). Mọi chuyển khác ⇒ 409 `invalid_transition`.
 
@@ -169,9 +199,11 @@ HrAuditLog        (id, workspaceId, actorId, action, targetUserId?, refId?, befo
 |---|---|---|---|
 | T-037 | B | ADR-119/120: grants + `effectivePermissions` + parity, `HrAuditLog`, quyền mới trong ma trận, route grants, migration 3 (gồm toàn bộ bảng §3 để các vé sau không đụng nhau) | — (làm trước, ~½ ngày) |
 | T-038 | A | Module `attendance`: lịch/ngày lễ, check-in/out, `summarizeDay`, bảng công, điều chỉnh/hủy, xuất CSV; adapter cho `WorkCalendarPort` của leave | T-037 |
-| T-039 | D | Module `leave` theo bảng chuyển trạng thái §10: đơn, khóa, duyệt/từ chối/hủy/thu hồi, số dư; adapter cho `ApprovedLeavePort` của attendance | T-037 (2 port chốt ở §4) |
+| T-039 | D | Module `leave` theo bảng chuyển trạng thái §9: đơn, khóa, duyệt/từ chối/hủy/thu hồi, số dư; adapter cho `ApprovedLeavePort` của attendance | T-037 (2 port chốt ở §4) |
 | T-040 | B | Module `notifications` + `notification:new` + `member:grants-changed`; leave/attendance gọi qua port | T-037 |
 | T-041a/b/c | E | Web §6 chia 3 để nối API theo từng vé backend: (a) thẻ chấm công + `/attendance` + chuông/header, (b) `/leave`, (c) `/hr` + công tắc grant; bắt đầu từ contracts + mock | T-037 |
 | T-042 | F | test-spec-hr, SEC/CC, E2E, Stryker cho `summarizeDay` + đếm ngày nghỉ | song song |
 
 Ước tính: 4–5 ngày làm việc của cả đội (đường găng là web ~4 ngày — E), tùy tải máy.
+
+
