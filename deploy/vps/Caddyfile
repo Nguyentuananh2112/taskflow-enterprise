@@ -1,0 +1,25 @@
+# Caddy — HTTPS tự động (Let's Encrypt), HTTP→HTTPS, reverse proxy (phương án VPS, D3).
+# API sau đúng 1 proxy ⇒ TRUST_PROXY_HOPS=1 trong .env.api (ĐO lại sau deploy — go-live #4). Caddy là proxy ngoài
+# cùng: mặc định KHÔNG tin X-Forwarded-For client gửi, tự ghi IP thật ⇒ không khai trusted_proxies.
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	# WebSocket (Socket.IO websocket-only — ADR-074) được reverse_proxy hỗ trợ sẵn.
+	reverse_proxy api:4000 {
+		health_uri /readyz
+		health_interval 10s
+		lb_try_duration 5s
+	}
+	# /metrics nằm trên cổng nội bộ 9464 — không có route ra Internet.
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000 {
+		health_uri /api/healthz
+		health_interval 10s
+	}
+}
