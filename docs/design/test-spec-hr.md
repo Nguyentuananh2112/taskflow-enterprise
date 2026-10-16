@@ -160,7 +160,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | LV-21 | APPROVED → REVOKED | Hana | đã bắt đầu | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) |
 | LV-22 | REJECTED/CANCELLED/REVOKED → bất kỳ | ai cũng vậy | — | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) (ma trận đủ 5×5 trạng thái, giống TE-M01..16) |
 | LV-23 | APPROVED → APPROVED | Hana | duyệt lại | 409 `RESOURCE_CONFLICT` (`reason: invalid_transition`) |
-| LV-24 | — | — | bảng chuyển của domain | **parity** với hằng trong `packages/contracts` (ADR-080) |
+| LV-24 | — | — | bảng chuyển của domain ↔ contracts | **MIỄN (TL chốt)**: không đưa `LEAVE_TRANSITIONS` vào contracts. Lý do: web chỉ ẩn/hiện nút theo `status` + `startDate`, server là nguồn quyết định duy nhất (409 `invalid_transition`). Vẫn giữ parity các enum (status/type/dayPart/reason/rule/audit/notification) và ma trận 5×5 ở domain (LV-22) |
 | LV-25 | stale-actor (B-H3) | Hana | Hana bị thu grant sau khi mở form, trước khi bấm duyệt | 403 (đọc lại membership + grants SAU khóa) |
 
 ## 4. Số dư phép (tầng A + I)
