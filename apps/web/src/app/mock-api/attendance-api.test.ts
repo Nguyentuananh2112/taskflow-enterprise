@@ -136,8 +136,9 @@ describe('mock chấm công', () => {
     expect(viewer.body.error.details).toEqual({ required: 'attendance:self' });
   });
 
-  it('tháng: đủ mọi ngày; ngày làm đã qua không chấm ⇒ ABSENT; Chủ nhật ⇒ OFF; tương lai ⇒ PENDING', async () => {
+  it('tháng: đủ mọi ngày; trước khi gia nhập ⇒ NOT_EMPLOYED; ngày làm đã qua không chấm ⇒ ABSENT; Chủ nhật ⇒ OFF; tương lai ⇒ PENDING', async () => {
     const { send, register } = setup();
+    now = Date.parse('2026-10-14T12:00:00.000Z'); // 19:00 thứ 4 giờ VN — gia nhập hôm đó, đã qua giờ làm
     const lan = await register('lan@example.com');
     const month = await send(
       'GET',
@@ -146,8 +147,18 @@ describe('mock chấm công', () => {
     );
     const days = month.body.data.days ?? [];
     expect(days).toHaveLength(31);
-    expect(days[13]).toMatchObject({ date: '2026-10-14', status: 'ABSENT' }); // thứ 4
-    expect(days[10]).toMatchObject({ date: '2026-10-11', status: 'OFF' }); // chủ nhật
+    expect(days[13]).toMatchObject({
+      date: '2026-10-14',
+      status: 'ABSENT',
+      timezone: 'Asia/Ho_Chi_Minh',
+    }); // ngày gia nhập
+    expect(days[12]).toMatchObject({
+      date: '2026-10-13',
+      status: 'NOT_EMPLOYED',
+      isWorkday: false,
+    });
+    expect(days[10]).toMatchObject({ date: '2026-10-11', status: 'NOT_EMPLOYED' }); // CN trước gia nhập: NOT_EMPLOYED ưu tiên cao nhất
+    expect(days[17]).toMatchObject({ date: '2026-10-18', status: 'OFF' }); // chủ nhật sau gia nhập
     expect(days[19]).toMatchObject({ date: '2026-10-20', status: 'PENDING' });
   });
 });

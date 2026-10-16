@@ -7,6 +7,8 @@ import type { DayStatus } from '@taskflow/contracts/attendance';
 export const DAY_STATUS: Readonly<
   Record<DayStatus, { label: string; icon: string; tone: string }>
 > = {
+  // Trước khi gia nhập / sau khi rời, không có lượt chấm (TL chốt): trung tính, không tính vào tổng.
+  NOT_EMPLOYED: { label: 'Chưa/không làm việc', icon: '·', tone: 'text-text-muted' },
   PRESENT: { label: 'Có mặt', icon: '✓', tone: 'text-success' },
   MISSING_OUT: { label: 'Chưa chấm ra', icon: '!', tone: 'text-warning' },
   ABSENT: { label: 'Vắng', icon: '✕', tone: 'text-danger' },

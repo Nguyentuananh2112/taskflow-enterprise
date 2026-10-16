@@ -47,6 +47,9 @@ const parts = (ms: number) => {
   };
 };
 
+/** Ngày lịch (múi giờ của lịch mock) của một thời điểm ISO. */
+export const localDate = (iso: string) => parts(Date.parse(iso)).date;
+
 /** T2–T7 là ngày làm (CN nghỉ). */
 const isWorkday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0;
 
@@ -108,7 +111,8 @@ export class MockAttendance {
     }));
   }
 
-  summarize(wsId: string, userId: string, date: string): AttendanceDayDto {
+  /** `joinedDate` (theo múi giờ lịch): ngày trước đó, không có lượt chấm ⇒ NOT_EMPLOYED (TL chốt). */
+  summarize(wsId: string, userId: string, date: string, joinedDate?: string): AttendanceDayDto {
     const list = this.punches(wsId, userId, date).filter((p) => !p.voided);
     const firstIn = list.find((p) => p.kind === 'IN');
     const outs = list.filter((p) => p.kind === 'OUT' && firstIn && p.at >= firstIn.at);
@@ -117,15 +121,18 @@ export class MockAttendance {
     const today = this.today();
     const nowMin = parts(this.now()).minute;
     const past = date < today || (date === today && nowMin >= MOCK_SCHEDULE.endMin);
-    const status = !workday
-      ? 'OFF'
-      : firstIn
-        ? lastOut || !past
-          ? 'PRESENT'
-          : 'MISSING_OUT'
-        : past
-          ? 'ABSENT'
-          : 'PENDING';
+    const notEmployed = joinedDate !== undefined && date < joinedDate && list.length === 0;
+    const status = notEmployed
+      ? 'NOT_EMPLOYED'
+      : !workday
+        ? 'OFF'
+        : firstIn
+          ? lastOut || !past
+            ? 'PRESENT'
+            : 'MISSING_OUT'
+          : past
+            ? 'ABSENT'
+            : 'PENDING';
     const inMin = firstIn ? parts(firstIn.at).minute : null;
     const outMin = lastOut ? parts(lastOut.at).minute : null;
     const lateMin =
@@ -143,7 +150,8 @@ export class MockAttendance {
         : 0;
     return {
       date,
-      isWorkday: workday,
+      timezone: MOCK_TZ,
+      isWorkday: workday && !notEmployed,
       status,
       late: lateMin > 0,
       early: earlyMin > 0,

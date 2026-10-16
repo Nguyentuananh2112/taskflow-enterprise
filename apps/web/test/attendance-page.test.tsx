@@ -41,16 +41,18 @@ describe('bảng công tháng', () => {
     ).toEqual(['Ngày', 'Trạng thái', 'Vào', 'Ra', 'Giờ làm', 'Muộn / sớm']);
     const rows = within(table).getAllByRole('rowheader');
     expect(rows).toHaveLength(31);
-    const wed = within(table)
+    // Người dùng gia nhập 15/10 ⇒ ngày trước đó KHÔNG phải "Vắng" (TL chốt NOT_EMPLOYED).
+    const before = within(table)
       .getByRole('rowheader', { name: /14\/10/ })
       .closest('tr');
-    expect(wed?.textContent).toContain('Vắng');
+    expect(before?.textContent).toContain('Chưa/không làm việc');
+    expect(before?.textContent).not.toContain('Vắng');
     const sun = within(table)
-      .getByRole('rowheader', { name: /11\/10/ })
+      .getByRole('rowheader', { name: /18\/10/ })
       .closest('tr');
     expect(sun?.textContent).toContain('Không phải ngày làm');
-    // Biểu tượng chỉ để nhìn — trình đọc màn hình đọc chữ.
-    expect(wed?.querySelector('[aria-hidden="true"]')?.textContent).toContain('✕');
+    // Biểu tượng chỉ để nhìn (trung tính, không màu vắng) — trình đọc màn hình đọc chữ.
+    expect(before?.querySelector('[aria-hidden="true"]')?.textContent).toContain('·');
     await expectNoA11yViolations();
   });
 

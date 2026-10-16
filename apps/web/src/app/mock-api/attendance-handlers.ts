@@ -10,7 +10,7 @@ import {
 } from '@taskflow/contracts/attendance';
 
 import type { MockAttendance } from './mock-attendance';
-import { MOCK_TZ } from './mock-attendance';
+import { MOCK_TZ, localDate } from './mock-attendance';
 import type { MockDb } from './mock-db';
 import { requireMember, type MemberContext } from './mock-guard';
 import { fail, ok, parseQuery } from './respond';
@@ -84,11 +84,16 @@ export function createAttendanceHandlers(
       if (query.response) return query.response;
       const [year, month] = query.data.month.split('-').map(Number) as [number, number];
       const daysIn = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const wsId = String(params.wsId);
+      // Ngày trước khi gia nhập (theo lịch) không phải ngày vắng ⇒ NOT_EMPLOYED (TL chốt).
+      const joinedAt = db.workspaces.member(wsId, ctx.ok.user.id)?.joinedAt;
+      const joinedDate = joinedAt ? localDate(joinedAt) : undefined;
       const days = Array.from({ length: daysIn }, (_, i) =>
         attendance.summarize(
-          String(params.wsId),
+          wsId,
           ctx.ok.user.id,
           `${query.data.month}-${String(i + 1).padStart(2, '0')}`,
+          joinedDate,
         ),
       );
       return ok(AttendanceMonthDto, { month: query.data.month, timezone: MOCK_TZ, days });
