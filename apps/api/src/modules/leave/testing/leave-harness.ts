@@ -1,5 +1,4 @@
 import { FakeClock, SequentialIdGenerator } from '../../../../test/support';
-import { FakeUnitOfWork } from '../../../../test/support/fake-unit-of-work';
 import { LeaveCommands } from '../application/leave-commands';
 import type {
   HrAuditAction,
@@ -14,20 +13,21 @@ import type {
   WorkCalendarDay,
 } from '../application/ports/leave.ports';
 import type { CalendarDate } from '../domain/leave-days';
-import { InMemoryLeaveRepository } from '../infrastructure/persistence/in-memory/in-memory-leave.repository';
+import { inMemoryLeaveBackend, RecordingLeaveRepository, type LeaveBackend } from './leave-backend';
 
 /** Fixture chuẩn test-spec-hr §0.2. */
-export const W1 = 'w1';
-export const W2 = 'w2';
+// UUID thật (cột uuid ở bản Prisma — tầng I/C dùng chung harness).
+export const W1 = '00000000-0000-7000-8000-0000000a0001';
+export const W2 = '00000000-0000-7000-8000-0000000a0002';
 export const U = {
-  Olivia: 'u-olivia', // OWNER (hr:manage + hr:grant theo role)
-  Hana: 'u-hana', // MEMBER + grant HR_MANAGE
-  Pam: 'u-pam', // PM
-  Mia: 'u-mia',
-  Max: 'u-max',
-  Vic: 'u-vic', // VIEWER
-  Rex: 'u-rex', // đã rời W1
-  Otto: 'u-otto', // OWNER của W2
+  Olivia: '00000000-0000-7000-8000-0000000b0001', // OWNER (hr:manage + hr:grant theo role)
+  Hana: '00000000-0000-7000-8000-0000000b0002', // MEMBER + grant HR_MANAGE
+  Pam: '00000000-0000-7000-8000-0000000b0003', // PM
+  Mia: '00000000-0000-7000-8000-0000000b0004',
+  Max: '00000000-0000-7000-8000-0000000b0005',
+  Vic: '00000000-0000-7000-8000-0000000b0006', // VIEWER
+  Rex: '00000000-0000-7000-8000-0000000b0007', // đã rời W1
+  Otto: '00000000-0000-7000-8000-0000000b0008', // OWNER của W2
 } as const;
 /** Thứ Ba 17/11/2026 10:00 giờ VN. */
 export const NOW = '2026-11-17T03:00:00.000Z';
@@ -134,13 +134,14 @@ export class SpyHrAudit implements IHrAudit {
   }
 }
 
-export function createLeaveHarness() {
-  const requests = new InMemoryLeaveRepository();
+export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBackend()) {
+  await backend.prepare({ workspaces: [W1, W2], users: Object.values(U) });
+  const requests = new RecordingLeaveRepository(backend.requests);
+  const { uow } = backend;
   const calendar = new FakeWorkCalendar();
   const membership = new FakeLeaveMembership();
   const notifier = new SpyLeaveNotifier();
   const audit = new SpyHrAudit();
-  const uow = new FakeUnitOfWork(requests);
   const clock = new FakeClock(NOW);
   const ids = new SequentialIdGenerator();
 
@@ -165,7 +166,9 @@ export function createLeaveHarness() {
   const as = (actorId: string, workspaceId: string = W1) => ({ workspaceId, actorId });
 
   /** Đơn có sẵn (không qua use case) — mặc định ANNUAL FULL PENDING của Mia. */
-  const seed = (over: Partial<LeaveRequestRecord> & { id: string }): LeaveRequestRecord => {
+  const seed = async (
+    over: Partial<LeaveRequestRecord> & { id: string },
+  ): Promise<LeaveRequestRecord> => {
     const at = new Date(NOW);
     const record: LeaveRequestRecord = {
       workspaceId: W1,
@@ -184,9 +187,23 @@ export function createLeaveHarness() {
       updatedAt: at,
       ...over,
     };
-    requests.seed(record);
+    await backend.seed(record);
     return record;
   };
 
-  return { leave, requests, calendar, membership, notifier, audit, uow, clock, ids, as, seed };
+  return {
+    leave,
+    requests,
+    locks: requests.locks,
+    rows: () => backend.rows(),
+    calendar,
+    membership,
+    notifier,
+    audit,
+    uow,
+    clock,
+    ids,
+    as,
+    seed,
+  };
 }
