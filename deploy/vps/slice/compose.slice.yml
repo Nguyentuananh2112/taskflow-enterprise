@@ -1,0 +1,12 @@
+# Lát cắt VPS trên MÁY DEV (D3) — lớp phủ cho deploy/vps/compose.prod.yml. KHÔNG dùng trên VPS thật.
+# Image local theo tag (build từ repo — README), Caddy chỉ nghe 127.0.0.1:18080/18443 (không đụng 80/443 của máy).
+name: taskflow-d3-slice
+services:
+  caddy:
+    ports: !override ['127.0.0.1:18080:80', '127.0.0.1:18443:443']
+  api:
+    image: ${SLICE_API_IMAGE:?tag image api, vd taskflow-api:slice}
+  web:
+    image: ${SLICE_WEB_IMAGE:?tag image web, vd taskflow-web:slice}
+  migrate:
+    image: ${SLICE_MIGRATE_IMAGE:?tag image migrate, vd taskflow-api-migrate:slice}
