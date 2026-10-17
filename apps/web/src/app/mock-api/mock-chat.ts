@@ -213,14 +213,19 @@ export class MockChat {
   }
 
   toDetail(conv: Conversation, viewerId: string): ConversationDetailDto {
-    const members =
+    // DIRECT (G 18/10, server T-069): đủ người tham gia còn ở công ty — người kia đã nghỉ ⇒ chỉ còn 1. Không xét
+    // `joinedAt` như nhóm: DIRECT cũ hiện lại cho người được nhận lại (F-03g).
+    const ids =
       conv.kind === 'DIRECT'
-        ? []
-        : this.memberIds(conv).map((id) => ({
-            user: this.userRef(id),
-            role: this.roleOf(conv, id) ?? ('MEMBER' as const),
-            joinedAt: this.participants.get(conv.id)?.get(id)?.joinedAt ?? conv.createdAt,
-          }));
+        ? [...(this.participants.get(conv.id)?.keys() ?? [])].filter((id) =>
+            this.activeInCompany(id),
+          )
+        : this.memberIds(conv);
+    const members = ids.map((id) => ({
+      user: this.userRef(id),
+      role: this.roleOf(conv, id) ?? ('MEMBER' as const),
+      joinedAt: this.participants.get(conv.id)?.get(id)?.joinedAt ?? conv.createdAt,
+    }));
     return { ...this.toDto(conv, viewerId), members };
   }
 }

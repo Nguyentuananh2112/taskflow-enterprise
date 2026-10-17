@@ -98,7 +98,10 @@ describe('mock chat — DIRECT + IDOR (SEC-CH-01/03)', () => {
     const again = await call(vic.token, 'POST', '/chat/direct', { userId: mia.id });
     expect(again.status).toBe(200);
     expect(data<{ id: string; members: unknown[] }>(again)).toMatchObject({ id });
-    expect(Array.isArray(data<{ members: unknown[] }>(again).members)).toBe(true); // DIRECT: [] (dùng `peer`)
+    expect(data<{ members: Array<{ role: string }> }>(again).members).toEqual([
+      expect.objectContaining({ role: 'MEMBER' }),
+      expect.objectContaining({ role: 'MEMBER' }),
+    ]);
     expect(
       (await call(mia.token, 'POST', '/chat/direct', { userId: mia.id })).body.error?.details?.rule,
     ).toBe('SELF_DIRECT');
