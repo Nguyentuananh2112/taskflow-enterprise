@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 import { LoginForm } from '@/features/auth-login';
 import { AuthCard } from '@/shared/ui/auth-card';
 
@@ -9,14 +7,8 @@ export function LoginPage() {
     <AuthCard
       title="Đăng nhập"
       subtitle="Chào mừng bạn quay lại TaskFlow."
-      footer={
-        <>
-          Chưa có tài khoản?{' '}
-          <Link href="/register" className="font-medium text-primary underline">
-            Đăng ký
-          </Link>
-        </>
-      }
+      // ADR-137: không tự đăng ký — tài khoản do bộ phận nhân sự tạo, nhân viên kích hoạt bằng link.
+      footer="Chưa có tài khoản? Hãy nhờ bộ phận nhân sự gửi link kích hoạt."
     >
       <LoginForm />
     </AuthCard>

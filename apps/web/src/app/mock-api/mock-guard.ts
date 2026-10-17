@@ -1,6 +1,6 @@
 import type { MembershipDto } from '@taskflow/contracts/auth';
 import { Uuid } from '@taskflow/contracts/common';
-import { hasPermission, roleHasPermission, type Permission } from '@taskflow/contracts/rbac';
+import { roleHasPermission, type Permission } from '@taskflow/contracts/rbac';
 
 import type { CompanyPermission, MeCompanyDto } from '@taskflow/contracts/company';
 
@@ -58,21 +58,6 @@ export function forbiddenUnless(ctx: MemberContext, permission: Permission): Res
 export function originClientId(request: Request): string | null {
   const value = request.headers.get('x-client-id');
   return Uuid.safeParse(value).success ? value : null;
-}
-
-/**
- * 403 khi quyền HIỆU LỰC (role ∪ grants — ADR-119) thiếu `permission`; đọc grants mới nhất mỗi request
- * (thu quyền có hiệu lực ngay — B-H3).
- */
-export function forbiddenUnlessGranted(
-  ctx: MemberContext,
-  db: MockDb,
-  permission: Permission,
-): Response | null {
-  const grants = db.workspaces.member(ctx.membership.workspaceId, ctx.user.id)?.grants ?? [];
-  return hasPermission(ctx.membership.role, grants, permission)
-    ? null
-    : fail(403, 'FORBIDDEN_ACCESS', { required: permission });
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { WorkspaceRole } from '@taskflow/contracts/rbac';
 import { UserDto } from '@taskflow/contracts/auth';
+import { CompanyAccessChangedEventEnvelope } from '@taskflow/contracts/realtime';
 import type { TaskDto, TaskStatus } from '@taskflow/contracts/task';
 import { act, render } from '@testing-library/react';
 import { getResponse } from 'msw';
@@ -8,6 +9,7 @@ import { useSyncExternalStore } from 'react';
 import { API_BASE, type startMockApi } from '@test/mock-api';
 import { testRouter } from '@test/navigation';
 
+import { userRoom } from '@/app/mock-api/workspace-events';
 import { AppShell } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import { session } from '@/entities/session';
@@ -79,6 +81,26 @@ export function seedBoard(mock: ReturnType<typeof startMockApi>) {
       ? mock.db.company.setAccess(user.id, 'EMPLOYEE', ['HR_MANAGE'])
       : mock.db.company.setAccess(user.id, access);
 
+  /** Server báo `company:access-changed` tới `user` với vai trò / quyền HIỆN TẠI trong mock (ADR-135). */
+  const pushAccessChanged = (user: typeof owner.user) => {
+    const row = mock.db.company.row(user.id);
+    if (!row) throw new Error('người này không thuộc công ty');
+    act(() =>
+      mock.board.publish({
+        room: userRoom(user.id),
+        name: 'company:access-changed',
+        payload: CompanyAccessChangedEventEnvelope.parse({
+          eventId: crypto.randomUUID(),
+          type: 'company:access-changed',
+          occurredAt: new Date().toISOString(),
+          actorId: owner.user.id,
+          originClientId: null,
+          data: { role: row.role, grants: [...row.grants] },
+        }),
+      }),
+    );
+  };
+
   /** Đăng nhập tab này bằng `user` (thay cho luồng /auth/refresh — đã test ở auth-flow). */
   const signInAs = (user: typeof owner.user) =>
     act(() => session.signIn(mock.db.issueAccess(user), UserDto.parse(user)));
@@ -93,6 +115,7 @@ export function seedBoard(mock: ReturnType<typeof startMockApi>) {
     apiAs,
     createTask,
     moveTask,
+    pushAccessChanged,
     setCompanyAccess,
     signInAs,
   };

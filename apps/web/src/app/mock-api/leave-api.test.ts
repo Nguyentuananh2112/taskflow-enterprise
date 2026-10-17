@@ -8,7 +8,7 @@ import { createMockApi } from './index';
 const BASE = 'http://localhost:4000/api/v1';
 const ORIGIN = 'http://localhost:4000';
 
-async function setup() {
+function setup() {
   const api = createMockApi(BASE, { now: () => Date.parse('2026-10-15T03:00:00.000Z') });
   const call = async (method: string, path: string, token?: string, body?: unknown) => {
     const response = await getResponse(
@@ -33,18 +33,18 @@ async function setup() {
       },
     };
   };
-  const reg = await call('POST', '/auth/register', undefined, {
+  // ADR-137: không còn /auth/register — tài khoản có sẵn trong mock.
+  const { user } = api.db.createUser({
     email: 'lan@example.com',
     password: 'cay-tre-xanh-ven-song',
     fullName: 'Trần Lan',
   });
-  const me = reg.body.data as unknown as { accessToken: string };
-  return { call, token: me.accessToken };
+  return { call, token: api.db.issueAccess(user).accessToken };
 }
 
 describe('mock: đơn của tôi', () => {
   it('tham số lạ (userId — SEC-HR-03) hoặc limit > 100 ⇒ 400; trang có meta.page', async () => {
-    const { call, token } = await setup();
+    const { call, token } = setup();
     const path = '/leave/requests';
     const other = crypto.randomUUID();
     expect((await call('GET', `${path}?mine=1&userId=${other}`, token)).status).toBe(400);

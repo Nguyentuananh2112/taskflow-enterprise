@@ -21,6 +21,8 @@ afterEach(() => {
   now = Date.parse('2026-10-15T03:00:00.000Z');
 });
 
+const PW = 'cay-tre-xanh-ven-song';
+
 function setup(accessTtlSec = 900) {
   const api = createMockApi(BASE, { accessTtlSec, now: () => now });
   const send = async (
@@ -44,18 +46,34 @@ function setup(accessTtlSec = 900) {
       cookie,
     };
   };
-  const register = (email = 'lan@example.com') =>
-    send('POST', '/auth/register', {
-      body: { email, password: 'cay-tre-xanh-ven-song', fullName: 'Trần Lan' },
-    });
-  return { api, send, register };
+  // ADR-137: không còn /auth/register — tài khoản có sẵn trong mock rồi đăng nhập (phiên + cookie như server).
+  const register = (email = 'lan@example.com') => {
+    api.db.createUser({ email, password: PW, fullName: 'Trần Lan' });
+    return send('POST', '/auth/login', { body: { email, password: PW } });
+  };
+  /** Người chờ kích hoạt + token (để thử PasswordPolicy ở /auth/activate). */
+  const pending = (email = 'an@example.com') => {
+    const { user } = api.db.createUser({ email, password: '', fullName: 'An', workspace: false });
+    return api.db.company.issueToken(user.id, now, 86_400_000).token;
+  };
+  return { api, send, register, pending };
 }
 
 describe('validate request bằng schema contracts', () => {
-  it('mật khẩu 11 ký tự ⇒ 400 VALIDATION_ERROR theo path, issue KHÔNG chứa input (ADR-096)', async () => {
-    const { send } = setup();
-    const res = await send('POST', '/auth/register', {
-      body: { email: 'lan@example.com', password: 'mat-khau-11', fullName: 'Trần Lan' },
+  it('POST /auth/register KHÔNG còn (ADR-137 — tắt tự đăng ký)', async () => {
+    const { api } = setup();
+    const request = new Request(`${BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: ORIGIN },
+      body: JSON.stringify({ email: 'x@example.com', password: PW, fullName: 'X' }),
+    });
+    expect(await getResponse(api.handlers, request)).toBeUndefined();
+  });
+
+  it('mật khẩu 11 ký tự (kích hoạt) ⇒ 400 VALIDATION_ERROR theo path, issue KHÔNG chứa input (ADR-096)', async () => {
+    const { send, pending } = setup();
+    const res = await send('POST', '/auth/activate', {
+      body: { token: pending(), password: 'mat-khau-11' },
     });
     expect(res.status).toBe(400);
     expect(res.body?.error.code).toBe('VALIDATION_ERROR');
@@ -73,28 +91,35 @@ describe('validate request bằng schema contracts', () => {
     expect(res.body?.error.details.issues[0]?.code).toBe('unrecognized_keys');
   });
 
-  it('email được chuẩn hóa như server (trim + lowercase) ⇒ trùng ⇒ 409 EMAIL_ALREADY_EXISTS', async () => {
-    const { register } = setup();
-    await register('lan@example.com');
-    const dup = await register('  LAN@Example.com ');
+  it('email được chuẩn hóa như server (trim + lowercase) ⇒ thêm trùng nhân viên ⇒ 409 already_employee', async () => {
+    const { api, register, send } = setup();
+    const token = (await register('lan@example.com')).body?.data.accessToken as string;
+    const lan = api.db.findUserByEmail('lan@example.com');
+    if (lan) api.db.company.setAccess(lan.id, 'ADMIN');
+    const dup = await send('POST', '/hr/employees', {
+      headers: { authorization: `Bearer ${token}` },
+      body: { email: '  LAN@Example.com ', fullName: 'Lan 2' },
+    });
     expect(dup.status).toBe(409);
-    expect(dup.body?.error.code).toBe('EMAIL_ALREADY_EXISTS');
+    expect((dup.body?.error.details as { reason?: string } | undefined)?.reason).toBe(
+      'already_employee',
+    );
   });
 
-  it('mật khẩu phổ biến ⇒ VALIDATION_ERROR tại password (luật chỉ server biết)', async () => {
-    const { send } = setup();
-    const res = await send('POST', '/auth/register', {
-      body: { email: 'an@example.com', password: 'password1234', fullName: 'An' },
+  it('mật khẩu phổ biến (kích hoạt) ⇒ VALIDATION_ERROR tại password (luật chỉ server biết)', async () => {
+    const { send, pending } = setup();
+    const res = await send('POST', '/auth/activate', {
+      body: { token: pending(), password: 'password1234' },
     });
     expect(res.body?.error.details.issues[0]?.path).toEqual(['password']);
   });
 });
 
 describe('vòng đời phiên giống server thật', () => {
-  it('register ⇒ 201 + cookie HttpOnly Path=/api/v1/auth; /auth/me với Bearer', async () => {
+  it('đăng nhập ⇒ 200 + cookie HttpOnly Path=/api/v1/auth; /auth/me với Bearer', async () => {
     const { register, send } = setup();
     const res = await register();
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.cookie).toMatch(/^mock-rt-/);
     const me = await send('GET', '/auth/me', {
       headers: { authorization: `Bearer ${res.body?.data.accessToken}` },

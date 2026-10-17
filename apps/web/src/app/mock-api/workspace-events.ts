@@ -1,11 +1,10 @@
 import {
-  MemberGrantsChangedEvent,
   MemberRoleChangedEvent,
   ProjectUpdatedEvent,
   WorkspaceAccessRevokedEvent,
 } from '@taskflow/contracts/realtime';
 import type { ProjectDto } from '@taskflow/contracts/project';
-import type { MemberGrant, WorkspaceRole } from '@taskflow/contracts/rbac';
+import type { WorkspaceRole } from '@taskflow/contracts/rbac';
 import type { TaskDto } from '@taskflow/contracts/task';
 
 import type { MockBoard } from './mock-board';
@@ -42,23 +41,6 @@ export function accessRevoked(
       ),
     });
   }
-}
-
-/** ADR-119: tới `user:{id}` của người được cấp/thu — web làm mới quyền ngay. */
-export function grantsChanged(
-  board: MockBoard,
-  origin: Origin,
-  workspaceId: string,
-  userId: string,
-  grants: readonly MemberGrant[],
-): void {
-  board.publish({
-    room: userRoom(userId),
-    name: 'member:grants-changed',
-    payload: MemberGrantsChangedEvent.parse(
-      envelope(board, 'member:grants-changed', origin, { workspaceId, grants: [...grants] }),
-    ),
-  });
 }
 
 export function roleChanged(

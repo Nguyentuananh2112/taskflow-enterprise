@@ -41,17 +41,14 @@ function setup() {
     const text = await response.text();
     return { status: response.status, body: (text ? JSON.parse(text) : null) as Json };
   };
-  const register = async (email: string) => {
-    const request = new Request(`${BASE}/auth/register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', origin: ORIGIN },
-      body: JSON.stringify({ email, password: 'cay-tre-xanh-ven-song', fullName: 'Trần Lan' }),
+  // ADR-137: không còn /auth/register — tạo tài khoản thẳng trong mock (nhân viên + workspace riêng như trước).
+  const register = (email: string) => {
+    const { user, defaultWorkspaceId } = api.db.createUser({
+      email,
+      password: 'cay-tre-xanh-ven-song',
+      fullName: 'Trần Lan',
     });
-    const response = await getResponse(api.handlers, request);
-    const body = (await response?.json()) as {
-      data: { accessToken: string; user: { id: string }; defaultWorkspaceId: string };
-    };
-    return body.data;
+    return Promise.resolve({ ...api.db.issueAccess(user), user, defaultWorkspaceId });
   };
   return { api, send, register };
 }

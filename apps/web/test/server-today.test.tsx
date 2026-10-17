@@ -59,8 +59,6 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
     mock.notifications.notify(f.owner.id, {
       type: 'LEAVE_APPROVED',
       refId: crypto.randomUUID(),
-      workspaceId: f.wsId,
-      workspaceName: 'Công ty Lan',
       actor: { id: crypto.randomUUID(), fullName: 'Hana HR' },
       leave: { type: 'ANNUAL', startDate: '2031-03-12', endDate: '2031-03-12' },
     });
@@ -68,7 +66,8 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
     await u.click(await screen.findByRole('button', { name: 'Thông báo, 1 chưa đọc' }));
     const panel = await screen.findByRole('dialog', { name: 'Thông báo' });
     const item = await within(panel).findByRole('link', { name: /^Chưa đọc:/ });
-    expect(item.getAttribute('aria-label')).toMatch(/, phút này$/);
+    // Mốc 3.5: thông báo không còn tên workspace ⇒ "…. phút này".
+    expect(item.getAttribute('aria-label')).toMatch(/\. phút này$/);
   });
 
   it('/hr: bảng công tháng 3/2031 + "Tháng sau" khóa; ngày lễ năm 2031; số phép năm 2031', async () => {

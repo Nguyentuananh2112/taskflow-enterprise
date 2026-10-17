@@ -1,7 +1,7 @@
 import type { LeaveType, NotificationDto } from '@taskflow/contracts/hr';
 
 // Web dựng câu chữ từ type + ngữ cảnh join sẵn (ADR-123: thông báo không chép nội dung nghiệp vụ;
-// đơn nghỉ KHÔNG có lý do). Tên người/ workspace hiển thị như TEXT (React tự escape — E2E-HR-08).
+// đơn nghỉ KHÔNG có lý do). Tên người hiển thị như TEXT (React tự escape — E2E-HR-08).
 
 export const LEAVE_TYPE_LABEL: Readonly<Record<LeaveType, string>> = {
   ANNUAL: 'phép năm',
@@ -31,10 +31,14 @@ export function notificationText(n: NotificationDto): string {
       return `Đơn ${leave} của bạn đã bị thu hồi`;
     case 'ATTENDANCE_ADJUSTED':
       return `${who} đã điều chỉnh chấm công của bạn`;
-    case 'HR_GRANTED':
-      return 'Bạn được cấp quyền Quản lý nhân sự';
-    case 'HR_REVOKED':
-      return 'Quyền Quản lý nhân sự của bạn đã bị thu hồi';
+    // Mốc 3.5: quyền cấp công ty (thay HR_GRANTED / HR_REVOKED theo workspace) + nghỉ việc.
+    case 'ACCESS_CHANGED':
+      return 'Quyền của bạn trong công ty đã thay đổi';
+    case 'OFFBOARD_SCHEDULED':
+      // Gửi cả người nghỉ lẫn Admin; DTO không có tên người nghỉ ⇒ câu trung tính, chi tiết ở trang chính / Nhân sự.
+      return `${who} đã lên lịch nghỉ việc — xem chi tiết`;
+    case 'OFFBOARD_CLEANUP':
+      return 'Đã dọn đơn nghỉ của người vừa nghỉ việc';
   }
 }
 
@@ -50,8 +54,10 @@ export function notificationHref(n: NotificationDto): string {
       return '/leave';
     case 'ATTENDANCE_ADJUSTED':
       return '/attendance';
-    case 'HR_GRANTED':
-    case 'HR_REVOKED':
+    case 'ACCESS_CHANGED':
+    case 'OFFBOARD_SCHEDULED':
       return '/w';
+    case 'OFFBOARD_CLEANUP':
+      return '/hr?tab=leave';
   }
 }

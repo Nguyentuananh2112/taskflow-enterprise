@@ -94,8 +94,6 @@ export function createHrLeaveHandlers(
       notifications.notify(l.userId, {
         type: NOTIFY[action],
         refId: l.id,
-        workspaceId: wsId,
-        workspaceName: db.company.name,
         actor: by,
         leave: { type: l.type, startDate: l.startDate, endDate: l.endDate },
       });

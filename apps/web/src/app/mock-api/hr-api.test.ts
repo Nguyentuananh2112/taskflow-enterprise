@@ -3,7 +3,6 @@ import { getResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
 import { createMockApi } from './index';
-import { COMPANY_SCOPE } from './mock-guard';
 
 // Mock phía HR (T-041c) phải khó tính như API thật (A/D chốt; attendance-leave.md §5, §9): quyền
 // `hr:manage` trước validate, luật "không tự xử lý của mình", máy trạng thái đơn, CSV chống injection.
@@ -39,23 +38,18 @@ async function setup() {
     const text = await response.text();
     return { status: response.status, body: (text ? JSON.parse(text) : null) as Json };
   };
-  const register = async (email: string, fullName: string) => {
-    const response = await getResponse(
-      api.handlers,
-      new Request(`${BASE}/auth/register`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', origin: ORIGIN },
-        body: JSON.stringify({ email, password: 'cay-tre-xanh-ven-song', fullName }),
-      }),
-    );
-    const json = (await response?.json()) as {
-      data: { accessToken: string; user: { id: string }; defaultWorkspaceId: string };
-    };
-    return {
-      token: json.data.accessToken,
-      id: json.data.user.id,
-      ws: json.data.defaultWorkspaceId,
-    };
+  // ADR-137: không còn /auth/register — tạo tài khoản thẳng trong mock.
+  const register = (email: string, fullName: string) => {
+    const { user, defaultWorkspaceId } = api.db.createUser({
+      email,
+      password: 'cay-tre-xanh-ven-song',
+      fullName,
+    });
+    return Promise.resolve({
+      token: api.db.issueAccess(user).accessToken,
+      id: user.id,
+      ws: defaultWorkspaceId,
+    });
   };
   const owner = await register('lan@example.com', 'Trần Lan');
   api.db.company.setAccess(owner.id, 'ADMIN');
@@ -278,8 +272,6 @@ describe('mock HR — thông báo theo quyền hiện tại (B-H3)', () => {
     api.notifications.notify(ha.id, {
       type: 'LEAVE_SUBMITTED',
       refId: crypto.randomUUID(),
-      workspaceId: COMPANY_SCOPE,
-      workspaceName: 'Công ty Mẫu',
       actor: null,
       leave: { type: 'ANNUAL', startDate: '2026-10-19', endDate: '2026-10-19' },
     });

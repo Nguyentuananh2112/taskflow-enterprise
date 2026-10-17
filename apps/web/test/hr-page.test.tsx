@@ -64,8 +64,18 @@ describe('trang Nhân sự — quyền', () => {
     expect(links.map((l) => l.getAttribute('href'))).toContain('/hr');
   });
 
-  // Đổi quyền KHÔNG tải lại (E2E-HR-03/18) chờ event `company:access-changed` của B (T-061 code commit).
-  it.todo('được cấp / bị thu HR_MANAGE ⇒ lối vào hiện / ẩn ngay qua company:access-changed');
+  it('được cấp / bị thu HR_MANAGE ⇒ lối vào "Nhân sự" hiện / ẩn NGAY qua company:access-changed (không tải lại)', async () => {
+    const { f, an, open } = seed();
+    open('/attendance', an);
+    await screen.findByRole('table', { name: /^Bảng công tháng/ });
+    expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull();
+    f.setCompanyAccess(an, 'HR');
+    f.pushAccessChanged(an);
+    expect(await screen.findByRole('link', { name: 'Nhân sự' })).toBeTruthy();
+    f.setCompanyAccess(an, 'EMPLOYEE');
+    f.pushAccessChanged(an);
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull());
+  });
 });
 
 describe('trang Nhân sự — XSS (E2E-HR-08)', () => {
@@ -110,8 +120,6 @@ describe('trang Nhân sự — realtime', () => {
       mock.notifications.notify(f.owner.id, {
         type: 'LEAVE_SUBMITTED',
         refId: created.id,
-        workspaceId: COMPANY_SCOPE,
-        workspaceName: 'WS',
         actor: { id: an.id, fullName: an.fullName },
         leave: { type: 'PERSONAL_PAID', startDate: '2026-10-23', endDate: '2026-10-23' },
       });
@@ -143,10 +151,16 @@ describe('nhân viên — realtime', () => {
 });
 
 describe('trang Nhân sự — thu quyền', () => {
-  // Chờ event `company:access-changed` (B) — trước đó web chỉ biết mất quyền khi request kế tiếp trả 403.
-  it.todo(
-    'đang mở /hr mà bị thu HR_MANAGE ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất',
-  );
+  it('đang mở /hr mà bị thu HR_MANAGE ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
+    const { f, an, open, grantHr } = seed();
+    grantHr(an);
+    open('/hr', an);
+    await screen.findByRole('table', { name: 'Chấm công từng người hôm nay' });
+    f.setCompanyAccess(an, 'EMPLOYEE');
+    f.pushAccessChanged(an);
+    expect(await screen.findByText('Bạn không có quyền Quản lý nhân sự')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
 });
 
 describe('trang Nhân sự — các tab', () => {

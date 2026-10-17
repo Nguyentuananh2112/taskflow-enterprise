@@ -3,19 +3,16 @@ import {
   ChangePasswordBody,
   LoginBody,
   LoginResponse,
-  RegisterBody,
-  RegisterResponse,
+  MeResponse,
   UpdateMeBody,
   UserDto,
 } from '@taskflow/contracts/auth';
 import { http, type HttpHandler } from 'msw';
 
-import { MeWithCompanyResponse } from '@/shared/api/pending-contracts/company';
-
 import type { MockDb } from './mock-db';
 import { rejectsOrigin } from './request-guards';
 import { authenticate as authenticateRequest } from './mock-guard';
-import { fail, noContent, ok, parseBody, ruleViolation } from './respond';
+import { fail, noContent, ok, parseBody } from './respond';
 
 // Handler /auth/* của mock API — hành vi theo data-and-api.md §2.4 và security.md §1, §2.3, §6.4–6.5.
 
@@ -56,30 +53,7 @@ export function createAuthHandlers(
   };
 
   return [
-    http.post(url('/auth/register'), async ({ request }) => {
-      const body = await parseBody(request, RegisterBody);
-      if (body.response) return body.response;
-      const { email, password, fullName } = body.data;
-      if (COMMON_PASSWORDS.has(password.toLowerCase())) {
-        return ruleViolation(
-          'password',
-          'common_password',
-          'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.',
-        );
-      }
-      const localPart = email.split('@')[0] ?? '';
-      if (localPart.length >= 3 && password.toLowerCase().includes(localPart)) {
-        return ruleViolation('password', 'contains_email', 'Mật khẩu không được chứa email.');
-      }
-      if (db.findUserByEmail(email)) return fail(409, 'EMAIL_ALREADY_EXISTS');
-      const { user, defaultWorkspaceId } = db.createUser({ email, password, fullName });
-      const tokens = db.issueAccess(user);
-      return ok(
-        RegisterResponse,
-        { ...tokens, user: UserDto.parse(user), defaultWorkspaceId },
-        { status: 201, headers: setCookie(db.issueRefresh(user.id)) },
-      );
-    }),
+    // ADR-137: KHÔNG có /auth/register (tắt tự đăng ký) — request tới đó không có handler (server thật 404).
 
     http.post(url('/auth/login'), async ({ request }) => {
       const body = await parseBody(request, LoginBody);
@@ -140,7 +114,7 @@ export function createAuthHandlers(
       const company = db.company.of(auth.user.id);
       // ADR-135: không thuộc công ty ⇒ 401 SESSION_REVOKED (không có "đăng nhập mà không thuộc công ty").
       if (!company) return fail(401, 'SESSION_REVOKED');
-      return ok(MeWithCompanyResponse, {
+      return ok(MeResponse, {
         user: UserDto.parse(auth.user),
         memberships: db.membershipsOf(auth.user.id),
         company,

@@ -50,7 +50,7 @@ export class MockNotifications {
         occurredAt: item.createdAt,
         actorId: n.actor?.id ?? recipientId,
         originClientId: null,
-        data: { notificationId: item.id, type: item.type, workspaceId: item.workspaceId },
+        data: { notificationId: item.id, type: item.type },
       }),
     });
     return item;

@@ -1,11 +1,10 @@
 import {
   AuthTokenDto,
   LoginResponse,
-  RegisterResponse,
+  MeResponse,
   UserDto,
   type ChangePasswordBody,
   type LoginBody,
-  type RegisterBody,
   type UpdateMeBody,
 } from '@taskflow/contracts/auth';
 import * as z from 'zod';
@@ -17,7 +16,6 @@ import {
 } from '@taskflow/contracts/company';
 
 import { cookieHttp, http } from '@/shared/api';
-import { MeWithCompanyResponse } from '@/shared/api/pending-contracts/company';
 
 // Gọi /auth/* (data-and-api.md §2.4). Response parse bằng schema contracts trong `http`.
 // refresh/logout dùng cookie ⇒ `cookieHttp` (không qua hàng đợi refresh của `http`).
@@ -25,13 +23,12 @@ import { MeWithCompanyResponse } from '@/shared/api/pending-contracts/company';
 const NoContent = z.undefined();
 
 export const authApi = {
-  register: (body: RegisterBody) => http.post('/auth/register', { schema: RegisterResponse, body }),
   login: (body: LoginBody) => http.post('/auth/login', { schema: LoginResponse, body }),
   refresh: () => cookieHttp.post('/auth/refresh', { schema: AuthTokenDto }),
   logout: () => cookieHttp.post('/auth/logout', { schema: NoContent }),
   logoutAll: () => http.post('/auth/logout-all', { schema: NoContent }),
   /** Kèm khối `company` (Mốc 3.5, ADR-135) — quyền công ty của trang chính / header. */
-  me: () => http.get('/auth/me', { schema: MeWithCompanyResponse }),
+  me: () => http.get('/auth/me', { schema: MeResponse }),
   /** ADR-137: CHỈ ĐỌC — mở link / bot xem trước không tiêu token. Token đi trong body, không trong URL. */
   inspectActivation: (token: string) =>
     http.post('/auth/activation/inspect', { schema: ActivationInspectResponse, body: { token } }),

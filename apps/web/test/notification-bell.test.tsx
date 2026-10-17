@@ -35,8 +35,6 @@ function open() {
     mock.notifications.notify(f.owner.id, {
       type,
       refId: crypto.randomUUID(),
-      workspaceId: f.wsId,
-      workspaceName: 'Công ty Lan',
       actor: { id: crypto.randomUUID(), fullName },
       leave: { type: 'ANNUAL', startDate: '2026-10-20', endDate: '2026-10-21' },
     });
@@ -56,7 +54,7 @@ describe('chuông thông báo', () => {
     const item = await within(panel).findByRole('link', {
       name: /Chưa đọc: Đơn nghỉ phép năm 20\/10–21\/10 của bạn đã được duyệt/,
     });
-    expect(item.textContent).toContain('Công ty Lan');
+    // Mốc 3.5: thông báo thuộc công ty — không còn tên workspace trong dòng phụ.
     // jsdom không điều hướng <Link> của Next ⇒ kiểm đích + hiệu ứng đánh dấu đã đọc.
     expect(item.getAttribute('href')).toBe('/leave'); // route công ty ở gốc (ADR-139)
     await expectNoA11yViolations();
@@ -91,8 +89,6 @@ describe('thông báo dành cho HR (§9 B-H3)', () => {
     const mia = f.addUser('Mia', `mia-${crypto.randomUUID()}@example.com`, 'MEMBER');
     const base = {
       refId: crypto.randomUUID(),
-      workspaceId: f.wsId,
-      workspaceName: 'Công ty Lan',
       actor: { id: f.owner.id, fullName: 'Lan' },
       leave: { type: 'ANNUAL', startDate: '2026-10-20', endDate: '2026-10-21' },
     } as const;
@@ -113,7 +109,17 @@ describe('thông báo dành cho HR (§9 B-H3)', () => {
 });
 
 describe('company:access-changed', () => {
-  // `member:grants-changed` (quyền HR theo workspace) bị thay bởi `company:access-changed` (ADR-135) — chờ B thêm
-  // event vào contracts realtime (T-061 code commit) rồi viết ca này.
-  it.todo('được cấp HR ⇒ báo ngay + /auth/me làm mới (menu Nhân sự hiện, không reload)');
+  // Thay `member:grants-changed` (quyền HR theo workspace — ADR-135).
+  it('được cấp HR ⇒ báo ngay + /auth/me làm mới: ô "Nhân sự" hiện ở trang chính, không tải lại', async () => {
+    const f = seedBoard(mock);
+    f.signInAs(f.owner);
+    openApp('/w', new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id));
+    await screen.findByRole('region', { name: 'Chấm công' });
+    expect(screen.queryByRole('region', { name: 'Việc quản lý' })).toBeNull();
+    f.setCompanyAccess(f.owner, 'HR');
+    f.pushAccessChanged(f.owner);
+    expect(await screen.findByText('Quyền của bạn trong công ty vừa thay đổi')).toBeTruthy();
+    const tiles = await screen.findByRole('region', { name: 'Việc quản lý' });
+    expect(within(tiles).getByRole('link', { name: /^Nhân sự/ })).toBeTruthy();
+  });
 });

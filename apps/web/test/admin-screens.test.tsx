@@ -104,7 +104,7 @@ describe('cài đặt workspace', () => {
 });
 
 describe('thành viên', () => {
-  it('OWNER thêm theo email; email lạ và người đã là thành viên cùng MỘT câu chung (§6.5); a11y', async () => {
+  it('OWNER thêm bằng ô tìm nhân viên công ty (ADR-134): gõ tên ⇒ chọn "tên · email" ⇒ Thêm; người đã ở ws không còn trong gợi ý; a11y', async () => {
     const f = fresh();
     mock.db.createUser({ email: 'hoa@example.com', password: 'x', fullName: 'Mai Hoa' });
     f.signInAs(f.owner);
@@ -112,18 +112,18 @@ describe('thành viên', () => {
     const form = await screen.findByRole('form', { name: 'Thêm thành viên' });
     await expectNoA11yViolations();
     const u = user();
-    await u.type(within(form).getByLabelText('Email'), 'hoa@example.com');
+    const search = within(form).getByRole('combobox', { name: 'Tìm nhân viên' });
+    expect(within(form).getByRole('button', { name: 'Thêm' }).hasAttribute('disabled')).toBe(true);
+    await u.type(search, 'Mai');
+    await u.click(await screen.findByRole('option', { name: 'Mai Hoa · hoa@example.com' }));
     await u.click(within(form).getByRole('button', { name: 'Thêm' }));
     expect((await screen.findAllByRole('cell', { name: /Mai Hoa/ })).length).toBeGreaterThan(0);
 
-    const generic = /Không thể thêm người này/;
-    await u.type(within(form).getByLabelText('Email'), 'khong-co@example.com');
-    await u.click(within(form).getByRole('button', { name: 'Thêm' }));
-    expect((await within(form).findByRole('alert')).textContent).toMatch(generic);
-    await u.clear(within(form).getByLabelText('Email'));
-    await u.type(within(form).getByLabelText('Email'), 'hoa@example.com');
-    await u.click(within(form).getByRole('button', { name: 'Thêm' }));
-    await waitFor(() => expect(within(form).getByRole('alert').textContent).toMatch(generic));
+    await u.clear(search);
+    await u.type(search, 'Mai');
+    expect(
+      await screen.findByText('Không có nhân viên phù hợp (hoặc đã ở workspace này).'),
+    ).toBeTruthy();
   });
 
   it('PM: chỉ cấp Thành viên/Người xem; không đổi role; không có nút xóa OWNER', async () => {
