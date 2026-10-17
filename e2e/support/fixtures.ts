@@ -84,7 +84,13 @@ export const checkinPrompt = (page: Page) => page.getByRole('dialog', { name: /^
  */
 export async function dismissCheckinPrompt(page: Page): Promise<void> {
   await page.addLocatorHandler(checkinPrompt(page), async (dialog) => {
-    await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
+    // Dialog thuộc trang /w: nếu `me/today` về đúng lúc ca điều hướng đi (vd bấm "Tài khoản" ngay sau đăng nhập), dialog
+    // mở rồi TỰ unmount theo trang ⇒ click chờ một nút không còn tới hết giờ test (E2E-11, cổng Mốc 6 18/10). Trần 2 s;
+    // dialog đã tự đóng thì bỏ qua — còn hiện thì Playwright gọi lại handler ở hành động kế tiếp.
+    await dialog
+      .getByRole('button', { name: 'Để sau', exact: true })
+      .click({ timeout: 2_000 })
+      .catch(() => undefined);
   });
 }
 
