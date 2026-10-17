@@ -106,5 +106,6 @@ export function createPrismaPersistence(d: {
     hrProfile: { profiles, locks: profiles },
     ...prismaMaintenance(db),
     uow,
+    readSnapshot: uow.snapshot,
   };
 }

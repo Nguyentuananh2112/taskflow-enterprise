@@ -20,7 +20,7 @@ export class LeavePolicyController {
     private readonly d: {
       get: Pick<GetLeavePolicyQuery, 'execute'>;
       put: Pick<PutLeavePolicyUseCase, 'execute'>;
-      exporter: Pick<LeaveExportUseCase, 'start'>;
+      exporter: Pick<LeaveExportUseCase, 'run'>;
       spreadsheet: ISpreadsheetWriter;
       responder: HttpResponder;
     },
@@ -31,12 +31,17 @@ export class LeavePolicyController {
     this.d.responder.ok(res, await this.d.get.execute({ actorId: requireUser(req).id }, year));
   };
 
-  /** Quyền + audit EXPORT xong trong `start` (lỗi vẫn là JSON); sau đó mới gửi header và stream. */
+  /**
+   * Quyền / 429 / 422 / audit EXPORT xảy ra TRƯỚC `deliver` (lỗi lúc đó vẫn là envelope JSON); `deliver` gửi header rồi
+   * stream ngay trong snapshot của use case.
+   */
   exportXlsx = async (req: Request, res: Response) => {
     const query = req.query as unknown as LeaveExportQuery;
-    const { year, sheets } = await this.d.exporter.start(requireUser(req).id, query);
     // `year` đã qua Zod (số nguyên 2000–2100) ⇒ tên file an toàn.
-    await sendXlsx(res, this.d.spreadsheet, `nghi-phep-${String(year)}.xlsx`, sheets);
+    const filename = `nghi-phep-${String(query.year)}.xlsx`;
+    await this.d.exporter.run(requireUser(req).id, query, (sheets) =>
+      sendXlsx(res, this.d.spreadsheet, filename, sheets),
+    );
   };
 
   put = async (req: Request, res: Response) => {

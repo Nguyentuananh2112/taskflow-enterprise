@@ -18,7 +18,13 @@ import {
   PutLeavePolicyUseCase,
 } from './application/use-cases/leave-policy.use-cases';
 import { LeavePolicyController } from './presentation/leave-policy.controller';
-import { LeaveExportUseCase } from './application/use-cases/leave-export.use-case';
+import {
+  DEFAULT_LEAVE_EXPORT_LIMITS,
+  LeaveExportUseCase,
+  type LeaveExportLimits,
+} from './application/use-cases/leave-export.use-case';
+import type { ExportSlots } from '../../core/export/export-slots';
+import type { IReadSnapshot } from '../../core/persistence/read-snapshot';
 import { LeaveCarryoverJob } from './application/use-cases/leave-carryover.job';
 import type { ISpreadsheetWriter } from '../../core/export/xlsx/xlsx-writer';
 import type { ILogger } from '../../core/logging/logger';
@@ -36,6 +42,10 @@ export interface LeaveModuleDeps extends LeaveCommandDeps {
   readModel: ILeaveReadModel;
   /** Bộ ghi .xlsx (core, ADR-130) — báo cáo phép. */
   spreadsheet: ISpreadsheetWriter;
+  /** Snapshot đọc nhất quán + suất export đồng thời (T-055y) + trần / nhịp đọc (T-055 `exportLimits`). */
+  readSnapshot: IReadSnapshot;
+  exportSlots: ExportSlots;
+  exportLimits?: LeaveExportLimits;
   logger: ILogger;
   employees: ILeaveEmployeeDirectory;
   responder: HttpResponder;
@@ -66,7 +76,11 @@ export function createLeaveModule(d: LeaveModuleDeps): {
   const policy = new LeavePolicyController({
     get: new GetLeavePolicyQuery(kit),
     put: new PutLeavePolicyUseCase(kit, d.readModel, d.employees),
-    exporter: new LeaveExportUseCase(kit, d.readModel, d.employees),
+    exporter: new LeaveExportUseCase(kit, d.readModel, d.employees, {
+      snapshot: d.readSnapshot,
+      slots: d.exportSlots,
+      limits: d.exportLimits ?? DEFAULT_LEAVE_EXPORT_LIMITS,
+    }),
     spreadsheet: d.spreadsheet,
     responder: d.responder,
   });

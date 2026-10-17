@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import type { IReadSnapshot } from '../core/persistence/read-snapshot';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
@@ -70,6 +71,8 @@ export interface Persistence {
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
   uow: IUnitOfWork;
+  /** Ảnh chụp đọc nhất quán cho báo cáo dài (ADR-130, T-055y) — cùng UoW (repository vẫn dùng `uow.db()`). */
+  readSnapshot: IReadSnapshot;
 }
 
 /** Lưu trữ trong bộ nhớ — chỉ local/test, MẤT DỮ LIỆU khi khởi động lại. */
@@ -154,5 +157,6 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     leave,
     hrProfile: { profiles, locks: profiles },
     uow,
+    readSnapshot: uow.snapshot,
   };
 }

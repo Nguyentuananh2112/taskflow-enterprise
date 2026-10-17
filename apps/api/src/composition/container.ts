@@ -22,6 +22,7 @@ import { companyAdminDeps, employmentCollaborators, workspaceGate } from './comp
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
+import { ExportSlots } from '../core/export/export-slots';
 import { wireLeaveAndProfile } from './hr-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
@@ -160,10 +161,12 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
   accountsRef.current = auth.accounts;
+  // Một bộ suất export đồng thời cho cả công ty (SEC-HR-54) — bảng công / phép / lương dùng chung.
+  const exportSlots = new ExportSlots();
   // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
   const { leave, hrProfile } = wireLeaveAndProfile(
     { persistence, clock: business, ids, logger },
-    { company, attendance, notifications, auth },
+    { company, attendance, notifications, auth, exportSlots },
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
