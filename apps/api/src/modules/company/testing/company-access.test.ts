@@ -1,5 +1,5 @@
-// T-061: chốt quyền cấp công ty + nhiệm kỳ theo ngày (ADR-133/135/136). Bản Prisma chạy lại qua runner LSP
-// (test/integration/lsp/company.company-access.lsp.int.ts) khi có lượt integration.
+// T-061: chốt quyền cấp công ty + nhiệm kỳ theo ngày (ADR-133/135/136). Chưa có runner LSP cho file này; `tenuresOf`
+// bản Prisma (gồm CO-03 nhận lại) ở test/integration/company/tenure-rehire.int.ts.
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../../../../test/support';
