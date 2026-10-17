@@ -66,9 +66,12 @@ export interface ConversationSummary {
   readonly peerLastReadMessageId: string | null;
 }
 
-/** Keyset danh sách hội thoại: `last_message_at DESC NULLS LAST, id DESC` (hội thoại chưa có tin theo `created_at`). */
+/**
+ * Keyset danh sách hội thoại: `COALESCE(last_message_at, created_at) DESC, id DESC` — hội thoại chưa có tin đứng theo
+ * lúc tạo (vừa tạo nhóm ⇒ lên đầu). `at` = giá trị COALESCE của dòng cuối trang.
+ */
 export interface ConversationCursor {
-  readonly lastMessageAt: Date | null;
+  readonly at: Date;
   readonly id: string;
 }
 
