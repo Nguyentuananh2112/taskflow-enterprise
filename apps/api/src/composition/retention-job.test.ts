@@ -38,6 +38,7 @@ function fakeStores(remaining: Record<string, number> = {}, locked = true) {
       scrubHrAuditNotes: take('scrubHrAuditNotes'),
     },
     notifications: { deleteNotifications: take('deleteNotifications') },
+    hrProfile: { deleteProfiles: take('deleteProfiles') },
     tryLock: () => Promise.resolve(locked),
   };
   return { stores, calls };
@@ -54,6 +55,8 @@ describe('retentionSteps — mốc tính theo phương án B (NOW = 2026-12-01)'
       ['deleteEvents', '2024-12-01'],
       ['deleteRequestsBeforeYear', 2024],
       ['deleteBalancesBeforeYear', 2024],
+      // EP-10: D8 (hồ sơ) TRƯỚC D5 (departure là căn cứ giữ hồ sơ), cùng mốc ngày.
+      ['deleteProfiles', '2024-12-01'],
       ['deleteDepartures', '2024-12-01'],
       ['deleteNotifications', new Date('2026-06-04T00:00:00.000Z')],
       ['deleteHrAuditLogs', new Date('2021-12-01T00:00:00.000Z')],

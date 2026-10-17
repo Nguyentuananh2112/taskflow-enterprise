@@ -73,6 +73,13 @@ import {
   UpdateCompanyBody,
 } from '../company/company.schemas';
 import {
+  EmployeeProfileDto,
+  EmployeeProfileParams,
+  ProfileSuggestionsDto,
+  PutEmployeeProfileBody,
+  PutEmployeeProfileResponse,
+} from '../company/employee-profile.schemas';
+import {
   AuthTokenDto,
   ChangePasswordBody,
   LoginBody,
@@ -370,6 +377,55 @@ export const API_ROUTES: readonly ApiRoute[] = [
     params: EmployeeParams,
     response: { status: 200, data: EmployeeDto },
     errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'VALIDATION_ERROR', 'RESOURCE_NOT_FOUND'],
+  },
+  // Mốc 5 (T-054, ADR-128): hồ sơ nhân viên — `/me`, `/departments` khai báo trước `/{userId}`.
+  {
+    method: 'get',
+    path: '/hr/employee-profiles/me',
+    summary: 'Hồ sơ nhân sự của tôi (profile:self — chỉ nhân viên; Admin 403)',
+    tag: 'hr',
+    security: 'bearer',
+    response: { status: 200, data: EmployeeProfileDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  {
+    method: 'get',
+    path: '/hr/employee-profiles/departments',
+    summary: 'Gợi ý phòng ban / chức vụ đã dùng trong công ty (hr:manage)',
+    tag: 'hr',
+    security: 'bearer',
+    response: { status: 200, data: ProfileSuggestionsDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  {
+    method: 'get',
+    path: '/hr/employee-profiles/{userId}',
+    summary:
+      'Hồ sơ của người từng là nhân viên (hr:manage) — chưa có hồ sơ ⇒ trường null, version 0',
+    tag: 'hr',
+    security: 'bearer',
+    params: EmployeeProfileParams,
+    response: { status: 200, data: EmployeeProfileDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'VALIDATION_ERROR', 'RESOURCE_NOT_FOUND'],
+  },
+  {
+    method: 'put',
+    path: '/hr/employee-profiles/{userId}',
+    summary:
+      'Tạo / sửa hồ sơ (hr:manage, không sửa của chính mình) — đổi ngày vào đã có cần lý do; khóa lạc quan',
+    tag: 'hr',
+    security: 'bearer',
+    params: EmployeeProfileParams,
+    body: PutEmployeeProfileBody,
+    response: { status: 200, data: PutEmployeeProfileResponse },
+    errors: [
+      'SESSION_REVOKED',
+      'FORBIDDEN_ACCESS',
+      'VALIDATION_ERROR',
+      'RESOURCE_NOT_FOUND',
+      'VERSION_CONFLICT',
+      'BUSINESS_RULE_VIOLATION',
+    ],
   },
   {
     method: 'post',

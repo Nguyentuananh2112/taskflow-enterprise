@@ -1,4 +1,5 @@
 import type { IClock, IIdGenerator } from '../../core/domain';
+import { ResourceNotFoundError } from '../../core/errors';
 import type { ILogger } from '../../core/logging/logger';
 import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
 import type { CompanyAccess } from './application/company-access';
@@ -20,6 +21,7 @@ import {
   ScheduleOffboardingUseCase,
 } from './application/use-cases/offboarding.use-cases';
 import { ReissueActivationUseCase } from './application/use-cases/reissue-activation.use-case';
+import type { EmployeeStatus } from './domain/company-member';
 import type { CompanyPermission } from './domain/roles';
 
 /**
@@ -44,9 +46,16 @@ export function createEmployment(d: {
 }) {
   const completer = new CompleteOffboardingUseCase(d);
   return {
-    hire: new HireEmployeeUseCase({ ...d, rehireLeave: () => d.collaborators().rehireLeave }),
+    hire: new HireEmployeeUseCase({
+      ...d,
+      rehireLeave: () => d.collaborators().rehireLeave,
+      hireProfile: () => d.collaborators().hireProfile,
+    }),
     bootstrap: new BootstrapAdminUseCase(d),
-    employees: new EmployeeQueries(d),
+    employees: new EmployeeQueries({
+      ...d,
+      profileColumns: () => d.collaborators().profileColumns,
+    }),
     schedule: new ScheduleOffboardingUseCase(d, completer),
     cancel: new CancelOffboardingUseCase(d),
     completer,
@@ -55,6 +64,29 @@ export function createEmployment(d: {
 }
 
 export type Employment = ReturnType<typeof createEmployment>;
+
+/**
+ * Người TỪNG có nhiệm kỳ EMPLOYEE (hồ sơ — ADR-128): có nhiệm kỳ (đang / đã đóng, kể cả Admin từng là nhân viên) VÀ
+ * tài khoản chưa xóa. Chưa từng (Admin chưa từng là nhân viên) ⇒ `null` (404 `user`).
+ */
+export async function employeeRefOf(
+  d: { tenures: ICompanyTenureReader; employees: Pick<EmployeeQueries, 'one'> },
+  userId: string,
+): Promise<{ fullName: string; status: EmployeeStatus } | null> {
+  const ever = await d.tenures.tenuresOf({
+    userIds: [userId],
+    from: '0001-01-01',
+    to: '9999-12-31',
+  });
+  if (ever.length === 0) return null;
+  try {
+    const e = await d.employees.one(userId);
+    return { fullName: e.fullName, status: e.status };
+  } catch (err) {
+    if (err instanceof ResourceNotFoundError) return null;
+    throw err;
+  }
+}
 
 /** Tài khoản của auth (auth dựng SAU company — cần cổng công ty) ⇒ proxy đọc `current` lúc chạy request. */
 export function lateAccounts(ref: { current: ICompanyAccounts | null }): ICompanyAccounts {

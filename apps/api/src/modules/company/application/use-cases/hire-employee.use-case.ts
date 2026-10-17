@@ -11,7 +11,11 @@ import type { CompanyAccess } from '../company-access';
 import type { HrAuditWriter } from '../hr-audit-writer';
 import type { ICompanyAccounts } from '../ports/accounts.port';
 import type { ICompanyMemberRepository, ICompanyTenureReader } from '../ports/company-member.port';
-import type { IRehireLeavePort } from '../ports/employment-collaborators.port';
+import type {
+  HireProfilePatch,
+  IHireProfilePort,
+  IRehireLeavePort,
+} from '../ports/employment-collaborators.port';
 
 const HOUR_MS = 60 * 60 * 1000;
 /** ADR-137: link kích hoạt nhân viên sống 7 ngày. */
@@ -24,6 +28,12 @@ export interface HireEmployeeInput {
   email: string;
   fullName: string;
   startDate?: LocalDate | undefined;
+  /** Mốc 5 (T-054): hồ sơ tùy chọn ghi cùng transaction. */
+  hireDate?: HireProfilePatch['hireDate'];
+  department?: HireProfilePatch['department'];
+  jobTitle?: HireProfilePatch['jobTitle'];
+  workPhone?: HireProfilePatch['workPhone'];
+  keepHireDate?: boolean | undefined;
 }
 
 export interface HireEmployeeResult {
@@ -63,6 +73,8 @@ export class HireEmployeeUseCase {
       logger: ILogger;
       /** Module leave (nhận lại cùng năm — D H2); tham chiếu trễ ở composition. */
       rehireLeave: () => IRehireLeavePort;
+      /** Module hr-profile (T-054); tham chiếu trễ. */
+      hireProfile: () => IHireProfilePort;
     },
   ) {}
 
@@ -79,7 +91,17 @@ export class HireEmployeeUseCase {
   }
 
   async execute(input: HireEmployeeInput): Promise<HireEmployeeResult> {
+    const profile = this.d.hireProfile();
+    const patch: HireProfilePatch = {
+      hireDate: input.hireDate,
+      department: input.department,
+      jobTitle: input.jobTitle,
+      workPhone: input.workPhone,
+    };
+    const wantsProfile = profile.wantsProfile({ patch, keepHireDate: input.keepHireDate });
     return this.d.uow.run(async () => {
+      // T-054: hồ sơ có thể đổi `hireDate` (phép thâm niên) ⇒ khóa policy SHARED (bậc 1) TRƯỚC mọi khóa khác.
+      if (wantsProfile) await profile.lockBeforeHire();
       const actor = await this.d.access.authorizeWrite({ actorId: input.actorId });
       const now = this.d.clock.now();
       const today = toLocal(now, await this.d.timeZone()).date;
@@ -88,6 +110,7 @@ export class HireEmployeeUseCase {
       if (startDate < addDays(today, -HIRE_BACKDATE_MAX_DAYS)) {
         throw startDateIssue(`Ngày bắt đầu lùi tối đa ${HIRE_BACKDATE_MAX_DAYS} ngày.`);
       }
+      profile.validate({ patch }, today);
 
       const existing = await this.d.accounts.findByEmail(input.email);
       if (existing?.deleted) {
@@ -134,6 +157,15 @@ export class HireEmployeeUseCase {
           userId,
           year: Number(startDate.slice(0, 4)),
           actorId: actor.userId,
+        });
+      }
+      if (wantsProfile) {
+        await profile.applyOnHire({
+          actorId: actor.userId,
+          userId,
+          rehire: existing !== null,
+          patch,
+          keepHireDate: input.keepHireDate,
         });
       }
       const hasPassword = existing?.hasPassword ?? false;

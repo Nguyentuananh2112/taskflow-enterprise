@@ -30,6 +30,7 @@ const prismaLike = {
     },
     company: { deleteDepartures: noop, deleteHrAuditLogs: noop, scrubHrAuditNotes: noop },
     notifications: { deleteNotifications: noop },
+    hrProfile: { deleteProfiles: noop },
     tryLock: () => Promise.resolve(true),
   },
 } as unknown as Persistence;
