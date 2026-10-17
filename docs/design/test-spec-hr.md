@@ -323,8 +323,12 @@ UI (E2E) chạy MỘT mốc (thứ Ba 10:00). Các biên trên kiểm ở tầng
 | E2E-HR-07         | a11y                                                                                                                    | lịch tháng là `<table>` có tiêu đề hàng/cột, trạng thái có chữ + biểu tượng (axe serious/critical = 0, sáng + tối)          |
 | E2E-HR-08         | XSS (mở rộng SEC-49)                                                                                                    | `reason`, `decisionNote`, ghi chú ADJUSTMENT, tên ngày lễ chứa payload ⇒ hiển thị text ở danh sách đơn, chuông, lịch, `/hr` |
 | E2E-HR-09         | responsive 360 → 1440, Firefox                                                                                          | luồng `@main` xanh                                                                                                          |
+| E2E-HR-10 `@main` | T-045: mốc thứ Ba 10:00, Mia chưa chấm, vào /projects | dialog "Chào buổi sáng, <tên>!" (mô tả "Hôm nay bạn chưa chấm công.", ca 08:00–17:30), focus ở "Chấm công vào" ⇒ bấm ⇒ 201, toast "Đã chấm vào lúc HH:mm" = giờ VN của `firstIn` server; tải lại không hiện lại |
+| E2E-HR-11 | T-045: "Để sau" | đóng, KHÔNG tự chấm (`firstIn` null), banner vẫn nhắc; tải lại và tab mới cùng phiên không hiện lại trong ngày |
+| E2E-HR-12 | T-045: VIEWER; người đã chấm vào | không có dialog |
+| E2E-HR-13 | T-045: "Để sau" ⇒ đăng xuất ⇒ đăng nhập lại cùng ngày | dialog HIỆN LẠI (45d8b36 xóa khóa daily-once khi đăng xuất — TL chấp nhận); vẫn không tự chấm |
 
-Tách theo vé web (cổng T-041a): phần chỉ cần T-041a (thẻ chấm công, `/attendance`, chuông) giữ id gốc; phần cần `/leave` (T-041b) hoặc `/hr` (T-041c) tách thành id hậu tố — **E2E-HR-04b** (VIEWER ở `/leave`), **07b** (axe `/leave`), **07c** (axe mọi tab `/hr`), **08b** (XSS lý do đơn + ghi chú HR ở `/leave`), **08c** (XSS ở `/hr`), **09b** (responsive `/leave`).
+Mọi ca khác chạy với fixture tự bấm "Để sau" (`checkinPrompt: 'dismiss'`, `e2e/support/fixtures.ts`); E2E-HR-10..12 dùng `test.use({ checkinPrompt: 'keep' })`. Tách theo vé web (cổng T-041a): phần chỉ cần T-041a (thẻ chấm công, `/attendance`, chuông) giữ id gốc; phần cần `/leave` (T-041b) hoặc `/hr` (T-041c) tách thành id hậu tố — **E2E-HR-04b** (VIEWER ở `/leave`), **07b** (axe `/leave`), **07c** (axe mọi tab `/hr`), **08b** (XSS lý do đơn + ghi chú HR ở `/leave`), **08c** (XSS ở `/hr`), **09b** (responsive `/leave`).
 
 ## 10. Mutation
 

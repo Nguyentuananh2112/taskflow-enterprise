@@ -1,4 +1,11 @@
-import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fixtures';
+import {
+  dismissCheckinPrompt,
+  expect,
+  loginViaUi,
+  newUser,
+  registerViaUi,
+  test,
+} from '../support/fixtures';
 
 // Luồng phiên trên API thật (Prisma + Valkey) + web build production. Không cần route task.
 
@@ -18,8 +25,10 @@ test('@main E2E-10: đăng xuất mọi thiết bị ở A ⇒ A2 (cùng user, c
   const a2 = await browser.newContext();
   try {
     const pageA = await a.newPage();
+    await dismissCheckinPrompt(pageA); // context riêng ⇒ tự gắn (dialog T-045)
     await registerViaUi(pageA, user);
     const pageA2 = await a2.newPage();
+    await dismissCheckinPrompt(pageA2);
     await loginViaUi(pageA2, user);
 
     await pageA.goto('/account');
