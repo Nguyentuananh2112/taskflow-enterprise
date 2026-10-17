@@ -13,6 +13,9 @@ import {
   type BootstrapAdminInput,
   type BootstrapAdminResult,
 } from './application/use-cases/bootstrap-admin.use-case';
+import type { ICompanyAccessEvents } from './application/ports/access-events.port';
+import type { IOffboardLeavePort } from './application/ports/offboard-leave.port';
+import { AdminAccessUseCases } from './application/use-cases/admin-access.use-cases';
 import { HireEmployeeUseCase } from './application/use-cases/hire-employee.use-case';
 import type {
   ICompanyMemberRepository,
@@ -21,7 +24,8 @@ import type {
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
-import { HrController, hrRoutes } from './presentation/hr.routes';
+import { ADMIN_PATH, AdminController, adminRoutes } from './presentation/admin.routes';
+import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -62,6 +66,10 @@ export interface CompanyModuleDeps {
   accounts: { current: ICompanyAccounts | null };
   /** Múi giờ lịch hiện hành (ADR-120) — attendance (T-063) nối; mặc định Asia/Ho_Chi_Minh. */
   timeZone?: () => Promise<string>;
+  /** Dọn đơn nghỉ khi đóng nhiệm kỳ (leave — D T-064; trước đó composition nối bản không làm gì). */
+  offboardLeave: IOffboardLeavePort;
+  /** Thông báo bền + realtime khi Admin đổi role / grant (T-061a). */
+  accessEvents: ICompanyAccessEvents;
 }
 
 export interface CompanyModule {
@@ -75,8 +83,8 @@ export interface CompanyModule {
   meOf(userId: string): Promise<MeCompanyView | null>;
   /** `admin:bootstrap` (CLI) — một transaction, khóa `company:admins`. */
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
-  /** Router `/api/v1/hr` (thêm nhân viên — T-061; phần còn lại T-062). */
-  hrRoutes(authenticate: RequestHandler): Router;
+  /** Router của company kèm đường gắn dưới `/api/v1`: `/hr` (T-061/T-062), `/admin` (T-061a). */
+  routers(authenticate: RequestHandler): { path: string; router: Router }[];
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
     isActive(userId: string): Promise<boolean>;
@@ -119,6 +127,18 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
     logger: d.logger,
   });
+  const adminAccess = new AdminAccessUseCases({
+    access,
+    members,
+    accounts,
+    audit,
+    offboardLeave: d.offboardLeave,
+    events: d.accessEvents,
+    uow: d.uow,
+    ids,
+    clock,
+    timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
+  });
   const active = async (userId: string) => {
     const m = await members.find(userId);
     return m && isCompanyAccessActive(m, clock.now()) ? m : null;
@@ -133,6 +153,10 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     clock,
     timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
   });
+  const permissionsOf = async (userId: string) => {
+    const m = await active(userId);
+    return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
+  };
   const meOf = async (userId: string): Promise<MeCompanyView | null> => {
     const m = await active(userId);
     if (!m) return null;
@@ -152,21 +176,31 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     members,
     hrAudit: audit,
     bootstrapAdmin: (input) => bootstrap.execute(input),
-    hrRoutes: (authenticate) =>
-      hrRoutes({
-        controller: new HrController({ hire, responder: d.responder }),
-        authenticate,
-        limit: d.limit,
-      }),
+    routers: (authenticate) => [
+      {
+        path: HR_PATH,
+        router: hrRoutes({
+          controller: new HrController({ hire, responder: d.responder }),
+          authenticate,
+          limit: d.limit,
+        }),
+      },
+      {
+        path: ADMIN_PATH,
+        router: adminRoutes({
+          controller: new AdminController({ access: adminAccess, responder: d.responder }),
+          permissionsOf,
+          authenticate,
+          limit: d.limit,
+        }),
+      },
+    ],
     sessionGate: {
       isActive: async (userId) => (await active(userId)) !== null,
       meOf,
       companyName: async () => (await d.repos.company.get())?.name ?? null,
     },
-    async permissionsOf(userId) {
-      const m = await active(userId);
-      return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
-    },
+    permissionsOf,
     meOf,
     notificationAudience: {
       async accessOf(userId) {

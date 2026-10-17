@@ -126,6 +126,42 @@ export class InMemoryCompanyStore
     return this.find(userId);
   }
 
+  listAll(): Promise<CompanyMemberSnapshot[]> {
+    return Promise.resolve(
+      this.members()
+        .map((m) => ({ ...m, grants: [...m.grants] }))
+        .sort((a, b) => (a.userId < b.userId ? -1 : 1)),
+    );
+  }
+
+  setGrants(
+    userId: string,
+    grants: CompanyMemberSnapshot['grants'],
+    at: Date,
+  ): Promise<CompanyMemberSnapshot | null> {
+    const m = this.#state.members.get(userId);
+    if (!m || m.role !== 'EMPLOYEE') return Promise.resolve(null);
+    this.upsertMember({ ...m, grants: [...grants], version: m.version + 1, updatedAt: at });
+    return this.find(userId);
+  }
+
+  demoteToEmployee(
+    userId: string,
+    input: { startDate: string; grants: CompanyMemberSnapshot['grants']; at: Date },
+  ): Promise<CompanyMemberSnapshot | null> {
+    const m = this.#state.members.get(userId);
+    if (!m || m.role !== 'ADMIN') return Promise.resolve(null);
+    this.upsertMember({
+      ...m,
+      role: 'EMPLOYEE',
+      grants: [...input.grants],
+      startDate: input.startDate,
+      version: m.version + 1,
+      updatedAt: input.at,
+    });
+    return this.find(userId);
+  }
+
   recordDeparture(d: CompanyDepartureRow): Promise<void> {
     this.addDeparture(d);
     return Promise.resolve();

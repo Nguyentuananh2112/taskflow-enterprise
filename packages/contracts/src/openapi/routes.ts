@@ -48,12 +48,15 @@ import {
   SubmitLeaveBody,
 } from '../leave';
 import {
+  AccessDto,
   ActivateBody,
   ActivateResponse,
   ActivationInspectBody,
   ActivationInspectResponse,
+  EmployeeParams,
   HireEmployeeBody,
   HireEmployeeResponse,
+  SetAccessBody,
 } from '../company/company.schemas';
 import {
   AuthTokenDto,
@@ -193,6 +196,37 @@ export const API_ROUTES: readonly ApiRoute[] = [
       'RESOURCE_CONFLICT',
       'BUSINESS_RULE_VIOLATION',
       'RATE_LIMITED',
+    ],
+  },
+  // ---------- quản trị công ty (T-061a, company-level ADR-134) ----------
+  {
+    method: 'get',
+    path: '/admin/access',
+    summary:
+      'Quyền công ty của mọi người đang thuộc công ty (company:admin) — role, grants, trạng thái; có email',
+    tag: 'hr',
+    security: 'bearer',
+    response: { status: 200, data: z.array(AccessDto) },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  {
+    method: 'put',
+    path: '/admin/access/{userId}',
+    summary:
+      'Đổi role ADMIN↔EMPLOYEE / grants (company:grant). Nâng Admin đóng nhiệm kỳ chấm công hôm nay; hạ Admin mở nhiệm kỳ từ ngày mai; thu hồi phiên khi đổi role. Tự đổi mình ⇒ 403; Admin cuối ⇒ 409 last_admin',
+    tag: 'hr',
+    security: 'bearer',
+    params: EmployeeParams,
+    body: SetAccessBody,
+    response: { status: 200, data: AccessDto },
+    errors: [
+      'SESSION_REVOKED',
+      'FORBIDDEN_ACCESS',
+      'VALIDATION_ERROR',
+      'RESOURCE_NOT_FOUND',
+      'VERSION_CONFLICT',
+      'RESOURCE_CONFLICT',
+      'BUSINESS_RULE_VIOLATION',
     ],
   },
   {

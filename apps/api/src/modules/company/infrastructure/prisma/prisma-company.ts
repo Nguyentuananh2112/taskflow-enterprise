@@ -11,6 +11,7 @@ import type {
   NewCompanyMember,
 } from '../../application/ports/company-member.port';
 import type { CompanyMemberSnapshot } from '../../domain/company-member';
+import { demote, updateGrants, type DemoteInput } from './prisma-company-roles';
 
 /** = `uow.db()` của `PrismaUnitOfWork` — repository không tự mở transaction (ADR-012). */
 export type DbProvider = () => Prisma.TransactionClient;
@@ -52,25 +53,25 @@ export class PrismaCompany implements ICompanyRepository {
   }
 }
 
+const toSnapshot = (r: Prisma.CompanyMemberGetPayload<object>): CompanyMemberSnapshot => ({
+  userId: r.userId,
+  role: r.role,
+  grants: r.grants,
+  startDate: dateOnly(r.startDate),
+  offboardLastDay: dateOnly(r.offboardLastDay),
+  offboardAccessUntil: r.offboardAccessUntil,
+  offboardScheduledById: r.offboardScheduledById,
+  version: r.version,
+  createdAt: r.createdAt,
+  updatedAt: r.updatedAt,
+});
+
 export class PrismaCompanyMembers implements ICompanyMemberRepository {
   constructor(private readonly db: DbProvider) {}
 
   async find(userId: string): Promise<CompanyMemberSnapshot | null> {
     const r = await this.db().companyMember.findUnique({ where: { userId } });
-    return r
-      ? {
-          userId: r.userId,
-          role: r.role,
-          grants: r.grants,
-          startDate: dateOnly(r.startDate),
-          offboardLastDay: dateOnly(r.offboardLastDay),
-          offboardAccessUntil: r.offboardAccessUntil,
-          offboardScheduledById: r.offboardScheduledById,
-          version: r.version,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-        }
-      : null;
+    return r ? toSnapshot(r) : null;
   }
 
   async listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
@@ -154,6 +155,19 @@ export class PrismaCompanyMembers implements ICompanyMemberRepository {
       },
     });
     return count === 1 ? this.find(userId) : null;
+  }
+
+  async listAll(): Promise<CompanyMemberSnapshot[]> {
+    const rows = await this.db().companyMember.findMany({ orderBy: { userId: 'asc' } });
+    return rows.map(toSnapshot);
+  }
+
+  async setGrants(userId: string, grants: CompanyMemberSnapshot['grants'], at: Date) {
+    return (await updateGrants(this.db(), userId, grants, at)) ? this.find(userId) : null;
+  }
+
+  async demoteToEmployee(userId: string, input: DemoteInput) {
+    return (await demote(this.db(), userId, input)) ? this.find(userId) : null;
   }
 
   async recordDeparture(d: Parameters<ICompanyMemberRepository['recordDeparture']>[0]) {
