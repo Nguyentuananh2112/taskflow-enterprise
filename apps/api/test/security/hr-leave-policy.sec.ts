@@ -14,7 +14,9 @@ import { download, expectSafeWorkbook, expectXlsxHeaders, readXlsx } from './har
 // SEC-HR-52p, 54p (vế phép). Chính sách là MỘT bộ cho cả công ty ⇒ file riêng, DB riêng (§0.4); thứ tự ca trong file
 // có ý nghĩa (LP-01 chạy trước mọi PUT).
 
-const { api, actors } = useCompanyApi(hrClockEnv());
+// `LEAVE_CARRYOVER_INTERVAL_MS` (test-only, D) ⇒ jitter 0 ⇒ lượt đầu của job đúng 5 s sau start (mặc định jitter tới 5 phút
+// áp cả lượt đầu — LP-12 cần biết chắc lượt đầu đã chạy).
+const { api, actors } = useCompanyApi({ ...hrClockEnv(), LEAVE_CARRYOVER_INTERVAL_MS: '3600000' });
 const AREA = 'Mốc 5 chính sách phép (T-057)';
 const TODAY = todayVn();
 const Y = Number(TODAY.slice(0, 4));

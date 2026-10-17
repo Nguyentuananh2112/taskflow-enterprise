@@ -110,8 +110,10 @@ async function punch(userId: string, kind: 'IN' | 'OUT', time: string, date = YE
   return eventIdOf(res);
 }
 
+/** Lượt còn hiệu lực. Người CHƯA TỪNG có lượt chấm nào ⇒ route trả 404 `user` (Mốc 3) ⇒ coi là rỗng. */
 async function validEvents(userId: string, date: string) {
   const res = await call(hana, 'GET', HR.eventsOf(userId, date));
+  if (res.status === 404 && errorOf(res).details?.['resource'] === 'user') return [];
   expectStatus(res, 200, 'lượt thô');
   return eventsOf(res).filter((e) => e.voidedAt === null);
 }
@@ -239,7 +241,8 @@ describe('quyền, IDOR, strict', () => {
       const hr3 = await actors.createUser('cr50-hr3', { grants: ['HR_MANAGE'], startDate: START });
       const watchers = [hana, hugo, hr3, actors.ada];
       const before = await Promise.all(watchers.map((w) => actors.notificationIds(w)));
-      const c = await submitted(hana, { date: YESTERDAY, kind: 'IN', time: '08:00' });
+      // Hana đã có đơn chờ IN hôm qua (SEC-HR-49, luật 6) ⇒ ngày khác.
+      const c = await submitted(hana, { date: TODAY, kind: 'IN', time: '08:00' });
       const got = await Promise.all(
         watchers.map((w, i) =>
           actors.newNotifications(w, before[i] as Set<string>, {
@@ -607,7 +610,7 @@ describe('CR — duyệt', () => {
 
   secCase(
     'CR-11',
-    'người gửi bị nâng Admin rồi mới duyệt ⇒ 422 REQUESTER_NOT_EMPLOYEE, từ chối vẫn 200',
+    'người gửi bị nâng Admin ⇒ đơn PENDING bị hủy cùng bước dọn nhiệm kỳ (như nghỉ việc — CR-14); duyệt sau đó ⇒ 409 invalid_transition, không lượt. REQUESTER_NOT_EMPLOYEE chỉ chạm được trong khe trước job (tầng A / K)',
     AREA,
     async () => {
       const mia = await employee('cr11-mia');
@@ -617,13 +620,14 @@ describe('CR — duyệt', () => {
         grants: [],
         expectedVersion: await accessVersion(actors, mia.userId),
       });
-      const list = dataOf<CorrectionDto[]>(await call(hana, 'GET', C.list()));
-      const now = list.find((x) => x.id === c.id);
-      expect(now?.status, 'nâng Admin có hủy đơn không?').toBe('PENDING');
+      const now = dataOf<CorrectionDto[]>(await call(hana, 'GET', C.list())).find(
+        (x) => x.id === c.id,
+      );
+      expect(now?.status).toBe('CANCELLED');
       const r = await decide(hugo, now ?? c, 'approve');
-      expectStatus(r, 422, 'duyệt đơn của người đã thành Admin');
-      expect(ruleOf(r)).toBe('REQUESTER_NOT_EMPLOYEE');
-      expectStatus(await decide(hugo, now ?? c, 'reject'), 200, 'từ chối');
+      expectStatus(r, 409, 'duyệt đơn đã bị hủy');
+      expect(reasonOf(r)).toBe('invalid_transition');
+      expect(await validEvents(mia.userId, YESTERDAY)).toEqual([]);
     },
   );
 
