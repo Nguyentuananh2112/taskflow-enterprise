@@ -74,7 +74,11 @@ describe('Prisma workspace — lệnh của /admin/workspaces', () => {
 
     expect(await repo.archive(ctx.w2.id, AT)).toBe(true);
     expect(await repo.archive(ctx.w2.id, AT)).toBe(false);
-    await prisma.workspace.update({ where: { id: ctx.w1.id }, data: { deletedAt: AT } });
+    // Xóa mềm hợp lệ: deleted_at + purge_at cùng khác NULL (workspaces_soft_delete_chk).
+    await prisma.workspace.update({
+      where: { id: ctx.w1.id },
+      data: { deletedAt: AT, purgeAt: new Date(AT.getTime() + 30 * 86_400_000) },
+    });
     expect(await repo.archive(ctx.w1.id, AT)).toBe(false);
     expect((await repo.findById(ctx.w2.id))?.archivedAt).toEqual(AT);
 

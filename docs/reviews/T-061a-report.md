@@ -70,8 +70,9 @@ lỗi), use case workspaces company (4), `AdminWorkspaceOps` (5), HTTP admin (11
 của D: CANCELLED / REVOKED / giữ, `decidedBy` = Admin, ghi chú hệ thống, một `OFFBOARD_CLEANUP`, Admin ⇒ 403 `leave:self`),
 contract `findManyByIds`. Kiểm ngược: bỏ `lockEmployeeWork` / `offboardCleanup` / guard Admin cuối ⇒ mỗi lần 1 test đỏ.
 
-**Chưa chạy (cần lượt máy):** `test/integration/company-admin-repos.int.ts` (Prisma: `setGrants` / `demoteToEmployee` /
-`listAll` / `archive` / `listForAdmin` / `findManyByIds`) + contract user repo bản Prisma.
+**Integration (lượt máy sau D):** `company-admin-repos.int.ts` + `auth/auth-contracts.int.ts` (contract user repo Prisma, gồm
+`findManyByIds`) — DB riêng, exit 0, 2 file / 20 test. Lượt 1 đỏ 1 ca do dữ liệu test (xóa mềm thiếu `purge_at` —
+`workspaces_soft_delete_chk`), đã sửa.
 
 ## Quyết định tự đưa ra
 
