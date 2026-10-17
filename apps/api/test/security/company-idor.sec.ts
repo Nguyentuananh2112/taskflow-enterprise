@@ -5,7 +5,7 @@ import { beforeAll, describe, expect } from 'vitest';
 import { addDays } from './harness/clock';
 import { useCompanyApi, type CompanyActor } from './harness/company';
 import {
-  eventIdOf,
+  eventsOf,
   HR,
   hrClockEnv,
   leaveOf,
@@ -58,7 +58,9 @@ describe('IDOR giữa người (route self / HR)', () => {
       // Lượt chấm của Mia hôm nay (mốc nghiệp vụ T3 10:00).
       const punched = await withKey(api, 'POST', HR.checkIn, mia.accessToken);
       expectStatus(punched, 201, 'Mia check-in');
-      const miaEventId = eventIdOf(punched);
+      const miaEvents = eventsOf(await call(mia, 'GET', HR.myEvents(TODAY)));
+      expect(miaEvents).toHaveLength(1);
+      const miaEventId = miaEvents[0]!.id;
       const maxView = await call(max, 'GET', HR.myEvents(TODAY));
       expectStatus(maxView, 200, 'Max đọc me/events');
       expect(maxView.text).not.toContain(miaEventId);

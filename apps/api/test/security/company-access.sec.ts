@@ -224,6 +224,7 @@ describe('Leo quyền / tách quyền (ADR-134/135)', () => {
     },
   );
 
+  // Tuần tự: thu rồi mới gọi. Vế "lệnh ghi đang chờ khóa lúc thu" phủ ở CC-HR-11 (hr-races.sec: thu grant ‖ approve ×20).
   secCase(
     'SEC-HR-33',
     'Thu HR_MANAGE ⇒ CÙNG access token: đọc 403 ngay, ghi (duyệt đơn) 403 và không ghi gì',
@@ -309,7 +310,7 @@ describe('Leo quyền / tách quyền (ADR-134/135)', () => {
         ['POST', HR.schedules, bad],
         ['PUT', HR.holiday(addDays(TODAY, 40)), bad],
         ['GET', `/leave/balances?year=${year}`, undefined],
-        ['GET', HR.balance(max.userId, year), undefined],
+        ['PATCH', HR.balance(max.userId, year), bad],
         ['GET', '/leave/requests?status=PENDING', undefined],
         ['GET', '/hr/employees', undefined],
         ['POST', '/hr/employees', bad],
