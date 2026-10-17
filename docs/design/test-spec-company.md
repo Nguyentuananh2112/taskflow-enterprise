@@ -127,11 +127,14 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | `test/security/company-access.sec.ts` | SEC-HR-30…35, 38, 65 |
 | `test/security/company-idor.sec.ts` | SEC-HR-36, 37, 39 |
 | `test/security/company-activation.sec.ts` | SEC-HR-56…61, 63 |
-| `test/security/company-offboard.sec.ts` | SEC-HR-62, 68, 69, 70 |
+| `test/security/company-offboard.sec.ts` | SEC-HR-62 (vế hoàn tất trong request), 68 — D |
+| `test/security/company-clock-0559.sec.ts` | mốc 05:59:10 (khe trước job): CLK-HR-05, SEC-HR-62b (sau 06:00), 69, 70 — D |
+| `test/security/company-activation.sec.ts` | SEC-HR-56…61, 63, 63b — F |
+| `test/security/company-races.sec.ts` | CC-HR-16…19, 26, 27 — F (CC-HR-18 vế job / 05:59:59 ở company-clock-0559) |
 | `test/integration/company/session-revoke.int.ts` | SEC-HR-66 (tầng I, store token-version giả ném lỗi) |
 | `test/security/company-bootstrap.sec.ts` | SEC-HR-64 (gọi CLI trực tiếp, không cần API) |
 | `test/security/company-races.sec.ts` | CC-HR-16…19, 26, 27 |
-| `test/security/company-clock-*.sec.ts` | CLK-HR-05…09 (mỗi mốc một file) |
+| `test/security/company-clock-*.sec.ts` | CLK-HR-06…09 (mỗi mốc một file, `api.restart`) — B |
 | `test/security/hr*.sec.ts` (có sẵn) | viết lại theo §6 |
 | `e2e/specs/company.e2e.ts` | E2E-HR-15…19 |
 | `e2e/specs/hr.e2e.ts` | E2E-HR-01…14 viết lại theo §6 |
@@ -173,7 +176,7 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | **SEC-HR-58** | Nina (chờ kích hoạt) `login` với mọi mật khẩu kể cả rỗng, `refresh`; Quinn (đã nghỉ) `login`, `refresh` bằng refresh token cũ, access token cũ gọi route công ty | như user không tồn tại (cùng mã / body / thời gian); 401; 401 `SESSION_REVOKED` |
 | **SEC-HR-59** | Token (số canh) không có trong: audit, thông báo, stdout pino của API, Sentry (API + web — sự kiện ném lỗi trên `/activate`), `GET hr/employees`, URL của mọi request API; response thêm / tạo lại link có `no-store`; không route GET nào trả token; `/activate` có `Referrer-Policy: no-referrer` và xóa fragment khỏi URL sau khi tải | đúng (S + E) |
 | **SEC-HR-60** | Bot xem trước: GET `/activate#t=…` 5 lần (context không JS) + `inspect` 5 lần | token vẫn `activate` được; `inspect` không đổi `used_at` (đọc qua `activate` thành công) |
-| **SEC-HR-61** | `activate` mật khẩu yếu; rồi mật khẩu tốt; rồi dùng lại | 422, token vẫn sống; 200 + phiên mới; 410 |
+| **SEC-HR-61** | `activate` mật khẩu yếu; rồi mật khẩu tốt; rồi dùng lại | 400 `VALIDATION_ERROR` (B: policy trước transaction), token vẫn sống; 200 + phiên mới; 410 |
 | **SEC-HR-62** | Mia sắp nghỉ, `lastDay` = hôm qua, mốc 05:59:00 (K, file CLK riêng); sau 06:00 (trước job) gọi route công ty, route W1, `refresh`, socket handshake, socket join | 401 `SESSION_REVOKED`; 404 `workspace`; 401; từ chối; từ chối |
 | **SEC-HR-63** | Hana thêm nhân viên lần 31 / giờ; tạo lại link cho một người lần 11 / giờ | 429 + `Retry-After` |
 | **SEC-HR-64** | Bootstrap (CLI, không API): lần 2 khi đã có Admin; thiếu từng env; không TTY và không `APP_ENV=test`; `--reissue-link` khi Admin đã kích hoạt; email của nhân viên đã có mật khẩu | thoát 1 + "Đã có Admin", DB không đổi; thoát lỗi, không user; từ chối; thoát 1; nâng ADMIN, mật khẩu giữ, không token |
@@ -190,11 +193,11 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | ID | Ca | Mong đợi |
 |---|---|---|
 | CC-HR-16 | Mia check-in 2 tab song song (key khác; rồi cùng key) | khác key: một 201 + một 409 `already_checked_in`; cùng key: một 201 + một 200 replay; luôn đúng 1 IN |
-| CC-HR-17 | Ada và Ada2 hạ nhau song song | đúng 1 thành công, 1 × 409 `last_admin`; luôn còn ≥ 1 Admin |
+| CC-HR-17 | Ada và Ada2 hạ nhau song song (chỉ còn hai Admin) | đúng 1 thành công; bên thua 403 (đã mất quyền — `lockAdmins` tuần tự hóa) / 401 (phiên bị thu hồi) / 409 `last_admin`; luôn còn đúng ≥ 1 Admin, không 5xx |
 | CC-HR-18 | `PUT offboarding` `lastDay` quá khứ (hoàn tất trong request) ‖ job hoàn tất ‖ Mia chấm Ra (05:59:59, K) ‖ Hana `DELETE offboarding` | đúng **một** departure, một `endMembership`, không 500; trạng thái cuối nhất quán (nghỉ **hoặc** còn làm, không nửa vời) |
 | CC-HR-19 | 2 `activate` cùng token; 2 `POST hr/employees` cùng email | một phiên + một 410; một tài khoản + một 409 `already_employee` |
 | CC-HR-26 | hoàn tất nghỉ việc ‖ Mia gửi đơn ×20 | sau hoàn tất không còn đơn PENDING nào sau `lastDay` của Mia |
-| CC-HR-27 | `admin/workspaces/:id/owner` ‖ OWNER cũ được thêm lại | đúng một OWNER, không 500 |
+| CC-HR-27 | ws mồ côi (OWNER duy nhất nghỉ): Ada giao OWNER cho hai thành viên song song ("thêm lại" chỉ đi qua `admin/workspaces/:id/owner` — ws mồ côi không ai có `member:add`) | đúng một OWNER, bên kia 409 `workspace_has_owner`, không 5xx |
 
 ## 5. CLK — đồng hồ neo (tầng K, mỗi file một process / mốc)
 
