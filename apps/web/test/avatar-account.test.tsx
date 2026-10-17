@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,8 +50,9 @@ function open() {
   const f = seedBoard(mock);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
   f.signInAs(f.owner);
-  openApp('/account', hub.client(getClientId(), f.owner.id));
-  return f;
+  const client = hub.client(getClientId(), f.owner.id);
+  openApp('/account', client);
+  return { ...f, client };
 }
 
 const photo = (type = 'image/jpeg') => new File([JPEG], 'ảnh của tôi.jpg', { type });
@@ -160,6 +161,30 @@ describe('/account — ảnh đại diện', () => {
     );
     await user.click(within(dialog).getByRole('button', { name: 'Lưu ảnh đại diện' }));
     expect(await screen.findByText('Đã cập nhật ảnh đại diện')).toBeTruthy();
+  });
+
+  it('user:avatar-changed (đổi ở tab / thiết bị khác) ⇒ header + /account tự hiện ảnh mới, không tải lại trang', async () => {
+    const f = open();
+    const region = await screen.findByRole('region', { name: 'Ảnh đại diện' });
+    expect(within(region).getByRole('img', { name: f.owner.fullName }).tagName).toBe('SPAN');
+    mock.avatars.set(f.owner.id, JPEG, 'image/jpeg');
+    const event = {
+      eventId: crypto.randomUUID(),
+      type: 'user:avatar-changed',
+      occurredAt: '2026-10-17T03:00:00.000Z',
+      actorId: f.owner.id,
+      originClientId: crypto.randomUUID(),
+      data: { userId: f.owner.id, avatarUrl: mock.avatars.urlOf(f.owner.id, '64') },
+    };
+    // TẠM: event chưa có trong ServerToClientEvents (G — T-068).
+    act(() => f.client.emitServer('user:avatar-changed' as never, event as never));
+    await waitFor(() =>
+      expect(
+        within(region).getByRole('img', { name: f.owner.fullName }).getAttribute('src'),
+      ).toContain('/256?v=1'),
+    );
+    const header = screen.getByRole('navigation', { name: 'Tài khoản' });
+    expect(header.querySelector('img')?.getAttribute('src')).toContain('/64?v=1');
   });
 
   it('Hủy ⇒ đóng dialog, không gửi gì', async () => {

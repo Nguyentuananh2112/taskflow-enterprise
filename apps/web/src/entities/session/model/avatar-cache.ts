@@ -5,6 +5,7 @@ import type {
   UserWithAvatarDto,
 } from '@/shared/api/pending-contracts/avatar';
 
+import { authApi } from '../api/auth.api';
 import { session } from './session';
 import { sessionStore } from './session-store';
 import { sessionKeys } from './use-me';
@@ -23,9 +24,33 @@ export function showsAvatars(key: QueryKey): boolean {
   );
 }
 
-/** Chỉ query đang mở mới tải lại (TanStack mặc định) — trang khác tự tải khi mở. */
-export function invalidateAvatarViews(queryClient: QueryClient): Promise<void> {
-  return queryClient.invalidateQueries({ predicate: (q) => showsAvatars(q.queryKey) });
+/**
+ * `user:avatar-changed` của `userId`. Chỉ query đang mở mới tải lại (TanStack mặc định) — trang khác tự tải khi mở.
+ * Của CHÍNH MÌNH (tab / thiết bị khác) ⇒ tải lại `/auth/me` rồi đồng bộ người dùng của phiên: header đọc từ phiên,
+ * không từ query `me`.
+ */
+export async function invalidateAvatarViews(
+  queryClient: QueryClient,
+  userId: string,
+): Promise<void> {
+  const mine = sessionStore.get().user?.id === userId;
+  await queryClient.invalidateQueries({
+    predicate: (q) => (!mine || q.queryKey[0] !== sessionKeys.me[0]) && showsAvatars(q.queryKey),
+  });
+  if (!mine) return;
+  const me = await queryClient.fetchQuery({
+    queryKey: sessionKeys.me,
+    queryFn: authApi.me,
+    staleTime: 0, // cache `me` còn "tươi" 5 phút — event nói nó đã cũ
+  });
+  const { user } = sessionStore.get();
+  if (user?.id === me.user.id) {
+    session.updateUser({
+      ...user,
+      avatarUrl: me.user.avatarUrl,
+      avatarUrlLarge: me.user.avatarUrlLarge,
+    });
+  }
 }
 
 type AvatarFields = Pick<UserWithAvatarDto, 'avatarUrl' | 'avatarUrlLarge'>;

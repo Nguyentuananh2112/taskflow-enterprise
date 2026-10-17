@@ -1,5 +1,5 @@
 import { LoginResponse, MeResponse, UserDto, UserRefDto } from '@taskflow/contracts/auth';
-import { Uuid } from '@taskflow/contracts/common';
+import { IsoDateTime, Uuid } from '@taskflow/contracts/common';
 import * as z from 'zod';
 
 // TẠM (T-071, thống nhất với G — avatar-chat.md ADR-142): G commit vào `@taskflow/contracts/auth` (DTO) và
@@ -39,6 +39,17 @@ export const UserAvatarChangedEventDto = z.object({
   avatarUrl: z.string().min(1).nullable(),
 });
 export type UserAvatarChangedEventDto = z.infer<typeof UserAvatarChangedEventDto>;
+
+/** Vỏ đầy đủ — cùng shape `realtimeEnvelope` của contracts (data-and-api §4.3; hàm đó không export). */
+export const UserAvatarChangedEvent = z.object({
+  eventId: Uuid,
+  type: z.literal(USER_AVATAR_CHANGED),
+  occurredAt: IsoDateTime,
+  actorId: Uuid,
+  originClientId: Uuid.nullable(),
+  data: UserAvatarChangedEventDto,
+});
+export type UserAvatarChangedEvent = z.infer<typeof UserAvatarChangedEvent>;
 
 /**
  * Mã lỗi MỚI của upload (G thêm vào `ErrorCode`); web nhận như `serverCode` cho tới khi contracts có.
