@@ -51,7 +51,7 @@ export class DecideLeaveUseCase {
     if (!found) throw new ResourceNotFoundError('leave_request');
 
     return d.uow.run(async () => {
-      await d.requests.lockUser(found.userId);
+      await this.kit.lockFor(found.userId); // policy SHARED → leave:<user> (ADR-131/136)
       // B-H3 + B-H1 sau khóa: đọc lại quyền (FOR SHARE, bậc 5) + luật tự xử lý — `ICompanyAccess.authorizeWrite`.
       await d.company.authorizeHrWrite({
         actorId,
@@ -76,15 +76,15 @@ export class DecideLeaveUseCase {
         }
         const employment = await d.company.employmentOf(record.userId);
         assertNotAfterLastDay(record, employment.lastDay);
+        await this.kit.snapshotCarried(record.userId, year, today);
+        // Đơn đang xét đã nằm trong `holding` (PENDING) ⇒ đếm đúng một lần (ADR-131).
         await this.kit.assertBalance({
           userId: record.userId,
           year,
           type: record.type,
-          requested: halfDays,
           holding: await d.requests.listHolding(record.userId, year),
-          calendar,
           tenure: countingTenure(employment),
-          excludeId: record.id,
+          today,
         });
       }
 
@@ -99,6 +99,8 @@ export class DecideLeaveUseCase {
         updatedAt: now,
       };
       await this.kit.save(next, record, halfDays);
+      // Đơn năm Y đổi trạng thái khi Y+1 đã bắt đầu (duyệt muộn / thu hồi) ⇒ `carried(Y+1)` đã chụp phải tính lại.
+      await this.kit.refreshNextCarried(record.userId, year, today);
       await d.audit.record({
         actorId,
         action: action === 'revoke' ? 'LEAVE_REVOKE' : 'LEAVE_DECIDE',

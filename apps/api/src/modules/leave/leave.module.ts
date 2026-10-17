@@ -9,7 +9,7 @@ import type {
   ILeaveEmployeeDirectory,
   ILeaveReadModel,
 } from './application/ports/leave-read-model.port';
-import type { ILeaveRepository } from './application/ports/leave.ports';
+import type { ILeavePolicyStore, ILeaveRepository } from './application/ports/leave.ports';
 import { EmploymentLeaveHooks } from './application/use-cases/employment-hooks.use-cases';
 import { LeaveController } from './presentation/leave.controller';
 import { leaveRoutes, type LeaveRouteDeps } from './presentation/leave.routes';
@@ -17,6 +17,8 @@ import { leaveRoutes, type LeaveRouteDeps } from './presentation/leave.routes';
 /** Lưu trữ của leave (composition root chọn bộ nhớ / Prisma). */
 export interface LeaveRepositories {
   requests: ILeaveRepository;
+  /** Chính sách phép (T-057). */
+  policies: ILeavePolicyStore;
   readModel: ILeaveReadModel;
   employees: ILeaveEmployeeDirectory;
 }

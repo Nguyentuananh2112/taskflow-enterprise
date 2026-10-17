@@ -11,8 +11,19 @@ import type {
   ILeaveUserRefs,
 } from '../application/ports/leave-read-model.port';
 import type { LeaveRequestRecord } from '../application/ports/leave.ports';
-import { FakeLeaveCompany, FakeWorkCalendar, SpyHrAudit, SpyLeaveNotifier } from './leave-fakes';
-import { inMemoryLeaveBackend, RecordingLeaveRepository, type LeaveBackend } from './leave-backend';
+import {
+  FakeHireDates,
+  FakeLeaveCompany,
+  FakeWorkCalendar,
+  SpyHrAudit,
+  SpyLeaveNotifier,
+} from './leave-fakes';
+import {
+  inMemoryLeaveBackend,
+  RecordingLeavePolicyStore,
+  RecordingLeaveRepository,
+  type LeaveBackend,
+} from './leave-backend';
 
 export * from './leave-fakes';
 
@@ -98,7 +109,22 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
   company.set(U.Rex, 'EMPLOYEE');
   company.offboard(U.Rex, REX_LAST_DAY);
 
-  const deps = { requests, calendar, company, notifier, audit, uow, clock, ids, users };
+  // T-057: khóa policy ghi vào CÙNG `requests.locks` (thứ tự policy SHARED → leave:<user>); ngày vào công ty giả.
+  const policies = new RecordingLeavePolicyStore(backend.policies, requests.locks);
+  const hireDates = new FakeHireDates();
+  const deps = {
+    requests,
+    policies,
+    hireDates,
+    calendar,
+    company,
+    notifier,
+    audit,
+    uow,
+    clock,
+    ids,
+    users,
+  };
   const leave = new LeaveCommands(deps);
   const employees = new FakeEmployeeDirectory(company, users);
   const queries = new LeaveQueries({ ...deps, readModel: backend.readModel, employees });
@@ -142,6 +168,8 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
     calendar,
     company,
     hooks,
+    policies: backend.policies,
+    hireDates,
     notifier,
     audit,
     uow,

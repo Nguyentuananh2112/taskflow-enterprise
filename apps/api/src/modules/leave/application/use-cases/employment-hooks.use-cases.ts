@@ -10,7 +10,8 @@ export const REHIRE_NOTE = 'Nhận lại — đặt lại điều chỉnh';
 /**
  * Port leave cho vòng đời nhân viên của company (T-062 — `IOffboardLeavePort` do company sở hữu, adapter ở đây). Cả
  * hai lệnh chạy TRONG transaction của bên gọi (`uow.run` lồng nhau dùng chung transaction) và lấy
- * `taskflow:leave:<user>` (bậc 3 bảng khóa ADR-136 — bên gọi đã giữ `taskflow:company:admins` bậc 2 nếu cần).
+ * `taskflow:leave-policy` SHARED (bậc 1) rồi `taskflow:leave:<user>` (bậc 3 bảng khóa ADR-136 — bên gọi đã giữ
+ * `taskflow:company:admins` bậc 2 nếu cần).
  * Bên gọi PHẢI lấy `taskflow:leave:<user>` TRƯỚC khi DELETE/UPDATE dòng `company_members` (bậc 5) — nếu không sẽ
  * deadlock với submit đang giữ khóa này và chờ FOR SHARE dòng đó; khóa advisory xact tái nhập nên gọi lại vô hại.
  */
@@ -29,7 +30,7 @@ export class EmploymentLeaveHooks {
   }): Promise<{ cancelled: number; revoked: number }> {
     const d = this.kit.d;
     return d.uow.run(async () => {
-      await d.requests.lockUser(input.userId);
+      await this.kit.lockFor(input.userId); // policy SHARED → leave:<user> (ADR-131/136)
       const open = await d.requests.listOpen(input.userId);
       const plan = offboardCleanupPlan(open, input.lastDay);
       const byId = new Map(open.map((r) => [r.id, r]));
@@ -92,7 +93,7 @@ export class EmploymentLeaveHooks {
   async resetOnRehire(input: { userId: string; year: number; actorId: string }): Promise<boolean> {
     const d = this.kit.d;
     return d.uow.run(async () => {
-      await d.requests.lockUser(input.userId);
+      await this.kit.lockFor(input.userId);
       const before = await d.requests.getOrCreateBalance(input.userId, input.year);
       if (before.adjustment === 0) return false;
       await d.requests.setBalanceAdjustment(input.userId, input.year, 0);
