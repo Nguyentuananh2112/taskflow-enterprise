@@ -54,6 +54,11 @@ export class InMemoryChatConversationStore implements IChatConversationStore {
     return Promise.resolve(c ? { ...c } : null);
   }
 
+  findByWorkspace(workspaceId: string): Promise<ConversationRecord | null> {
+    const c = this.#find((x) => x.workspaceId === workspaceId);
+    return Promise.resolve(c ? { ...c } : null);
+  }
+
   lock(): Promise<void> {
     return Promise.resolve(); // transaction InMemory đã tuần tự
   }

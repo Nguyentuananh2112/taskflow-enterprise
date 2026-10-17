@@ -119,8 +119,7 @@ export async function startServer(
   const gateway = new RealtimeGateway(server, {
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
-    authenticator: container.socketAuth,
-    accessChecker: container.workspace.accessChecker,
+    ...container.gateway,
     handshakeLimiter: createHitLimiter(RATE_LIMIT_RULES.socketHandshake[0], {
       storeFor: rateLimitStore,
       logger,

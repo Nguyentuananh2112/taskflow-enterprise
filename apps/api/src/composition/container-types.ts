@@ -1,4 +1,5 @@
 import type { Store } from 'express-rate-limit';
+import type { GatewayWiring } from './late-realtime';
 import type { Express, Router } from 'express';
 import type { Logger } from 'pino';
 import type { AppConfig } from '../app';
@@ -80,6 +81,8 @@ export interface Container {
   leave: LeaveModule;
   /** Authenticator của gateway Socket.io: access token (auth) + cổng công ty (HIGH-2). */
   socketAuth: ISocketAuthenticator;
+  /** Phần option gateway từ composition (xác thực, quyền project, `chat:typing` — T-070): `...container.gateway`. */
+  gateway: GatewayWiring;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
   /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
