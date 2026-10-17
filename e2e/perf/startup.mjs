@@ -97,6 +97,8 @@ async function startServer(root) {
       NODE_ENV: 'production',
       APP_ENV: 'local',
       APP_MOCK_API: '1', // mock API cùng origin (mock-flag.ts) — không cần API thật / socket
+      // Runtime config của web (app/config/server-env.ts): API là mock cùng origin ⇒ socket client OFFLINE.
+      API_URL: API,
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
