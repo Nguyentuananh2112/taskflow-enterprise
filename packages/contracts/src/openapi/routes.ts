@@ -82,7 +82,6 @@ import {
   UserDto,
   AvatarUploadResponseDto,
 } from '../auth/auth.schemas';
-import type { ErrorCode } from '../common/error-codes';
 import {
   CreateProjectBody,
   ListProjectsQuery,
@@ -118,61 +117,22 @@ import {
   WorkspaceParams,
 } from '../workspace';
 import { CHAT_API_ROUTES } from './chat-routes';
+import type { ApiRoute } from './route-types';
+
+export type { ApiRoute, HttpMethod, Security, Tag } from './route-types';
+
+/** `X-Upload-Name` = `encodeURIComponent(tên gốc)` — ≤ 255 byte UTF-8 sau giải mã (ADR-141). */
+const AvatarUploadHeaders = z.object({ 'x-upload-name': z.string().min(1).max(765) });
+
+const WS = '/workspaces/{wsId}';
+const PROJECT = `${WS}/projects/{projectId}`;
+const TASKS = `${PROJECT}/tasks`;
 
 /**
  * Danh mục route HTTP của `/api/v1` — NGUỒN của OpenAPI (A2, sinh từ Zod, không viết tay). Test
  * parity ở apps/api so khớp danh mục này với router Express thật (thiếu/thừa route ⇒ đỏ). Bảng mô tả
  * nghiệp vụ: docs/design/data-and-api.md §2.
  */
-export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
-export type Security = 'bearer' | 'refreshCookie' | 'none';
-export type Tag =
-  | 'auth'
-  | 'workspaces'
-  | 'members'
-  | 'projects'
-  | 'tasks'
-  | 'hr'
-  | 'company'
-  | 'notifications'
-  | 'chat';
-
-/** `X-Upload-Name` = `encodeURIComponent(tên gốc)` — ≤ 255 byte UTF-8 sau giải mã (ADR-141). */
-const AvatarUploadHeaders = z.object({ 'x-upload-name': z.string().min(1).max(765) });
-
-export interface ApiRoute {
-  method: HttpMethod;
-  /** Tương đối `/api/v1`, tham số dạng `{wsId}` (OpenAPI). */
-  path: string;
-  summary: string;
-  tag: Tag;
-  security: Security;
-  params?: z.ZodObject;
-  query?: z.ZodType;
-  body?: z.ZodType;
-  /** Header bắt buộc (vd `Idempotency-Key`) ⇒ `parameter` `in: header`. */
-  headers?: z.ZodObject;
-  /** Mốc 6 (ADR-141): thân NHỊ PHÂN `application/octet-stream` (upload) thay cho JSON. */
-  binaryBody?: true;
-  /**
-   * 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`; `csv` ⇒ thân `text/csv` (không
-   * envelope); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
-   */
-  response: {
-    status: 200 | 201 | 204;
-    data?: z.ZodType;
-    paged?: boolean;
-    csv?: boolean;
-    alsoOk?: boolean;
-  };
-  /** Mã lỗi đặc thù của route (ngoài lỗi chung 400/401/403/404/429). */
-  errors?: readonly ErrorCode[];
-}
-
-const WS = '/workspaces/{wsId}';
-const PROJECT = `${WS}/projects/{projectId}`;
-const TASKS = `${PROJECT}/tasks`;
-
 export const API_ROUTES: readonly ApiRoute[] = [
   // ---------- auth ----------
   {

@@ -27,7 +27,7 @@ import {
   UploadResponseDto,
   WorkspaceConversationParams,
 } from '../chat/chat.schemas';
-import type { ApiRoute } from './routes';
+import type { ApiRoute } from './route-types';
 
 // Mốc 6 — trò chuyện (avatar-chat.md §4, ADR-143…146; T-069). Mọi route qua cổng công ty ⇒ SESSION_REVOKED.
 
