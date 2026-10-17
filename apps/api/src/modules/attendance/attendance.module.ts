@@ -23,6 +23,11 @@ import { CheckInOutUseCase } from './application/use-cases/check-in-out.use-case
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from './application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
+import {
+  payrollDaysFor,
+  payrollMembersOf,
+  type PayrollPeriodDays,
+} from './application/payroll-days';
 import { scheduleTimeZoneNow } from './application/schedule-timezone';
 import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
 import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memory/in-memory-work-calendar';
@@ -81,6 +86,13 @@ export interface AttendanceModule {
    * (CLK-HR-08: lịch múi Berlin ⇒ ngày / 06:00 theo Berlin).
    */
   timeZoneNow(): Promise<string>;
+  /** Port công tính lương cho module payroll (payroll.md ADR-126/127, T-049). */
+  payroll: {
+    payrollDaysFor(q: { userIds: readonly string[]; period: string }): Promise<PayrollPeriodDays>;
+    payrollMembersOf(period: string): Promise<string[]>;
+    /** Mọi người TỪNG có nhiệm kỳ EMPLOYEE (màn hồ sơ lương). */
+    everEmployed(): Promise<string[]>;
+  };
 }
 
 /** Composition của module Attendance (ADR-016): wire nội bộ module, port ngoài được tiêm vào. */
@@ -115,5 +127,16 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
       attendanceRoutes({ controller, membership: d.membership, authenticate, limit: d.limit }),
     workCalendar: new AttendanceWorkCalendar(d.repos.calendar),
     timeZoneNow: () => scheduleTimeZoneNow(d.repos.calendar, d.clock),
+    payroll: {
+      payrollDaysFor: (q) => payrollDaysFor(deps, q),
+      payrollMembersOf: (period) => payrollMembersOf(deps, period),
+      everEmployed: async () => [
+        ...new Set(
+          (await d.tenures.tenuresOf({ from: '1900-01-01', to: '9999-12-31' })).map(
+            (t) => t.userId,
+          ),
+        ),
+      ],
+    },
   };
 }

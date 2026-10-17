@@ -23,7 +23,7 @@ import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.r
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { wireLeave } from './leave-wiring';
-import { wireHrProfile } from './hr-profile-wiring';
+import { wireProfileAndPayroll } from './payroll-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
@@ -175,9 +175,9 @@ export function createContainer(d: ContainerDeps): Container {
   );
   approvedLeaves.bind(leave.approvedLeaves);
   // Hồ sơ nhân viên (Mốc 5, T-054): quyền / người / audit ← company; phép âm ← leave (T-057).
-  const hrProfile = wireHrProfile(
-    { persistence, clock: business, logger },
-    { company, notifications, timeZone: () => attendance.timeZoneNow() },
+  const { hrProfile, routers: people } = wireProfileAndPayroll(
+    { persistence, clock: business, ids, logger },
+    { company, notifications, attendance, timeZone: () => attendance.timeZoneNow() },
     { responder, limit },
   );
 
@@ -185,7 +185,7 @@ export function createContainer(d: ContainerDeps): Container {
   const routers = [
     { path: '/auth', router: auth.router },
     ...company.routers(auth.authenticate),
-    ...hrProfile.routers(auth.authenticate),
+    ...people(auth.authenticate),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },

@@ -23,6 +23,27 @@ import {
   VoidAttendanceBody,
   WorkScheduleDto,
 } from '../attendance/attendance.schemas';
+import {
+  CreatePayslipRevisionBody,
+  CreateSalaryProfileVersionBody,
+  MyPayslipDto,
+  MyPayslipParams,
+  MyPayslipRevisionParams,
+  MyPayslipSummaryDto,
+  PayrollPeriodParams,
+  PayrollRunDto,
+  PayrollRunListDto,
+  PayrollSettingsDto,
+  PayslipDto,
+  PayslipParams,
+  PublishPayrollBody,
+  PutPayrollSettingsBody,
+  PutPayslipBody,
+  RecalculatePreviewDto,
+  SalaryProfileDto,
+  SalaryProfileParams,
+  SalaryProfileVersionDto,
+} from '../payroll/payroll.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
   HrAuditLogDto,
@@ -132,7 +153,15 @@ import {
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type Security = 'bearer' | 'refreshCookie' | 'none';
 export type Tag =
-  'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'company' | 'notifications';
+  | 'auth'
+  | 'workspaces'
+  | 'members'
+  | 'projects'
+  | 'tasks'
+  | 'hr'
+  | 'company'
+  | 'notifications'
+  | 'payroll';
 
 export interface ApiRoute {
   method: HttpMethod;
@@ -1047,5 +1076,172 @@ export const API_ROUTES: readonly ApiRoute[] = [
     params: TaskParams,
     query: ListAuditLogsQuery,
     response: { status: 200, data: z.array(AuditLogDto), paged: true },
+  },
+  // ---------- lương (Mốc 4, payroll.md v4 — T-049): payroll:manage · payslip:self ----------
+  {
+    method: 'get',
+    path: `/payroll/settings`,
+    summary: 'Cài đặt lương — mức phụ cấp thâm niên / năm (payroll:manage)',
+    tag: 'payroll',
+    security: 'bearer',
+    response: { status: 200, data: PayrollSettingsDto },
+  },
+  {
+    method: 'put',
+    path: `/payroll/settings`,
+    summary:
+      'Đổi mức thâm niên (version); có bảng NHÁP ⇒ cờ SENIORITY_RATE_CHANGED tới khi tính lại',
+    tag: 'payroll',
+    security: 'bearer',
+    body: PutPayrollSettingsBody,
+    response: { status: 200, data: PayrollSettingsDto },
+    errors: ['VERSION_CONFLICT'],
+  },
+  {
+    method: 'get',
+    path: `/payroll/salary-profiles`,
+    summary: 'Hồ sơ lương theo phiên bản của mọi người từng là nhân viên (hireDate chỉ đọc)',
+    tag: 'payroll',
+    security: 'bearer',
+    response: { status: 200, data: z.array(SalaryProfileDto) },
+  },
+  {
+    method: 'post',
+    path: `/payroll/salary-profiles/{userId}`,
+    summary: 'Thêm phiên bản hồ sơ lương (chỉ thêm); trùng tháng ⇒ 409; hồ sơ của chính mình ⇒ 403',
+    tag: 'payroll',
+    security: 'bearer',
+    params: SalaryProfileParams,
+    body: CreateSalaryProfileVersionBody,
+    response: { status: 201, data: SalaryProfileVersionDto },
+    errors: ['RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'get',
+    path: `/payroll/runs`,
+    summary: 'Các bảng lương tháng (mới nhất trước) + kỳ kế tiếp tạo được',
+    tag: 'payroll',
+    security: 'bearer',
+    response: { status: 200, data: PayrollRunListDto },
+  },
+  {
+    method: 'get',
+    path: `/payroll/runs/{period}`,
+    summary: 'Bảng lương tháng: dòng từng người + lý do chặn + việc còn lại',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    response: { status: 200, data: PayrollRunDto },
+  },
+  {
+    method: 'post',
+    path: `/payroll/runs/{period}`,
+    summary:
+      'Tạo bảng NHÁP (tháng đã kết thúc) — đã có ⇒ 200 bảng cũ; 422 PERIOD_NOT_ENDED / NO_WORKING_DAYS / ATTENDANCE_RETENTION_EXPIRED',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    response: { status: 201, data: PayrollRunDto, alsoOk: true },
+    errors: ['BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'post',
+    path: `/payroll/runs/{period}/recalculate/preview`,
+    summary: 'Xem trước "Tính lại công": số phiếu sẽ đổi (không ghi)',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    response: { status: 200, data: RecalculatePreviewDto },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/payroll/runs/{period}/recalculate`,
+    summary: 'Tính lại công của bảng NHÁP (giữ dòng gõ tay, ghi chú, sửa công)',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    response: { status: 200, data: PayrollRunDto },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/payroll/runs/{period}/add-missing`,
+    summary: 'Thêm phiếu cho người có nhiệm kỳ nhân viên trong kỳ mà chưa có phiếu',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    response: { status: 200, data: PayrollRunDto },
+    errors: ['RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/payroll/runs/{period}/publish`,
+    summary:
+      'Phát hành — bị chặn ⇒ 422 PUBLISH_BLOCKED liệt kê đủ phiếu + lý do; thông báo từng nhân viên',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    body: PublishPayrollBody,
+    response: { status: 200, data: PayrollRunDto },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'get',
+    path: `/payroll/runs/{period}/payslips/{userId}`,
+    summary: 'Phiếu đầy đủ (ảnh chụp) — audit PAYROLL_PAYSLIP_VIEW',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayslipParams,
+    response: { status: 200, data: PayslipDto },
+  },
+  {
+    method: 'put',
+    path: `/payroll/runs/{period}/payslips/{userId}`,
+    summary:
+      'Sửa phiếu NHÁP (dòng, ghi chú, sửa công có lý do) — lockVersion; phiếu của chính mình ⇒ 403',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayslipParams,
+    body: PutPayslipBody,
+    response: { status: 200, data: PayslipDto },
+    errors: ['VERSION_CONFLICT', 'RESOURCE_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/payroll/runs/{period}/payslips/{userId}/revisions`,
+    summary: 'Bản điều chỉnh của phiếu đã phát hành (revision + 1, lý do bắt buộc)',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayslipParams,
+    body: CreatePayslipRevisionBody,
+    response: { status: 201, data: PayslipDto },
+    errors: ['VERSION_CONFLICT', 'RESOURCE_CONFLICT', 'BUSINESS_RULE_VIOLATION'],
+  },
+  {
+    method: 'get',
+    path: `/payslips`,
+    summary: 'Phiếu lương của tôi (payslip:self) — chỉ kỳ + bản, không số tiền',
+    tag: 'payroll',
+    security: 'bearer',
+    response: { status: 200, data: z.array(MyPayslipSummaryDto) },
+  },
+  {
+    method: 'get',
+    path: `/payslips/{period}`,
+    summary: 'Phiếu lương của tôi kỳ này (bản hiệu lực, chỉ bảng đã phát hành)',
+    tag: 'payroll',
+    security: 'bearer',
+    params: MyPayslipParams,
+    response: { status: 200, data: MyPayslipDto },
+  },
+  {
+    method: 'get',
+    path: `/payslips/{period}/revisions/{revision}`,
+    summary: 'Một bản cụ thể của phiếu lương của tôi',
+    tag: 'payroll',
+    security: 'bearer',
+    params: MyPayslipRevisionParams,
+    response: { status: 200, data: MyPayslipDto },
   },
 ];

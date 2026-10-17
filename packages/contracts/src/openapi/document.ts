@@ -153,6 +153,7 @@ export function buildOpenApiDocument(options: OpenApiOptions): Json {
       'hr',
       'company',
       'notifications',
+      'payroll',
       'system',
     ].map((name) => ({
       name,

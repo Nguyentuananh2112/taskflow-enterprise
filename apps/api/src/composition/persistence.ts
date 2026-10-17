@@ -11,6 +11,10 @@ import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
 import type { HrProfileRepositories } from '../modules/hr-profile/hr-profile.module';
+import {
+  createInMemoryPayrollRepositories,
+  type PayrollRepositories,
+} from '../modules/payroll/payroll.module';
 import { InMemoryEmployeeProfiles } from '../modules/hr-profile/infrastructure/in-memory/in-memory-employee-profiles';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
@@ -60,6 +64,8 @@ export interface Persistence {
   leave: LeaveRepositories;
   /** Hồ sơ nhân viên (Mốc 5, T-054). */
   hrProfile: HrProfileRepositories;
+  /** Lương (Mốc 4, T-049). */
+  payroll: PayrollRepositories;
   /** Chỉ bộ nhớ: bảng công ty để seed / harness (Prisma: dữ liệu ở DB). */
   companyStore?: InMemoryCompanyStore;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
@@ -99,6 +105,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const attendance = createInMemoryAttendanceRepositories();
   const leaveStore = new InMemoryLeaveRepository();
   const profiles = new InMemoryEmployeeProfiles();
+  const payroll = createInMemoryPayrollRepositories();
   const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
   const uow = new InMemoryUnitOfWork(
     [
@@ -116,6 +123,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       attendance.calendar,
       leaveStore,
       profiles,
+      payroll.store,
     ],
     logger,
   );
@@ -132,7 +140,11 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     task,
     notifications: {
       store: notificationStore,
-      context: notificationContextFrom({ users: task.users, leaves: leave.readModel }),
+      context: notificationContextFrom({
+        users: task.users,
+        leaves: leave.readModel,
+        payslips: payroll.store,
+      }),
     },
     company: {
       company: companyStore,
@@ -145,6 +157,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     attendance,
     leave,
     hrProfile: { profiles, locks: profiles },
+    payroll,
     uow,
   };
 }
