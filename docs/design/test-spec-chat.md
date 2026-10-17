@@ -72,6 +72,8 @@ upload(api, token, body: Buffer, opts: {
 
 ### 1.2 Tệp mẫu sinh lúc chạy — `test/security/harness/files/fixtures.ts` (không commit nhị phân)
 
+> Đã làm: **thuần Node** (zlib + byte tay), **không cần sharp** — dùng được trước khi `apps/api` có sharp. JPEG baseline xám tối thiểu, PNG RGB, EXIF GPS chèn APP1, ZIP STORED tự dựng. `fixtures.test.ts` giải mã thật bằng sharp 0.35.5 tìm trong `node_modules/.pnpm`, nên tệp mẫu được chính thư viện của API đọc được.
+
 | Hàm | Cách sinh | Dùng ở |
 |---|---|---|
 | `jpeg/png/webp/gif({w,h})` | sharp | mọi ca ảnh |
@@ -121,7 +123,7 @@ Nội dung theo thiết kế §6. F thêm mong đợi cụ thể:
 | AV-03 | U | `mediaExpBucket(now)` ổn định trong khung, đổi đúng biên khung (±1 ms) |
 | AV-04 | I | Người đã nghỉ ⇒ `avatarUrl: null` ở `/auth/me` của người khác (task assignee, thành viên ws) |
 | AV-05 | K | → §5 CLK-CH-02 |
-| AV-06 | I | Worker không nạp (env giả `SHARP_DISABLED` chỉ test) ⇒ `PUT me/avatar` 503 `IMAGE_PROCESSING_UNAVAILABLE`, `/readyz` 200, `files_image_worker_up = 0` |
+| AV-06 | I | Worker không nạp (`FILES_IMAGE_PIPELINE_DISABLED=1`, chỉ test — G) ⇒ `PUT me/avatar` 503 `IMAGE_PROCESSING_UNAVAILABLE`, `/readyz` 200, `files_image_worker_up = 0` |
 | AV-07 | I | Socket người khác nhận `user:avatar-changed {userId, avatarUrl}` trong ≤ 2 s |
 | CH-01…16 | U / I | như thiết kế; CH-03 phải có đủ hàng trong bảng §1.2 (một ca U cho mỗi hàm sinh); CH-13 khóa giả định `company_members` chỉ tạo lúc vào làm / nhận lại (đổi ⇒ đỏ); CH-14 fs giả ném `EPERM` 4 lần rồi được |
 
@@ -197,7 +199,7 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 | CLK-CH-02 (= AV-05) | F | `chat-clock-avatar.sec.ts` | Quinn có avatar; nghỉ; restart mốc +31 ngày với `MAINTENANCE_INTERVAL_MS` ngắn; chờ sweep chạy | blob avatar Quinn bị xóa; người nhận lại ở +29 ngày còn blob |
 | CLK-CH-03 (= CH-11 hộp đen) | F | `chat-clock-retention.sec.ts` | Tin + ảnh lúc mốc; restart +365 ngày −1 phút / +365 ngày +1 phút; chạy job retention | còn / mất; URL ảnh 404 sau khi mất |
 
-> TL chốt: **không** route / cờ kích job. Dùng env chỉ `APP_ENV=test` rút chu kỳ job (vd `MAINTENANCE_INTERVAL_MS` cho `files-sweep` / `chat-retention`) + `TEST_CLOCK_ANCHOR` + `api.restart` mốc tiến. Job chạy lần đầu sau khởi động + chu kỳ rút ngắn ⇒ ca chờ theo điều kiện (poll `storeTree` / `GET messages`). Không đủ ⇒ hạ xuống **I** (G viết, F soát).
+> TL chốt: **không** route kích job. Env chỉ `APP_ENV=test` (G): `FILES_SWEEP_ON_START=1` / `CHAT_RETENTION_ON_START=1` (chạy một lượt trước ready, log `maintenance.run_done`) + rút chu kỳ job (vd `MAINTENANCE_INTERVAL_MS` cho `files-sweep` / `chat-retention`) + `TEST_CLOCK_ANCHOR` + `api.restart` mốc tiến. Job chạy lần đầu sau khởi động + chu kỳ rút ngắn ⇒ ca chờ theo điều kiện (poll `storeTree` / `GET messages`). Không đủ ⇒ hạ xuống **I** (G viết, F soát).
 
 ## 6. E2E-CH (tầng E)
 
