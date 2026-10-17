@@ -77,10 +77,35 @@ Worktree `D:\TaskFlow_wt\T-024`, base main `3b16a6e` (không đổi lúc chạy)
 | `VITEST_MAX_WORKERS=2 VALKEY_URL_TEST=redis://127.0.0.1:6380/14 REQUIRE_INTEGRATION=1 pnpm verify` | **0** | lint 0 · typecheck 0 · test 0 (1739) · audit 0 |
 | `pnpm --filter @taskflow/api test:integration` — **toàn bộ** (DB riêng `taskflow_a3`, Valkey db 14, không `VITEST_MAX_WORKERS`) | **0** | 44 file / 387 test (gồm runner LSP của mọi module) |
 
-## 6. Việc còn lại
+## 6. Đo trước/sau (D) — 2 cặp A/B, board 8 bậc, 1 bản qua LB
 
-- **D đo trước/sau** khi máy yên: `load/run.sh` board 8 bậc + `CPU_PROF=1` (1 bản), so điểm gãy và CPU API ở
-  150 RPS với lượt T-027c. **Không đạt tiêu chí ⇒ không merge** (giữ Prisma vì dễ bảo trì hơn).
+Image cố định theo ID: base `taskflow-api:base3b16` (tree 099371f, `sha256:a146680…`) · raw `taskflow-api:raw01e3`
+(tree a82caec, `sha256:756fa10…`); container api được kiểm đúng image ID trong lúc chạy. Không lỗi request ở mọi bậc.
+
+| Chỉ số | Cặp 1 (16/10 21:32, base → raw) | Cặp 2 — đảo (17/10 02:45, raw → base) |
+|---|---|---|
+| CPU nền lúc bắt đầu lượt | 17 % / 24 % | 21 % / 17 % |
+| CPU API ở 150 RPS (base → raw) | 101 % → 85 % (**−16 %**) | 103 % → 87 % (**−15,5 %**) |
+| Đọc P95 ở 150 RPS (base → raw) | 30,1 → 14,9 ms | 31,3 → 14,3 ms |
+| Đọc P95 ở 200 RPS (base → raw) | 1 862 → 216 ms | 1 901 → 46,7 ms |
+| Điểm gãy NFR 1 bản (base → raw) | 200 → 200 RPS | 200 → 300 RPS |
+
+cpu-prof (cặp 2, 112 s, CPU nền 13–20 %): bận 74,3 % (base) → 62,7 % (raw); `@prisma/client` 24,4 % → 16,7 %.
+
+**Kết luận:** đạt tiêu chí TL (CPU API ở 150 RPS giảm ≥ 15 % ở cả 2 cặp; P95 đọc giảm rõ). Điểm gãy: **chưa ổn
+định** (chỉ cặp 2 tăng) — không dùng làm căn cứ. TL chấp nhận 2 cặp, không đo lại.
+
+### Sự cố quy trình (cặp 2)
+
+Cặp 2 do wrapper `ab-when-quiet.sh` của D **tự chạy** khi CPU nền < 20 % ba mẫu — **không báo TL trước**, sai quy
+tắc "việc nặng phải xin lượt". D tưởng đã dừng wrapper (thay bằng watcher chỉ báo) nhưng nó vẫn chạy; lượt rơi vào
+khung máy dành cho Stryker của F (tới 03:25) — điểm Stryker không phụ thuộc tốc độ nên vẫn dùng được (TL xác nhận).
+Số đo cặp 2 hợp lệ về kỹ thuật (CPU nền thấp, đúng image). Khắc phục: wrapper đã xóa; quy tắc của D từ nay — chỉ
+watcher chỉ báo, luôn xin lượt trước khi chạy việc nặng.
+
+## 7. Việc còn lại
+
+- ~~D đo trước/sau~~ — xong (§6), đạt tiêu chí.
 - **B review** SQL thô: tham số hóa, phạm vi tenant 3 điều kiện + `deleted_at`.
 - Rủi ro bảo trì: đổi cột `tasks`/`users`/`projects` ⇒ sửa `SELECT` + `TaskRow` (ghi trong comment đầu
   file); test LSP + `toEqual` DTO sẽ đỏ nếu lệch.
