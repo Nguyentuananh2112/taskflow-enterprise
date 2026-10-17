@@ -1,5 +1,6 @@
 import { createActivationHandlers } from './activation-handlers';
 import { createAdminHandlers } from './admin-handlers';
+import { createAvatarHandlers } from './avatar-handlers';
 import { createAttendanceHandlers } from './attendance-handlers';
 import { createEmployeeHandlers } from './employee-handlers';
 import { createAuthHandlers } from './auth-handlers';
@@ -10,6 +11,7 @@ import { createLeaveHandlers } from './leave-handlers';
 import { MockLeave } from './mock-leave';
 import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
+import { MockAvatars } from './mock-avatars';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
 import { createMemberHandlers } from './member-handlers';
@@ -24,6 +26,7 @@ import { createWorkspaceHandlers } from './workspace-handlers';
 // app/mock-api/v1/[...path] khi APP_MOCK_API=1). Hành vi theo data-and-api.md; event realtime phát
 // qua `board.onEvent` (test nối vào socket giả).
 
+export { MockAvatars, type AvatarChange } from './mock-avatars';
 export { MockBoard, type BoardEvent } from './mock-board';
 export { MockDb, REFRESH_GRACE_MS, type MockDbOptions } from './mock-db';
 export { isMockApiEnabled } from './mock-flag';
@@ -52,6 +55,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const notifications = new MockNotifications(board, options.now ?? Date.now);
   const leave = new MockLeave(attendance, options.now ?? Date.now);
   const hr = new MockHr(db, attendance, leave);
+  const avatars = new MockAvatars(baseUrl, options.now ?? Date.now);
   return {
     db,
     board,
@@ -59,9 +63,11 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     notifications,
     leave,
     hr,
+    avatars,
     handlers: [
       contentTypeGuard(baseUrl),
-      ...createAuthHandlers(baseUrl, db, allowedOrigins),
+      ...createAuthHandlers(baseUrl, db, allowedOrigins, avatars),
+      ...createAvatarHandlers(baseUrl, db, avatars, limit),
       ...createActivationHandlers(baseUrl, db),
       ...createAdminHandlers(baseUrl, db),
       ...createWorkspaceHandlers(baseUrl, db, board, limit),

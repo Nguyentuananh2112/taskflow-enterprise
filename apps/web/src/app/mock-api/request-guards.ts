@@ -1,5 +1,6 @@
 import { http, type HttpHandler } from 'msw';
 
+import { OCTET_STREAM_ROUTES } from './avatar-handlers';
 import { fail } from './respond';
 
 // Kiểm tra cấp app của API thật (apps/api core/http/middleware.ts), đặt TRƯỚC mọi handler mock.
@@ -31,6 +32,11 @@ function contentType(header: string | null): {
 export function contentTypeGuard(baseUrl: string): HttpHandler {
   return http.all(`${baseUrl}/*`, ({ request }) => {
     const { type, charset, invalid } = contentType(request.headers.get('content-type'));
+    // Mốc 6 (ADR-141, B M1): ngoại lệ ĐÚNG cặp method + path — chỉ nhận octet-stream; route khác vẫn 415.
+    const path = new URL(request.url).pathname;
+    if (OCTET_STREAM_ROUTES.some(([m, re]) => m === request.method && re.test(path))) {
+      return type === 'application/octet-stream' ? undefined : fail(415, 'UNSUPPORTED_MEDIA_TYPE');
+    }
     const wrongType = METHODS_WITH_BODY.has(request.method) && type !== 'application/json';
     const wrongCharset =
       type === 'application/json' && (invalid || (charset !== undefined && !UTF8.has(charset)));

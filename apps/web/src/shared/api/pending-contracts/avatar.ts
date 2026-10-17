@@ -1,4 +1,4 @@
-import { UserDto, UserRefDto } from '@taskflow/contracts/auth';
+import { LoginResponse, MeResponse, UserDto, UserRefDto } from '@taskflow/contracts/auth';
 import { Uuid } from '@taskflow/contracts/common';
 import * as z from 'zod';
 
@@ -18,6 +18,12 @@ export const UserWithAvatarDto = UserDto.extend({
   avatarUrlLarge: AvatarUrl,
 });
 export type UserWithAvatarDto = z.infer<typeof UserWithAvatarDto>;
+
+// zod object mặc định BỎ khóa lạ ⇒ parse bằng schema cũ sẽ cắt `avatarUrl`: web + mock phải dùng bản dưới.
+export const MeWithAvatarResponse = MeResponse.extend({ user: UserWithAvatarDto });
+export type MeWithAvatarResponse = z.infer<typeof MeWithAvatarResponse>;
+export const LoginWithAvatarResponse = LoginResponse.extend({ user: UserWithAvatarDto });
+export type LoginWithAvatarResponse = z.infer<typeof LoginWithAvatarResponse>;
 
 /** `PUT /me/avatar` ⇒ 200. */
 export const AvatarUploadResponseDto = z.object({
