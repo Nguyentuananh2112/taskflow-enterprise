@@ -155,6 +155,10 @@ model User {
   activationTokens       AccountActivationToken[] @relation("ActivationTokenUser")
   activationTokensIssued AccountActivationToken[] @relation("ActivationTokenCreator")
 
+  // Mốc 5 (T-054, ADR-128)
+  employeeProfile EmployeeProfile?  @relation("ProfileUser")
+  profilesUpdated EmployeeProfile[] @relation("ProfileUpdater")
+
   @@map("users")
 }
 
@@ -504,4 +508,25 @@ model HrAuditLog {
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@index([actorId])
   @@map("hr_audit_logs")
+}
+
+// ---------------------------------------------------------------- Mốc 5: hồ sơ nhân viên (ADR-128, T-054)
+/// Một dòng / user, KHÔNG phiên bản, nguồn duy nhất của `hireDate` (lương + phép). Không FK tới `company_members`
+/// (dòng đó bị xóa khi nghỉ việc) — người đã nghỉ giữ hồ sơ tới hạn lưu D8. CHECK: SQL tay trong migration.
+model EmployeeProfile {
+  userId      String    @id @map("user_id") @db.Uuid
+  hireDate    DateTime? @map("hire_date") @db.Date
+  department  String?   @db.VarChar(100)
+  jobTitle    String?   @map("job_title") @db.VarChar(100)
+  workPhone   String?   @map("work_phone") @db.VarChar(16) // đã chuẩn hóa: +? và chữ số
+  version     Int       @default(1)
+  updatedById String    @map("updated_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user      User @relation("ProfileUser", fields: [userId], references: [id], onDelete: Restrict)
+  updatedBy User @relation("ProfileUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([updatedById])
+  @@map("employee_profiles")
 }
