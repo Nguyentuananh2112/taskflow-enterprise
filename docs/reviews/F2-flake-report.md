@@ -61,3 +61,13 @@ Script cổng được siết sau ghi chú của D: lỗi hạ tầng (`ERR_PNPM
 
 - `prisma-startup.int.ts` `afterAll` chỉ `kill('SIGTERM')`, không chờ process thoát ⇒ D sửa (await exit).
 - Harness E2E/security: thêm listener `error` cho client pg ⇒ Postgres restart giữa chừng (57P01) không làm sập tiến trình test.
+
+## 6. Mốc 5–6 (18/10) — E2E chập chờn khi máy tải nặng
+
+| Ca | Biểu hiện | Nguyên nhân | Xử lý | Xác minh |
+|---|---|---|---|---|
+| E2E-11 (`token-expiry`) | `toHaveURL` nhận `""`; handler dialog "Chào buổi…" click "Để sau" bị *detached* tới hết giờ | Dialog nhắc chấm công thuộc `/w`; header Mốc 6 nặng hơn ⇒ `me/today` về đúng lúc ca điều hướng đi ⇒ dialog mở rồi tự unmount; handler `click()` không trần chờ nút không còn | `fixtures.ts`: handler click trần 2 s, bỏ qua nếu dialog đã tự đóng (4a803711) | E2E toàn bộ cổng Mốc 6 (TL) xanh |
+| E2E-06 (`collaboration`) | chờ PATCH thành công của B hết 60 s (1 lần / lượt toàn bộ; chạy riêng luôn xanh) | B sửa mô tả trước khi NHẬN realtime "A di chuyển" ⇒ máy tải nặng thì event tới giữa lúc gõ / lưu ⇒ form rebase giữa chừng | chờ ô "Trạng thái" trong drawer của B = `IN_PROGRESS` (10 s) trước khi sửa (3fbd0acd) | `collaboration.e2e.ts` ×3 = 24/24, 0 flaky |
+| E2E-HR-23 (`hr-extended`) | "Tải thêm" — đếm trước khi trang render, chờ nút đã gỡ | vòng lặp test của F (không phải request treo — F chẩn đoán sai lần đầu, E đọc trace đúng) | `support/load-more.ts loadUntilVisible` chờ số dòng tăng hoặc nút gỡ (f678b925) | E2E toàn bộ Mốc 5 107/0/0 |
+
+**Rủi ro theo dõi (chưa khẳng định — không có trace):** E2E-06 — nếu event realtime "task đã đổi" tới ĐÚNG lúc PATCH của form đang bay, `use-edit-task-form.ts` gọi `form.reset(form.getValues())` (rebase) giữa lúc gửi ⇒ có thể có khe phía web (form sạch nhưng PATCH 409 không được gửi lại). Ca hiện chờ event trước khi sửa nên không còn chạm khe này. Nếu E2E-06 (hoặc báo lỗi người dùng "bấm Lưu mà không lưu") xuất hiện lại: giữ trace (TL đã đổi quy trình — chép `test-results` ra thư mục riêng trước khi chạy lại) và chuyển E (web T-025) xem.
