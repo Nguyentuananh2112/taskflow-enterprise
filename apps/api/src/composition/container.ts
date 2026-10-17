@@ -103,8 +103,13 @@ export function createContainer(d: ContainerDeps): Container {
     repos: persistence.workspace,
     users: new AuthUserDirectory(persistence.auth.users),
     notifier: realtime,
-    // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`.
-    company: company.sessionGate,
+    // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
+    // người chưa có lịch nghỉ (ADR-134).
+    company: {
+      isActive: (userId) => company.sessionGate.isActive(userId),
+      canJoinWorkspace: async (userId) =>
+        (await company.members.find(userId))?.offboardLastDay === null,
+    },
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
