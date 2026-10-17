@@ -39,3 +39,70 @@ export const addDays = (date: string, days: number): string =>
  * process API riêng (`useApi`) ⇒ tính một lần mỗi file là đủ nhất quán trong file.
  */
 export const SEC_CLOCK_ANCHOR = process.env.SEC_CLOCK_ANCHOR ?? nextVnAnchor(2, '10:00:00');
+
+/** Số ngày của tháng `month` (1..12) năm `year` — tháng 2 theo năm nhuận (hạn E của ADR-131). */
+export const daysInMonth = (year: number, month: number): number =>
+  new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+/** Offset (ms) của múi giờ IANA `tz` tại thời điểm `utcMs` (dương = trước UTC). */
+function tzOffsetMs(tz: string, utcMs: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(utcMs));
+  const n = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const local = Date.UTC(n('year'), n('month') - 1, n('day'), n('hour'), n('minute'), n('second'));
+  return local - Math.floor(utcMs / 1000) * 1000;
+}
+
+/** YYYY-MM-DD theo múi `tz` của một thời điểm ISO (`vnDateOf` cho lịch khác VN, vd `Europe/Berlin`). */
+export const dateInTz = (iso: string, tz: string): string => {
+  const ms = Date.parse(iso);
+  return new Date(ms + tzOffsetMs(tz, ms)).toISOString().slice(0, 10);
+};
+
+/** Giờ địa phương `date` + `hms` ở múi `tz` ⇒ ISO UTC. Giờ rơi vào khe đổi giờ (không tồn tại) ⇒ ném lỗi. */
+export function localToIso(date: string, hms: string, tz = 'Asia/Ho_Chi_Minh'): string {
+  const [h = 0, m = 0, s = 0] = hms.split(':').map(Number);
+  const wall = Date.parse(`${date}T00:00:00Z`) + ((h * 60 + m) * 60 + s) * 1000;
+  let utc = wall - tzOffsetMs(tz, wall);
+  utc = wall - tzOffsetMs(tz, utc);
+  if (utc + tzOffsetMs(tz, utc) !== wall) throw new Error(`${date} ${hms} không tồn tại ở ${tz}`);
+  return new Date(utc).toISOString();
+}
+
+/**
+ * Mốc theo NGÀY (test-spec-company §1.4, test-spec-hr-extended §1.1): lần đầu tiên ngày `day` xuất hiện từ (hôm nay
+ * theo `tz` + 2 ngày — như `nextVnAnchor`, để `joinedAt` giờ thật luôn trước mốc), lúc `hms` giờ địa phương.
+ *
+ * `day`: `'MM-DD'` (vd `'12-31'`, `'02-29'` ⇒ năm nhuận kế tiếp) · `'*-DD'` (ngày DD của tháng bất kỳ, vd `'*-01'`
+ * đầu tháng) · `'MM-L'` / `'*-L'` (ngày cuối tháng — hạn E của cộng dồn phép).
+ */
+export function nextVnDateAnchor(
+  day: string,
+  hms: string,
+  opts: { tz?: string; from?: Date } = {},
+): string {
+  const tz = opts.tz ?? 'Asia/Ho_Chi_Minh';
+  const match = /^(\*|0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]|L)$/.exec(day);
+  if (!match) throw new Error(`day phải là 'MM-DD' | '*-DD' | 'MM-L' | '*-L', nhận '${day}'`);
+  const [, mm = '*', dd = 'L'] = match;
+  const start = addDays(dateInTz((opts.from ?? new Date()).toISOString(), tz), 2);
+  let cursor = start;
+  // ≤ 8 năm lịch: đủ cho 02-29 (chu kỳ nhuận dài nhất 8 năm quanh 2100).
+  for (let i = 0; i < 8 * 366; i += 1) {
+    const year = Number(cursor.slice(0, 4));
+    const month = Number(cursor.slice(5, 7));
+    const dom = Number(cursor.slice(8, 10));
+    const wantDom = dd === 'L' ? daysInMonth(year, month) : Number(dd);
+    if ((mm === '*' || Number(mm) === month) && dom === wantDom) return localToIso(cursor, hms, tz);
+    cursor = addDays(cursor, 1);
+  }
+  throw new Error(`không tìm được ngày ${day} trong 8 năm kể từ ${start}`);
+}
