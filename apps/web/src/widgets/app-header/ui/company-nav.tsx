@@ -18,10 +18,14 @@ type Item = Readonly<{
 }>;
 
 // "Bảng lương" (`payroll:manage`) thêm ở Mốc 4 — chưa có trang thì không có lối vào.
+// Thứ tự TL chốt (dùng chung Mốc 4/5/6): Trang chính · Bảng công của tôi · Nghỉ phép · Hồ sơ của tôi · Phiếu lương ·
+// Trò chuyện · Nhân sự · Bảng lương · Quản trị — mục chưa có trang thì chưa có ở đây.
 const ITEMS: readonly Item[] = [
   { href: '/w', label: 'Trang chính' },
   { href: '/attendance', label: 'Bảng công của tôi', needs: 'attendance:self' },
   { href: '/leave', label: 'Nghỉ phép', needs: 'leave:self' },
+  // Mốc 6 (avatar-chat.md §7 E9): ai thuộc công ty cũng có (kể cả Admin). ≥ md: icon cạnh chuông thay cho link.
+  { href: '/chat', label: 'Trò chuyện' },
   { href: '/hr', label: 'Nhân sự', needs: 'hr:manage', manage: true },
   { href: '/admin', label: 'Quản trị', needs: 'company:admin', manage: true },
 ];
