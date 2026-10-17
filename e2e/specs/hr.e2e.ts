@@ -781,7 +781,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr10');
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     // 10:00 < 11:00 ⇒ "buổi sáng"; tên = từ cuối của họ tên.
@@ -819,7 +819,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr11');
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
@@ -871,7 +871,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr13');
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
@@ -883,7 +883,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
       .click();
     await expect(page).toHaveURL(/\/login/);
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     await expect(dialog).toBeVisible();
     // Vẫn không tự chấm.
     const today = await apiMyToday(request, await refreshed(request, w.mia));
@@ -968,7 +968,7 @@ test.describe('Ổn định bố cục /w', () => {
         hanaIsHr: who === 'hana',
       });
       await loginViaUi(page, w[who].user);
-      await page.goto(HOME);
+      await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
       const card = attendanceCard(page);
       const prompt = checkinPrompt(page);
       await expect(prompt).toBeVisible();
