@@ -9,6 +9,9 @@ import { controlClass } from '@/shared/ui/input';
 // aria-activedescendant trỏ tới option đang chọn; ↑/↓ di chuyển, Enter chọn, Esc đóng. Danh sách do
 // phía gọi lọc (tìm phía server qua `onQueryChange`) — component chỉ hiển thị.
 
+const POPUP =
+  'absolute top-full z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-control border border-border bg-surface p-1 shadow-raised';
+
 export type ComboboxOption = Readonly<{ value: string; label: string; description?: string }>;
 
 type Props = Readonly<{
@@ -92,8 +95,9 @@ export function Combobox(props: Props) {
         id={listId}
         role="listbox"
         aria-label={label}
-        hidden={!open}
-        className="absolute top-full z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-control border border-border bg-surface p-1 shadow-raised"
+        // Không có option ⇒ ẩn listbox: listbox chỉ được chứa option (axe aria-required-children, E2E-CH-07).
+        hidden={!open || options.length === 0}
+        className={POPUP}
       >
         {options.map((option, i) => (
           <li
@@ -117,12 +121,13 @@ export function Combobox(props: Props) {
             )}
           </li>
         ))}
-        {options.length === 0 && (
-          <li role="presentation" className="px-2 py-1.5 text-sm text-text-muted">
-            {props.loading ? 'Đang tìm…' : (props.emptyText ?? 'Không có kết quả')}
-          </li>
-        )}
       </ul>
+      {open && options.length === 0 && (
+        // Trạng thái (trống / đang tìm) ở NGOÀI listbox, đọc qua vùng status.
+        <p role="status" className={cn(POPUP, 'px-3 py-2 text-sm text-text-muted')}>
+          {props.loading ? 'Đang tìm…' : (props.emptyText ?? 'Không có kết quả')}
+        </p>
+      )}
     </div>
   );
 }
