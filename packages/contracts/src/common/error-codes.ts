@@ -69,8 +69,10 @@ export const BusinessRule = z.enum([
   'START_DATE_OUT_OF_RANGE',
   'LAST_DAY_OUT_OF_RANGE',
   'ALREADY_ACTIVATED',
-  // Mốc 6 (TL 18/10): ảnh hỏng / sharp timeout ⇒ 422 (ADR-141).
+  // Mốc 6 (TL 18/10, ADR-141): ảnh hỏng ⇒ IMAGE_UNREADABLE; sharp quá thời gian / vượt trần điểm ảnh ⇒
+  // IMAGE_TOO_COMPLEX (web: "Ảnh quá lớn hoặc phức tạp, hãy chọn ảnh nhỏ hơn").
   'IMAGE_UNREADABLE',
+  'IMAGE_TOO_COMPLEX',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 

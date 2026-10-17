@@ -15,8 +15,9 @@
    **trước mọi thao tác đĩa**, kể cả `commit`: khóa sai ⇒ `RangeError` và tmp vẫn bị xóa. Khóa avatar chỉ
    dựng bằng `avatarFileKey(userId, version, variant)` từ dữ liệu server (userId của phiên, version từ DB),
    không bao giờ từ input thô của client (điều kiện của TL; B soát).
-3. **Ảnh hỏng / sharp lỗi / quá 10 s** ⇒ 422 `BUSINESS_RULE_VIOLATION` với `details.rule = IMAGE_UNREADABLE`
-   (thêm vào `BusinessRule` của contracts; test parity `test/contract/files-parity.test.ts`).
+3. **Ảnh hỏng** ⇒ 422 `BUSINESS_RULE_VIOLATION` `details.rule = IMAGE_UNREADABLE`; **sharp quá thời gian /
+   vượt trần điểm ảnh** ⇒ `IMAGE_TOO_COMPLEX` (TL 18/10). Cả hai trong `BusinessRule` của contracts; test parity
+   `test/contract/files-parity.test.ts`.
 
 Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWEEP_ON_START`, `FILES_SWEEP_INTERVAL_MS`
 (≥ 1 s), `FILES_IMAGE_PIPELINE_DISABLED`. `MEDIA_CORP` là env thường.
@@ -55,5 +56,5 @@ volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Câu hỏi mở
 
-- TL/E: worker sharp quá 10 s nên là rule riêng `IMAGE_TOO_COMPLEX` ("chọn ảnh nhỏ hơn") hay dùng chung
-  `IMAGE_UNREADABLE` + log phân biệt (đề xuất của B)?
+- (Đã chốt — TL 18/10) worker sharp quá thời gian / vượt trần điểm ảnh ⇒ rule riêng `IMAGE_TOO_COMPLEX` (422);
+  `IMAGE_UNREADABLE` cho ảnh hỏng. Đã báo H câu hiển thị.

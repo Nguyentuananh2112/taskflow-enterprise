@@ -69,10 +69,18 @@ export class StorageFullError extends AppError {
   }
 }
 
-/** 422 `BUSINESS_RULE_VIOLATION` rule `IMAGE_UNREADABLE` — ảnh hỏng, sharp lỗi / quá 10 s (TL 18/10). */
+/** 422 `BUSINESS_RULE_VIOLATION` rule `IMAGE_UNREADABLE` — ảnh hỏng / sharp không giải mã được (TL 18/10). */
 export function imageUnreadableError(): BusinessRuleViolationError {
   return new BusinessRuleViolationError(
     'IMAGE_UNREADABLE',
     'Ảnh này chưa đọc được, hãy chọn ảnh JPG hoặc PNG khác.',
+  );
+}
+
+/** 422 rule `IMAGE_TOO_COMPLEX` — worker sharp quá thời gian hoặc vượt `limitInputPixels` (TL 18/10). */
+export function imageTooComplexError(): BusinessRuleViolationError {
+  return new BusinessRuleViolationError(
+    'IMAGE_TOO_COMPLEX',
+    'Ảnh quá lớn hoặc phức tạp, hãy chọn ảnh nhỏ hơn.',
   );
 }
