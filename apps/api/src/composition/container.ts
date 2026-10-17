@@ -80,6 +80,8 @@ export function createContainer(d: ContainerDeps): Container {
   const accountsRef: { current: ICompanyAccounts | null } = { current: null };
   const company = createCompanyModule({
     repos: persistence.company,
+    // ADR-120: ngày công / access_until theo múi giờ lịch công ty (attendance dựng sau ⇒ đọc trễ lúc chạy).
+    timeZone: () => attendance.timeZoneNow(),
     ids,
     clock: business,
     uow: persistence.uow,
