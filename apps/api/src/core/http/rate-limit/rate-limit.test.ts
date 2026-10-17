@@ -132,7 +132,7 @@ describe('createRateLimit', () => {
     expect(d.logger.messages('warn')).toHaveLength(2);
   });
 
-  it('mỗi route chọn rule từ bảng security §6.4; register/refresh cũng fail-closed', () => {
+  it('mỗi route chọn rule từ bảng security §6.4; activation/refresh cũng fail-closed', () => {
     expect(RATE_LIMIT_RULES.loginIp.map((r) => [r.id, r.limit, r.windowMs])).toEqual([
       ['login-ip', 20, 900_000],
     ]);
@@ -143,7 +143,7 @@ describe('createRateLimit', () => {
       ['login-fail-ip-email', 10, 900_000, [401]],
       ['login-fail-email', 100, 3_600_000, [401]],
     ]);
-    const closed = ['login', 'loginIp', 'register', 'refresh', 'changePassword'] as const;
+    const closed = ['login', 'loginIp', 'activation', 'refresh', 'changePassword'] as const;
     for (const name of closed) {
       expect(RATE_LIMIT_RULES[name].every((r) => r.failMode === 'closed')).toBe(true);
     }

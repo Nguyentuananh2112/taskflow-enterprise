@@ -9,23 +9,12 @@ import {
 } from '../../../../test/support';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type {
+  ICompanyMembershipGate,
   IUserDirectory,
   IWorkspacePurger,
-  IHrGrantNotifier,
   IWorkspaceRealtimeNotifier,
   UserSummary,
 } from '../application/ports/collaborators.port';
-import { HrAuditWriter } from '../application/hr-audit-writer';
-import type { HrAuditEntry, IHrAuditLog } from '../application/ports/hr-audit.port';
-import type {
-  IMemberDepartureLog,
-  IMembershipTenureReader,
-  MemberDeparture,
-} from '../application/ports/tenure.port';
-import {
-  InMemoryMemberDepartures,
-  InMemoryMembershipTenureReader,
-} from '../infrastructure/persistence/in-memory/in-memory-tenure';
 import type { IWorkspaceQueries } from '../application/ports/queries.port';
 import type {
   IMembershipRepository,
@@ -39,7 +28,6 @@ import { Project, type ProjectSnapshot } from '../domain/project';
 import type { WorkspaceRole } from '../domain/roles';
 import { Workspace, type WorkspaceSnapshot } from '../domain/workspace';
 import {
-  InMemoryHrAuditLog,
   InMemoryMembershipRepository,
   InMemoryProjectRepository,
   InMemoryWorkspaceRepository,
@@ -59,6 +47,16 @@ export const NOW = '2026-11-01T00:00:00.000Z';
 type Rows<T> = { rows(): T[] | Promise<T[]> };
 
 /**
+ * Module company giả (Mốc 3.5): mặc định mọi user thuộc công ty; `revoked` = đã nghỉ / quá `access_until`.
+ */
+export class FakeCompanyGate implements ICompanyMembershipGate {
+  readonly revoked = new Set<string>();
+  isActive(userId: string): Promise<boolean> {
+    return Promise.resolve(!this.revoked.has(userId));
+  }
+}
+
+/**
  * Phần lưu trữ của harness — InMemory mặc định; integration truyền bản Prisma để chạy lại ĐÚNG
  * bộ test use case (LSP, T-020). `rows()` có thể async ⇒ test luôn `await`.
  */
@@ -68,9 +66,6 @@ export interface WorkspaceBackend {
   projects: IProjectRepository & Rows<ProjectSnapshot>;
   users: IUserDirectory & { seed(user: UserSummary): void | Promise<void> };
   queries: IWorkspaceQueries;
-  hrAudit: IHrAuditLog & Rows<HrAuditEntry>;
-  departures: IMemberDepartureLog & Rows<MemberDeparture>;
-  tenure: IMembershipTenureReader;
   purger: IWorkspacePurger;
   uow: IUnitOfWork & {
     readonly steps: UowStep[];
@@ -84,19 +79,14 @@ export function inMemoryWorkspaceBackend(): WorkspaceBackend {
   const memberships = new InMemoryMembershipRepository();
   const projects = new InMemoryProjectRepository();
   const users = new InMemoryUserDirectory();
-  const hrAudit = new InMemoryHrAuditLog((id) => users.users.get(id)?.fullName);
-  const departures = new InMemoryMemberDepartures();
   return {
     workspaces,
     memberships,
     projects,
     users,
     queries: new InMemoryWorkspaceQueries(workspaces, memberships, projects, users),
-    hrAudit,
-    departures,
-    tenure: new InMemoryMembershipTenureReader(memberships, departures),
     purger: new InMemoryWorkspacePurger(workspaces, memberships, projects),
-    uow: new FakeUnitOfWork(workspaces, memberships, projects, hrAudit, departures),
+    uow: new FakeUnitOfWork(workspaces, memberships, projects),
   };
 }
 
@@ -108,11 +98,10 @@ export function createWorkspaceHarness(
   const ids = new SequentialIdGenerator();
   const { workspaces, memberships, projects, users, uow } = backend;
   const notifier = createSpy<IWorkspaceRealtimeNotifier>(uow);
-  const hrNotifier = createSpy<IHrGrantNotifier>(uow);
   const cleaner = new SpyTaskAssignmentCleaner(uow);
   const logger = new SpyLogger();
   const creator = new WorkspaceCreator({ workspaces, memberships, ids, clock });
-  const audit = new HrAuditWriter({ hrAudit: backend.hrAudit, ids, clock });
+  const company = new FakeCompanyGate();
   const seeded = new Set<string>();
 
   const h = {
@@ -121,11 +110,10 @@ export function createWorkspaceHarness(
     ids,
     random,
     notifier,
-    hrNotifier,
     cleaner,
     logger,
     creator,
-    audit,
+    company,
 
     /** Seed user (một lần mỗi tên); id cố định theo tên — `uid(name)`. */
     async user(name: string) {

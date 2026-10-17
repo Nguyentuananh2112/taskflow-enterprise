@@ -1,7 +1,7 @@
 import { NotificationNewEvent } from '@taskflow/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { createNotificationHarness, U, W1, W2 } from '../testing/notification-harness';
+import { createNotificationHarness, U } from '../testing/notification-harness';
 import { NotifyOutsideTransactionError } from './notification-publisher';
 
 const REQ = '0000aaaa-0000-7000-8000-00000000aaaa';
@@ -12,7 +12,6 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     let sentDuringTx = -1;
     await h.uow.run(async () => {
       await h.publisher.notify({
-        workspaceId: W1,
         type: 'LEAVE_APPROVED',
         refId: REQ,
         actorId: U.hana,
@@ -25,7 +24,6 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     const rows = h.store.rows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      workspaceId: W1,
       recipientId: U.mia,
       type: 'LEAVE_APPROVED',
       refId: REQ,
@@ -39,17 +37,15 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
           recipientId: U.mia,
           notificationId: rows[0]?.id,
           type: 'LEAVE_APPROVED',
-          workspaceId: W1,
         },
         meta: { actorId: U.hana, originClientId: null },
       },
     ]);
   });
 
-  it('recipient hr ⇒ mọi người có hr:manage HIỆN TẠI (OWNER + grant HR_MANAGE), không PM/MEMBER/VIEWER, ws khác không dính', async () => {
+  it('recipient hr ⇒ mọi người có hr:manage HIỆN TẠI (Admin + nhân viên có grant HR_MANAGE), không nhân viên thường', async () => {
     const h = createNotificationHarness();
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_SUBMITTED',
       refId: REQ,
       actorId: U.mia,
@@ -68,10 +64,9 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
 
   it('fan-out HR đọc quyền tại thời điểm ghi: thu grant của Hana trước ⇒ Hana không nhận; cấp cho Max ⇒ Max nhận', async () => {
     const h = createNotificationHarness();
-    h.audience.set(W1, U.hana, 'MEMBER', []);
-    h.audience.set(W1, U.max, 'MEMBER', ['HR_MANAGE']);
+    h.audience.set(U.hana, false);
+    h.audience.set(U.max, true);
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_CANCELLED',
       refId: REQ,
       actorId: U.mia,
@@ -85,10 +80,9 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     ).toEqual([U.olivia, U.max].sort());
   });
 
-  it('người gây ra không tự nhận: HR gửi đơn của chính mình ⇒ chỉ HR khác; OWNER tự duyệt ⇒ không dòng nào', async () => {
+  it('người gây ra không tự nhận: HR gửi đơn của chính mình ⇒ chỉ HR khác; Admin tự gửi cho mình ⇒ không dòng nào', async () => {
     const h = createNotificationHarness();
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_SUBMITTED',
       refId: REQ,
       actorId: U.hana,
@@ -98,7 +92,6 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
 
     const h2 = createNotificationHarness();
     await h2.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_APPROVED',
       refId: REQ,
       actorId: U.olivia,
@@ -116,7 +109,6 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
         ? Promise.reject(new Error('socket lỗi'))
         : original(input, meta);
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_SUBMITTED',
       refId: REQ,
       actorId: U.mia,
@@ -127,13 +119,13 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     expect(h.store.rows()).toHaveLength(2); // dòng bền vẫn còn (client tải lại khi kết nối lại)
   });
 
-  it('ws chỉ có actor là HR ⇒ không ghi, không phát', async () => {
+  it('chỉ actor có hr:manage ⇒ không ghi, không phát', async () => {
     const h = createNotificationHarness();
+    h.audience.set(U.hana, false);
     await h.notifyInTx({
-      workspaceId: W2,
       type: 'LEAVE_SUBMITTED',
       refId: REQ,
-      actorId: U.otto,
+      actorId: U.olivia,
       recipient: { kind: 'hr' },
     });
     expect(h.store.rows()).toEqual([]);
@@ -145,7 +137,6 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     await expect(
       h.uow.run(async () => {
         await h.publisher.notify({
-          workspaceId: W1,
           type: 'ATTENDANCE_ADJUSTED',
           refId: REQ,
           actorId: U.hana,
@@ -163,7 +154,6 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     const h = createNotificationHarness();
     await expect(
       h.publisher.notify({
-        workspaceId: W1,
         type: 'LEAVE_APPROVED',
         refId: REQ,
         actorId: U.hana,
@@ -173,10 +163,9 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     expect(h.store.rows()).toEqual([]);
   });
 
-  it('SEC-HR-20: payload event khớp `NotificationNewEvent` của contracts — chỉ id + loại + ws, không lý do / ghi chú', async () => {
+  it('SEC-HR-20: payload event khớp `NotificationNewEvent` của contracts — chỉ id + loại, không lý do / ghi chú', async () => {
     const h = createNotificationHarness();
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_REVOKED',
       refId: REQ,
       actorId: U.hana,
@@ -184,7 +173,7 @@ describe('NotificationPublisher.notify (ADR-123, T-040)', () => {
     });
     const [sent] = h.realtime.sent;
     expect(Object.keys(sent?.input ?? {}).sort()).toEqual(
-      ['notificationId', 'recipientId', 'type', 'workspaceId'].sort(),
+      ['notificationId', 'recipientId', 'type'].sort(),
     );
     // gateway bỏ recipientId (dùng làm phòng `user:{id}`) và bọc vỏ chung — data phải parse strict.
     const { recipientId: _room, ...data } = sent?.input ?? { recipientId: '' };

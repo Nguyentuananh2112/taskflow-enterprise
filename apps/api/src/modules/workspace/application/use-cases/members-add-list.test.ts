@@ -8,6 +8,7 @@ import {
 } from '../../../../core/errors';
 import {
   createWorkspaceHarness,
+  GHOST_ID,
   givenWorkspaceA,
   uid,
   type WorkspaceHarness,
@@ -32,13 +33,12 @@ describe('AddMemberUseCase', () => {
   const add = () => new AddMemberUseCase(h);
 
   it('MEM-01: OWNER thêm Nina với role PM ⇒ MemberView', async () => {
-    const view = await add().execute(ctx.alice, { email: 'nina@example.com', role: 'PM' });
+    const view = await add().execute(ctx.alice, { userId: uid('nina'), role: 'PM' });
     expect(view).toEqual({
       userId: uid('nina'),
       email: 'nina@example.com',
       fullName: 'Nina',
       role: 'PM',
-      grants: [],
       joinedAt: h.clock.now(),
     });
     expect(await h.roleOf(ctx.A, 'Nina')).toBe('PM');
@@ -46,19 +46,19 @@ describe('AddMemberUseCase', () => {
 
   it('MEM-02: PM thêm với role MEMBER / VIEWER', async () => {
     await expect(
-      add().execute(ctx.pam, { email: 'nina@example.com', role: 'MEMBER' }),
+      add().execute(ctx.pam, { userId: uid('nina'), role: 'MEMBER' }),
     ).resolves.toBeDefined();
     await h.user('Zed');
     await expect(
-      add().execute(ctx.pam, { email: 'zed@example.com', role: 'VIEWER' }),
+      add().execute(ctx.pam, { userId: uid('zed'), role: 'VIEWER' }),
     ).resolves.toBeDefined();
   });
 
   it('MEM-03: PM cấp PM/OWNER ⇒ 403 TRƯỚC khi tra user (email lạ vẫn 403, không 404)', async () => {
     for (const role of ['PM', 'OWNER']) {
-      expect(
-        await caught(add().execute(ctx.pam, { email: 'ghost@example.com', role })),
-      ).toBeInstanceOf(ForbiddenError);
+      expect(await caught(add().execute(ctx.pam, { userId: GHOST_ID, role }))).toBeInstanceOf(
+        ForbiddenError,
+      );
     }
     expect(h.uow.steps).toEqual([]);
   });
@@ -66,37 +66,37 @@ describe('AddMemberUseCase', () => {
   it('MEM-04: MEMBER / VIEWER thêm bất kỳ ai ⇒ 403', async () => {
     for (const actor of [ctx.mia, ctx.vic]) {
       expect(
-        await caught(add().execute(actor, { email: 'nina@example.com', role: 'VIEWER' })),
+        await caught(add().execute(actor, { userId: uid('nina'), role: 'VIEWER' })),
       ).toBeInstanceOf(ForbiddenError);
     }
   });
 
-  it('MEM-05: email không có tài khoản ⇒ 404 resource user', async () => {
-    const err = await caught(
-      add().execute(ctx.alice, { email: 'ghost@example.com', role: 'MEMBER' }),
-    );
+  it('MEM-05: userId không có tài khoản ⇒ 404 resource user', async () => {
+    const err = await caught(add().execute(ctx.alice, { userId: GHOST_ID, role: 'MEMBER' }));
     expect(err).toBeInstanceOf(ResourceNotFoundError);
     expect((err as ResourceNotFoundError).details).toEqual({ resource: 'user' });
   });
 
   it('MEM-06: đã là thành viên ⇒ 409, role không đổi', async () => {
     expect(
-      await caught(add().execute(ctx.alice, { email: 'mia@example.com', role: 'PM' })),
+      await caught(add().execute(ctx.alice, { userId: uid('mia'), role: 'PM' })),
     ).toBeInstanceOf(ResourceConflictError);
     expect(await h.roleOf(ctx.A, 'Mia')).toBe('MEMBER');
   });
 
-  it('MEM-07: email được chuẩn hóa', async () => {
-    await expect(
-      add().execute(ctx.alice, { email: '  NINA@Example.com ', role: 'MEMBER' }),
-    ).resolves.toMatchObject({ userId: uid('nina') });
+  it('MEM-07 (Mốc 3.5): người không còn thuộc công ty ⇒ cùng 404 user, không thêm', async () => {
+    h.company.revoked.add(uid('nina'));
+    const err = await caught(add().execute(ctx.alice, { userId: uid('nina'), role: 'MEMBER' }));
+    expect(err).toBeInstanceOf(ResourceNotFoundError);
+    expect((err as ResourceNotFoundError).details).toEqual({ resource: 'user' });
+    expect(await h.roleOf(ctx.A, 'Nina')).toBeNull();
   });
 
   it('MEM-09: role không hợp lệ ⇒ 400', async () => {
     for (const role of ['ADMIN', 'owner', '']) {
-      expect(
-        await caught(add().execute(ctx.alice, { email: 'nina@example.com', role })),
-      ).toBeInstanceOf(ValidationError);
+      expect(await caught(add().execute(ctx.alice, { userId: uid('nina'), role }))).toBeInstanceOf(
+        ValidationError,
+      );
     }
   });
 });

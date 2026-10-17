@@ -66,7 +66,6 @@ export function recordsRetentionCutoff(
 /** Các bước theo thứ tự: XÓA trước (bớt dòng phải scrub), scrub sau. Mốc tính từ `now` của lượt. */
 export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date): Step[] {
   const before = (days: number) => new Date(now.getTime() - days * DAY_MS);
-  const records = before(p.recordsDays);
   // năm Y xóa khi 31/12/Y < mốc ⇔ Y < năm của mốc
   const { cutoffDate: recordsDate, cutoffYear: recordsYear } = recordsRetentionCutoff(p, now);
   const reasonDate = dateOf(before(p.leaveReasonDays));
@@ -74,12 +73,12 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
     { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(recordsDate, n) },
     { name: 'leave_requests', run: (n) => s.leave.deleteRequestsBeforeYear(recordsYear, n) },
     { name: 'leave_balances', run: (n) => s.leave.deleteBalancesBeforeYear(recordsYear, n) },
-    { name: 'member_departures', run: (n) => s.workspace.deleteDepartures(records, n) },
+    { name: 'member_departures', run: (n) => s.company.deleteDepartures(recordsDate, n) },
     {
       name: 'notifications',
       run: (n) => s.notifications.deleteNotifications(before(p.notificationsDays), n),
     },
-    { name: 'hr_audit_logs', run: (n) => s.workspace.deleteHrAuditLogs(before(p.hrAuditDays), n) },
+    { name: 'hr_audit_logs', run: (n) => s.company.deleteHrAuditLogs(before(p.hrAuditDays), n) },
     {
       name: 'attendance_client_info',
       run: (n) => s.attendance.scrubClientInfo(before(p.clientInfoDays), n),
@@ -87,7 +86,7 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
     { name: 'leave_reasons', run: (n) => s.leave.scrubReasons(reasonDate, n) },
     {
       name: 'hr_audit_notes',
-      run: (n) => s.workspace.scrubHrAuditNotes(before(p.leaveReasonDays), n),
+      run: (n) => s.company.scrubHrAuditNotes(before(p.leaveReasonDays), n),
     },
   ];
 }

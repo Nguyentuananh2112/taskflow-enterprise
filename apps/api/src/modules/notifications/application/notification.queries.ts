@@ -7,7 +7,6 @@ import {
   type VisibilityScope,
 } from '../domain/notification';
 import type {
-  CanManageHr,
   INotificationAudience,
   INotificationContextReader,
   INotificationStore,
@@ -20,8 +19,6 @@ export interface NotificationView {
   id: string;
   type: NotificationType;
   refId: string;
-  workspaceId: string;
-  workspaceName: string;
   actor: { id: string; fullName: string } | null;
   leave: LeaveSummary | null;
   readAt: string | null;
@@ -32,13 +29,12 @@ export interface NotificationQueriesDeps {
   store: INotificationStore;
   audience: INotificationAudience;
   context: INotificationContextReader;
-  canManageHr: CanManageHr;
   clock: IClock;
 }
 
 /**
  * `GET/POST /api/v1/me/notifications…` — luôn của chính người gọi. Phạm vi hiển thị dựng lại MỖI request
- * từ membership hiện tại (ADR-123: chỉ ws còn là thành viên; B-H3b: loại dành cho HR theo quyền hiện tại).
+ * từ tư cách công ty hiện tại (ADR-136; B-H3b: loại dành cho HR theo quyền hiện tại).
  */
 export class NotificationQueries {
   constructor(private readonly d: NotificationQueriesDeps) {}
@@ -47,11 +43,11 @@ export class NotificationQueries {
     userId: string,
     page: { after?: NotificationKey | undefined; limit: number },
   ): Promise<{ items: NotificationView[]; nextAfter: NotificationKey | null }> {
-    const { scope, names } = await this.#scope(userId);
+    const scope = await this.#scope(userId);
     const rows = await this.d.store.list(scope, { after: page.after, limit: page.limit + 1 });
     const hasMore = rows.length > page.limit;
     const items = rows.slice(0, page.limit);
-    const views = await this.#views(items, names);
+    const views = await this.#views(items);
     const last = items.at(-1);
     return {
       items: views,
@@ -60,42 +56,32 @@ export class NotificationQueries {
   }
 
   async unreadCount(userId: string): Promise<number> {
-    return this.d.store.countUnread((await this.#scope(userId)).scope);
+    return this.d.store.countUnread(await this.#scope(userId));
   }
 
-  /** Id của người khác / ws đã rời / loại HR khi đã mất quyền ⇒ 404 (không lộ tồn tại — SEC-HR-17). */
+  /** Id của người khác / loại HR khi đã mất quyền ⇒ 404 (không lộ tồn tại — SEC-HR-17). */
   async markRead(userId: string, id: string): Promise<void> {
-    const { scope } = await this.#scope(userId);
+    const scope = await this.#scope(userId);
     if (!(await this.d.store.markRead(scope, id, this.d.clock.now()))) {
       throw new ResourceNotFoundError('notification');
     }
   }
 
   async markAllRead(userId: string): Promise<void> {
-    await this.d.store.markAllRead((await this.#scope(userId)).scope, this.d.clock.now());
+    await this.d.store.markAllRead(await this.#scope(userId), this.d.clock.now());
   }
 
-  async #scope(
-    userId: string,
-  ): Promise<{ scope: VisibilityScope; names: ReadonlyMap<string, string> }> {
-    const memberships = await this.d.audience.workspacesOf(userId);
-    const workspaces = memberships.map((m) => ({
-      workspaceId: m.workspaceId,
-      since: m.joinedAt,
-      hr: this.d.canManageHr(m.role, m.grants),
-    }));
-    const names = new Map(memberships.map((m) => [m.workspaceId, m.workspaceName]));
-    return { scope: { recipientId: userId, workspaces }, names };
+  async #scope(userId: string): Promise<VisibilityScope> {
+    const access = await this.d.audience.accessOf(userId);
+    return {
+      recipientId: userId,
+      access: access ? { since: access.since, hr: access.canManageHr } : null,
+    };
   }
 
-  async #views(
-    rows: readonly NotificationRecord[],
-    workspaceNames: ReadonlyMap<string, string>,
-  ): Promise<NotificationView[]> {
+  async #views(rows: readonly NotificationRecord[]): Promise<NotificationView[]> {
     const actorIds = rows.flatMap((r) => (r.actorId ? [r.actorId] : []));
-    const leaveRefs = rows
-      .filter((r) => LEAVE_TYPES.includes(r.type))
-      .map((r) => ({ workspaceId: r.workspaceId, refId: r.refId }));
+    const leaveRefs = rows.filter((r) => LEAVE_TYPES.includes(r.type)).map((r) => r.refId);
     const [actors, leaves] = await Promise.all([
       this.d.context.actorNames(actorIds),
       this.d.context.leaveSummaries(leaveRefs),
@@ -107,8 +93,6 @@ export class NotificationQueries {
         id: r.id,
         type: r.type,
         refId: r.refId,
-        workspaceId: r.workspaceId,
-        workspaceName: workspaceNames.get(r.workspaceId) ?? '',
         actor: r.actorId && actorName !== undefined ? { id: r.actorId, fullName: actorName } : null,
         leave: leave
           ? { type: leave.type, startDate: leave.startDate, endDate: leave.endDate }

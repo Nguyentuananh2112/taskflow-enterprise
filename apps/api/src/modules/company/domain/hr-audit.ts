@@ -1,9 +1,7 @@
-// HrAuditLog (Mốc 3, attendance-leave.md §3): tập hành động chốt ở đây (domain, thuần TS — ADR-043);
+// HrAuditLog (cấp công ty — company-level.md ADR-136): tập hành động chốt ở đây (domain, thuần TS — ADR-043);
 // parity với `HrAuditAction` của contracts: application/hr-audit-parity.test.ts.
 
 export const HR_AUDIT_ACTIONS = [
-  'GRANT',
-  'REVOKE',
   'SCHEDULE_SET',
   'HOLIDAY_SET',
   'HOLIDAY_DELETE',
@@ -15,6 +13,18 @@ export const HR_AUDIT_ACTIONS = [
   'LEAVE_REVOKE',
   'BALANCE_ADJUST',
   'EXPORT',
+  // Mốc 3.5 (company-level.md §3): GRANT / REVOKE theo workspace bỏ.
+  'COMPANY_ROLE_SET',
+  'GRANT_SET',
+  'EMPLOYEE_HIRED',
+  'EMPLOYEE_REHIRED',
+  'EMPLOYEE_OFFBOARD_SCHEDULED',
+  'EMPLOYEE_OFFBOARD_CANCELLED',
+  'EMPLOYEE_OFFBOARD_COMPLETED',
+  'OFFBOARD_CLEANUP',
+  'ACTIVATION_LINK_ISSUED',
+  'WORKSPACE_OWNER_ASSIGNED',
+  'WORKSPACE_ARCHIVED',
 ] as const;
 export type HrAuditAction = (typeof HR_AUDIT_ACTIONS)[number];
 

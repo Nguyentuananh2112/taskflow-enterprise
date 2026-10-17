@@ -25,8 +25,6 @@ import {
 } from '../attendance/attendance.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
-  HrAuditLogDto,
-  ListHrAuditLogsQuery,
   ListNotificationsQuery,
   NotificationDto,
   NotificationParams,
@@ -50,13 +48,19 @@ import {
   SubmitLeaveBody,
 } from '../leave';
 import {
+  ActivateBody,
+  ActivateResponse,
+  ActivationInspectBody,
+  ActivationInspectResponse,
+  HireEmployeeBody,
+  HireEmployeeResponse,
+} from '../company/company.schemas';
+import {
   AuthTokenDto,
   ChangePasswordBody,
   LoginBody,
   LoginResponse,
   MeResponse,
-  RegisterBody,
-  RegisterResponse,
   UpdateMeBody,
   UserDto,
 } from '../auth/auth.schemas';
@@ -91,7 +95,6 @@ import {
   MemberDto,
   MemberParams,
   RemoveMemberResponse,
-  SetMemberGrantsBody,
   UpdateWorkspaceBody,
   WorkspaceDto,
   WorkspaceParams,
@@ -141,16 +144,6 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ---------- auth ----------
   {
     method: 'post',
-    path: '/auth/register',
-    summary: 'Đăng ký tài khoản (đồng thời tạo workspace mặc định)',
-    tag: 'auth',
-    security: 'none',
-    body: RegisterBody,
-    response: { status: 201, data: RegisterResponse },
-    errors: ['EMAIL_ALREADY_EXISTS', 'RATE_LIMITED'],
-  },
-  {
-    method: 'post',
     path: '/auth/login',
     summary: 'Đăng nhập — access token + cookie refresh',
     tag: 'auth',
@@ -158,6 +151,49 @@ export const API_ROUTES: readonly ApiRoute[] = [
     body: LoginBody,
     response: { status: 200, data: LoginResponse },
     errors: ['INVALID_CREDENTIALS', 'RATE_LIMITED'],
+  },
+  {
+    method: 'post',
+    path: '/auth/activation/inspect',
+    summary: 'Xem link kích hoạt (chỉ đọc, không tiêu token — ADR-137)',
+    tag: 'auth',
+    security: 'none',
+    body: ActivationInspectBody,
+    response: { status: 200, data: ActivationInspectResponse },
+    errors: ['ACTIVATION_INVALID', 'ACTIVATION_GONE', 'ORIGIN_NOT_ALLOWED', 'RATE_LIMITED'],
+  },
+  {
+    method: 'post',
+    path: '/auth/activate',
+    summary: 'Kích hoạt tài khoản: đặt mật khẩu đầu tiên ⇒ phiên mới (token một lần)',
+    tag: 'auth',
+    security: 'none',
+    body: ActivateBody,
+    response: { status: 200, data: ActivateResponse },
+    errors: [
+      'VALIDATION_ERROR',
+      'ACTIVATION_INVALID',
+      'ACTIVATION_GONE',
+      'ORIGIN_NOT_ALLOWED',
+      'RATE_LIMITED',
+    ],
+  },
+  {
+    method: 'post',
+    path: '/hr/employees',
+    summary: 'Thêm nhân viên (hr:manage) — link kích hoạt 7 ngày, hoặc nhận lại người đã nghỉ',
+    tag: 'hr',
+    security: 'bearer',
+    body: HireEmployeeBody,
+    response: { status: 201, data: HireEmployeeResponse },
+    errors: [
+      'SESSION_REVOKED',
+      'FORBIDDEN_ACCESS',
+      'VALIDATION_ERROR',
+      'RESOURCE_CONFLICT',
+      'BUSINESS_RULE_VIOLATION',
+      'RATE_LIMITED',
+    ],
   },
   {
     method: 'post',
@@ -316,30 +352,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
     response: { status: 200, data: RemoveMemberResponse },
     errors: ['BUSINESS_RULE_VIOLATION'],
   },
-  {
-    method: 'put',
-    path: `${WS}/members/{userId}/grants`,
-    summary:
-      'Đặt quyền cấp thêm (Quản lý nhân sự) — chỉ OWNER; OWNER / VIEWER ⇒ 422 GRANT_NOT_ALLOWED',
-    tag: 'members',
-    security: 'bearer',
-    params: MemberParams,
-    body: SetMemberGrantsBody,
-    response: { status: 200, data: MemberDto },
-    errors: ['BUSINESS_RULE_VIOLATION'],
-  },
 
   // ---------- hr (Mốc 3) ----------
-  {
-    method: 'get',
-    path: `${WS}/hr-audit-logs`,
-    summary: 'Nhật ký thao tác nhân sự — chỉ OWNER (không chứa lý do đơn nghỉ)',
-    tag: 'hr',
-    security: 'bearer',
-    params: WorkspaceParams,
-    query: ListHrAuditLogsQuery,
-    response: { status: 200, data: z.array(HrAuditLogDto), paged: true },
-  },
 
   // ---------- notifications (ADR-123, T-040) — luôn của người gọi, chỉ ws còn là thành viên ----------
   {

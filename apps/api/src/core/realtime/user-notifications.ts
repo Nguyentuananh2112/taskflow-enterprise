@@ -1,5 +1,5 @@
 import { rooms } from './events';
-import type { MemberGrant, RealtimeEventMeta } from './ports';
+import type { CompanyGrant, CompanyRole, RealtimeEventMeta } from './ports';
 
 type Emit = (room: string, type: string, data: unknown, meta: RealtimeEventMeta) => void;
 
@@ -14,36 +14,29 @@ export class UserNotifications {
     this.#emit = emit;
   }
 
-  /** ADR-119: grant của user đổi ⇒ web làm mới quyền ngay. CHỈ `{ workspaceId, grants }`. */
-  grantsChanged(
-    input: { userId: string; workspaceId: string; grants: readonly MemberGrant[] },
+  /**
+   * Mốc 3.5 (thay `member:grants-changed`): role / grants CÔNG TY của user đổi ⇒ web làm mới `['company']` ngay.
+   * CHỈ `{ role, grants }`; REST vẫn kiểm quyền mỗi request.
+   */
+  companyAccessChanged(
+    input: { userId: string; role: CompanyRole; grants: readonly CompanyGrant[] },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    const { userId, workspaceId, grants } = input;
-    this.#emit(
-      rooms.user(userId),
-      'member:grants-changed',
-      { workspaceId, grants: [...grants] },
-      meta,
-    );
+    const { userId, role, grants } = input;
+    this.#emit(rooms.user(userId), 'company:access-changed', { role, grants: [...grants] }, meta);
     return Promise.resolve();
   }
 
   /**
-   * ADR-123 (T-040): thông báo bền đã commit ⇒ báo người nhận. CHỈ id + loại + workspace — nội dung
+   * ADR-123 (T-040): thông báo bền đã commit ⇒ báo người nhận. CHỈ id + loại — nội dung
    * (tên, ngày nghỉ) dựng lúc đọc theo quyền hiện tại (B-H3b).
    */
   notification(
-    input: { recipientId: string; notificationId: string; type: string; workspaceId: string },
+    input: { recipientId: string; notificationId: string; type: string },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    const { recipientId, notificationId, type, workspaceId } = input;
-    this.#emit(
-      rooms.user(recipientId),
-      'notification:new',
-      { notificationId, type, workspaceId },
-      meta,
-    );
+    const { recipientId, notificationId, type } = input;
+    this.#emit(rooms.user(recipientId), 'notification:new', { notificationId, type }, meta);
     return Promise.resolve();
   }
 }

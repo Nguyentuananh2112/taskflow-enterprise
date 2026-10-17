@@ -1,6 +1,9 @@
 import { addDays, instantOf, type LocalDate } from '../../../core/domain/local-time';
 import type { CompanyGrant, CompanyRole } from './roles';
 
+/** Múi giờ lịch mặc định (= lịch mặc định của attendance, ADR-120) khi chưa nối phiên bản lịch. */
+export const DEFAULT_COMPANY_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+
 /** Giờ chốt ngày công (attendance A#7): hết quyền lúc 06:00 ngày SAU ngày làm cuối. */
 export const ACCESS_CUTOFF_MIN = 6 * 60;
 

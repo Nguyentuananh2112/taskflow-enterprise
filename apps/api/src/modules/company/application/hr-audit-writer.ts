@@ -4,8 +4,8 @@ import { HR_AUDIT_FORBIDDEN_KEYS, type HrAuditAction } from '../domain/hr-audit'
 import type { AuditValue, IHrAuditLog } from './ports/hr-audit.port';
 
 export interface HrAuditInput {
-  workspaceId: string;
-  actorId: string;
+  /** null = `admin:bootstrap` (CLI). */
+  actorId: string | null;
   action: HrAuditAction;
   targetUserId?: string | null;
   refId?: string | null;
@@ -30,7 +30,6 @@ export class HrAuditWriter {
     }
     await this.d.hrAudit.append({
       id: this.d.ids.next(),
-      workspaceId: input.workspaceId,
       actorId: input.actorId,
       action: input.action,
       targetUserId: input.targetUserId ?? null,

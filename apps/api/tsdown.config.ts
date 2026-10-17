@@ -1,7 +1,8 @@
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({
-  entry: ['src/main.ts'],
+  // `dist/cli/admin-bootstrap.js` — Admin đầu tiên ở production (ADR-137).
+  entry: { main: 'src/main.ts', 'cli/admin-bootstrap': 'src/cli/admin-bootstrap.ts' },
   format: 'esm',
   platform: 'node',
   target: 'node24',

@@ -58,6 +58,10 @@ export const BusinessRule = z.enum([
   'NOT_EMPLOYED',
   'AFTER_LAST_DAY',
   'EMAIL_UNAVAILABLE',
+  // Mốc 3.5 (E 17/10): ngày theo "hôm nay" của giờ nghiệp vụ ⇒ luật nghiệp vụ (422), không phải validate 400.
+  'START_DATE_OUT_OF_RANGE',
+  'LAST_DAY_OUT_OF_RANGE',
+  'ALREADY_ACTIVATED',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 

@@ -1,4 +1,6 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+import { temporaryExclusionGlobs } from './temporary-exclusions';
 
 // Integration với Postgres thật (ADR-003). KHÔNG nằm trong `pnpm test` mặc định vì cần DB.
 // Chạy: DATABASE_URL_TEST=postgresql://… VALKEY_URL_TEST=redis://…/<db 1–15> pnpm --filter @taskflow/api test:integration
@@ -16,6 +18,8 @@ export default defineConfig({
     name: 'api-integration',
     environment: 'node',
     include: ['test/integration/**/*.int.ts'],
+    // T-061 TẠM: attendance / leave / test HR — danh sách duy nhất ở tsconfig.exclusions.json.
+    exclude: [...configDefaults.exclude, ...temporaryExclusionGlobs()],
     globalSetup: ['test/integration/global-setup.ts'],
     setupFiles: ['test/integration/serial-guard.ts'],
     fileParallelism: false,

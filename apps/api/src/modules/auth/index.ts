@@ -4,8 +4,10 @@
 // (test index.test.ts chặn việc lỡ thêm export runtime).
 export type {
   IAuthRealtimeNotifier,
+  ICompanySessionGate,
   IMembershipReader,
-  IWorkspaceProvisioner,
+  MeCompanyView,
   MembershipView,
 } from './application/ports/collaborators.port';
+export type { AuthAccounts } from './application/auth-accounts';
 export type { AuthenticatedUser } from './application/access-token-authenticator';

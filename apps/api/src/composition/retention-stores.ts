@@ -5,7 +5,7 @@ import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persi
 import { PrismaAttendanceRetention } from '../modules/attendance/infrastructure/persistence/prisma/prisma-attendance-retention';
 import { PrismaLeaveRetention } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-retention';
 import { PrismaNotificationRetention } from '../modules/notifications/infrastructure/prisma/prisma-notification-retention';
-import { PrismaWorkspaceRetention } from '../modules/workspace/infrastructure/persistence/prisma/prisma-workspace-retention';
+import { PrismaCompanyRetention } from '../modules/company/infrastructure/prisma/prisma-company-retention';
 
 /** Bước dọn của từng module (chỉ Prisma) — khớp cấu trúc các lớp `Prisma*Retention`. */
 export interface RetentionStores {
@@ -18,8 +18,8 @@ export interface RetentionStores {
     deleteRequestsBeforeYear(year: number, limit: number): Promise<number>;
     deleteBalancesBeforeYear(year: number, limit: number): Promise<number>;
   };
-  workspace: {
-    deleteDepartures(cutoff: Date, limit: number): Promise<number>;
+  company: {
+    deleteDepartures(cutoffDate: string, limit: number): Promise<number>;
     deleteHrAuditLogs(cutoff: Date, limit: number): Promise<number>;
     scrubHrAuditNotes(cutoff: Date, limit: number): Promise<number>;
   };
@@ -44,7 +44,7 @@ export function prismaRetentionStores(db: () => Prisma.TransactionClient): Reten
   return {
     attendance: new PrismaAttendanceRetention(db),
     leave: new PrismaLeaveRetention(db),
-    workspace: new PrismaWorkspaceRetention(db),
+    company: new PrismaCompanyRetention(db),
     notifications: new PrismaNotificationRetention(db),
     tryLock: prismaRetentionLock(db),
   };

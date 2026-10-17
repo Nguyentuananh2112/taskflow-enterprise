@@ -41,11 +41,11 @@ export class PrismaLeaveRetention {
       )`;
   }
 
-  /** D4: xóa số dư của các năm `< year` (bảng khóa chính (ws, user, year) — không có cột id). */
+  /** D4: xóa số dư của các năm `< year` (khóa chính (user, year) từ Mốc 3.5 — không có cột id). */
   deleteBalancesBeforeYear(year: number, limit: number): Promise<number> {
     return this.db().$executeRaw`
-      DELETE FROM leave_balances WHERE (workspace_id, user_id, year) IN (
-        SELECT workspace_id, user_id, year FROM leave_balances
+      DELETE FROM leave_balances WHERE (user_id, year) IN (
+        SELECT user_id, year FROM leave_balances
          WHERE year < ${year}::int
          ORDER BY year
          LIMIT ${limit}

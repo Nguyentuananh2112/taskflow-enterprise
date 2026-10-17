@@ -32,8 +32,7 @@ describe('workspace đã xóa mềm ⇒ mọi ghi là 404 workspace', () => {
   it.each([
     [
       'thêm thành viên',
-      () =>
-        new AddMemberUseCase(h).execute(ctx.alice, { email: 'nina@example.com', role: 'MEMBER' }),
+      () => new AddMemberUseCase(h).execute(ctx.alice, { userId: uid('nina'), role: 'MEMBER' }),
     ],
     [
       'đổi role',
@@ -57,7 +56,7 @@ describe('workspace đã xóa mềm ⇒ mọi ghi là 404 workspace', () => {
 
   it('không ai bị kéo vào ws đang chờ purge', async () => {
     await new AddMemberUseCase(h)
-      .execute(ctx.alice, { email: 'nina@example.com', role: 'MEMBER' })
+      .execute(ctx.alice, { userId: uid('nina'), role: 'MEMBER' })
       .catch(() => undefined);
     expect(await h.memberships.find(ctx.A, uid('nina'))).toBeNull();
   });

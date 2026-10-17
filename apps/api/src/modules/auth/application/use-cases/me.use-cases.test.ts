@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { UnauthorizedError, ValidationError } from '../../../../core/errors';
+import { SessionRevokedError, UnauthorizedError, ValidationError } from '../../../../core/errors';
 import { type AuthHarness, createAuthHarness, GHOST_ID } from '../../testing/auth-harness';
 import { GetMeQuery } from './get-me.query';
 import { UpdateMeUseCase } from './update-me.use-case';
@@ -28,7 +28,23 @@ describe('GetMeQuery (security.md 1.8)', () => {
       memberships: [
         { workspaceId: 'ws-1', workspaceName: 'Alice WS', slug: 'alice-nguyen', role: 'OWNER' },
       ],
+      company: {
+        name: 'Công ty Test',
+        role: 'EMPLOYEE',
+        grants: [],
+        permissions: ['attendance:self', 'leave:self', 'workspace:create'],
+        status: 'ACTIVE',
+        offboardLastDay: null,
+      },
     });
+  });
+
+  it('Mốc 3.5: không còn thuộc công ty ⇒ 401 SESSION_REVOKED (access token cũ còn hạn)', async () => {
+    const alice = await h.seedUser();
+    h.company.revoked.add(alice.id);
+    await expect(new GetMeQuery(h).execute({ userId: alice.id })).rejects.toBeInstanceOf(
+      SessionRevokedError,
+    );
   });
 
   it('user không tồn tại / đã xóa ⇒ 401', async () => {

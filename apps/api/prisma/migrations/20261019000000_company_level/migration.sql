@@ -272,6 +272,11 @@ ALTER TABLE "company_members" ADD CONSTRAINT "company_members_offboard_chk"
   CHECK (("offboard_last_day" IS NULL) = ("offboard_access_until" IS NULL)
      AND ("offboard_last_day" IS NULL) = ("offboard_scheduled_by_id" IS NULL));
 ALTER TABLE "company_members" ADD CONSTRAINT "company_members_version_chk" CHECK ("version" >= 1);
+-- D review MEDIUM-1: lịch nghỉ trước ngày bắt đầu ⇒ departure vi phạm range_chk lúc hoàn tất (job thử lại mãi).
+ALTER TABLE "company_members" ADD CONSTRAINT "company_members_offboard_after_start_chk"
+  CHECK ("offboard_last_day" IS NULL OR "start_date" IS NULL OR "offboard_last_day" >= "start_date");
+-- D review LOW-1: mảng NULL lọt CHECK cardinality (NULL ⇒ pass) — Prisma không sinh NOT NULL cho list.
+ALTER TABLE "company_members" ALTER COLUMN "grants" SET NOT NULL;
 
 ALTER TABLE "company_member_departures" ADD CONSTRAINT "company_member_departures_range_chk"
   CHECK ("last_day" >= "first_day");

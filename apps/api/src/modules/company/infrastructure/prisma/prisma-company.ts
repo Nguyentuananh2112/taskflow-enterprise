@@ -1,9 +1,14 @@
+import { ResourceConflictError } from '../../../../core/errors';
+import { uniqueConstraintOf } from '../../../../core/persistence/unique-constraint';
 import type { Prisma } from '../../../../generated/prisma/client';
 import type {
+  CompanyProfile,
   CompanyTenure,
   CompanyTenureQuery,
   ICompanyMemberRepository,
+  ICompanyRepository,
   ICompanyTenureReader,
+  NewCompanyMember,
 } from '../../application/ports/company-member.port';
 import type { CompanyMemberSnapshot } from '../../domain/company-member';
 
@@ -22,6 +27,30 @@ const byUserThenFrom = (a: CompanyTenure, b: CompanyTenure) =>
       : a.from > b.from
         ? 1
         : 0;
+
+/** Id cố định của dòng công ty duy nhất (CHECK `companies_single_row`). */
+export const COMPANY_ID = 1;
+
+export class PrismaCompany implements ICompanyRepository {
+  constructor(private readonly db: DbProvider) {}
+
+  get(): Promise<CompanyProfile | null> {
+    return this.db().company.findUnique({
+      where: { id: COMPANY_ID },
+      select: { name: true, version: true },
+    });
+  }
+
+  async ensure(name: string, at: Date): Promise<CompanyProfile> {
+    // ON CONFLICT DO NOTHING: hai bootstrap đồng thời đã tuần tự hóa bằng khóa `company:admins`, vẫn an toàn.
+    await this.db().$executeRaw`
+      INSERT INTO companies (id, name, version, updated_at) VALUES (${COMPANY_ID}, ${name}, 1, ${at})
+      ON CONFLICT (id) DO NOTHING`;
+    const row = await this.get();
+    if (!row) throw new Error('companies: không đọc lại được dòng vừa tạo');
+    return row;
+  }
+}
 
 export class PrismaCompanyMembers implements ICompanyMemberRepository {
   constructor(private readonly db: DbProvider) {}
@@ -42,6 +71,104 @@ export class PrismaCompanyMembers implements ICompanyMemberRepository {
           updatedAt: r.updatedAt,
         }
       : null;
+  }
+
+  async listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
+    const rows = await this.db().companyMember.findMany({
+      where: { OR: [{ role: 'ADMIN' }, { grants: { has: 'HR_MANAGE' } }] },
+      select: { userId: true },
+    });
+    const out: CompanyMemberSnapshot[] = [];
+    for (const r of rows) {
+      const m = await this.find(r.userId);
+      if (m) out.push(m);
+    }
+    return out;
+  }
+
+  async insert(input: NewCompanyMember): Promise<CompanyMemberSnapshot> {
+    try {
+      await this.db().companyMember.create({
+        data: {
+          userId: input.userId,
+          role: input.role,
+          grants: input.grants,
+          startDate: input.startDate ? new Date(`${input.startDate}T00:00:00.000Z`) : null,
+          createdAt: input.at,
+          updatedAt: input.at,
+        },
+        select: { userId: true },
+      });
+    } catch (err) {
+      if (uniqueConstraintOf(err) === 'company_members_pkey') {
+        throw new ResourceConflictError({ reason: 'already_employee', field: 'email' });
+      }
+      throw err;
+    }
+    const created = await this.find(input.userId);
+    if (!created) throw new Error('company_members: dòng vừa thêm không đọc lại được');
+    return created;
+  }
+
+  async hasAdmin(): Promise<boolean> {
+    return (await this.db().companyMember.count({ where: { role: 'ADMIN' } })) > 0;
+  }
+
+  async listAdmins(): Promise<CompanyMemberSnapshot[]> {
+    const rows = await this.db().companyMember.findMany({
+      where: { role: 'ADMIN' },
+      select: { userId: true },
+      orderBy: { userId: 'asc' },
+    });
+    const out: CompanyMemberSnapshot[] = [];
+    for (const r of rows) {
+      const m = await this.find(r.userId);
+      if (m) out.push(m);
+    }
+    return out;
+  }
+
+  /** `pg_advisory_xact_lock` trả `void` — Prisma không đọc được cột void ⇒ `$executeRaw`. */
+  async lockAdmins(): Promise<void> {
+    await this.db().$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${'taskflow:company:admins'}, 0))`;
+  }
+
+  async lockEmployeeWork(userId: string): Promise<void> {
+    // Đúng khóa của leave (D, T-064) và attendance (A, T-063) — cùng chuỗi, cùng hàm băm.
+    await this.db().$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`taskflow:leave:${userId}`}, 0))`;
+    await this.db().$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`taskflow:attendance:punch:${userId}`}, 0))`;
+  }
+
+  async promoteToAdmin(userId: string, at: Date): Promise<CompanyMemberSnapshot | null> {
+    const { count } = await this.db().companyMember.updateMany({
+      where: { userId, role: 'EMPLOYEE' },
+      data: {
+        role: 'ADMIN',
+        grants: [],
+        startDate: null,
+        version: { increment: 1 },
+        updatedAt: at,
+      },
+    });
+    return count === 1 ? this.find(userId) : null;
+  }
+
+  async recordDeparture(d: Parameters<ICompanyMemberRepository['recordDeparture']>[0]) {
+    await this.db().companyMemberDeparture.create({
+      data: {
+        id: d.id,
+        userId: d.userId,
+        role: d.role,
+        firstDay: new Date(`${d.firstDay}T00:00:00.000Z`),
+        lastDay: new Date(`${d.lastDay}T00:00:00.000Z`),
+        leftAt: d.leftAt,
+        reason: d.reason,
+      },
+      select: { id: true },
+    });
   }
 
   async findForShare(userId: string): Promise<CompanyMemberSnapshot | null> {

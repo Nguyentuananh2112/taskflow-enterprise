@@ -96,7 +96,6 @@ const MEMBER = {
   workspaceId: true,
   userId: true,
   role: true,
-  grants: true,
   joinedAt: true,
   updatedAt: true,
 } as const;
@@ -117,11 +116,10 @@ export class PrismaMembershipRepository implements IMembershipRepository {
     );
   }
   async save(membership: Membership): Promise<void> {
-    const { id, role, grants, updatedAt } = membership.toSnapshot();
+    const { id, role, updatedAt } = membership.toSnapshot();
     await this.db().workspaceMember.update({
       where: { id },
-      // role + grants trong CÙNG câu UPDATE (CHECK grants theo role — ADR-119)
-      data: { role, grants: { set: grants }, updatedAt },
+      data: { role, updatedAt },
       select: { id: true },
     });
   }
@@ -129,7 +127,7 @@ export class PrismaMembershipRepository implements IMembershipRepository {
     await this.db().workspaceMember.deleteMany({ where: { workspaceId, userId } });
   }
   async findForShare(workspaceId: string, userId: string): Promise<Membership | null> {
-    // B-H3a: khóa dòng (chặn UPDATE grants / role đến khi transaction này xong) rồi đọc lại qua `find`.
+    // B-H3a: khóa dòng (chặn UPDATE role đến khi transaction này xong) rồi đọc lại qua `find`.
     const locked = await this.db().$queryRaw<{ id: string }[]>`
       SELECT id FROM workspace_members
        WHERE workspace_id = ${workspaceId}::uuid AND user_id = ${userId}::uuid

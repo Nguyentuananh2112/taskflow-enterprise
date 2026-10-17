@@ -1,5 +1,5 @@
-// Thông báo bền trong app (ADR-123). Thuần TS (không import contracts — ADR-043); parity với
-// `NotificationType` của contracts + enum Postgres: notification-parity.test.ts (ADR-080).
+// Thông báo bền trong app (ADR-123), cấp CÔNG TY (Mốc 3.5, ADR-136 — không còn workspace). Thuần TS (không import
+// contracts — ADR-043); parity với `NotificationType` của contracts + enum Postgres (ADR-080).
 
 export const NOTIFICATION_TYPES = [
   'LEAVE_SUBMITTED',
@@ -8,18 +8,20 @@ export const NOTIFICATION_TYPES = [
   'LEAVE_CANCELLED',
   'LEAVE_REVOKED',
   'ATTENDANCE_ADJUSTED',
-  'HR_GRANTED',
-  'HR_REVOKED',
+  'ACCESS_CHANGED',
+  'OFFBOARD_SCHEDULED',
+  'OFFBOARD_CLEANUP',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /**
- * Loại "dành cho HR" (attendance-leave.md §9 bảng chuyển: gửi đơn / hủy đơn ⇒ báo HR). Người nhận chỉ
- * thấy chúng khi HIỆN TẠI còn `hr:manage` trong workspace đó (B-H3b) — thu grant ⇒ biến khỏi chuông.
+ * Loại "dành cho HR" (gửi đơn / hủy đơn / dọn đơn khi nghỉ việc ⇒ báo HR). Người nhận chỉ thấy khi HIỆN TẠI
+ * còn `hr:manage` (B-H3b) — thu grant ⇒ biến khỏi chuông.
  */
 export const HR_AUDIENCE_TYPES: readonly NotificationType[] = [
   'LEAVE_SUBMITTED',
   'LEAVE_CANCELLED',
+  'OFFBOARD_CLEANUP',
 ];
 
 /** Loại có ngữ cảnh đơn nghỉ (`refId` = id đơn) — DTO join loại + khoảng ngày, KHÔNG lý do (B-H2). */
@@ -33,38 +35,28 @@ export const LEAVE_TYPES: readonly NotificationType[] = [
 
 export interface NotificationRecord {
   id: string;
-  workspaceId: string;
   recipientId: string;
   type: NotificationType;
-  /** id đơn / lượt chấm / membership — đa hình, không FK. */
+  /** id đơn / lượt chấm / người — đa hình, không FK. */
   refId: string;
   actorId: string | null;
   readAt: Date | null;
   createdAt: Date;
 }
 
-/** Một workspace người nhận ĐANG là thành viên (membership hiện tại, đọc mỗi request). */
-export interface VisibleWorkspace {
-  workspaceId: string;
-  /** Đầu nhiệm kỳ hiện tại (`joinedAt`) — thông báo tạo trước đó thuộc nhiệm kỳ cũ ⇒ ẩn (T-040b). */
-  since: Date;
-  /** Có `hr:manage` HIỆN TẠI ⇒ thấy cả `HR_AUDIENCE_TYPES` (B-H3b). */
-  hr: boolean;
-}
-
 /**
- * Phạm vi người nhận được thấy, dựng từ membership HIỆN TẠI mỗi request (không cache, không tin token).
- * Ws không có trong danh sách ⇒ ẩn hết (SEC-HR-18); thông báo trước `since` ⇒ ẩn; không `hr` ⇒ ẩn loại HR.
+ * Phạm vi người nhận được thấy, dựng từ tư cách công ty HIỆN TẠI mỗi request (không cache, không tin token):
+ * `null` = không còn thuộc công ty / quá `access_until` ⇒ ẩn hết; thông báo trước `since` (đầu tư cách hiện
+ * tại — nhận lại người cũ không thấy thông báo cũ, T-040b L3) ⇒ ẩn; không `hr` ⇒ ẩn loại HR (B-H3b).
  */
 export interface VisibilityScope {
   recipientId: string;
-  workspaces: readonly VisibleWorkspace[];
+  access: { since: Date; hr: boolean } | null;
 }
 
 /** Hàm thuần — bản InMemory dùng trực tiếp; bản Prisma dịch cùng điều kiện sang WHERE. */
 export function isVisible(n: NotificationRecord, scope: VisibilityScope): boolean {
-  if (n.recipientId !== scope.recipientId) return false;
-  const ws = scope.workspaces.find((w) => w.workspaceId === n.workspaceId);
-  if (!ws || n.createdAt < ws.since) return false;
-  return ws.hr || !HR_AUDIENCE_TYPES.includes(n.type);
+  if (n.recipientId !== scope.recipientId || !scope.access) return false;
+  if (n.createdAt < scope.access.since) return false;
+  return scope.access.hr || !HR_AUDIENCE_TYPES.includes(n.type);
 }

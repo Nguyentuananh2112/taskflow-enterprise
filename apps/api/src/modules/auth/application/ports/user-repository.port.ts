@@ -47,6 +47,11 @@ export interface IUserRepository {
     newHash: string;
     at: Date;
   }): Promise<number | null>;
+  /**
+   * Kích hoạt (ADR-137): đặt mật khẩu ĐẦU TIÊN, có điều kiện `password_hash IS NULL` và chưa xóa;
+   * `RETURNING token_version`. `null` ⇒ đã có mật khẩu (kích hoạt đồng thời thua) / user không còn.
+   */
+  setInitialPassword(input: { id: string; hash: string; at: Date }): Promise<number | null>;
   /** `token_version + 1 RETURNING token_version` (đăng xuất mọi thiết bị). `null` ⇒ user không còn. */
   bumpTokenVersion(id: string, at: Date): Promise<number | null>;
   /** Chỉ `full_name` (đã chuẩn hóa bởi aggregate). `false` ⇒ user không còn. */

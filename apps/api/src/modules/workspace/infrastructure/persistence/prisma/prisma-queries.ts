@@ -6,7 +6,7 @@ import type {
   PageRequest,
 } from '../../../application/ports/queries.port';
 import type { ProjectSnapshot } from '../../../domain/project';
-import type { MemberGrant, WorkspaceRole } from '../../../domain/roles';
+import type { WorkspaceRole } from '../../../domain/roles';
 import type { WorkspaceSnapshot } from '../../../domain/workspace';
 import type { DbProvider } from './db';
 
@@ -52,19 +52,16 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
 
   async listActiveForUser(
     userId: string,
-  ): Promise<
-    { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
-  > {
+  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; joinedAt: Date }[]> {
     const rows = await this.db().workspaceMember.findMany({
       where: { userId, workspace: { deletedAt: null } },
       orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
       take: MAX_MY_WORKSPACES,
-      select: { role: true, grants: true, joinedAt: true, workspace: { select: WS } },
+      select: { role: true, joinedAt: true, workspace: { select: WS } },
     });
     return rows.map((r) => ({
       workspace: r.workspace,
       role: r.role,
-      grants: r.grants,
       joinedAt: r.joinedAt,
     }));
   }
@@ -74,15 +71,6 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
       where: { purgeAt: { gt: now }, members: { some: { userId, role: 'OWNER' } } },
       orderBy: { deletedAt: 'desc' },
       select: WS,
-    });
-  }
-
-  listMemberAccess(
-    workspaceId: string,
-  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]> {
-    return this.db().workspaceMember.findMany({
-      where: { workspaceId },
-      select: { userId: true, role: true, grants: true },
     });
   }
 
@@ -99,14 +87,13 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
         workspace_id: string;
         user_id: string;
         role: WorkspaceRole;
-        grants: MemberGrant[];
         joined_at: Date;
         updated_at: Date;
         email: string;
         full_name: string;
       }[]
     >`
-      SELECT m.id, m.workspace_id, m.user_id, m.role, m.grants::text[] AS grants, m.joined_at, m.updated_at,
+      SELECT m.id, m.workspace_id, m.user_id, m.role, m.joined_at, m.updated_at,
              u.email, u.full_name
         FROM workspace_members m JOIN users u ON u.id = m.user_id
        WHERE m.workspace_id = ${workspaceId}::uuid
@@ -123,7 +110,6 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
         workspaceId: r.workspace_id,
         userId: r.user_id,
         role: r.role,
-        grants: r.grants,
         joinedAt: r.joined_at,
         updatedAt: r.updated_at,
         email: r.email,

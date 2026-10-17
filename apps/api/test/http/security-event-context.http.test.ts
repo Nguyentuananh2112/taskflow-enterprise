@@ -43,11 +43,11 @@ describe('sự kiện bảo mật có reqId + ip', () => {
 
   it('member.added (sau commit) ⇒ reqId + ip', async () => {
     const alice = await t.register('Alice');
-    await t.register('Nina');
+    const nina = await t.register('Nina');
     const res = await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set({ ...alice.auth, 'X-Forwarded-For': IP })
-      .send({ email: 'nina@example.com', role: 'MEMBER' });
+      .send({ userId: nina.id, role: 'MEMBER' });
     expect(res.status).toBe(201);
     expect(event('member.added')).toMatchObject({ reqId: res.headers['x-request-id'], ip: IP });
   });

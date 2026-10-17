@@ -5,6 +5,7 @@ import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { Email } from '../../domain/email';
 import type { SessionMeta } from '../../domain/refresh-token';
 import { toUserView, type UserView } from '../auth-shared';
+import type { ICompanySessionGate } from '../ports/collaborators.port';
 import type { IPasswordHasher } from '../ports/password-hasher.port';
 import type { IUserRepository } from '../ports/user-repository.port';
 import type { IssuedSession, SessionIssuer } from '../session-issuer';
@@ -24,6 +25,7 @@ export interface LoginDeps {
   users: IUserRepository;
   issuer: SessionIssuer;
   hasher: IPasswordHasher;
+  company: ICompanySessionGate;
   uow: IUnitOfWork;
   clock: IClock;
   logger: ILogger;
@@ -34,17 +36,22 @@ export class LoginUseCase {
   constructor(private readonly d: LoginDeps) {}
 
   async execute(input: LoginInput): Promise<LoginResult> {
-    const user = await this.#findUser(input.email);
-    if (!user || user.isDeleted) {
+    const found = await this.#findUser(input.email);
+    // Chờ kích hoạt (`password_hash` null — ADR-137) ⇒ y như không có user (SEC-HR-58).
+    const user = found && !found.isDeleted && found.passwordHash !== null ? found : null;
+    const passwordHash = user?.passwordHash ?? null;
+    if (!user || passwordHash === null) {
       // Vẫn verify với hash giả ⇒ thời gian giống trường hợp sai mật khẩu (LOG-04).
       await this.d.hasher.verify(null, input.password);
       throw this.#failed(null, input.meta);
     }
-    if (!(await this.d.hasher.verify(user.passwordHash, input.password))) {
+    if (!(await this.d.hasher.verify(passwordHash, input.password))) {
       throw this.#failed(user.id, input.meta);
     }
+    // Không còn thuộc công ty / quá `access_until` ⇒ như sai thông tin (thiết kế Mốc 3.5 "Không mở lỗ").
+    if (!(await this.d.company.isActive(user.id))) throw this.#failed(user.id, input.meta);
     // Băm lại (nếu cần) NGOÀI transaction.
-    const rehashed = this.d.hasher.needsRehash(user.passwordHash)
+    const rehashed = this.d.hasher.needsRehash(passwordHash)
       ? await this.d.hasher.hash(input.password)
       : null;
 
@@ -52,13 +59,13 @@ export class LoginUseCase {
     // thay đổi đồng thời (đổi mật khẩu / đăng xuất mọi nơi) xảy ra trong lúc verify argon2.
     return this.d.uow.run(async () => {
       const now = this.d.clock.now();
-      let verifiedHash = user.passwordHash;
+      let verifiedHash = passwordHash;
       // Có điều kiện password_hash = hash đã verify: mật khẩu vừa bị đổi ⇒ bỏ qua, không hồi sinh hash cũ.
       if (
         rehashed !== null &&
         (await this.d.users.rehashPassword({
           id: user.id,
-          oldHash: user.passwordHash,
+          oldHash: passwordHash,
           newHash: rehashed,
           at: now,
         }))

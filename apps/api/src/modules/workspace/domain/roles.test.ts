@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ALL_PERMISSIONS,
-  GRANT_PERMISSIONS,
-  MEMBER_GRANTS,
   ROLE_PERMISSIONS,
-  WORKSPACE_ROLES,
-  canHoldGrants,
-  effectivePermissions,
-  isMemberGrant,
   isWorkspaceRole,
   roleAllows,
   type Permission,
@@ -39,10 +33,6 @@ const EXPECTED: Record<Permission, readonly string[]> = {
   'task:delete:own': ['MEMBER'],
   'audit:read': ['OWNER', 'PM', 'MEMBER', 'VIEWER'],
   'comment:create': ['OWNER', 'PM', 'MEMBER'],
-  'attendance:self': ['OWNER', 'PM', 'MEMBER'],
-  'leave:self': ['OWNER', 'PM', 'MEMBER'],
-  'hr:manage': ['OWNER'],
-  'hr:grant': ['OWNER'],
 };
 
 describe('ROLE_PERMISSIONS (security.md 3.2)', () => {
@@ -77,43 +67,10 @@ describe('ROLE_PERMISSIONS (security.md 3.2)', () => {
   });
 });
 
-describe('grants (ADR-119)', () => {
-  it('B-M1: grant KHÔNG BAO GIỜ mở hr:grant / member:* / workspace:* / project:* / task:* (chống leo quyền)', () => {
-    const forbidden = /^(hr:grant|member:|workspace:|project:|task:|audit:|comment:)/;
-    for (const grant of MEMBER_GRANTS) {
-      const opened = [...GRANT_PERMISSIONS[grant]];
-      expect(
-        opened.filter((p) => forbidden.test(p)),
-        grant,
-      ).toEqual([]);
+describe('Mốc 3.5 (ADR-134): role workspace chỉ còn quyền dự án', () => {
+  it('không có quyền chấm công / nghỉ phép / nhân sự (đã là quyền công ty)', () => {
+    for (const p of ['attendance:self', 'leave:self', 'hr:manage', 'hr:grant']) {
+      expect((ALL_PERMISSIONS as readonly string[]).includes(p), p).toBe(false);
     }
-    expect([...GRANT_PERMISSIONS.HR_MANAGE]).toEqual(['hr:manage']);
-  });
-
-  it('quyền hiệu lực = role ∪ grant; không grant ⇒ đúng bằng role', () => {
-    for (const role of WORKSPACE_ROLES) {
-      expect(effectivePermissions(role, [])).toEqual(ROLE_PERMISSIONS[role]);
-    }
-    const memberHr = effectivePermissions('MEMBER', ['HR_MANAGE']);
-    expect(memberHr.has('hr:manage')).toBe(true);
-    expect(memberHr.has('hr:grant')).toBe(false);
-    expect(memberHr.has('member:add')).toBe(false);
-    expect([...memberHr].sort()).toEqual([...ROLE_PERMISSIONS.MEMBER, 'hr:manage'].sort());
-  });
-
-  it('roleAllows nhận grants: MEMBER + HR_MANAGE có hr:manage, không có hr:grant; PM không grant ⇒ không hr:manage', () => {
-    expect(roleAllows('MEMBER', 'hr:manage', ['HR_MANAGE'])).toBe(true);
-    expect(roleAllows('MEMBER', 'hr:grant', ['HR_MANAGE'])).toBe(false);
-    expect(roleAllows('PM', 'hr:manage')).toBe(false);
-    expect(roleAllows('OWNER', 'hr:manage')).toBe(true);
-  });
-
-  it('chỉ PM / MEMBER giữ được grant (OWNER có qua role — B-M2; VIEWER không phải nhân viên)', () => {
-    expect(WORKSPACE_ROLES.filter(canHoldGrants)).toEqual(['PM', 'MEMBER']);
-  });
-
-  it('isMemberGrant', () => {
-    expect(isMemberGrant('HR_MANAGE')).toBe(true);
-    expect(isMemberGrant('ADMIN')).toBe(false);
   });
 });

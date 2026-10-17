@@ -116,7 +116,7 @@ describe('gateway trên composition root thật', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'MEMBER' });
+      .send({ userId: bob.id, role: 'MEMBER' });
     const socket = connect(bob.token);
     await connected(socket);
     expect(
@@ -147,7 +147,7 @@ describe('gateway trên composition root thật', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'MEMBER' });
+      .send({ userId: bob.id, role: 'MEMBER' });
     const projectId = await firstProjectId(alice);
     const tasks = `/api/v1/workspaces/${alice.workspaceId}/projects/${projectId}/tasks`;
     const created = await request(t.app).post(tasks).set(alice.auth).send({ title: 'Kéo thả' });

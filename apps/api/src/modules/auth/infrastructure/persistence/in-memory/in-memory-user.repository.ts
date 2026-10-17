@@ -79,6 +79,18 @@ export class InMemoryUserRepository implements IUserRepository {
     return Promise.resolve(tokenVersion);
   }
 
+  setInitialPassword(input: { id: string; hash: string; at: Date }): Promise<number | null> {
+    const row = this.#live(input.id);
+    if (!row || row.passwordHash !== null) return Promise.resolve(null);
+    this.#rows.set(input.id, {
+      ...row,
+      passwordHash: input.hash,
+      passwordChangedAt: input.at,
+      updatedAt: input.at,
+    });
+    return Promise.resolve(row.tokenVersion);
+  }
+
   bumpTokenVersion(id: string, at: Date): Promise<number | null> {
     const row = this.#live(id);
     if (!row) return Promise.resolve(null);

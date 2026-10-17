@@ -22,7 +22,7 @@ import { InMemorySessionRevocationStore } from '../infrastructure/persistence/in
 import { InMemoryUserRepository } from '../infrastructure/persistence/in-memory/in-memory-user.repository';
 import { CryptoRefreshTokenFactory } from '../infrastructure/security/crypto-refresh-token-factory';
 import { JoseAccessTokenService } from '../infrastructure/security/jose-access-token-service';
-import { FakeMembershipReader, FakePasswordHasher, FakeWorkspaceProvisioner } from './fakes';
+import { FakeCompanyGate, FakeMembershipReader, FakePasswordHasher } from './fakes';
 
 export const NOW = '2026-11-01T00:00:00.000Z';
 export const META = { userAgent: 'vitest', ip: '203.0.113.7' };
@@ -71,7 +71,7 @@ export function createAuthHarness(backend: AuthBackend = inMemoryAuthBackend()) 
   );
   const hasher = new FakePasswordHasher(uow);
   const policy = new PasswordPolicy(new Set(['password123456']));
-  const provisioner = new FakeWorkspaceProvisioner(uow);
+  const company = new FakeCompanyGate();
   const memberships = new FakeMembershipReader();
   const notifier = createSpy<IAuthRealtimeNotifier>(uow);
   const events = new SpyEventBus();
@@ -95,7 +95,7 @@ export function createAuthHarness(backend: AuthBackend = inMemoryAuthBackend()) 
     accessTokens,
     hasher,
     policy,
-    provisioner,
+    company,
     memberships,
     notifier,
     events,

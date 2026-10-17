@@ -32,7 +32,7 @@ const as = (u: TestUser) => ({
 });
 
 async function addMember(by: TestUser, wsId: string, who: TestUser, role: string) {
-  const res = await as(by).post(ws(`/${wsId}/members`), { email: who.email, role });
+  const res = await as(by).post(ws(`/${wsId}/members`), { userId: who.id, role });
   expect(res.status).toBe(201);
 }
 
@@ -116,9 +116,9 @@ describe('IDOR & thứ tự kiểm lỗi (ADR-020, data-and-api §2.2)', () => {
 });
 
 describe('members', () => {
-  it('thêm theo email (201 MemberDto); email lạ ⇒ 404 user; đã là thành viên ⇒ 409', async () => {
+  it('thêm theo userId (201 MemberDto); user lạ / không thuộc công ty ⇒ 404 user; đã là thành viên ⇒ 409', async () => {
     const id = alice.workspaceId;
-    const added = await as(alice).post(ws(`/${id}/members`), { email: bob.email, role: 'MEMBER' });
+    const added = await as(alice).post(ws(`/${id}/members`), { userId: bob.id, role: 'MEMBER' });
     expect(added.status).toBe(201);
     expect(envelopeOf(added).data).toMatchObject({
       userId: bob.id,
@@ -127,15 +127,20 @@ describe('members', () => {
       role: 'MEMBER',
     });
     const ghost = await as(alice).post(ws(`/${id}/members`), {
-      email: 'ghost@example.com',
+      userId: '00000000-0000-7000-8000-0000000fffff',
       role: 'MEMBER',
     });
     expect(errorOf(ghost)).toMatchObject({
       code: 'RESOURCE_NOT_FOUND',
       details: { resource: 'user' },
     });
+    const gone = await t.register('Gone');
+    t.companyStore.removeMember(gone.id); // đã nghỉ việc ⇒ như không có
     expect(
-      (await as(alice).post(ws(`/${id}/members`), { email: bob.email, role: 'VIEWER' })).status,
+      errorOf(await as(alice).post(ws(`/${id}/members`), { userId: gone.id, role: 'MEMBER' })),
+    ).toMatchObject({ code: 'RESOURCE_NOT_FOUND', details: { resource: 'user' } });
+    expect(
+      (await as(alice).post(ws(`/${id}/members`), { userId: bob.id, role: 'VIEWER' })).status,
     ).toBe(409);
   });
 
@@ -145,15 +150,14 @@ describe('members', () => {
     const dave = await t.register('Dave');
     await addMember(alice, id, bob, 'PM');
     await addMember(alice, id, carol, 'MEMBER');
+    expect((await as(bob).post(ws(`/${id}/members`), { userId: dave.id, role: 'PM' })).status).toBe(
+      403,
+    );
     expect(
-      (await as(bob).post(ws(`/${id}/members`), { email: dave.email, role: 'PM' })).status,
-    ).toBe(403);
-    expect(
-      (await as(bob).post(ws(`/${id}/members`), { email: dave.email, role: 'MEMBER' })).status,
+      (await as(bob).post(ws(`/${id}/members`), { userId: dave.id, role: 'MEMBER' })).status,
     ).toBe(201);
     expect(
-      (await as(carol).post(ws(`/${id}/members`), { email: 'x@example.com', role: 'VIEWER' }))
-        .status,
+      (await as(carol).post(ws(`/${id}/members`), { userId: dave.id, role: 'VIEWER' })).status,
     ).toBe(403);
   });
 
@@ -226,8 +230,8 @@ describe('F3: validate ở route với người có quyền + GET project thành
       ['PATCH ws field lạ', () => as(alice).patch(ws(`/${id}`), { name: 'x', deletedAt: null })],
       ['restore wsId không phải uuid', () => as(alice).post(ws('/not-a-uuid/restore'))],
       [
-        'thêm member email sai',
-        () => as(alice).post(ws(`/${id}/members`), { email: 'abc', role: 'VIEWER' }),
+        'thêm member theo email (Mốc 3.5 chỉ nhận userId)',
+        () => as(alice).post(ws(`/${id}/members`), { email: 'abc@example.com', role: 'VIEWER' }),
       ],
       [
         'tạo project kèm workspaceId (mass assignment)',

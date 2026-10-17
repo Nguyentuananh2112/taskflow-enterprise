@@ -1,6 +1,7 @@
 // T-040: `/api/v1/me/notifications` (ADR-123, attendance-leave.md §5 + §9 B-M3 / B-H3b, test-spec-hr SEC-HR-17…19).
 // Thông báo được tạo qua `publisher.notify` trong `uow.run` — đúng cách leave / attendance gọi (chưa có route
-// của họ trên nhánh này); membership / grants đổi qua route thật của Workspace.
+// của họ trên nhánh này). Mốc 3.5: quyền HR là quyền CÔNG TY — đổi thẳng trong store company (route admin/access
+// có test riêng).
 import { NotificationDto } from '@taskflow/contracts';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -12,10 +13,9 @@ const BASE = '/api/v1/me/notifications';
 const REQ = '0000aaaa-0000-7000-8000-00000000aaaa';
 
 let t: TestApp;
-let alice: TestUser; // OWNER
-let hana: TestUser; // MEMBER + HR_MANAGE
-let mia: TestUser; // MEMBER
-let wsId: string;
+let alice: TestUser; // ADMIN (hr:manage qua role)
+let hana: TestUser; // EMPLOYEE + HR_MANAGE
+let mia: TestUser; // EMPLOYEE
 
 const get = (by: TestUser, path = '') => request(t.app).get(`${BASE}${path}`).set(by.auth);
 // POST không body vẫn phải là JSON (chống CSRF — security.md §6.3; web luôn gửi `{}`).
@@ -30,7 +30,6 @@ const list = async (by: TestUser, query = '') =>
 const miaSubmits = () =>
   t.persistence.uow.run(() =>
     t.container.notifications.publisher.notify({
-      workspaceId: wsId,
       type: 'LEAVE_SUBMITTED',
       refId: REQ,
       actorId: mia.id,
@@ -40,24 +39,17 @@ const miaSubmits = () =>
 
 beforeEach(async () => {
   t = createTestApp();
-  alice = await t.register('Alice');
-  wsId = alice.workspaceId;
-  [hana, mia] = [await t.register('Hana'), await t.register('Mia')];
-  for (const u of [hana, mia]) {
-    const res = await request(t.app)
-      .post(`/api/v1/workspaces/${wsId}/members`)
-      .set(alice.auth)
-      .send({ email: u.email, role: 'MEMBER' });
-    expect(res.status).toBe(201);
-  }
-  const granted = await request(t.app)
-    .put(`/api/v1/workspaces/${wsId}/members/${hana.id}/grants`)
-    .set(alice.auth)
-    .send({ grants: ['HR_MANAGE'] });
-  expect(granted.status).toBe(200);
-  // Cấp HR ⇒ Hana có HR_GRANTED (ca riêng bên dưới); đánh dấu đã đọc làm mốc 0 cho các ca đếm.
-  expect((await post(hana, '/read-all')).status).toBe(204);
+  alice = await t.register('Alice', undefined, { role: 'ADMIN', workspace: false });
+  hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'], workspace: false });
+  mia = await t.register('Mia', undefined, { workspace: false });
 });
+
+/** Đổi grants công ty của một người (như `PUT /admin/access/:userId` — giữ nguyên tư cách). */
+async function setGrants(userId: string, grants: 'HR_MANAGE'[]) {
+  const m = await t.companyStore.find(userId);
+  if (!m) throw new Error('không có dòng company_members');
+  t.companyStore.upsertMember({ ...m, grants, version: m.version + 1 });
+}
 
 const typesOf = async (by: TestUser) => (await list(by)).map((n) => n.type);
 
@@ -73,18 +65,7 @@ describe('GET /me/notifications', () => {
     }
   });
 
-  it('GR-04 qua route thật: OWNER cấp HR ⇒ Hana có HR_GRANTED (actor = OWNER, không ngữ cảnh đơn)', async () => {
-    const [n] = await list(hana);
-    expect(NotificationDto.strict().parse(n)).toMatchObject({
-      type: 'HR_GRANTED',
-      workspaceId: wsId,
-      actor: { id: alice.id, fullName: 'Alice' },
-      leave: null,
-    });
-    expect(await typesOf(alice)).toEqual([]); // người cấp không tự nhận
-  });
-
-  it('fan-out tới OWNER + HR, không tới người gửi; DTO đúng contract, có tên ws + actor, không lý do', async () => {
+  it('fan-out tới Admin + HR, không tới người gửi; DTO đúng contract (không còn ws), có actor, không lý do', async () => {
     await miaSubmits();
     for (const hr of [alice, hana]) {
       const res = await get(hr);
@@ -96,12 +77,10 @@ describe('GET /me/notifications', () => {
       expect(NotificationDto.strict().parse(data?.[0])).toMatchObject({
         type: 'LEAVE_SUBMITTED',
         refId: REQ,
-        workspaceId: wsId,
         actor: { id: mia.id, fullName: 'Mia' },
         leave: null, // chế độ bộ nhớ chưa có module leave
         readAt: null,
       });
-      expect(data?.[0]?.workspaceName).toBeTruthy();
       expect(await count(hr)).toBe(1);
     }
     expect(await list(mia)).toEqual([]);
@@ -134,26 +113,21 @@ describe('GET /me/notifications', () => {
     }
   });
 
-  it('SEC-HR-19: OWNER thu grant của Hana ⇒ thông báo dành cho HR biến khỏi chuông ở request kế tiếp', async () => {
+  it('SEC-HR-19: thu grant HR của Hana ⇒ thông báo dành cho HR biến khỏi chuông ở request kế tiếp', async () => {
     await miaSubmits();
     expect(await count(hana)).toBe(1);
-    const revoked = await request(t.app)
-      .put(`/api/v1/workspaces/${wsId}/members/${hana.id}/grants`)
-      .set(alice.auth)
-      .send({ grants: [] });
-    expect(revoked.status).toBe(200);
-    // LEAVE_SUBMITTED ẩn; còn lại thông báo về chính quyền của Hana (HR_REVOKED mới, chưa đọc).
-    expect(await typesOf(hana)).toEqual(['HR_REVOKED', 'HR_GRANTED']);
-    expect(await count(hana)).toBe(1);
+    await setGrants(hana.id, []);
+    expect(await typesOf(hana)).toEqual([]);
+    expect(await count(hana)).toBe(0);
     expect(await count(alice)).toBe(1);
+    await setGrants(hana.id, ['HR_MANAGE']);
+    expect(await count(hana)).toBe(1); // cấp lại ⇒ hiện lại (cùng tư cách)
   });
 
-  it('SEC-HR-18: bị xóa khỏi workspace ⇒ không còn thông báo của ws đó', async () => {
+  it('SEC-HR-18 (Mốc 3.5): rời công ty ⇒ danh sách + số chưa đọc rỗng (phạm vi dựng lại mỗi request)', async () => {
     await miaSubmits();
-    const removed = await request(t.app)
-      .delete(`/api/v1/workspaces/${wsId}/members/${hana.id}`)
-      .set(alice.auth);
-    expect(removed.status).toBe(200);
+    t.companyStore.removeMember(hana.id);
+    expect((await get(hana)).status).toBe(200);
     expect(await list(hana)).toEqual([]);
     expect(await count(hana)).toBe(0);
   });

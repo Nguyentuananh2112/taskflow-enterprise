@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url';
 
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+import { temporaryExclusionGlobs } from '../../temporary-exclusions';
 
 // Bộ test bảo mật đen (T-017). Tách khỏi `pnpm test` vì cần Postgres/Valkey thật (ADR-097)
 // và spawn process API. Chạy: `pnpm --filter @taskflow/api test:security`.
@@ -16,6 +18,8 @@ export default defineConfig({
     root: fileURLToPath(new URL('../../', import.meta.url)),
     environment: 'node',
     include: ['test/security/**/*.sec.ts'],
+    // T-061 TẠM: attendance / leave / test HR — danh sách duy nhất ở tsconfig.exclusions.json.
+    exclude: [...configDefaults.exclude, ...temporaryExclusionGlobs()],
     // Warm-up hạ tầng một lần (DB + migrate + process API nguội) với timeout riêng — T-017c.
     globalSetup: ['test/security/harness/global-setup.ts'],
     // Mỗi file tự khởi động 1 process API + 1 DB clone ⇒ chạy tuần tự cho nhẹ RAM.

@@ -1,4 +1,6 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+import { temporaryExclusionGlobs } from './temporary-exclusions';
 
 // defineConfig (không phải defineProject): coverage chỉ cấu hình được ở config gốc —
 // `pnpm --filter @taskflow/api test:coverage` chạy file này làm gốc để áp ngưỡng core ≥ 90%.
@@ -7,6 +9,8 @@ export default defineConfig({
     name: 'api',
     environment: 'node',
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    // T-061 TẠM: attendance / leave / test HR — danh sách duy nhất ở tsconfig.exclusions.json.
+    exclude: [...configDefaults.exclude, ...temporaryExclusionGlobs()],
     // Lần gọi HTTP đầu tiên mỗi file phải nạp cả app (express, pino, zod, socket.io…) — khi chạy song
     // song ~80 file trên máy/CI bận có thể > 5s mặc định (đo được 7–11s) ⇒ nới để không flaky.
     testTimeout: 20_000,

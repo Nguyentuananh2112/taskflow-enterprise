@@ -79,6 +79,10 @@ export class MirroringUserRepository implements IUserRepository {
     return this.inner.rehashPassword(input);
   }
 
+  setInitialPassword(input: Parameters<IUserRepository['setInitialPassword']>[0]) {
+    return this.inner.setInitialPassword(input);
+  }
+
   changePassword(input: Parameters<IUserRepository['changePassword']>[0]) {
     return this.inner.changePassword(input);
   }

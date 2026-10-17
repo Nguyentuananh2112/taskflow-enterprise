@@ -1,7 +1,7 @@
 import * as z from 'zod';
 
 import { IsoDateTime, Uuid, singleLineText } from '../common/primitives';
-import { MemberGrant, WorkspaceRole } from '../rbac/permissions';
+import { WorkspaceRole } from '../rbac/permissions';
 
 /** R19/ADR-094: tên workspace. */
 export const WorkspaceName = singleLineText(1, 100);
@@ -47,8 +47,6 @@ export const WorkspaceDto = z.object({
   name: z.string(),
   slug: z.string(),
   myRole: WorkspaceRole,
-  /** ADR-119: grant của chính mình; OWNER luôn `[]` (HR ngầm qua role — B-M2). */
-  myGrants: z.array(MemberGrant),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

@@ -31,7 +31,7 @@ describe('actor bị hạ role giữa chừng (role cũ còn trong request)', ()
   it('PM bị hạ xuống MEMBER ⇒ thêm thành viên 403', async () => {
     await demote('pam', 'MEMBER');
     await expect(
-      new AddMemberUseCase(h).execute(ctx.pam, { email: 'nina@example.com', role: 'VIEWER' }),
+      new AddMemberUseCase(h).execute(ctx.pam, { userId: uid('nina'), role: 'VIEWER' }),
     ).rejects.toBeInstanceOf(ForbiddenError);
     expect(await h.memberships.find(ctx.A, uid('nina'))).toBeNull();
   });
@@ -44,7 +44,7 @@ describe('actor bị hạ role giữa chừng (role cũ còn trong request)', ()
     async (role) => {
       await demote('olga', 'PM');
       const err = await new AddMemberUseCase(h)
-        .execute(ctx.olga, { email: 'nina@example.com', role })
+        .execute(ctx.olga, { userId: uid('nina'), role })
         .catch((e: unknown) => e);
       expect(err).toBeInstanceOf(ForbiddenError);
       expect((err as ForbiddenError).details).toEqual({ required: 'member:add' });
@@ -55,7 +55,7 @@ describe('actor bị hạ role giữa chừng (role cũ còn trong request)', ()
   it('đối chứng W-1: OWNER bị hạ xuống PM vẫn cấp được MEMBER (quyền của PM)', async () => {
     await demote('olga', 'PM');
     await expect(
-      new AddMemberUseCase(h).execute(ctx.olga, { email: 'nina@example.com', role: 'MEMBER' }),
+      new AddMemberUseCase(h).execute(ctx.olga, { userId: uid('nina'), role: 'MEMBER' }),
     ).resolves.toMatchObject({ role: 'MEMBER' });
   });
 
@@ -79,7 +79,7 @@ describe('actor bị xóa khỏi workspace giữa chừng', () => {
   it.each([
     [
       'add',
-      () => new AddMemberUseCase(h).execute(ctx.pam, { email: 'nina@example.com', role: 'VIEWER' }),
+      () => new AddMemberUseCase(h).execute(ctx.pam, { userId: uid('nina'), role: 'VIEWER' }),
     ],
     ['remove', () => new RemoveMemberUseCase(h).execute(ctx.pam, { userId: uid('vic') })],
   ] as const)(

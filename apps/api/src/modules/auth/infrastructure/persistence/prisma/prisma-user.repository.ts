@@ -85,6 +85,15 @@ export class PrismaUserRepository implements IUserRepository {
     return rows[0]?.token_version ?? null;
   }
 
+  async setInitialPassword(input: { id: string; hash: string; at: Date }): Promise<number | null> {
+    const rows = await this.db().$queryRaw<{ token_version: number }[]>`
+      UPDATE users SET password_hash = ${input.hash}, password_changed_at = ${input.at},
+             updated_at = ${input.at}
+       WHERE id = ${input.id}::uuid AND password_hash IS NULL AND deleted_at IS NULL
+      RETURNING token_version`;
+    return rows[0]?.token_version ?? null;
+  }
+
   async bumpTokenVersion(id: string, at: Date): Promise<number | null> {
     const rows = await this.db().$queryRaw<{ token_version: number }[]>`
       UPDATE users SET token_version = token_version + 1, updated_at = ${at}

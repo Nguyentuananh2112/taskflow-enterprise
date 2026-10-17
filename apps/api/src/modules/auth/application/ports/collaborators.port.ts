@@ -1,20 +1,25 @@
 // Port do module auth ĐỊNH NGHĨA, module khác HIỆN THỰC, wire ở composition root (ADR-093).
 
+/** Khớp cấu trúc `MeCompanyDto` (contracts) — phần `company` của `GET /auth/me`. */
+export interface MeCompanyView {
+  name: string | null;
+  role: 'ADMIN' | 'EMPLOYEE';
+  grants: ('HR_MANAGE' | 'PAYROLL_MANAGE')[];
+  permissions: string[];
+  status: 'ACTIVE' | 'OFFBOARDING';
+  offboardLastDay: string | null;
+}
+
 /**
- * Register tạo workspace mặc định + membership OWNER + project mặc định (FR-01) trong **cùng
- * transaction** với user. Hiện thực bởi module Workspace.
- *
- * Slug sinh từ họ tên theo R19 (data-and-api.md 2.5): `attempt = 0` thử slug gốc, `attempt ≥ 1`
- * thêm hậu tố ngẫu nhiên. Trùng slug ⇒ ném `ResourceConflictError` với `details.field = 'slug'`;
- * Register thử lại **cả transaction** (lỗi unique làm hỏng transaction Postgres).
- * Không nhận email — slug không bao giờ lộ email (REG-13).
+ * Tư cách công ty (Mốc 3.5, ADR-133/137) — module company hiện thực, đọc DB mỗi lần (không cache). "Hoạt động"
+ * = còn dòng `company_members` VÀ chưa tới `access_until` (B HIGH-2: cùng điều kiện ở mọi cửa).
  */
-export interface IWorkspaceProvisioner {
-  provisionDefault(input: {
-    ownerId: string;
-    ownerFullName: string;
-    attempt: number;
-  }): Promise<{ workspaceId: string }>;
+export interface ICompanySessionGate {
+  isActive(userId: string): Promise<boolean>;
+  /** `null` ⇔ `isActive` false. */
+  meOf(userId: string): Promise<MeCompanyView | null>;
+  /** null khi chưa có dòng `companies` (chưa bootstrap). */
+  companyName(): Promise<string | null>;
 }
 
 export interface MembershipView {
