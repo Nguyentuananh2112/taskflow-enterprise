@@ -11,7 +11,7 @@ TL d9 chốt + đính chính 2026-10-17.
 - Mốc = `recordsRetentionCutoff(retentionPolicyFrom(env), businessClock.now()).cutoffDate` — chính hàm của job, theo
   giờ nghiệp vụ (R31); so `date < mốc` trên `YYYY-MM-DD` như `work_date < cutoffDate` của job.
 - Bảng công (me?month, HR, CSV): ngày < mốc ⇒ `RETENTION_EXPIRED` (ưu tiên cao nhất), không giờ / phép / phút / tên
-  lễ; tổng tháng tính 0. CSV: "Quá thời hạn lưu".
+  lễ; tổng tháng tính 0. CSV: "Ngoài thời hạn lưu".
 - 422 `OUTSIDE_RETENTION`: ADJUSTMENT `date` < mốc; void lượt có `workDate` < mốc; PUT / DELETE ngày lễ `date` < mốc
   (kể cả OWNER có lý do). Thứ tự lỗi: 404 ws / 403 / luật self → 404 tài nguyên con (user, attendance_event) → 422.
 

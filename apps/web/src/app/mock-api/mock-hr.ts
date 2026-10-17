@@ -102,7 +102,7 @@ export class MockHr {
 
 /** Nhãn trạng thái trong CSV (server sinh chữ — như API thật). */
 export const CSV_STATUS: Readonly<Record<DayStatus, string>> = {
-  RETENTION_EXPIRED: 'Quá thời hạn lưu',
+  RETENTION_EXPIRED: 'Ngoài thời hạn lưu',
   PRESENT: 'Có mặt',
   MISSING_OUT: 'Chưa chấm ra',
   ABSENT: 'Vắng',
