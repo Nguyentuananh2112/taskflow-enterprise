@@ -14,4 +14,5 @@ export const hrKeys = {
   leavePendingCount: () => ['company', 'hr', 'leave', 'pending-count'] as const,
   leaveList: (status: LeaveStatus | 'ALL') => ['company', 'hr', 'leave', status] as const,
   balances: (year: number) => ['company', 'hr', 'balances', year] as const,
+  policy: (year: number) => ['company', 'hr', 'policy', year] as const,
 };
