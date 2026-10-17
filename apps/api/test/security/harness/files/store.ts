@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 
@@ -14,6 +14,12 @@ export interface StoreEntry {
 
 export interface TempFileStore {
   readonly dir: string;
+  /**
+   * Thư mục gốc RIÊNG chứa kho (`<root>/w/w/store`) — `snapshotOutside` chỉ duyệt thư mục này. KHÔNG duyệt cha của
+   * kho trong %TEMP%: %TEMP% có thể chứa cả worktree + node_modules ⇒ duyệt đồng bộ chặn event loop nhiều phút (lượt
+   * chat-upload-limits 18/10 treo, timeout vitest không chạy được).
+   */
+  readonly root: string;
   tree(): StoreEntry[];
   /** Tệp dưới `tmp/`. */
   tmpFiles(): StoreEntry[];
@@ -44,7 +50,10 @@ function walk(root: string, at: string, out: StoreEntry[]): void {
 }
 
 export function createTempFileStore(prefix = 'tf-sec-files-'): TempFileStore {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  // Hai tầng đệm: tên tệp kiểu `../../x` (SEC-CH-09) nếu bị ghép thẳng vào đường dẫn sẽ rơi vào `root/…`, vẫn thấy được.
+  const dir = join(root, 'w', 'w', 'store');
+  mkdirSync(dir, { recursive: true });
   const tree = () => {
     const out: StoreEntry[] = [];
     walk(dir, dir, out);
@@ -52,6 +61,7 @@ export function createTempFileStore(prefix = 'tf-sec-files-'): TempFileStore {
   };
   return {
     dir,
+    root,
     tree,
     tmpFiles: () => tree().filter((e) => e.path.startsWith('tmp/')),
     blobs: () => tree().filter((e) => !e.path.startsWith('tmp/')),
@@ -60,18 +70,20 @@ export function createTempFileStore(prefix = 'tf-sec-files-'): TempFileStore {
       unlinkSync(join(dir, ...path.split('/')));
     },
     cleanup() {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     },
   };
 }
 
-/** Chụp cây thư mục CHA của kho — so trước / sau để biết có ghi ra ngoài kho không (SEC-CH-09). */
+/**
+ * Chụp cây `store.root` (ngoài thư mục kho) — so trước / sau để biết có ghi ra ngoài kho không (SEC-CH-09). Chỉ trong
+ * thư mục gốc riêng của suite ⇒ nhỏ, không chặn event loop.
+ */
 export function snapshotOutside(store: TempFileStore): () => string[] {
-  const parent = join(store.dir, '..');
-  const own = relative(parent, store.dir);
+  const own = relative(store.root, store.dir).split(sep).join('/');
   const list = () => {
     const out: StoreEntry[] = [];
-    walk(parent, parent, out);
+    walk(store.root, store.root, out);
     return new Set(out.map((e) => e.path).filter((p) => !p.startsWith(`${own}/`)));
   };
   const before = list();

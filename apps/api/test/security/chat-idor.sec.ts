@@ -202,10 +202,10 @@ describe('thân tin, người nhận', () => {
       expectStatus(toNina, 422, 'DIRECT tới Nina (chờ kích hoạt)');
       expect(ruleOf(toNina)).toBe('RECIPIENT_INACTIVE');
 
-      const quinn = await actors.createUser('ci-quinn', { startDate: shiftDays(-3) });
+      const quinn = await actors.createUser('ci-quinn', { startDate: shiftDays(-5) });
       const old = await chat.direct(mia, quinn.userId);
       await chat.send(mia, old.id, 'Trước khi nghỉ');
-      await actors.offboard(hana, quinn.userId, shiftDays(-1));
+      await actors.offboard(hana, quinn.userId, shiftDays(-2));
       const again = await chat.direct(mia, quinn.userId).catch(() => null);
       if (again) expect(again.id).toBe(old.id);
       const view = (await chatList(mia)).find((c) => c.id === old.id);
@@ -233,6 +233,10 @@ async function chatList(who: CompanyActor): Promise<ConversationDto[]> {
   expectStatus(res, 200, 'GET chat/conversations');
   return dataOf<ConversationDto[]>(res);
 }
+/**
+ * Ngày VN lùi `n` ngày. Cho nghỉ việc dùng lastDay = −2 (không phải −1): `access_until` = 06:00 ngày SAU lastDay ⇒ với
+ * −1, chạy trước 06:00 sáng người đó vẫn còn quyền (lượt 04:03 ngày 18/10 đỏ 3 ca vì vậy).
+ */
 function shiftDays(n: number): string {
   return new Date(Date.now() + 7 * 3_600_000 + n * 86_400_000).toISOString().slice(0, 10);
 }

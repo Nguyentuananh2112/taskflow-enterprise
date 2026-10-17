@@ -69,9 +69,9 @@ describe('mất quyền ⇒ mất hội thoại', () => {
       }
 
       // (c) nghỉ việc (hoàn tất trong request) ⇒ phiên bị thu hồi ⇒ 401.
-      const quinn = await actors.createUser(`cl4-quinn-${tag()}`, { startDate: day(-3) });
+      const quinn = await actors.createUser(`cl4-quinn-${tag()}`, { startDate: day(-5) });
       const qd = await chat.direct(quinn, mia.userId);
-      await actors.offboard(hana, quinn.userId, day(-1));
+      await actors.offboard(hana, quinn.userId, day(-2));
       for (const path of [CHAT.conversations, CHAT.messages(qd.id), CHAT.unread]) {
         const r = await chat.call(quinn, 'GET', path);
         expectStatus(r, 401, `Quinn (đã nghỉ) GET ${path}`);
@@ -86,14 +86,14 @@ describe('mất quyền ⇒ mất hội thoại', () => {
     AREA,
     async () => {
       const mia = await actors.createUser(`cl28-mia-${tag()}`);
-      const quinn = await actors.createUser(`cl28-quinn-${tag()}`, { startDate: day(-3) });
+      const quinn = await actors.createUser(`cl28-quinn-${tag()}`, { startDate: day(-5) });
       const vic = await actors.createUser(`cl28-vic-${tag()}`);
       const g = await chat.group(mia, `CL28-G-${tag()}`, [quinn.userId, vic.userId]);
       await chat.send(mia, g.id, 'Tin trong nhóm trước khi Quinn nghỉ');
       const d = await chat.direct(mia, quinn.userId);
       await chat.send(quinn, d.id, 'Tin DIRECT cũ');
 
-      await actors.offboard(hana, quinn.userId, day(-1));
+      await actors.offboard(hana, quinn.userId, day(-2));
       const rehired = await actors.hire(hana, { email: quinn.email, fullName: `Sec cl28-quinn` });
       expectStatus(rehired, 201, 'nhận lại Quinn');
       const back = await actors.login(quinn);
@@ -149,6 +149,7 @@ describe('mất quyền ⇒ mất hội thoại', () => {
 function tag(): string {
   return randomUUID().slice(0, 6);
 }
+/** Ngày VN lùi `n` ngày — lastDay = −2 để `access_until` (06:00 ngày sau lastDay) luôn đã qua, kể cả chạy trước 06:00. */
 function day(n: number): string {
   return new Date(Date.now() + 7 * 3_600_000 + n * 86_400_000).toISOString().slice(0, 10);
 }

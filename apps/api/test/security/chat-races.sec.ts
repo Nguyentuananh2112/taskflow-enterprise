@@ -12,6 +12,7 @@ import {
   type MessageDto,
 } from './harness/chat-api';
 import { secCase } from './harness/suite';
+import { flushRateLimitCounters } from './harness/valkey';
 
 // Mốc 6 — đua hội thoại (test-spec-chat §4, mẫu red[] ×N — `SEC_HR_RACE_RUNS`): CC-CH-01 (clientMsgId trùng), 02 (2
 // DIRECT đồng thời ⇒ một), 01b (cùng clientMsgId khác thân ⇒ 422 IDEMPOTENCY_KEY_REUSED). Vế socket (đúng 1
@@ -64,6 +65,8 @@ describe('đua', () => {
       const d = await chat.direct(mia, vic.userId);
       const red: string[] = [];
       for (let i = 0; i < RUNS; i += 1) {
+        // Hạn mức gửi 30 tin / phút / người (SEC-CH-14) tính CẢ request lặp cùng clientMsgId ⇒ xóa bộ đếm mỗi vòng.
+        await flushRateLimitCounters();
         const clientMsgId = randomUUID();
         const body = `tin ${String(i)} ${clientMsgId.slice(0, 4)}`;
         const res = await Promise.all(

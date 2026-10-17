@@ -107,7 +107,8 @@ describe('kích thước, thời gian, đồng thời', () => {
               Buffer.concat([fx.png({ w: 8, h: 8 }), Buffer.alloc(6 * MB)]),
               {
                 path: '/me/avatar',
-                name: null,
+                // Avatar cũng bắt buộc X-Upload-Name (rawUpload: 415 → 400 tên → 413).
+                name: 'anh.png',
               },
             ),
           413,
@@ -189,10 +190,10 @@ describe('tên tệp, content-type, route', () => {
     async () => {
       const outside = snapshotOutside(store);
       for (const name of [
-        '../../etc/passwd',
+        '../../etc/passwd.pdf', // đuôi phải khớp nội dung (không đuôi ⇒ 415)
         `hoa-don${String.fromCharCode(0x202e)}fdp.exe.pdf`,
         `a${String.fromCharCode(0)}b.pdf`,
-        '..\\..\\win.ini',
+        '..\\..\\win.ini.pdf',
       ]) {
         const r = await upload(api, mia.accessToken, fx.pdf(2048), { as: 'file', name });
         expectUpload(r, 201, `tên ${JSON.stringify(name)}`);
@@ -234,6 +235,11 @@ describe('tên tệp, content-type, route', () => {
               ...(path === '/chat/uploads' ? { as: 'image' as const } : {}),
               contentType,
             });
+            // JSON: bộ parse JSON toàn cục chạy trước rawUpload ⇒ 400 invalid_json (không ghi gì — vẫn đạt mục tiêu).
+            if (contentType === 'application/json') {
+              expect([400, 415], `${path} ${contentType}: ${String(r.status)}`).toContain(r.status);
+              continue;
+            }
             expectUpload(r, 415, `${path} ${contentType}`);
             expect(errorCode(r)).toBe('UNSUPPORTED_MEDIA_TYPE');
           }
@@ -275,7 +281,8 @@ describe('tên tệp, content-type, route', () => {
             path,
             name: 'x.pdf',
           });
-          expect([404, 405], `${method} ${path}: ${String(r.status)}`).toContain(r.status);
+          // octet-stream chỉ được nhận ở ĐÚNG method + path upload ⇒ method khác bị chặn 415 trước khi tới router (G T-067).
+          expect([404, 405, 415], `${method} ${path}: ${String(r.status)}`).toContain(r.status);
         }
       });
     },
