@@ -53,11 +53,14 @@ afterAll(() => {
   for (const s of sockets.splice(0)) s.close();
 });
 
-/** Trạng thái hiển thị của một nhân viên qua `GET hr/employees?q=` (Hana). */
-async function statusOf(who: CompanyActor): Promise<string | undefined> {
+/**
+ * Trạng thái hiển thị của một nhân viên qua `GET hr/employees?q=` (Hana). Danh sách mặc định KHÔNG gồm người đã
+ * nghỉ ⇒ hỏi LEFT phải lọc `status=left`.
+ */
+async function statusOf(who: CompanyActor, status?: 'left'): Promise<string | undefined> {
   const res = await actors.json(
     'GET',
-    `/hr/employees?q=${encodeURIComponent(who.email)}`,
+    `/hr/employees?q=${encodeURIComponent(who.email)}${status ? `&status=${status}` : ''}`,
     hana.accessToken,
   );
   expect(res.status, res.text.slice(0, 200)).toBe(200);
@@ -184,7 +187,7 @@ describe('access_until 06:00 áp ngay, không chờ job', () => {
       const miaSaw = collect(miaSocket, 'task:updated');
       await disconnected(miaSocket, 75_000);
       expect(Date.now() - crossed, 'ngắt trễ hơn ~70 s sau 06:00').toBeLessThanOrEqual(72_000);
-      expect(await statusOf(mia)).toBe('LEFT');
+      expect(await statusOf(mia, 'left')).toBe('LEFT');
 
       const owenGot = nextEvent(owenSocket, 'task:updated');
       const patched = await actors.json(
