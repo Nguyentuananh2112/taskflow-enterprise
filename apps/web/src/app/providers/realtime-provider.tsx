@@ -59,9 +59,15 @@ export function RealtimeProvider({
       }
     };
     document.addEventListener('visibilitychange', onVisible);
+    // Có mạng trở lại (vd chunk socket tải lỗi lúc mất mạng — T-044 S1) ⇒ thử nối lại ngay.
+    const onOnline = () => {
+      if (client.status() !== 'connected') client.connect();
+    };
+    window.addEventListener('online', onOnline);
     return () => {
       offRenew();
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
       client.disconnect();
     };
   }, [client]);

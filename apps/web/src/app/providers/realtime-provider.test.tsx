@@ -48,4 +48,21 @@ describe('RealtimeProvider', () => {
     await act(() => session.logout());
     expect(client.status()).toBe('offline');
   });
+
+  it('mất kết nối rồi trình duyệt báo "online" ⇒ thử nối lại (T-044 S1: chunk socket có thể đã tải lỗi)', () => {
+    const client = new FakeRealtimeHub().client();
+    render(
+      <RealtimeProvider createClient={() => client}>
+        <Status />
+      </RealtimeProvider>,
+    );
+    act(() => session.signIn({ accessToken: 'access-1', expiresIn: 900 }, USER));
+    expect(client.status()).toBe('connected');
+    act(() => client.drop());
+    expect(client.status()).toBe('reconnecting');
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(client.status()).toBe('connected');
+  });
 });
