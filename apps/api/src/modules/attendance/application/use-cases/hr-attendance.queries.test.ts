@@ -69,6 +69,23 @@ describe('HrAttendanceQueries.today', () => {
     ]);
   });
 
+  it('T-052 hai đơn nửa ngày AM + PM hôm nay ⇒ ON_LEAVE cả ngày (không PENDING / notCheckedInYet, không vắng ½)', async () => {
+    const t = await setup('2026-11-17 18:00');
+    // Port trả một dòng mỗi (đơn, ngày); PM trước AM — thứ tự dòng không được quyết định kết quả.
+    t.leaves.rows.push(
+      { workspaceId: W1, userId: MAX, date: '2026-11-17', part: 'PM' },
+      { workspaceId: W1, userId: MAX, date: '2026-11-17', part: 'AM' },
+    );
+    const r = await t.hrQueries.today(W1);
+    const max = r.members.find((m) => m.user.id === MAX)!.day;
+    expect(max).toMatchObject({
+      status: 'ON_LEAVE',
+      leave: 'FULL',
+      absentHalf: false,
+      notCheckedInYet: false,
+    });
+  });
+
   it('ngày lễ ⇒ isHoliday + tên; người đã rời có lượt hôm nay vẫn hiện, gắn left', async () => {
     const t = await setup('2026-11-17 10:00');
     await t.backend.addHoliday(W1, '2026-11-17', 'Lễ thử');
@@ -159,6 +176,34 @@ describe('HrAttendanceQueries.month', () => {
       upcomingLeaveDays: 1.5,
       throughDate: '2026-11-17',
     });
+    const mine = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    expect(mine.totals).toEqual(mia.totals);
+  });
+
+  it('T-052 AM + PM cùng ngày (hai đơn, có thể khác loại) ⇒ nghỉ cả ngày: leaveDays 1, không vắng; tổng HR = me?month', async () => {
+    const t = await setup('2026-11-30 20:00');
+    tenureOf(t, MIA, '2026-11-23 08:00', null);
+    t.leaves.rows.push(
+      { workspaceId: W1, userId: MIA, date: '2026-11-24', part: 'AM' },
+      { workspaceId: W1, userId: MIA, date: '2026-11-24', part: 'PM' },
+      // hai dòng cùng phần (một đơn nhiều ngày trùng ngày với đơn khác không thể có — D-M2) vẫn là nửa ngày
+      { workspaceId: W1, userId: MIA, date: '2026-11-25', part: 'PM' },
+      { workspaceId: W1, userId: MIA, date: '2026-11-25', part: 'PM' },
+    );
+    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    const mia = r.data.find((x) => x.user.id === MIA)!;
+    expect(mia.days.find((x) => x.date === '2026-11-24')).toMatchObject({
+      status: 'ON_LEAVE',
+      leave: 'FULL',
+      absentHalf: false,
+    });
+    expect(mia.days.find((x) => x.date === '2026-11-25')).toMatchObject({
+      status: 'ABSENT',
+      leave: 'PM',
+      absentHalf: true,
+    });
+    // 23..30/11: CN 29/11 nghỉ ⇒ 7 ngày công; 24/11 phép cả ngày, 25/11 vắng ½ + phép ½ ⇒ vắng 5,5.
+    expect(mia.totals).toMatchObject({ absentDays: 5.5, leaveDays: 1.5, presentDays: 0 });
     const mine = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
     expect(mine.totals).toEqual(mia.totals);
   });

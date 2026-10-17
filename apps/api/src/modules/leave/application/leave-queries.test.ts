@@ -251,6 +251,39 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
       }),
     ).resolves.toEqual([]);
   });
+
+  it('T-052 hai đơn nửa ngày AM (ANNUAL) + PM (UNPAID) cùng ngày ⇒ HAI dòng — attendance tự gộp thành cả ngày', async () => {
+    const h = await createLeaveHarness();
+    await h.seed({
+      id: id(1),
+      status: 'APPROVED',
+      type: 'ANNUAL',
+      startDate: '2026-11-24',
+      endDate: '2026-11-24',
+      dayPart: 'AM',
+    });
+    await h.seed({
+      id: id(2),
+      status: 'APPROVED',
+      type: 'UNPAID',
+      startDate: '2026-11-24',
+      endDate: '2026-11-24',
+      dayPart: 'PM',
+    });
+    const rows = await h.queries.approvedLeaves({
+      workspaceId: W1,
+      userIds: [U.Mia],
+      from: '2026-11-01',
+      to: '2026-11-30',
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { userId: U.Mia, date: '2026-11-24', part: 'AM' },
+        { userId: U.Mia, date: '2026-11-24', part: 'PM' },
+      ]),
+    );
+  });
 });
 
 describe('Lý do nghỉ tùy chọn (TL: trim, rỗng ⇒ null; ≤ 1000 ở contracts)', () => {

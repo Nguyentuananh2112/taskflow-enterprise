@@ -87,6 +87,14 @@ export const tenureWindow = (from: LocalDate, to: LocalDate) => ({
 });
 
 /**
+ * Port trả MỘT dòng cho mỗi (đơn, ngày) — hai đơn nửa ngày AM + PM cùng ngày (D-M2 cho phép, kể cả khác loại)
+ * là hai dòng ⇒ gộp thành cả ngày (T-052; trước đây Map giữ dòng cuối ⇒ ngày nghỉ trọn thành "vắng ½").
+ */
+export function mergeLeavePart(prev: LeavePart | undefined, part: LeavePart): LeavePart {
+  return prev === undefined || prev === part ? part : 'FULL';
+}
+
+/**
  * Bảng công của NHIỀU người cho các ngày `[from, to]` (gồm cả hai đầu) — tính khi đọc (ADR-121), không lưu
  * bảng tổng hợp; đọc theo lô (5 truy vấn cho cả trang). Ngày chưa có phiên bản lịch ⇒ lịch mặc định.
  */
@@ -110,9 +118,10 @@ export async function summarizeUsers(
   const cutoff = d.retention.recordsCutoffDate();
   const result = new Map<string, AttendanceDayDto[]>();
   for (const userId of userIds) {
-    const leaveOf = new Map<LocalDate, LeavePart>(
-      leaves.filter((l) => l.userId === userId).map((l) => [l.date, l.part]),
-    );
+    const leaveOf = new Map<LocalDate, LeavePart>();
+    for (const l of leaves) {
+      if (l.userId === userId) leaveOf.set(l.date, mergeLeavePart(leaveOf.get(l.date), l.part));
+    }
     const mine = events.filter((e) => e.userId === userId);
     const myTenures = tenures.filter((t) => t.userId === userId);
     result.set(
