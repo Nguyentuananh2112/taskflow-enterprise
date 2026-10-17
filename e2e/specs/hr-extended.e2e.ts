@@ -597,9 +597,11 @@ test.describe('E2E-HR-23 chính sách phép năm sau', () => {
     const more = page.getByRole('button', { name: 'Tải thêm' });
     await expect(table.getByRole('row').nth(1)).toBeVisible();
     for (let page_ = 0; page_ < 20 && (await miaRow.count()) === 0; page_ += 1) {
-      await expect(more).toBeEnabled();
+      // Mỗi trang 50 dòng, server tính số dư từng người ⇒ ở DB của lượt đầy đủ (~150 người, máy tải) một trang có thể
+      // > 10 s (lượt 1aa6bd0a: trang 3 còn aria-busy sau 10 s — đã báo D đo).
+      await expect(more).toBeEnabled({ timeout: 30_000 });
       await more.click();
-      await expect(miaRow.or(more)).toBeVisible();
+      await expect(miaRow.or(more)).toBeVisible({ timeout: 30_000 });
     }
     await expect(miaRow).toBeVisible();
     const headers = await table.getByRole('columnheader').allTextContents();
