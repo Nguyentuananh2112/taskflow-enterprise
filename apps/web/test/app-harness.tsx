@@ -8,6 +8,7 @@ import { AppShell } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import type { RealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
+import { AdminAccessPage, AdminCompanyPage, AdminPage, AdminWorkspacesPage } from '@/views/admin';
 import { AttendancePage } from '@/views/attendance';
 import { HrPage } from '@/views/hr';
 import { HrEmployeesPage } from '@/views/hr-employees';
@@ -32,6 +33,10 @@ const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/leave$/, () => <LeavePage />],
   [/^\/hr$/, () => <HrPage />],
   [/^\/hr\/employees$/, () => <HrEmployeesPage />],
+  [/^\/admin$/, () => <AdminPage />],
+  [/^\/admin\/access$/, () => <AdminAccessPage />],
+  [/^\/admin\/workspaces$/, () => <AdminWorkspacesPage />],
+  [/^\/admin\/company$/, () => <AdminCompanyPage />],
   [/^\/w\/[^/]+\/settings$/, () => <WorkspaceSettingsPage />],
   [/^\/w\/[^/]+\/settings\/members$/, () => <MembersPage />],
   [/^\/w\/[^/]+\/p\/[^/]+\/settings$/, () => <ProjectSettingsPage />],
