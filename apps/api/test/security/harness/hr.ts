@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { randomIp, type Actor, type Actors } from './actors';
+import type { CompanyActors } from './company';
 import { SEC_CLOCK_ANCHOR, addDays, vnDateOf } from './clock';
 import type { RawResponse } from './http-client';
 import type { ApiUnderTest } from './suite';
@@ -60,7 +61,7 @@ export interface HrTenant {
 }
 
 /** Bối cảnh chuẩn của test-spec-hr §0.2 (trừ Rex — ca cần "người đã rời" tự dựng). */
-export async function seedHr(actors: Actors): Promise<HrTenant> {
+export async function seedHr(actors: CompanyActors): Promise<HrTenant> {
   const reg = (l: string) => actors.register(`hr-${l}`);
   const [olivia, hana, pam, mia, max, vic, otto] = await Promise.all([
     reg('olivia'),

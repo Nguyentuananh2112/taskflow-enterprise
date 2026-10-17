@@ -10,7 +10,7 @@ import type {
 } from '@taskflow/contracts/company';
 import { beforeAll } from 'vitest';
 
-import { Actors, refreshCookieOf, type Role } from './actors';
+import { Actors, refreshCookieOf, type Actor, type Role } from './actors';
 import { runBootstrap, type BootstrapResult } from './company-bootstrap';
 import type { RawResponse } from './http-client';
 import { useApi, type ApiUnderTest, type PendingStartup } from './suite';
@@ -175,6 +175,16 @@ export class CompanyActors extends Actors {
       expectedVersion: version,
     });
     return opts.admin ? this.login(actor) : actor;
+  }
+
+  /**
+   * Alias chuyển tiếp cho các file trước Mốc 3.5 (test-spec-company §1.2): `createUser` + `newWorkspace` ⇒ `Actor`
+   * cũ có `defaultWorkspaceId` (người này là OWNER duy nhất). Xóa khi mọi file đã dùng `createUser` tường minh.
+   */
+  async register(label: string): Promise<Actor> {
+    const actor = await this.createUser(label);
+    const ws = await this.newWorkspace(actor, `Sec ${label}`);
+    return { ...actor, defaultWorkspaceId: ws.id };
   }
 
   async newWorkspace(owner: CompanyActor, name = `Sec WS ${randomUUID().slice(0, 8)}`) {

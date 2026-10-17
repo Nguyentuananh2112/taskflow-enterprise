@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import {
   HR,
   adjust,
@@ -21,14 +21,13 @@ import {
 } from './harness/hr';
 import { errorEnvelope } from './harness/http-client';
 import { openSocket, connected } from './harness/socket';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // SEC-HR-* (docs/design/test-spec-hr.md §7, T-042). Viết TRƯỚC khi có route: mọi ca khai báo pending
 // theo vé backend (harness/pending.ts) ⇒ gỡ mục đó khi vé merge là ca tự chạy. Thứ tự lỗi §0.3.
 
 // Giờ nghiệp vụ neo thứ Ba 10:00 VN (harness/clock.ts) — cùng mốc với workday()/todayVn().
-const api = useApi(hrClockEnv());
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(hrClockEnv());
 let seeded: Promise<HrTenant> | undefined;
 const hr = () => (seeded ??= seedHr(actors));
 /** Thành viên MỚI của ws chung — ca cần "chưa chấm vào hôm nay" không phụ thuộc thứ tự ca khác đã check-in. */

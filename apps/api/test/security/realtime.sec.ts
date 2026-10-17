@@ -4,7 +4,8 @@ import { request as httpRequest } from 'node:http';
 import type { Socket } from 'socket.io-client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { Actors, seedTenants, type Actor } from './harness/actors';
+import { seedTenants, type Actor } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import {
   collect,
   connected,
@@ -14,14 +15,14 @@ import {
   nextEvent,
   openSocket,
 } from './harness/socket';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
 
 // Socket.io (ADR-027, ADR-074, security.md §5). Handshake websocket được thử bằng HTTP Upgrade thô
 // (không cần socket.io-client): chỉ kiểm lớp `allowRequest` — Origin và transport — trước xác thực.
 // Đối chứng: Origin hợp lệ phải nhận 101; nếu build chưa có gateway (main trước T-016) ⇒ PENDING.
 
-const api = useApi();
+const { api, actors } = useCompanyApi();
 const WS_PATH = '/socket.io/?EIO=4&transport=websocket';
 
 interface UpgradeResult {
@@ -111,7 +112,6 @@ describe('SEC-56 — handshake websocket kiểm Origin (chống CSWSH)', () => {
 // Mỗi ca dựng tenant RIÊNG (xóa thành viên / logout-all làm bẩn dữ liệu). Mọi socket mở ra đều được
 // đóng ở afterEach (kể cả khi ca đỏ) — tránh treo tiến trình test và chạm trần 20 socket/user.
 
-const actors = new Actors(api);
 const sockets: Socket[] = [];
 const open = (token: string | undefined, clientId?: unknown) => {
   const socket = openSocket(api, token, clientId);

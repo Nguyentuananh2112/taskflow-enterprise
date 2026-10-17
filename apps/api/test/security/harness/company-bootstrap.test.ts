@@ -12,31 +12,36 @@ describe('harness company-bootstrap', () => {
     expect(() => tokenOfLink('http://localhost:3000/activate#x=abc')).toThrow(/fragment/);
   });
 
-  const result = {
-    userId: 'u-1',
-    link: 'http://w.test/activate#t=tok1',
+  const activation = {
     token: 'tok1',
+    link: 'http://w.test/activate#t=tok1',
     expiresAt: '2026-10-21T03:00:00.000Z',
   };
+  const output = { userId: 'u-1', activation };
 
   it('parseBootstrapOutput đọc dòng JSON duy nhất ở cuối stdout', () => {
-    expect(parseBootstrapOutput(`Đang tạo Admin…\n${JSON.stringify(result)}\n`)).toEqual(result);
+    expect(parseBootstrapOutput(`Đang tạo Admin…\n${JSON.stringify(output)}\n`)).toEqual({
+      userId: 'u-1',
+      ...activation,
+    });
   });
 
   it('parseBootstrapOutput ném lỗi kèm output khi stdout sai hợp đồng', () => {
-    const line = JSON.stringify(result);
+    const line = JSON.stringify(output);
     // Hai dòng JSON (log lọt vào stdout).
     expect(() => parseBootstrapOutput(`{"level":30}\n${line}`)).toThrow(/đúng một dòng JSON/);
     // JSON không ở dòng cuối.
     expect(() => parseBootstrapOutput(`${line}\nxong`)).toThrow(/dòng cuối/);
-    // Thiếu trường.
-    expect(() => parseBootstrapOutput('{"userId":"u-1","link":"http://w.test/a#t=x"}')).toThrow(
+    // Dạng phẳng (bản B bỏ) / thiếu trường.
+    expect(() => parseBootstrapOutput(JSON.stringify({ userId: 'u-1', ...activation }))).toThrow(
       /thiếu/,
     );
     // token không khớp fragment.
-    expect(() => parseBootstrapOutput(JSON.stringify({ ...result, token: 'other' }))).toThrow(
-      /không khớp/,
-    );
+    expect(() =>
+      parseBootstrapOutput(
+        JSON.stringify({ userId: 'u-1', activation: { ...activation, token: 'other' } }),
+      ),
+    ).toThrow(/không khớp/);
     // Không có gì (vd "Đã có Admin" ra stderr, exit 1).
     expect(() => parseBootstrapOutput('')).toThrow(/đúng một dòng JSON/);
   });

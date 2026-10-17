@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect } from 'vitest';
 
-import { Actors, refreshCookieOf } from './harness/actors';
+import { refreshCookieOf } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { errorEnvelope } from './harness/http-client';
-import { caseRuns, secCase, useApi } from './harness/suite';
+import { caseRuns, secCase } from './harness/suite';
 import { startTempValkey, type TempValkey } from './harness/valkey-container';
 
 // Valkey sự cố (security.md §2.4, ADR-105 / findings A3). File riêng vì process API trỏ vào một container
@@ -28,8 +29,7 @@ afterAll(() => {
   valkey?.remove();
 });
 
-const api = useApi(env);
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(env);
 const me = (token: string) => actors.json('GET', '/auth/me', token);
 
 /**
@@ -139,12 +139,14 @@ describe('Valkey sự cố', () => {
 
   secCase(
     'SEC-28b',
-    'Valkey tắt ⇒ login/register 503 (fail-closed), API thường vẫn chạy',
+    // Mốc 3.5: register bỏ ⇒ luồng công khai thứ hai là `auth/activate` (hạn mức IP như login).
+    'Valkey tắt ⇒ login/activate 503 (fail-closed), API thường vẫn chạy',
     T020,
     async () => {
       if (!valkey) throw new Error('container Valkey tạm chưa dựng');
       await waitValkeyReconnected();
       const user = await actors.register('limiter-down');
+      const pending = await actors.createUser('limiter-down-new', { pending: true });
 
       valkey.kill();
       try {
@@ -154,13 +156,12 @@ describe('Valkey sự cố', () => {
         });
         expect(login.status, `login: ${login.text.slice(0, 200)}`).toBe(503);
         expect(errorEnvelope(login).error.code).toBe('SERVICE_UNAVAILABLE');
-        const register = await actors.json('POST', '/auth/register', undefined, {
-          email: `limiter-down-new-${user.userId.slice(0, 8)}@sec.example`,
+        const activate = await actors.json('POST', '/auth/activate', undefined, {
+          token: pending.token,
           password: 'correct-horse-battery-staple-9',
-          fullName: 'Sec limiter',
         });
-        expect(register.status, `register: ${register.text.slice(0, 200)}`).toBe(503);
-        expect(errorEnvelope(register).error.code).toBe('SERVICE_UNAVAILABLE');
+        expect(activate.status, `activate: ${activate.text.slice(0, 200)}`).toBe(503);
+        expect(errorEnvelope(activate).error.code).toBe('SERVICE_UNAVAILABLE');
         // Limiter fail-closed chỉ ở luồng xác thực (ADR-074): API đã xác thực vẫn chạy.
         expect((await me(user.accessToken)).status, 'GET /auth/me khi Valkey chết').toBe(200);
         expect((await api.request({ method: 'GET', path: '/healthz' })).status).toBe(200);

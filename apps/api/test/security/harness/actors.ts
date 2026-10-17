@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-
+import type { CompanyActors } from './company';
 import type { RawResponse } from './http-client';
 import type { ApiUnderTest } from './suite';
 
@@ -16,10 +15,9 @@ export interface Actor {
   accessToken: string;
   /** Cặp `name=value` của cookie refresh (để gửi lại trong header Cookie). */
   refreshCookie: string;
+  /** Mốc 3.5: ws do `CompanyActors.register` tạo tường minh (không còn ws mặc định khi đăng ký). */
   defaultWorkspaceId: string;
 }
-
-const PASSWORD = 'correct-horse-battery-staple-9';
 
 /** IP ngẫu nhiên (10.x.y.z) cho request chưa xác thực — API chạy với TRUST_PROXY_HOPS=1 nên đây là IP client. */
 const octet = () => 1 + Math.floor(Math.random() * 254);
@@ -58,31 +56,15 @@ export class Actors {
     });
   }
 
-  async register(label: string): Promise<Actor> {
-    const email = `${label}-${randomUUID()}@sec.example`;
-    const res = await this.json('POST', '/auth/register', undefined, {
-      email,
-      password: PASSWORD,
-      fullName: `Sec ${label}`,
-    });
-    const body = data<{ accessToken: string; user: { id: string }; defaultWorkspaceId: string }>(
-      res,
-      201,
-      'POST /auth/register',
-    );
-    return {
-      userId: body.user.id,
-      email,
-      password: PASSWORD,
-      accessToken: body.accessToken,
-      refreshCookie: refreshCookieOf(res),
-      defaultWorkspaceId: body.defaultWorkspaceId,
-    };
-  }
-
-  async addMember(owner: Actor, wsId: string, member: Actor, role: Role) {
+  /** Mốc 3.5 (ADR-134): thêm theo `userId` người thuộc công ty — không còn `{email, role}`. */
+  async addMember(
+    owner: Pick<Actor, 'accessToken'>,
+    wsId: string,
+    member: Pick<Actor, 'userId'>,
+    role: Role,
+  ) {
     const res = await this.json('POST', `/workspaces/${wsId}/members`, owner.accessToken, {
-      email: member.email,
+      userId: member.userId,
       role,
     });
     return data<unknown>(res, 201, `POST /workspaces/${wsId}/members`);
@@ -131,7 +113,7 @@ export class Actors {
  * Bối cảnh chuẩn của security.md §8: ws A (Alice OWNER, Pam PM, Mia MEMBER, Vic VIEWER), ws B
  * (Bob OWNER). Mỗi ws có 1 project. Task: `seedTasks`.
  */
-export async function seedTenants(actors: Actors) {
+export async function seedTenants(actors: CompanyActors) {
   // Tuần tự có chủ đích: seed không phải nơi thử đồng thời (race có test riêng — SEC-40).
   const alice = await actors.register('alice');
   const pam = await actors.register('pam');
@@ -151,7 +133,7 @@ export async function seedTenants(actors: Actors) {
 export type Tenants = Awaited<ReturnType<typeof seedTenants>>;
 
 /** Thêm task (cần module task — T-018): của Pam, của Mia (ws A) và của Bob (ws B). */
-export async function seedTasks(actors: Actors, t: Tenants) {
+export async function seedTasks(actors: CompanyActors, t: Tenants) {
   const pamTask = await actors.createTask(t.pam, t.wsA, t.projectA.id, 'task của Pam');
   const miaTask = await actors.createTask(t.mia, t.wsA, t.projectA.id, 'task của Mia');
   const bobTask = await actors.createTask(t.bob, t.wsB, t.projectB.id, 'task của Bob');

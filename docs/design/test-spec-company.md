@@ -77,9 +77,9 @@ Lịch, ngày lễ, danh sách nhân viên và người nhận thông báo HR l�
 - **Security:** `useApi(env)` `beforeAll`, theo thứ tự:
   1. `prepareSuiteDatabase` (reset);
   2. chạy `admin:bootstrap --json` với `DATABASE_URL` của suite, `TEST_CLOCK_ANCHOR`, `APP_ENV=test`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `COMPANY_NAME`;
-  3. đọc `{link, userId}` (`link` = `<origin>/activate#t=<token>`);
-  4. `POST /auth/activate {token, password}` để có phiên Ada;
-  5. khởi động API.
+  3. đọc dòng JSON duy nhất, cuối stdout: `{userId, activation: {token, link, expiresAt}}` (`link` = `<origin>/activate#t=<token>`, token phải khớp fragment; log CLI ra stderr — B chốt);
+  4. khởi động API;
+  5. `POST /auth/activate {token, password}` để có phiên Ada (`useCompanyApi`).
   - Lỗi bất kỳ bước nào thì cả file đỏ, có thông báo rõ.
 - **E2E:** `globalSetup` làm đúng các bước đó **một lần**, ghi phiên Ada vào biến môi trường của worker.
 - **Không** route test-only, **không** chèn DB.
@@ -256,6 +256,18 @@ CLK-HR-01…04 (Mốc 3) giữ nội dung, đổi đường dẫn sang công ty.
 | 06, 07 | P | `/hr` gốc; tìm Mia qua ô tìm |
 | 09 | P | `/w` + `/attendance` |
 | 14 | R | đo `/w` (thẻ gọn + Việc quản lý + Workspace) ở 360 / 768 / 1280, cả nhân viên lẫn HR |
+
+### 6.4 SEC chung (ngoài HR) — bỏ `/auth/register` và `members {email}`
+
+Mọi file dùng `useCompanyApi()`; `actors.register(label)` là alias `createUser` + `newWorkspace` (§1.2) nên thân ca giữ nguyên. Thêm thành viên gửi `{userId, role}`. Ca gọi thẳng route cũ:
+
+| Ca | Loại | Chuyển |
+|---|---|---|
+| SEC-32 (`auth.sec.ts`) | R | chính sách mật khẩu kiểm ở `POST auth/activate`: 5 mật khẩu sai trên **cùng** token ⇒ 400 `VALIDATION_ERROR`, không phản chiếu; token đó vẫn kích hoạt được bằng mật khẩu đúng (sai không tiêu token); 12 / 256 / tiếng Việt 12 ký tự ⇒ 200 |
+| SEC-40 (`tenant.sec.ts`) | R | 5 owner tạo ws trùng tên song song ⇒ 5 × 201, 5 slug khác nhau; Ada thêm 5 nhân viên trùng email song song ⇒ `[201, 409×4]`, `hr/employees?q=` đúng 1 dòng |
+| SEC-28b (`valkey-outage.sec.ts`) | R | Valkey tắt ⇒ `login` **và** `auth/activate` 503 `SERVICE_UNAVAILABLE` (fail-closed luồng công khai), API đã xác thực vẫn 200 |
+| SEC-13, SEC-47 (`tenant.sec.ts`) | P | body `{userId, role}` |
+| SEC-HR-39 | mới | `POST auth/register`, `members {email}` ⇒ 404 / 400 (§3) |
 
 ## 7. E2E mới (tầng E, `workers: 1` cho suite HR)
 

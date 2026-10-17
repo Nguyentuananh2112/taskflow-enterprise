@@ -1,16 +1,15 @@
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { nextVnAnchor } from './harness/clock';
 import { HR, hrClockEnv, withKey } from './harness/hr';
 import { seedTrio, today } from './harness/hr-clock';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // CLK-HR-04 (test-spec-hr §5b): CHỦ NHẬT (S0 nghỉ). Mốc Chủ nhật 10:00 VN — process API riêng. Chấm vào vẫn được
 // ghi nhưng ngày OFF có ưu tiên cao hơn PRESENT (SD thứ tự ưu tiên) ⇒ không "đang làm", không bị tính vắng.
 const ANCHOR = nextVnAnchor(0, '10:00:00');
-const api = useApi(hrClockEnv(ANCHOR));
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(hrClockEnv(ANCHOR));
 const AREA = 'Mốc 3 HR — biên giờ';
 
 describe('Chủ nhật', () => {

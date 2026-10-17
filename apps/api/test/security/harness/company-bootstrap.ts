@@ -17,8 +17,9 @@ export interface BootstrapResult {
 }
 
 /**
- * Entry CLI `admin:bootstrap` theo design §4 (production `dist/cli/admin-bootstrap.js`). `SEC_BOOTSTRAP_ENTRY`
- * ghi đè khi B đặt tên khác, tới lúc T-061 code commit.
+ * Entry CLI `admin:bootstrap` (B xác nhận; production `dist/cli/admin-bootstrap.js`). Đầu vào CHỈ qua env
+ * `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_NAME` / `COMPANY_NAME` (`bootstrapEnv`); `SEC_BOOTSTRAP_ENTRY` để
+ * trỏ worktree khác.
  */
 export const BOOTSTRAP_ENTRY = process.env.SEC_BOOTSTRAP_ENTRY ?? 'src/cli/admin-bootstrap.ts';
 
@@ -30,8 +31,9 @@ export function tokenOfLink(link: string): string {
 }
 
 /**
- * B (T-061): `--json` in ĐÚNG MỘT dòng JSON ở stdout, là dòng cuối — `{userId, link, token, expiresAt}`; log
- * đi stderr. Kiểm chặt: dòng cuối phải là object đủ trường và `token` khớp fragment `#t=` của `link`.
+ * B (T-061, chốt theo design): `--json` in ĐÚNG MỘT dòng JSON ở stdout, là dòng cuối —
+ * `{userId, activation: {token, link, expiresAt}}` (cùng dạng `HireEmployeeResponse.activation`); log đi stderr.
+ * Kiểm chặt: dòng cuối phải là object đủ trường và `token` khớp fragment `#t=` của `link`.
  */
 export function parseBootstrapOutput(stdout: string): Omit<BootstrapResult, 'email'> {
   const lines = stdout
@@ -49,14 +51,15 @@ export function parseBootstrapOutput(stdout: string): Omit<BootstrapResult, 'ema
   } catch {
     throw fail('dòng cuối stdout không phải JSON');
   }
-  const { userId, link, token, expiresAt } = parsed as Record<string, unknown>;
+  const { userId, activation } = parsed as { userId?: unknown; activation?: unknown };
+  const { link, token, expiresAt } = (activation ?? {}) as Record<string, unknown>;
   if (
     typeof userId !== 'string' ||
     typeof link !== 'string' ||
     typeof token !== 'string' ||
     typeof expiresAt !== 'string'
   ) {
-    throw fail('thiếu {userId, link, token, expiresAt}');
+    throw fail('thiếu {userId, activation: {token, link, expiresAt}}');
   }
   if (tokenOfLink(link) !== token) throw fail('token không khớp fragment #t= của link');
   return { userId, link, token, expiresAt };

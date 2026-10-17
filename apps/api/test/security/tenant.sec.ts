@@ -1,23 +1,23 @@
 import { describe, expect } from 'vitest';
 
-import { Actors, seedTenants, type Actor, type Tenants } from './harness/actors';
+import { seedTenants, type Actor, type Tenants } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { errorEnvelope } from './harness/http-client';
 import { connected, emitAck, nextEvent, openSocket } from './harness/socket';
-import { outOfScope, secCase, useApi } from './harness/suite';
+import { outOfScope, secCase } from './harness/suite';
 
 // Đa tenant / workspace (security.md §8: SEC-01, 13..16, 40, 46, 47, 51..55, 58). Case task: task.sec.ts.
 // Dữ liệu seed lười trong từng test (KHÔNG beforeAll). Ca LÀM ĐỔI dữ liệu (xóa member/ws, đổi role) dựng
 // tenant riêng (`fresh`) để không làm bẩn bối cảnh chung của ca khác (F4).
 
-const api = useApi();
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi();
 let seeded: Promise<Tenants> | undefined;
 const tenants = () => (seeded ??= seedTenants(actors));
 
 const WS = 'workspaces/:wsId routes (T-015 + Phase 3)';
 const NIL_WS = '00000000-0000-7000-8000-000000000000';
 const fresh = () => seedTenants(actors);
-type Res = Awaited<ReturnType<Actors['json']>>;
+type Res = Awaited<ReturnType<typeof actors.json>>;
 
 /** 404 chống dò tồn tại: status 404 và lỗi GIỐNG HỆT cùng route trên một ws không tồn tại. */
 async function expect404LikeMissing(
@@ -106,10 +106,10 @@ describe('IDOR chéo workspace', () => {
 describe('RBAC', () => {
   secCase('SEC-13', 'Pam thêm member role OWNER/PM; Pam đổi role ⇒ 403', WS, async () => {
     const t = await fresh();
-    const nina = await actors.register('nina');
+    const nina = await actors.createUser('nina');
     for (const role of ['OWNER', 'PM']) {
       const res = await actors.json('POST', `/workspaces/${t.wsA}/members`, t.pam.accessToken, {
-        email: nina.email,
+        userId: nina.userId,
         role,
       });
       expect(res.status, `Pam thêm ${role}`).toBe(403);
@@ -160,38 +160,39 @@ describe('RBAC', () => {
 describe('Toàn vẹn & race', () => {
   secCase(
     'SEC-40',
-    'Đăng ký đồng thời trùng fullName / trùng email ⇒ slug khác nhau / 409, không mồ côi',
-    'auth routes (Phase 3)',
+    // Mốc 3.5 (test-spec-company §6): tự đăng ký bỏ ⇒ race slug chuyển sang tạo ws trùng tên, race email
+    // chuyển sang HR thêm nhân viên trùng email.
+    'Tạo ws đồng thời trùng tên / thêm nhân viên đồng thời trùng email ⇒ slug khác nhau / 409, không mồ côi',
+    'workspace + hr/employees (T-061)',
     async () => {
-      const register = (email: string, fullName: string) =>
-        actors.json('POST', '/auth/register', undefined, {
-          email,
-          password: 'correct-horse-battery-staple-9',
-          fullName,
-        });
       const tag = `${Date.now()}`;
-      // Cùng fullName ⇒ cùng slug gốc: cả 5 phải 201 và slug workspace khác nhau.
+      // Cùng tên ⇒ cùng slug gốc: cả 5 phải 201 và slug khác nhau (5 owner khác nhau, chạy song song).
+      const owners = await Promise.all(
+        Array.from({ length: 5 }, (_, i) => actors.createUser(`s40-${i}`)),
+      );
       const sameName = await Promise.all(
-        Array.from({ length: 5 }, (_, i) =>
-          register(`dup-${tag}-${i}@sec.example`, `Trùng Tên ${tag}`),
+        owners.map((o) =>
+          actors.json('POST', '/workspaces', o.accessToken, { name: `Trùng ${tag}` }),
         ),
       );
       expect(sameName.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
-      const slugs = await Promise.all(
-        sameName.map(async (r) => {
-          const token = (r.json as { data: { accessToken: string } }).data.accessToken;
-          const me = await actors.json('GET', '/auth/me', token);
-          return (me.json as { data: { memberships: { slug: string }[] } }).data.memberships[0]
-            ?.slug;
-        }),
-      );
+      const slugs = sameName.map((r) => (r.json as { data: { slug: string } }).data.slug);
       expect(new Set(slugs).size).toBe(5);
 
-      // Cùng email: đúng 1 cái 201, còn lại 409 EMAIL_ALREADY_EXISTS — không 500.
+      // Cùng email: đúng 1 cái 201, còn lại 409 — không 500, chỉ một nhân viên.
+      const email = `same-${tag}@sec.example`;
       const sameEmail = await Promise.all(
-        Array.from({ length: 5 }, () => register(`same-${tag}@sec.example`, 'Same Email')),
+        Array.from({ length: 5 }, () => actors.hire(actors.ada, { email, fullName: 'Same Email' })),
       );
       expect(sameEmail.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409]);
+      const list = await actors.json(
+        'GET',
+        `/hr/employees?q=${encodeURIComponent(email)}`,
+        actors.ada.accessToken,
+      );
+      expect((list.json as { data: { email: string }[] }).data.map((e) => e.email)).toEqual([
+        email,
+      ]);
     },
   );
   secCase(
@@ -278,7 +279,7 @@ describe('Workspace xóa mềm (ADR-047/050)', () => {
         ['GET', (ws) => `/workspaces/${ws}`],
         ['GET', (ws) => `/workspaces/${ws}/projects`],
         ['GET', (ws) => `/workspaces/${ws}/projects/${t.projectA.id}/tasks/${task.id}/audit-logs`],
-        ['POST', (ws) => `/workspaces/${ws}/members`, { email: t.bob.email, role: 'MEMBER' }],
+        ['POST', (ws) => `/workspaces/${ws}/members`, { userId: t.bob.userId, role: 'MEMBER' }],
         ['PATCH', (ws) => `/workspaces/${ws}/members/${t.vic.userId}`, { role: 'MEMBER' }],
       ];
       // Đối chứng TRƯỚC khi xóa: mọi route đều hoạt động với Alice (404 sau đó không phải do sai đường).

@@ -2,17 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { HR, eventsOf, hrClockEnv, todayVn } from './harness/hr';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // SEC-HR-23 (test-spec-hr §7, T-042) — process API RIÊNG với TRUST_PROXY_HOPS=0 (suite chính chạy hops=1 để
 // mỗi actor có IP giả riêng). Không tin proxy nào ⇒ `X-Forwarded-For` client gửi bị bỏ qua: IP lưu ở lượt chấm
 // công là IP socket (loopback), không phải IP giả. Mọi request cùng một IP ⇒ chỉ đăng ký 2 user (Olivia là OWNER
 // nên có hr:manage để đọc IP qua attendance/events) cho khỏi chạm limiter đăng ký.
 
-const api = useApi({ TRUST_PROXY_HOPS: '0', ...hrClockEnv() });
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi({ TRUST_PROXY_HOPS: '0', ...hrClockEnv() });
 const AREA = 'Mốc 3 HR — proxy';
 
 /** IP socket của client test chạy cùng máy: IPv4 loopback (có thể dạng IPv4-mapped) hoặc IPv6 loopback. */
