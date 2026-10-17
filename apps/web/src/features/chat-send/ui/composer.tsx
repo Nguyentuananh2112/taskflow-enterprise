@@ -123,6 +123,7 @@ export function Composer({ convId, replyTo, onCancelReply }: Props) {
           id={fileId}
           type="file"
           multiple
+          aria-label="Chọn tệp đính kèm"
           className="sr-only"
           tabIndex={-1}
           onChange={(e) => {
