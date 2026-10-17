@@ -30,9 +30,9 @@ export const cmid = (n: number) =>
   `00000000-0000-7000-8000-0000000ee${n.toString().padStart(3, '0')}`;
 export const aid = (n: number) =>
   `00000000-0000-7000-8000-0000000ff${n.toString().padStart(3, '0')}`;
-/** Khóa blob hợp lệ (`^[a-z2-7]{26}$`, CHECK chat_attachments_keys_chk): đính kèm `n`, biến thể f / p / t. */
+/** Khóa blob hợp lệ (`^chat/[a-z2-7]{26}$`, CHECK chat_attachments_keys_chk): đính kèm `n`, biến thể f / p / t. */
 export const blob = (n: number, v: 'f' | 'p' | 't') =>
-  `${'a'.repeat(24)}${String.fromCharCode(97 + n)}${v}`;
+  `chat/${'a'.repeat(24)}${String.fromCharCode(97 + n)}${v}`;
 export const G = cid(50);
 export const hex = (c: string) => c.repeat(64);
 
