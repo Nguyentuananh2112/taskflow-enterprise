@@ -71,6 +71,13 @@ describe('decidePunch — IN', () => {
     expect(decide('IN', at(TUE, '08:00'), [], [])).toEqual({ ok: false, reason: 'NOT_EMPLOYED' });
   });
 
+  it('OUT mồ côi (không IN) cùng ngày không chặn IN — chỉ lượt IN mới tính "đã vào"', () => {
+    expect(decide('IN', at(TUE, '08:00'), [ev('OUT', TUE, '07:00')])).toEqual({
+      ok: true,
+      workDate: TUE,
+    });
+  });
+
   it('NOT_EMPLOYED được kiểm trước ALREADY_CHECKED_IN', () => {
     expect(
       decide('IN', at(TUE, '09:00'), [ev('IN', TUE, '08:00')], [{ from: MON, until: MON }]),
@@ -111,6 +118,13 @@ describe('decidePunch — OUT', () => {
       workDate: MON,
     });
     expect(decide('OUT', at(TUE, '06:00'), [ev('IN', MON, '20:00')], lastDay)).toEqual({
+      ok: false,
+      reason: 'NOT_CHECKED_IN',
+    });
+  });
+
+  it('chỉ lượt IN mở được OUT: OUT mồ côi trước đó cùng ngày ⇒ vẫn NOT_CHECKED_IN', () => {
+    expect(decide('OUT', at(TUE, '17:30'), [ev('OUT', TUE, '07:00')])).toEqual({
       ok: false,
       reason: 'NOT_CHECKED_IN',
     });
