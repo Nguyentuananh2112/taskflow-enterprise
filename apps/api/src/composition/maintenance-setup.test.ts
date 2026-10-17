@@ -41,19 +41,27 @@ const names = (vars: NodeJS.ProcessEnv) =>
     logger: new SpyLogger(),
   }).map((j) => j.name);
 
-describe('maintenanceJobs — bật / tắt theo APP_ENV', () => {
-  it.each(['local', 'test'] as const)(
-    'APP_ENV=%s, không đặt cờ ⇒ KHÔNG có job nào (kể cả retention)',
-    (appEnv) => {
-      expect(
-        names(
-          testEnvVars({ APP_ENV: appEnv, NODE_ENV: appEnv === 'local' ? 'development' : 'test' }),
-        ),
-      ).toEqual([]);
-    },
-  );
+describe('maintenanceJobs — bật / tắt theo APP_ENV và cờ', () => {
+  const local = (extra: NodeJS.ProcessEnv = {}) =>
+    testEnvVars({ APP_ENV: 'local', NODE_ENV: 'development', ...extra });
 
-  it('production ⇒ đủ 3 job, có retention', () => {
+  it.each(['local', 'test'] as const)('APP_ENV=%s, không đặt cờ ⇒ KHÔNG có job nào', (appEnv) => {
+    const nodeEnv = appEnv === 'local' ? 'development' : 'test';
+    expect(names(testEnvVars({ APP_ENV: appEnv, NODE_ENV: nodeEnv }))).toEqual([]);
+  });
+
+  it('local + chỉ cờ chung MAINTENANCE_JOBS_ENABLED=true ⇒ có purge, KHÔNG có retention', () => {
+    expect(names(local({ MAINTENANCE_JOBS_ENABLED: 'true' }))).toEqual([
+      'purge-deleted-workspaces',
+      'purge-expired-refresh-tokens',
+    ]);
+  });
+
+  it('local + RETENTION_JOB_ENABLED=true (bật có chủ đích) ⇒ chỉ retention', () => {
+    expect(names(local({ RETENTION_JOB_ENABLED: 'true' }))).toEqual(['retention']);
+  });
+
+  it('production mặc định ⇒ đủ 3 job, có retention', () => {
     expect(names(productionEnvVars())).toEqual([
       'purge-deleted-workspaces',
       'purge-expired-refresh-tokens',
@@ -61,7 +69,14 @@ describe('maintenanceJobs — bật / tắt theo APP_ENV', () => {
     ]);
   });
 
-  it('production đặt MAINTENANCE_JOBS_ENABLED=false ⇒ tắt hết', () => {
+  it('production RETENTION_JOB_ENABLED=false ⇒ tắt riêng retention', () => {
+    expect(names(productionEnvVars({ RETENTION_JOB_ENABLED: 'false' }))).toEqual([
+      'purge-deleted-workspaces',
+      'purge-expired-refresh-tokens',
+    ]);
+  });
+
+  it('production MAINTENANCE_JOBS_ENABLED=false ⇒ tắt hết (retention theo cờ chung khi không đặt cờ riêng)', () => {
     expect(names(productionEnvVars({ MAINTENANCE_JOBS_ENABLED: 'false' }))).toEqual([]);
   });
 });

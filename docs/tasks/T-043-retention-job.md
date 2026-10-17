@@ -16,7 +16,7 @@
    | `RETENTION_NOTIFICATIONS_DAYS` | D6 thông báo ⇒ DELETE | 180 | 30 |
    | `RETENTION_HR_AUDIT_DAYS` | D7 HrAuditLog ⇒ DELETE | 1826 (5 năm) | 365 |
 
-   `min` chặn cấu hình nhầm (vd `0` xóa sạch). Bật / tắt theo `MAINTENANCE_JOBS_ENABLED` sẵn có (mặc định bật ở staging/production).
+   `min` chặn cấu hình nhầm (vd `0` xóa sạch). **Cờ riêng `RETENTION_JOB_ENABLED`** (TL chốt — dữ liệu bị xóa vĩnh viễn): APP_ENV local/test ⇒ chỉ chạy khi cờ này = `true` (cờ chung `MAINTENANCE_JOBS_ENABLED` không đủ — localhost của người dùng có dữ liệu thật); staging/production ⇒ cờ riêng nếu đặt, không thì theo cờ chung, mặc định bật.
 2. **Ranh giới module** (quyết định L2 của T-040b: không module nào đọc/ghi bảng của module khác): mỗi module cung cấp **bước dọn** của bảng mình — một câu SQL theo lô (`… WHERE id IN (SELECT id … LIMIT n FOR UPDATE SKIP LOCKED)`), gọi TRONG transaction của lô:
    - attendance: scrub IP/UA (D1), xóa lượt chấm (D2);
    - leave: scrub lý do (D3, trừ PENDING), xóa đơn + số dư theo **cả năm** (D4): năm Y bị xóa khi 31/12/Y < mốc (`start_date < <năm của mốc>-01-01`, số dư `year < <năm của mốc>`). Không xóa giữa năm vì số ngày đã dùng được tính lại từ đơn (D-H3a) — xóa một phần làm sai số dư năm đó; đơn không kéo qua hai năm (`LEAVE_SPANS_YEARS`);
