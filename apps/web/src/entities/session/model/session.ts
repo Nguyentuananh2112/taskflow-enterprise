@@ -81,19 +81,10 @@ export function createSessionController(deps: SessionDeps) {
    */
   type Restored = { kind: 'authenticated'; user: UserDto } | { kind: 'anonymous' | 'unreachable' };
   let restoring: Promise<Restored> | null = null;
-  /** T-044 S3: có access token từ khôi phục phiên — TRƯỚC /auth/me (tầng app prefetch query của route song song). */
-  const tokenRestoredListeners = new Set<() => void>();
   function restore(): Promise<Restored> {
     restoring ??= (async (): Promise<Restored> => {
       try {
         if (!(await renew())) return { kind: 'anonymous' };
-        for (const listener of tokenRestoredListeners) {
-          try {
-            listener();
-          } catch {
-            // prefetch là tối ưu — lỗi của nó không được làm hỏng khôi phục phiên
-          }
-        }
         return { kind: 'authenticated', user: (await deps.api.me()).user };
       } catch {
         return { kind: 'unreachable' }; // mạng/5xx: màn "Không kết nối được" + Thử lại
@@ -236,17 +227,6 @@ export function createSessionController(deps: SessionDeps) {
       revoked: (): void => end('revoked'),
     },
 
-    /**
-     * `listener()` khi khôi phục phiên (tải trang) vừa có access token, TRƯỚC /auth/me — để tầng app prefetch query
-     * của route song song với /auth/me (T-044 S3). Không gọi cho signIn (đăng nhập bằng form đi đường khác).
-     */
-    onTokenRestored(listener: () => void): () => void {
-      tokenRestoredListeners.add(listener);
-      return () => {
-        tokenRestoredListeners.delete(listener);
-      };
-    },
-
     /** `listener(reason)` khi phiên đang hoạt động bị kết thúc (dọn cache, toast…). */
     onEnded(listener: (reason: EndReason) => void): () => void {
       endedListeners.add(listener);
@@ -262,7 +242,6 @@ export function createSessionController(deps: SessionDeps) {
       channel = null;
       endedListeners.clear();
       pendingListeners.clear();
-      tokenRestoredListeners.clear();
       logoutPending = false;
       tokenStore.clear();
       sessionStore.resetForTest();

@@ -1,4 +1,4 @@
-import { queryOptions, useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { projectApi, type ProjectListFilter } from '../api/project.api';
 
@@ -22,14 +22,11 @@ export function useProjects(wsId: string, archived: ProjectListFilter, enabled =
   });
 }
 
-/** Project của board — `project:updated` qua socket ghi thẳng vào key này. Dùng chung với prefetch (T-044 S3). */
-export const projectQuery = (wsId: string, projectId: string) =>
-  queryOptions({
+/** Project của board — `project:updated` qua socket ghi thẳng vào key này. */
+export function useProject(wsId: string, projectId: string) {
+  return useQuery({
     queryKey: projectKeys.detail(wsId, projectId),
     queryFn: () => projectApi.get(wsId, projectId),
     staleTime: 60_000,
   });
-
-export function useProject(wsId: string, projectId: string) {
-  return useQuery(projectQuery(wsId, projectId));
 }

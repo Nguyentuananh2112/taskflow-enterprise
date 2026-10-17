@@ -1,5 +1,5 @@
 import type { TaskDto } from '@taskflow/contracts/task';
-import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 
 import { taskApi, type TaskScope } from '../api/task.api';
 import { boardFromTasks, type BoardData } from './board-cache';
@@ -7,33 +7,15 @@ import { taskKeys } from './query-keys';
 
 /**
  * Board của project (frontend.md §3.2): `staleTime: Infinity` — giữ tươi bằng socket, refetch khi
- * reconnect/join lại; không refetch khi focus cửa sổ. Options dùng chung cho hook + prefetch (T-044 S3).
+ * reconnect/join lại; không refetch khi focus cửa sổ.
  */
-const snapshotStartedAt = new Map<string, number>();
-const scopeKey = (scope: TaskScope) => `${scope.wsId}/${scope.projectId}`;
-
-/**
- * Lúc GỬI request board gần nhất (≈ lúc server chụp snapshot; `undefined` = chưa tải). Realtime dùng để biết snapshot
- * có cũ hơn lúc join phòng không (T-044 S3: board được prefetch từ lúc có token, join chỉ xảy ra sau /auth/me + tải
- * socket + handshake ⇒ event giữa hai mốc phải được bù bằng một lần refetch).
- */
-export function boardSnapshotStartedAt(scope: TaskScope): number | undefined {
-  return snapshotStartedAt.get(scopeKey(scope));
-}
-
-export const boardQuery = (scope: TaskScope) =>
-  queryOptions({
+export function useBoard(scope: TaskScope) {
+  return useQuery({
     queryKey: taskKeys.board(scope.wsId, scope.projectId),
-    queryFn: async ({ signal }) => {
-      snapshotStartedAt.set(scopeKey(scope), Date.now());
-      return boardFromTasks(await taskApi.listAll(scope, signal));
-    },
+    queryFn: async ({ signal }) => boardFromTasks(await taskApi.listAll(scope, signal)),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
-
-export function useBoard(scope: TaskScope) {
-  return useQuery(boardQuery(scope));
 }
 
 /**

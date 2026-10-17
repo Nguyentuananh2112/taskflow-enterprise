@@ -1,4 +1,4 @@
-import { queryOptions, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 import { notificationApi } from '../api/notification.api';
 
@@ -10,15 +10,13 @@ export const notificationKeys = {
 };
 
 /** Số chưa đọc — làm mới qua `notification:new` (realtime) và khi kết nối lại; dự phòng 2 phút. */
-export const unreadCountQuery = () =>
-  queryOptions({
+export function useUnreadCount() {
+  return useQuery({
     queryKey: notificationKeys.unread,
     queryFn: notificationApi.unreadCount,
     staleTime: 60_000,
+    refetchInterval: 2 * 60_000,
   });
-
-export function useUnreadCount() {
-  return useQuery({ ...unreadCountQuery(), refetchInterval: 2 * 60_000 });
 }
 
 /** 20 thông báo mới nhất — chỉ tải khi mở chuông (`enabled`). */

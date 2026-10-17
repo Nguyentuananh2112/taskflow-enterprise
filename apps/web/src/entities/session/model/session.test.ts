@@ -167,41 +167,6 @@ describe('prestart (T-044 S2a: mở khôi phục phiên trước khi cây hydrat
   });
 });
 
-describe('onTokenRestored (T-044 S3: prefetch song song với /auth/me)', () => {
-  it('khôi phục có token ⇒ gọi listener TRƯỚC /auth/me; lỗi của listener không làm hỏng khôi phục', async () => {
-    const order: string[] = [];
-    const me = vi.fn(() => {
-      order.push('me');
-      return Promise.resolve({ user: USER, memberships: [] });
-    });
-    const { controller } = setup({ me });
-    controller.onTokenRestored(() => order.push('prefetch'));
-    controller.onTokenRestored(() => {
-      throw new Error('prefetch hỏng');
-    });
-    await controller.bootstrap();
-    expect(order).toEqual(['prefetch', 'me']);
-    expect(sessionStore.get().status).toBe('authenticated');
-  });
-
-  it('không có phiên (refresh 401) ⇒ KHÔNG gọi listener; signIn bằng form cũng không gọi', async () => {
-    const listener = vi.fn();
-    const { controller } = setup({ refresh: () => Promise.reject(invalid()) });
-    controller.onTokenRestored(listener);
-    await controller.bootstrap();
-    controller.signIn(TOKEN, USER);
-    expect(listener).not.toHaveBeenCalled();
-  });
-
-  it('gỡ listener ⇒ không gọi', async () => {
-    const listener = vi.fn();
-    const { controller } = setup();
-    controller.onTokenRestored(listener)();
-    await controller.bootstrap();
-    expect(listener).not.toHaveBeenCalled();
-  });
-});
-
 describe('đăng nhập / kết thúc phiên', () => {
   it('signIn ⇒ authenticated + báo tab khác "login"', () => {
     const { controller, posted } = setup();
