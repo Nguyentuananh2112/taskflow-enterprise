@@ -115,6 +115,8 @@ export interface ILeavePolicyStore {
 /** Ngày vào công ty (hồ sơ — T-054 sở hữu, adapter nối ở composition; chưa có ⇒ null cho mọi người). */
 export interface ILeaveHireDates {
   hireDateOf(userId: string): Promise<CalendarDate | null>;
+  /** Theo lô (T-057d — trang số dư / báo cáo): người không có ngày vào ⇒ không có trong map. */
+  hireDatesOf?(userIds: readonly string[]): Promise<ReadonlyMap<string, CalendarDate | null>>;
 }
 
 // ---------------------------------------------------------------- công ty & quyền (adapter: company, T-061)
