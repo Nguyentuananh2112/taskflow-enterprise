@@ -186,6 +186,34 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     },
   );
 
+  it('TEST_CLOCK_ANCHOR (E2E giờ nghiệp vụ): hợp lệ CHỈ khi APP_ENV=test, ISO có offset; thiếu / rỗng ⇒ undefined', () => {
+    for (const anchor of [
+      '2026-10-20T10:00:00+07:00',
+      '2026-10-20T03:00:00Z',
+      '2026-10-20T03:00:00.123Z',
+    ]) {
+      expect(
+        loadEnv(testEnvVars({ APP_ENV: 'test', TEST_CLOCK_ANCHOR: anchor })).TEST_CLOCK_ANCHOR,
+      ).toBe(anchor);
+    }
+    expect(loadEnv(testEnvVars()).TEST_CLOCK_ANCHOR).toBeUndefined();
+    expect(loadEnv(testEnvVars({ TEST_CLOCK_ANCHOR: '  ' })).TEST_CLOCK_ANCHOR).toBeUndefined();
+    for (const bad of ['2026-10-20', '2026-10-20T10:00:00', 'hôm nay', '1760929200000']) {
+      expect(variablesOf(testEnvVars({ APP_ENV: 'test', TEST_CLOCK_ANCHOR: bad }))).toEqual([
+        'TEST_CLOCK_ANCHOR',
+      ]);
+    }
+  });
+
+  it.each(['local', 'staging', 'production'])(
+    'TEST_CLOCK_ANCHOR ở APP_ENV=%s ⇒ từ chối khởi động (không âm thầm bỏ qua)',
+    (appEnv) => {
+      const anchor = { APP_ENV: appEnv, TEST_CLOCK_ANCHOR: '2026-10-20T10:00:00+07:00' };
+      const vars = appEnv === 'local' ? testEnvVars(anchor) : productionEnvVars(anchor);
+      expect(variablesOf(vars)).toEqual(['TEST_CLOCK_ANCHOR']);
+    },
+  );
+
   it('T-035: thiếu SENTRY_DSN ở staging/production KHÔNG chặn khởi động (main.ts cảnh báo); rỗng = không đặt', () => {
     for (const appEnv of ['staging', 'production']) {
       expect(variablesOf(productionEnvVars({ APP_ENV: appEnv, SENTRY_DSN: undefined }))).toEqual(

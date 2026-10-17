@@ -4,6 +4,7 @@ import request, { type Response } from 'supertest';
 
 import { createContainer, type ContainerConfig } from '../../src/composition/container';
 import { createMemoryPersistence } from '../../src/composition/persistence';
+import { AnchoredClock } from '../../src/core/infrastructure/anchored-clock';
 import { CryptoRandom } from '../../src/core/infrastructure/system';
 import { createLogger } from '../../src/core/logging/pino-logger';
 import type { DestinationStream } from 'pino';
@@ -23,10 +24,17 @@ export const NOW = '2026-11-01T00:00:00.000Z';
 export function createTestApp(
   overrides: Partial<ContainerConfig> = {},
   /** Ghi log ra stream này (mức info) thay vì im lặng — test kiểm nội dung log (T-032). */
-  options: { logDestination?: DestinationStream } = {},
+  options: {
+    logDestination?: DestinationStream;
+    /** Như TEST_CLOCK_ANCHOR: giờ nghiệp vụ neo vào mốc này, trôi theo `clock` (giờ thật giả lập). */
+    businessAnchor?: string;
+  } = {},
 ) {
   applyVietnameseZodLocale();
   const clock = new FakeClock(NOW);
+  const businessClock = options.businessAnchor
+    ? new AnchoredClock(new Date(options.businessAnchor), clock)
+    : clock;
   const logger = createLogger(
     { level: options.logDestination ? 'info' : 'silent', gitSha: 'test', appEnv: 'test' },
     options.logDestination,
@@ -47,6 +55,7 @@ export function createTestApp(
     },
     logger,
     clock,
+    businessClock,
     ids: new SequentialIdGenerator(),
     random: new CryptoRandom(),
     hasher: new FakePasswordHasher(),
@@ -91,7 +100,7 @@ export function createTestApp(
     };
   }
 
-  return { app, container, persistence, clock, register, nextIp };
+  return { app, container, persistence, clock, businessClock, register, nextIp };
 }
 
 export type TestApp = ReturnType<typeof createTestApp>;
