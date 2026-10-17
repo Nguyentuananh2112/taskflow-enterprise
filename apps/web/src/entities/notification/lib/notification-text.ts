@@ -42,6 +42,13 @@ export function notificationText(n: NotificationDto): string {
     // Mốc 5 (ADR-128): không mang giá trị hồ sơ — chi tiết ở trang Hồ sơ của tôi.
     case 'PROFILE_UPDATED':
       return 'Hồ sơ nhân sự của bạn đã được cập nhật';
+    // Mốc 4 (payroll.md §4): KHÔNG số tiền — chi tiết ở trang Phiếu lương.
+    case 'PAYSLIP_PUBLISHED':
+      return 'Phiếu lương tháng của bạn đã có';
+    case 'PAYSLIP_REVISED':
+      return 'Phiếu lương của bạn vừa được điều chỉnh';
+    case 'PAYROLL_REMINDER':
+      return 'Nhắc: bảng lương tháng trước chưa phát hành';
   }
 }
 
@@ -64,5 +71,10 @@ export function notificationHref(n: NotificationDto): string {
       return '/hr?tab=leave';
     case 'PROFILE_UPDATED':
       return '/my-profile';
+    case 'PAYSLIP_PUBLISHED':
+    case 'PAYSLIP_REVISED':
+      return '/payslips';
+    case 'PAYROLL_REMINDER':
+      return '/payroll';
   }
 }

@@ -1,6 +1,12 @@
 import type { DbProvider } from './prisma-company';
 
 /**
+ * Audit lương (`PAYROLL_*`, payroll.md §3, RD-11) NẰM NGOÀI D7 / D7' — hạn lưu chứng từ lương riêng (chốt cùng R27).
+ * `\_` thoát dấu gạch dưới của LIKE.
+ */
+const PAYROLL_AUDIT_PATTERN = 'PAYROLL\\_%';
+
+/**
  * Bước dọn của job retention (T-043, data-retention.md §4) cho bảng của module company — gọi TRONG
  * transaction lô của job. Tối đa `limit` dòng mỗi lần, cũ nhất trước, `SKIP LOCKED`.
  */
@@ -32,18 +38,19 @@ export class PrismaCompanyRetention {
       UPDATE hr_audit_logs SET "before" = "before" - 'note', "after" = "after" - 'note' WHERE id IN (
         SELECT id FROM hr_audit_logs
          WHERE created_at < ${cutoff} AND ("before" ? 'note' OR "after" ? 'note')
+           AND action NOT LIKE ${PAYROLL_AUDIT_PATTERN}
          ORDER BY created_at
          LIMIT ${limit}
          FOR UPDATE SKIP LOCKED
       )`;
   }
 
-  /** D7: HrAuditLog có `created_at < cutoff`. */
+  /** D7: HrAuditLog có `created_at < cutoff` — trừ audit lương `PAYROLL_*`. */
   deleteHrAuditLogs(cutoff: Date, limit: number): Promise<number> {
     return this.db().$executeRaw`
       DELETE FROM hr_audit_logs WHERE id IN (
         SELECT id FROM hr_audit_logs
-         WHERE created_at < ${cutoff}
+         WHERE created_at < ${cutoff} AND action NOT LIKE ${PAYROLL_AUDIT_PATTERN}
          ORDER BY created_at
          LIMIT ${limit}
          FOR UPDATE SKIP LOCKED
