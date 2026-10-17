@@ -6,11 +6,22 @@
 - Khi hai tài liệu lệch nhau, **tài liệu này và `security.md` đúng hơn** — báo Engineer B để đồng bộ.
 - Bằng chứng (log, ảnh, link run CI) ghi vào `docs/ops/go-live.md`, kèm người ký.
 
-**Mục CHẶN go-live (G1, 2026-10-15)** — chưa đạt thì **không** bật production, không ngoại lệ: **4.5**, **5.7**, **5.8**, **7.7**. Mục 4.5 chỉ chặn khi chạy > 1 instance.
+**Mục CHẶN go-live (G1, 2026-10-15)** — chưa đạt thì **không** bật production, không ngoại lệ: **4.5**, **5.7**, **5.8**, **7.7**. Mục 4.5 chỉ chặn khi chạy > 1 instance. **Mốc 6 (T-074) thêm: 0.1, 0.2, 0.3** — chỉ chặn khi bản deploy có ảnh đại diện / trò chuyện.
 
 **Nguyên tắc:** app **tự từ chối khởi động** khi cấu hình production sai ở những chỗ nó kiểm được (`apps/api/src/config/env.ts`). Checklist này phủ phần app **không** tự kiểm được: topology, tài khoản, quy trình.
 
 ---
+
+## 0. Hosting và kho tệp (Mốc 6 — `avatar-chat.md` ADR-141, R43–R48)
+
+| # | Việc | Cách kiểm | Bằng chứng |
+|---|---|---|---|
+| 0.1 | **Người dùng chốt hosting có ổ lâu dài — bắt buộc TRƯỚC deploy** (VPS hoặc máy văn phòng chạy Docker Compose + volume; `devops.md` §1.3). App Platform / PaaS không ổ lâu dài ⇒ KHÔNG deploy Mốc 6 lên đó. | Người dùng xác nhận bằng văn bản: nơi chạy, ai trả tiền / ai giữ máy, UPS (máy văn phòng). | Ghi chép quyết định có chữ ký người dùng |
+| 0.2 | Volume `FILE_STORE_DIR` trên ext4 / xfs / NTFS (hard link), ngoài thư mục app; ổ còn ≥ `FILE_STORE_MAX_BYTES` + 20 %; cảnh báo ổ < 15 % đã bắn thử. | API khởi động không lỗi `FILE_STORE_DIR`; `df -h` trên máy thật. | Ảnh `df -h` + log khởi động |
+| 0.3 | **Backup tệp mã hóa** hằng ngày (`restic` / `tar \| age`), **khóa giải mã không nằm trên máy chủ**, đích tách khỏi máy chủ; **đã diễn tập khôi phục** DB trước, tệp sau (`devops.md` §4.3–4.4). | Khôi phục vào máy tạm bằng khóa lấy từ két; ≥ 20 tệp mẫu mở được qua `/media`. | Mục trong `docs/ops/restore-drills.md` |
+| 0.4 | `MEDIA_CORP` đúng topology: web + API chung eTLD+1 ⇒ `same-site`, không thì `cross-origin` có chủ ý. `MEDIA_BASE_URL` = origin https công khai của API. | Smoke sau deploy: ảnh đại diện hiện được trên origin web thật (`CORS_ORIGINS`); `curl -I` thấy CORP + CSP `sandbox` + `nosniff`. | Output `curl -I` |
+| 0.5 | Reverse proxy KHÔNG ghi query của `/api/v1/media/*` (URL ký là bearer — R43). | Mở một ảnh rồi `grep sig=` trong log Caddy ⇒ không có. | Output grep rỗng |
+| 0.6 | Container `api` có `mem_limit` ≥ 1,5 GiB (libvips dùng bộ nhớ native ngoài `resourceLimits` — `devops.md` §4.6). | Tải lên ảnh 40 MP trên staging: không OOM, worker không bị kill. | Số liệu `docker stats` |
 
 ## 1. Secret
 
@@ -21,6 +32,7 @@
 | 1.3 | `METRICS_TOKEN` ≥ 32 ký tự — bắt buộc ở **staging và production**. | API từ chối khởi động nếu thiếu. | — |
 | 1.4 | Secret chỉ nằm trong **GitHub Environment secrets** (`production`) hoặc env mã hóa của nền tảng. Không có file `.env` thật trên máy dev. Chỉ chủ dự án và Tech Lead đọc được. Agent không bao giờ nhận secret production trong prompt. | Kiểm cài đặt Environment: required reviewers bật. | Ảnh màn hình cài đặt (che giá trị) |
 | 1.5 | **Diễn tập xoay `JWT_ACCESS_SECRET` trên staging**: khóa mới làm hiện tại, khóa cũ sang `_PREVIOUS` → deploy → sau ≥ 15 phút bỏ `_PREVIOUS`. | Trong lúc xoay không ai bị đăng xuất (theo dõi tỉ lệ 401 / `TOKEN_EXPIRED`). | Ghi chép diễn tập |
+| 1.5b | `FILE_URL_SECRET` (Mốc 6) ≥ 32 byte, **khác** JWT; xoay: khóa mới làm hiện tại, khóa cũ sang `FILE_URL_SECRET_PREVIOUS` ≥ 24 giờ (khung URL avatar) rồi bỏ. | App từ chối khi thiếu ở staging / production, khi trùng JWT, khi `_PREVIOUS` trùng hiện tại. | Ghi chép diễn tập xoay |
 | 1.6 | Lịch xoay: JWT 6 tháng / lần; mật khẩu DB, Valkey, `METRICS_TOKEN` 12 tháng / lần; **ngay lập tức** khi nghi lộ (mục 9). | — | Lịch trong `docs/ops/` |
 
 ## 2. Cookie phiên và CORS
