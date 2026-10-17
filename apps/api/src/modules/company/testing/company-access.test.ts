@@ -1,5 +1,5 @@
-// T-061: chốt quyền cấp công ty + nhiệm kỳ theo ngày (ADR-133/135/136). Bản Prisma chạy lại qua runner LSP
-// (test/integration/lsp/company.company-access.lsp.int.ts) khi có lượt integration.
+// T-061: chốt quyền cấp công ty + nhiệm kỳ theo ngày (ADR-133/135/136). Chưa có runner LSP cho file này; `tenuresOf`
+// bản Prisma (gồm CO-03 nhận lại) ở test/integration/company/tenure-rehire.int.ts.
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../../../../test/support';
@@ -147,6 +147,22 @@ describe('tenuresOf (theo ngày, bao gồm hai đầu)', () => {
       from: '2025-03-01',
       until: '2026-06-30',
     });
+  });
+
+  it('CO-03 vào → nghỉ → nhận lại ⇒ 2 đoạn (đoạn cũ đóng ở last_day, đoạn mới từ start_date mới); truy vấn chỉ trong khoảng giữa ⇒ []', async () => {
+    store.upsertMember(member({ userId: GONE, startDate: '2026-09-01' }));
+    expect(
+      await store.tenuresOf({ userIds: [GONE], from: '2025-01-01', to: '2026-12-31' }),
+    ).toEqual([
+      { userId: GONE, from: '2025-03-01', until: '2026-06-30' },
+      { userId: GONE, from: '2026-09-01', until: null },
+    ]);
+    expect(
+      await store.tenuresOf({ userIds: [GONE], from: '2026-07-01', to: '2026-08-31' }),
+    ).toEqual([]);
+    expect(
+      await store.tenuresOf({ userIds: [GONE], from: '2026-06-30', to: '2026-06-30' }),
+    ).toEqual([{ userId: GONE, from: '2025-03-01', until: '2026-06-30' }]);
   });
 
   it('biên: until = from vẫn giao; from = to + 1 không giao; userIds [] ⇒ []', async () => {

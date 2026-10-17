@@ -292,7 +292,7 @@ describe('CheckInOutUseCase — qua nửa đêm (SD-11b, SD-12e) qua luồng ch�
 });
 
 describe('CheckInOutUseCase — nhiệm kỳ + khóa theo user (T-063, company-level ADR-136)', () => {
-  it('A S1: IN trước ngày đầu nhiệm kỳ ⇒ 422 NOT_EMPLOYED, không ghi; từ ngày đầu ⇒ 201', async () => {
+  it('CO-10 / A S1: IN trước ngày đầu nhiệm kỳ (start_date) ⇒ 422 NOT_EMPLOYED, không ghi; từ ngày đầu ⇒ 201', async () => {
     const t = await setup('2026-11-17 08:05');
     t.tenures.rows.splice(0, t.tenures.rows.length, {
       userId: MIA,
