@@ -49,15 +49,29 @@ export const RETENTION_FIRST_RUN_AFTER_MS = 150_000;
 
 type Step = { name: string; run: (limit: number) => Promise<number> };
 
+const dateOf = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Mốc lưu của dữ liệu công / đơn (D2, D4, D5) — NGUỒN DUY NHẤT cho job và cho API (`OUTSIDE_RETENTION`, việc
+ * nối tiếp T-043 của A): ngày công `< cutoffDate` đã / sẽ bị job xóa; đơn + số dư của năm `< cutoffYear` cũng vậy.
+ */
+export function recordsRetentionCutoff(
+  policy: Pick<RetentionPolicy, 'recordsDays'>,
+  now: Date,
+): { cutoffDate: string; cutoffYear: number } {
+  const at = new Date(now.getTime() - policy.recordsDays * DAY_MS);
+  return { cutoffDate: dateOf(at), cutoffYear: at.getUTCFullYear() };
+}
+
 /** Các bước theo thứ tự: XÓA trước (bớt dòng phải scrub), scrub sau. Mốc tính từ `now` của lượt. */
 export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date): Step[] {
   const before = (days: number) => new Date(now.getTime() - days * DAY_MS);
   const records = before(p.recordsDays);
-  const recordsYear = records.getUTCFullYear(); // năm Y xóa khi 31/12/Y < mốc ⇔ Y < năm của mốc
-  const dateOf = (d: Date) => d.toISOString().slice(0, 10);
+  // năm Y xóa khi 31/12/Y < mốc ⇔ Y < năm của mốc
+  const { cutoffDate: recordsDate, cutoffYear: recordsYear } = recordsRetentionCutoff(p, now);
   const reasonDate = dateOf(before(p.leaveReasonDays));
   return [
-    { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(dateOf(records), n) },
+    { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(recordsDate, n) },
     { name: 'leave_requests', run: (n) => s.leave.deleteRequestsBeforeYear(recordsYear, n) },
     { name: 'leave_balances', run: (n) => s.leave.deleteBalancesBeforeYear(recordsYear, n) },
     { name: 'member_departures', run: (n) => s.workspace.deleteDepartures(records, n) },

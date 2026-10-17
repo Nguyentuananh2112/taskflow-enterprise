@@ -206,6 +206,7 @@ Các lớp mới được thêm **sau khi** rà soát tìm ra lỗ hổng thật
 | R28 | File CSV bảng công đã tải ra khỏi hệ thống ngoài tầm kiểm soát | Nhu cầu tính lương; không chứa IP / UA / lý do; chỉ có audit EXPORT | **ADR-121** | Có tích hợp tính lương trực tiếp |
 | R29 | Thông báo realtime best-effort: rớt socket ⇒ chỉ thấy khi tải lại | Bảng `Notification` bền, client tải lại khi kết nối lại | **ADR-123** | Cần đảm bảo giao (email / push) |
 | R30 | Giữ lịch sử công, đơn, số dư của người đã rời workspace | Nghĩa vụ lưu hồ sơ lao động; HR vẫn xuất được bảng công cũ | `attendance-leave.md` §3 | Gắn với thời hạn lưu của R27 |
+| R31 | Đồng hồ nghiệp vụ giả cho E2E (`TEST_CLOCK_ANCHOR`) | E2E tất định theo ngày / giờ | env chặn ngoài `APP_ENV=test` (từ chối khởi động) + `NODE_ENV=production` cấm `APP_ENV=test`; auth/JWT, rate limit, socket, dọn refresh token luôn giờ thật; purge workspace + retention theo giờ nghiệp vụ (nhất quán với dữ liệu) | Review B T-038 test-clock; T-043b |
 
 R11 (Valkey không persistence) đã khắc phục bằng X3 nên không còn trong danh sách; phần còn lại thuộc R5. R14 (image GHCR public) không phải rủi ro vì image không chứa secret (Trivy secret scan).
 

@@ -45,6 +45,8 @@ export const BusinessRule = z.enum([
   'LEAVE_SPANS_YEARS',
   // ADR-119: cấp grant cho OWNER (đã có qua role — B-M2) hoặc VIEWER (không phải nhân viên).
   'GRANT_NOT_ALLOWED',
+  // T-043 / R27: ghi lượt chấm / ngày lễ cho ngày đã quá thời hạn lưu (job retention sẽ xóa ngay).
+  'OUTSIDE_RETENTION',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 

@@ -92,7 +92,12 @@ describe('Mốc 3 — hợp đồng dùng chung (T-037)', () => {
         createdAt: NOW,
       }).success,
     ).toBe(true);
-    for (const rule of ['GRANT_NOT_ALLOWED', 'INSUFFICIENT_BALANCE', 'IDEMPOTENCY_KEY_REUSED'])
+    for (const rule of [
+      'GRANT_NOT_ALLOWED',
+      'INSUFFICIENT_BALANCE',
+      'IDEMPOTENCY_KEY_REUSED',
+      'OUTSIDE_RETENTION',
+    ])
       expect(BusinessRule.safeParse(rule).success, rule).toBe(true);
     expect(BusinessRule.options.every((r) => r === r.toUpperCase())).toBe(true);
     expect(HrConflictReason.options.every((r) => r === r.toLowerCase())).toBe(true);

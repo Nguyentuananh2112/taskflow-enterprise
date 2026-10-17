@@ -11,6 +11,7 @@ import {
 } from '../../test/support';
 import { loadEnv } from '../config/env';
 import { maintenanceJobs } from './maintenance-setup';
+import { recordsRetentionCutoff } from './retention-job';
 import type { Persistence } from './persistence';
 
 const noop = () => Promise.resolve(0);
@@ -38,6 +39,7 @@ const names = (vars: NodeJS.ProcessEnv) =>
     persistence: prismaLike,
     env: loadEnv(vars),
     clock: new FakeClock(),
+    businessClock: new FakeClock(),
     logger: new SpyLogger(),
   }).map((j) => j.name);
 
@@ -78,5 +80,47 @@ describe('maintenanceJobs — bật / tắt theo APP_ENV và cờ', () => {
 
   it('production MAINTENANCE_JOBS_ENABLED=false ⇒ tắt hết (retention theo cờ chung khi không đặt cờ riêng)', () => {
     expect(names(productionEnvVars({ MAINTENANCE_JOBS_ENABLED: 'false' }))).toEqual([]);
+  });
+});
+
+describe('maintenanceJobs — đồng hồ của từng job (R31)', () => {
+  it('purge workspace + retention tính mốc theo giờ NGHIỆP VỤ; dọn refresh token theo giờ THẬT', async () => {
+    const seen: Record<string, unknown> = {};
+    const record = (key: string) => (arg: unknown) => {
+      seen[key] = arg;
+      return Promise.resolve(0);
+    };
+    const persistence = {
+      uow: new FakeUnitOfWork(),
+      workspace: {
+        workspaces: { listPurgeable: (now: Date) => record('purgeNow')(now).then(() => []) },
+      },
+      workspacePurger: {},
+      refreshTokenPurger: { purgeExpired: record('tokenCutoff') },
+      retention: {
+        ...(prismaLike.retention as object),
+        attendance: { scrubClientInfo: noop, deleteEvents: record('eventsCutoff') },
+      },
+    } as unknown as Persistence;
+    const real = new FakeClock('2026-12-01T00:00:00.000Z');
+    const business = new FakeClock('2030-06-15T00:00:00.000Z');
+    const jobs = maintenanceJobs({
+      persistence,
+      env: loadEnv(productionEnvVars()),
+      clock: real,
+      businessClock: business,
+      logger: new SpyLogger(),
+    });
+    for (const job of jobs) await job.run();
+    expect(seen.purgeNow).toEqual(business.now());
+    expect(seen.eventsCutoff).toBe('2028-06-15'); // 2030-06-15 − 730 ngày (29/02/2028 nằm trước tháng 6)
+    expect((seen.tokenCutoff as Date).getTime()).toBe(real.now().getTime() - 7 * 86_400_000);
+  });
+
+  it('recordsRetentionCutoff: nguồn mốc chung cho job và API (OUTSIDE_RETENTION)', () => {
+    expect(recordsRetentionCutoff({ recordsDays: 730 }, new Date('2026-12-01T00:00:00Z'))).toEqual({
+      cutoffDate: '2024-12-01',
+      cutoffYear: 2024,
+    });
   });
 });
