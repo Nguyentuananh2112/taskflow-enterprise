@@ -30,6 +30,20 @@ export function avatarRefs(directory: IAvatarDirectory, signer: MediaUrlSigner):
   };
 }
 
+/**
+ * Ghi đè vài method của một adapter mà GIỮ nguyên phần còn lại. Không dùng `{ ...obj }`: adapter thường là instance của
+ * class ⇒ spread làm mất method trên prototype (và field `#private` cần `this` gốc).
+ */
+export function overriding<T extends object>(target: T, overrides: Partial<T>): T {
+  return new Proxy(target, {
+    get(t, prop) {
+      if (Object.hasOwn(overrides, prop)) return overrides[prop as keyof T];
+      const value: unknown = Reflect.get(t, prop, t);
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(t) : value;
+    },
+  });
+}
+
 type Ref = { id: string; fullName: string };
 const refWith = <T extends Ref>(ref: T, urls: ReadonlyMap<string, string>) => ({
   ...ref,
@@ -51,39 +65,34 @@ function taskWithAvatars(task: Persistence['task'], refs: AvatarRefs): Persisten
       createdBy: t.createdBy ? refWith(t.createdBy, urls) : null,
     }));
   };
-  return {
-    ...task,
-    users: {
+  return overriding(task, {
+    users: overriding(task.users, {
       async findRefs(ids) {
         const [names, urls] = await Promise.all([task.users.findRefs(ids), refs.urlsOf(ids)]);
         return new Map([...names].map(([id, r]) => [id, refWith(r, urls)]));
       },
-    },
-    readModel: {
-      ...rm,
+    }),
+    readModel: overriding(rm, {
       getTask: async (...a) => {
         const t = await rm.getTask(...a);
         return t ? ((await decorate([t]))[0] ?? null) : null;
       },
       listTasks: async (...a) => decorate(await rm.listTasks(...a)),
-      taskExists: (...a) => rm.taskExists(...a),
       listAuditLogs: async (...a) => {
         const logs = await rm.listAuditLogs(...a);
         const urls = await refs.urlsOf(logs.map((l) => l.actor.id));
         return logs.map((l) => ({ ...l, actor: refWith(l.actor, urls) }));
       },
-    },
-  };
+    }),
+  });
 }
 
 function workspaceWithAvatars(
   ws: Persistence['workspace'],
   refs: AvatarRefs,
 ): Persistence['workspace'] {
-  return {
-    ...ws,
-    queries: {
-      ...ws.queries,
+  return overriding(ws, {
+    queries: overriding(ws.queries, {
       listMembers: async (...a) => {
         const page = await ws.queries.listMembers(...a);
         const urls = await refs.urlsOf(page.items.map((m) => m.userId));
@@ -92,15 +101,15 @@ function workspaceWithAvatars(
           items: page.items.map((m) => ({ ...m, avatarUrl: urls.get(m.userId) ?? null })),
         };
       },
-    },
-    candidates: {
+    }),
+    candidates: overriding(ws.candidates, {
       async search(input) {
         const found = await ws.candidates.search(input);
         const urls = await refs.urlsOf(found.map((c) => c.id));
         return found.map((c) => ({ ...c, avatarUrl: urls.get(c.id) ?? null }));
       },
-    },
-  };
+    }),
+  });
 }
 
 /** Bọc lưu trữ: không có kho tệp (test HTTP cũ) ⇒ trả nguyên, không gắn ảnh. */
@@ -117,10 +126,9 @@ export function withAvatarRefs(
     userDirectory: userDirectoryWithAvatars(users, refs),
     task: taskWithAvatars(p.task, refs),
     workspace: workspaceWithAvatars(p.workspace, refs),
-    notifications: {
-      ...p.notifications,
-      context: { ...p.notifications.context, actorAvatars: (ids) => refs.urlsOf(ids) },
-    },
+    notifications: overriding(p.notifications, {
+      context: overriding(p.notifications.context, { actorAvatars: (ids) => refs.urlsOf(ids) }),
+    }),
   };
 }
 
