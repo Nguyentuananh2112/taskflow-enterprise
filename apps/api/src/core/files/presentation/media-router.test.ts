@@ -133,7 +133,7 @@ describe('/media — phục vụ', () => {
       'content-disposition': 'inline',
       'cache-control': `private, max-age=${exp - NOW.getTime() / 1000}`,
       'x-content-type-options': 'nosniff',
-      'content-security-policy': "default-src 'none'; sandbox",
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
       'referrer-policy': 'no-referrer',
       'cross-origin-resource-policy': 'same-site',
     });
@@ -190,7 +190,9 @@ describe('/media — từ chối: 404 HTML giống hệt nhau, không lộ lý d
     const res = await request(app).get(tamper(signer().avatarUrl(USER, 3, '64')));
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
-    expect(res.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+    expect(res.headers['content-security-policy']).toBe(
+      "default-src 'none'; frame-ancestors 'none'; sandbox",
+    );
     expect(res.text).toBe(html);
     expect(resolve).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();

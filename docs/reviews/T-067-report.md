@@ -121,6 +121,13 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - Hạn mức `RATE_LIMIT_RULES.media` 600 / phút / IP, fail-open (chữ ký + DB vẫn chặn); 429 kèm `Retry-After`.
 - Query `/media` không vào log app (pino chỉ ghi path) và Sentry API (allow-list bỏ query — `sentry.ts`).
   Log Caddy + Sentry web: B / H (SEC-CH-20/25).
+- Soát B (f0a8cea3): đạt. **L1** CSP thêm `frame-ancestors 'none'` (trang lỗi / tệp không có lý do bị nhúng
+  frame; `<img>` không chịu ảnh hưởng). **L2 — hành vi có chủ đích, KHÔNG phải lỗi SEC-CH:** `Cache-Control:
+  private, max-age=<exp-now>` ⇒ sau khi xóa ảnh / đổi avatar / rời hội thoại, bản ĐÃ CACHE trong trình duyệt của
+  chính người đó còn hiện tối đa tới `exp` (avatar ≤ 24–48 giờ, ảnh chat ≤ 1–2 giờ); request MỚI thì 404 ngay.
+  Nằm trong khung `exp` của ADR-141 (R43/R44).
+- **`MEDIA_BASE_URL`** (biến mới, TL đồng ý 18/10 — TL cập nhật ADR-141 lúc gộp): origin công khai của API cho
+  URL ký tuyệt đối; bắt buộc `https://` ở staging/production, mặc định `http://localhost:4000` ở local/test.
 - `MediaUrlSigner`: URL tuyệt đối (`MEDIA_BASE_URL` — bước 6), khung `exp` avatar 24 giờ / ảnh chat 1 giờ, tải
   tệp 60 s; chỉ khóa hiện tại ký.
 

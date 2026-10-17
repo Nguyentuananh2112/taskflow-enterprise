@@ -59,7 +59,7 @@ export function mediaErrorHtml(backUrl: string): string {
 function baseHeaders(res: Response, corp: MediaRouterDeps['corp']): void {
   res.set({
     'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'; sandbox",
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
     'Referrer-Policy': 'no-referrer',
     'Cross-Origin-Resource-Policy': corp,
   });
