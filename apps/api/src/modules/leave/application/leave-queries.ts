@@ -2,7 +2,7 @@ import type { PageMeta } from '@taskflow/contracts';
 import * as z from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../../core/http/cursor';
-import { DEFAULT_ENTITLED_HALF_DAYS } from '../domain/leave-balance';
+import { DEFAULT_ENTITLED_HALF_DAYS, type LeaveType } from '../domain/leave-balance';
 import {
   countLeaveHalfDays,
   leaveDatesWithin,
@@ -115,11 +115,11 @@ export class LeaveQueries {
     userIds?: readonly string[];
     from: CalendarDate;
     to: CalendarDate;
-  }): Promise<{ userId: string; date: CalendarDate; part: LeaveDayPart }[]> {
+  }): Promise<{ userId: string; date: CalendarDate; part: LeaveDayPart; type: LeaveType }[]> {
     if (q.userIds?.length === 0) return [];
     const approved = await this.d.readModel.listApproved(q);
     return approved.flatMap((r) =>
-      leaveDatesWithin(r, q.from, q.to).map((day) => ({ userId: r.userId, ...day })),
+      leaveDatesWithin(r, q.from, q.to).map((day) => ({ userId: r.userId, type: r.type, ...day })),
     );
   }
 
