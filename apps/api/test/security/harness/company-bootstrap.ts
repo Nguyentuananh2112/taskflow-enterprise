@@ -12,6 +12,8 @@ export interface BootstrapResult {
   email: string;
   link: string;
   token: string;
+  /** Token Admin đầu tiên sống 24 giờ (design §4). */
+  expiresAt: string;
 }
 
 /**
@@ -27,25 +29,37 @@ export function tokenOfLink(link: string): string {
   return token;
 }
 
-/** `--json` in đúng một object `{link, userId}` — lấy dòng JSON cuối (log khác có thể in trước). */
+/**
+ * B (T-061): `--json` in ĐÚNG MỘT dòng JSON ở stdout, là dòng cuối — `{userId, link, token, expiresAt}`; log
+ * đi stderr. Kiểm chặt: dòng cuối phải là object đủ trường và `token` khớp fragment `#t=` của `link`.
+ */
 export function parseBootstrapOutput(stdout: string): Omit<BootstrapResult, 'email'> {
   const lines = stdout
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith('{'));
-  for (const line of lines.reverse()) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const { link, userId } = parsed as { link?: unknown; userId?: unknown };
-    if (typeof link === 'string' && typeof userId === 'string') {
-      return { link, userId, token: tokenOfLink(link) };
-    }
+    .filter(Boolean);
+  const fail = (why: string) =>
+    new Error(`admin:bootstrap --json: ${why}:\n${stdout.slice(0, 2000)}`);
+  if (lines.filter((l) => l.startsWith('{')).length !== 1) {
+    throw fail('stdout phải có đúng một dòng JSON');
   }
-  throw new Error(`admin:bootstrap --json không in {link, userId}:\n${stdout.slice(0, 2000)}`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(lines.at(-1) ?? '');
+  } catch {
+    throw fail('dòng cuối stdout không phải JSON');
+  }
+  const { userId, link, token, expiresAt } = parsed as Record<string, unknown>;
+  if (
+    typeof userId !== 'string' ||
+    typeof link !== 'string' ||
+    typeof token !== 'string' ||
+    typeof expiresAt !== 'string'
+  ) {
+    throw fail('thiếu {userId, link, token, expiresAt}');
+  }
+  if (tokenOfLink(link) !== token) throw fail('token không khớp fragment #t= của link');
+  return { userId, link, token, expiresAt };
 }
 
 /** Dời một mốc ISO (vd `TEST_CLOCK_ANCHOR` cho restart). */

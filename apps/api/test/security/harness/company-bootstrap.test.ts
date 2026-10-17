@@ -12,25 +12,33 @@ describe('harness company-bootstrap', () => {
     expect(() => tokenOfLink('http://localhost:3000/activate#x=abc')).toThrow(/fragment/);
   });
 
-  it('parseBootstrapOutput lấy dòng JSON cuối có {link, userId}, bỏ qua log khác', () => {
-    const stdout = [
-      '{"level":30,"msg":"connecting"}',
-      'not json',
-      '{"link":"http://w.test/activate#t=tok1","userId":"u-1"}',
-      '{"level":30,"msg":"done"}',
-      '',
-    ].join('\n');
-    expect(parseBootstrapOutput(stdout)).toEqual({
-      link: 'http://w.test/activate#t=tok1',
-      userId: 'u-1',
-      token: 'tok1',
-    });
+  const result = {
+    userId: 'u-1',
+    link: 'http://w.test/activate#t=tok1',
+    token: 'tok1',
+    expiresAt: '2026-10-21T03:00:00.000Z',
+  };
+
+  it('parseBootstrapOutput đọc dòng JSON duy nhất ở cuối stdout', () => {
+    expect(parseBootstrapOutput(`Đang tạo Admin…\n${JSON.stringify(result)}\n`)).toEqual(result);
   });
 
-  it('parseBootstrapOutput ném lỗi kèm output khi không có kết quả', () => {
-    expect(() => parseBootstrapOutput('{"level":50,"msg":"Đã có Admin"}\n{broken')).toThrow(
-      /Đã có Admin/,
+  it('parseBootstrapOutput ném lỗi kèm output khi stdout sai hợp đồng', () => {
+    const line = JSON.stringify(result);
+    // Hai dòng JSON (log lọt vào stdout).
+    expect(() => parseBootstrapOutput(`{"level":30}\n${line}`)).toThrow(/đúng một dòng JSON/);
+    // JSON không ở dòng cuối.
+    expect(() => parseBootstrapOutput(`${line}\nxong`)).toThrow(/dòng cuối/);
+    // Thiếu trường.
+    expect(() => parseBootstrapOutput('{"userId":"u-1","link":"http://w.test/a#t=x"}')).toThrow(
+      /thiếu/,
     );
+    // token không khớp fragment.
+    expect(() => parseBootstrapOutput(JSON.stringify({ ...result, token: 'other' }))).toThrow(
+      /không khớp/,
+    );
+    // Không có gì (vd "Đã có Admin" ra stderr, exit 1).
+    expect(() => parseBootstrapOutput('')).toThrow(/đúng một dòng JSON/);
   });
 
   it('bootstrapEnv thêm biến CLI, giữ env của suite', () => {

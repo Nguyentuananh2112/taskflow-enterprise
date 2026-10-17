@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  AccessDto,
   ActivateResponse,
   CompanyGrant,
   HireEmployeeResponse,
@@ -89,7 +90,7 @@ export class CompanyActors extends Actors {
       token: who.token,
       password,
     });
-    const body = data<ActivateResponse>(res, [200, 201], 'POST /auth/activate');
+    const body = data<ActivateResponse>(res, [200], 'POST /auth/activate');
     return {
       userId: body.user.id,
       email: who.email,
@@ -128,12 +129,13 @@ export class CompanyActors extends Actors {
     access: { role: 'ADMIN' | 'EMPLOYEE'; grants: CompanyGrant[]; expectedVersion: number },
   ) {
     const res = await this.json('PUT', `/admin/access/${userId}`, admin.accessToken, access);
-    return data<unknown>(res, [200], `PUT /admin/access/${userId}`);
+    return data<AccessDto>(res, [200], `PUT /admin/access/${userId}`);
   }
 
   /**
-   * Ada thêm nhân viên ⇒ kích hoạt ⇒ (tuỳ chọn) đổi role/grant. Đổi quyền có thể thu hồi phiên (ADR-105) ⇒
-   * đăng nhập lại để có phiên mang quyền mới. Xóa bộ đếm hạn mức trước (thêm nhân viên 30/giờ/actor — §0.5).
+   * Ada thêm nhân viên ⇒ kích hoạt ⇒ (tuỳ chọn) đổi role/grant. B (T-062): đổi ROLE thu hồi phiên (ADR-105)
+   * ⇒ đăng nhập lại; chỉ đổi GRANT thì KHÔNG (quyền đọc DB mỗi request) ⇒ giữ phiên kích hoạt, để SEC-HR-33
+   * kiểm được "grant có hiệu lực không cần login lại". Xóa bộ đếm hạn mức trước (30/giờ/actor — §0.5).
    */
   async createUser(
     label: string,
@@ -172,7 +174,7 @@ export class CompanyActors extends Actors {
       grants: opts.admin ? [] : (opts.grants ?? []),
       expectedVersion: version,
     });
-    return this.login(actor);
+    return opts.admin ? this.login(actor) : actor;
   }
 
   async newWorkspace(owner: CompanyActor, name = `Sec WS ${randomUUID().slice(0, 8)}`) {
@@ -210,7 +212,7 @@ export class CompanyActors extends Actors {
       hr.accessToken,
       {},
     );
-    return data<ReissueActivationResponse>(res, [200, 201], 'POST …/activation-link').activation;
+    return data<ReissueActivationResponse>(res, [200], 'POST …/activation-link').activation;
   }
 
   /** Mọi id thông báo hiện có của `actor` (đi hết các trang) — mốc cho `newNotifications`. */
