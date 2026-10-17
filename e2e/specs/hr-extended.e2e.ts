@@ -591,7 +591,17 @@ test.describe('E2E-HR-23 chính sách phép năm sau', () => {
     const table = page.getByRole('table', {
       name: `Số phép năm ${String(nextYear)} của từng nhân viên`,
     });
-    await expect(table.getByRole('row').filter({ hasText: mia.user.fullName })).toBeVisible();
+    // Một công ty, một DB cho cả lượt E2E (§0.4): bảng phân trang — Mia (tạo mới) có thể không ở trang 1 ⇒ "Tải thêm"
+    // tới khi thấy dòng (như HR-08c). Chờ bảng có dữ liệu trước khi đếm (F, lượt E2E đầy đủ 189bcdcf).
+    const miaRow = table.getByRole('row').filter({ hasText: mia.user.fullName });
+    const more = page.getByRole('button', { name: 'Tải thêm' });
+    await expect(table.getByRole('row').nth(1)).toBeVisible();
+    for (let page_ = 0; page_ < 20 && (await miaRow.count()) === 0; page_ += 1) {
+      await expect(more).toBeEnabled();
+      await more.click();
+      await expect(miaRow.or(more)).toBeVisible();
+    }
+    await expect(miaRow).toBeVisible();
     const headers = await table.getByRole('columnheader').allTextContents();
     const col = headers.findIndex((h) => h.trim() === 'Chuyển sang');
     expect(col, JSON.stringify(headers)).toBeGreaterThan(0);

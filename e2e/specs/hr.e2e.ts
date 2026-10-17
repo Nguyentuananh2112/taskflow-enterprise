@@ -443,7 +443,10 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
 
 // ---------------------------------------------------------------- E2E-HR-06
 
-test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên file theo tháng, có BOM`, async ({
+// Mốc 5 (ADR-130, T-058c): web bỏ nút "Xuất CSV", thay bằng "Tải Excel" (endpoint CSV vẫn còn — SEC-HR ở suite bảo
+// mật). Nội dung file (.xlsx an toàn, dòng của người, ô ngày) ở E2E-HR-22 (hr-extended.e2e.ts); ca này giữ phần riêng
+// của T-041c: tải bằng fetch + Bearer (không link GET trần), tên file theo tháng, cảnh báo dữ liệu cá nhân.
+test(`E2E-HR-06 [${T041C}]: HR tải Excel bảng công tháng (fetch + Blob, Bearer) ⇒ tên file theo tháng, file .xlsx, không còn nút CSV`, async ({
   page,
   request,
 }) => {
@@ -458,25 +461,23 @@ test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên
     }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tháng sau ›' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Xuất CSV' })).toHaveCount(0);
 
-  const exportBtn = page.getByRole('button', { name: 'Xuất CSV' });
-  await expect(exportBtn).toHaveAttribute('title', /dữ liệu cá nhân/);
-  const csvRes = page.waitForResponse((r) => r.url().includes('/attendance/export.csv'));
+  const exportBtn = page.getByRole('button', { name: 'Tải Excel' });
+  await expect(exportBtn).toHaveAttribute('title', /dữ liệu của nhân viên/);
+  const xlsxRes = page.waitForResponse((r) => r.url().includes('/attendance/export.xlsx'));
   const download = page.waitForEvent('download');
   await exportBtn.click();
-  const res = await csvRes;
+  const res = await xlsxRes;
   expect(res.status()).toBe(200);
   expect(
     (await res.request().allHeaders())['authorization'],
-    'CSV gọi bằng Bearer (fetch), không phải link GET trần',
+    'Excel gọi bằng Bearer (fetch), không phải link GET trần',
   ).toMatch(/^Bearer /);
   const file = await download;
-  expect(file.suggestedFilename()).toContain(month);
-  expect(file.suggestedFilename()).toMatch(/\.csv$/);
+  expect(file.suggestedFilename()).toBe(`bang-cong-${month}.xlsx`);
   const bytes = await readFile(await file.path());
-  expect([...bytes.subarray(0, 3)], 'BOM UTF-8 (U+FEFF)').toEqual([0xef, 0xbb, 0xbf]);
-  expect(bytes.toString('utf8')).toContain(w.mia.user.fullName);
-  await expect(page.getByText('Đã xuất bảng công', { exact: true })).toBeVisible();
+  expect(bytes.subarray(0, 2).toString('latin1'), 'file ZIP (.xlsx)').toBe('PK');
 });
 
 // ---------------------------------------------------------------- E2E-HR-07
