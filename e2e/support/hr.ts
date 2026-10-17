@@ -91,7 +91,8 @@ export async function refreshed(request: APIRequestContext, who: HrPerson): Prom
 export async function seedHrWorld(
   request: APIRequestContext,
   label: string,
-  { hanaIsHr = true }: { hanaIsHr?: boolean } = {},
+  // Cấp HR_MANAGE cho Hana cần PUT admin/access (T-061a) ⇒ chỉ ca thật sự cần HR bật (ca khác không phải chờ vé).
+  { hanaIsHr = false }: { hanaIsHr?: boolean } = {},
 ): Promise<HrWorld> {
   const oliviaUser = newUser(`${label}-olivia`);
   const olivia = { ...(await apiRegister(request, oliviaUser)), user: oliviaUser };

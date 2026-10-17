@@ -205,7 +205,7 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
   browser,
   request,
 }) => {
-  const w = await seedHrWorld(request, 'hr02');
+  const w = await seedHrWorld(request, 'hr02', { hanaIsHr: true });
   const day = vnWorkday(3);
   await loginViaUi(page, w.mia.user);
   const hana = await openAs(browser, w.hana.user);
@@ -273,7 +273,7 @@ test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online 
   page,
   request,
 }) => {
-  const w = await seedHrWorld(request, 'hr02b');
+  const w = await seedHrWorld(request, 'hr02b', { hanaIsHr: true });
   const day = vnWorkday(4);
   const leave = await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
@@ -325,7 +325,10 @@ test(`E2E-HR-03 / E2E-HR-18 [${T065B}]: Ada cấp "Quản lý nhân sự" cho Mi
   browser,
   request,
 }) => {
-  test.fixme(awaiting(T065B), `[PENDING ${T065B}] trang /admin/access (web E)`);
+  test.fixme(
+    awaiting(T065B) || awaiting('T-061a'),
+    `[PENDING ${T065B} + T-061a] /admin/access (web E + API A)`,
+  );
   const w = await seedHrWorld(request, 'hr03', { hanaIsHr: false });
   const miaName = w.mia.user.fullName;
   const mia = await openAs(browser, w.mia.user);
@@ -352,6 +355,9 @@ test(`E2E-HR-03 / E2E-HR-18 [${T065B}]: Ada cấp "Quản lý nhân sự" cho Mi
   await save();
 
   await expect(manage.getByRole('link', { name: /^Nhân sự/ })).toBeVisible(REALTIME);
+  await expect(
+    mia.page.getByText('Quyền của bạn trong công ty vừa thay đổi').first(),
+  ).toBeVisible();
   await manage.getByRole('link', { name: /^Nhân sự/ }).click();
   await expect(mia.page.getByRole('heading', { level: 1, name: 'Nhân sự' })).toBeVisible();
   await expect(mia.page.getByRole('tablist', { name: 'Quản lý nhân sự' })).toBeVisible();
@@ -445,7 +451,7 @@ test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên
   page,
   request,
 }) => {
-  const w = await seedHrWorld(request, 'hr06');
+  const w = await seedHrWorld(request, 'hr06', { hanaIsHr: true });
   await apiCheckIn(request, w.mia.accessToken);
   await loginViaUi(page, w.hana.user);
   await page.goto('/hr?tab=timesheet');
@@ -564,7 +570,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       browser,
       request,
     }) => {
-      const w = await seedHrWorld(request, `hr07c-${colorScheme}`);
+      const w = await seedHrWorld(request, `hr07c-${colorScheme}`, { hanaIsHr: true });
       await apiCheckIn(request, w.mia.accessToken);
       const hana = await openAs(browser, w.hana.user);
       await hana.page.emulateMedia({ colorScheme });
@@ -610,7 +616,7 @@ test(`E2E-HR-08 [${T041A}]: XSS (mở rộng SEC-49) — lý do ADJUSTMENT, tên
   request,
 }) => {
   const dialogsMia = await arm(context);
-  const w = await seedHrWorld(request, 'hr08');
+  const w = await seedHrWorld(request, 'hr08', { hanaIsHr: true });
   const holiday = await seedXssAttendance(request, w);
 
   await loginViaUi(page, w.mia.user);
@@ -645,7 +651,7 @@ test(`E2E-HR-08b [${T041B}]: XSS — lý do đơn, ghi chú HR chứa payload �
   request,
 }) => {
   const dialogsMia = await arm(context);
-  const w = await seedHrWorld(request, 'hr08b');
+  const w = await seedHrWorld(request, 'hr08b', { hanaIsHr: true });
   const rejected = await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
     startDate: vnWorkday(3),
@@ -676,7 +682,7 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   browser,
   request,
 }) => {
-  const w = await seedHrWorld(request, 'hr08c');
+  const w = await seedHrWorld(request, 'hr08c', { hanaIsHr: true });
   const holiday = await seedXssAttendance(request, w);
   const rejected = await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
@@ -775,7 +781,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr10');
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     // 10:00 < 11:00 ⇒ "buổi sáng"; tên = từ cuối của họ tên.
@@ -813,7 +819,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr11');
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
@@ -865,7 +871,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr13');
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
@@ -877,7 +883,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
       .click();
     await expect(page).toHaveURL(/\/login/);
     await loginViaUi(page, w.mia.user);
-    await page.goto(HOME);
+    await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
     await expect(dialog).toBeVisible();
     // Vẫn không tự chấm.
     const today = await apiMyToday(request, await refreshed(request, w.mia));
@@ -958,9 +964,11 @@ test.describe('Ổn định bố cục /w', () => {
         }
       });
 
-      const w = await seedHrWorld(request, `hr14-${String(width)}-${who}`);
+      const w = await seedHrWorld(request, `hr14-${String(width)}-${who}`, {
+        hanaIsHr: who === 'hana',
+      });
       await loginViaUi(page, w[who].user);
-      await page.goto(HOME);
+      await expect(page).toHaveURL(/\/w$/); // Đăng nhập đáp thẳng xuống /w, nơi dialog nhắc mở và ghi "đã hiện" ngay ⇒ KHÔNG goto lại (tải lại = dialog đã dùng).
       const card = attendanceCard(page);
       const prompt = checkinPrompt(page);
       await expect(prompt).toBeVisible();
