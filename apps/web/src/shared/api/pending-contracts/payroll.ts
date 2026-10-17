@@ -173,3 +173,7 @@ export const MyPayslipListDto = z.array(
   z.object({ period: Period, revision: z.int().min(1), publishedAt: IsoDateTime }),
 );
 export type MyPayslipListDto = z.infer<typeof MyPayslipListDto>;
+
+/** Như `XLSX_CONTENT_TYPE` của attendance (T-056) — nhánh Mốc 4 chưa có contract đó. */
+export const XLSX_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
