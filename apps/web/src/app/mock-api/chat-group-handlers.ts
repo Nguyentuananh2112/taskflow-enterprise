@@ -2,7 +2,6 @@ import {
   AddGroupMembersBody,
   CHAT_GROUP_MAX_OTHERS,
   ConversationDetailDto,
-  ConversationDto,
   RenameGroupBody,
   TransferOwnerBody,
 } from '@taskflow/contracts/chat';
@@ -23,7 +22,6 @@ export function createChatGroupHandlers(
   chat: MockChat,
 ): HttpHandler[] {
   const url = (path: string) => `${baseUrl}/chat${path}`;
-  const dto = (conv: Conversation, viewer: string) => chat.toDto(conv, viewer);
   const checkInvitees = invitees(db, chat);
   /** GROUP + OWNER (thao tác quản trị nhóm). */
   const asOwner = (conv: Conversation, userId: string) => {
@@ -41,7 +39,7 @@ export function createChatGroupHandlers(
       const body = await parseBody(request, RenameGroupBody);
       if (body.response) return body.response;
       loaded.conv.title = body.data.title;
-      return ok(ConversationDto, dto(loaded.conv, ctx.ok.user.id));
+      return ok(ConversationDetailDto, chat.toDetail(loaded.conv, ctx.ok.user.id));
     }),
 
     http.post(url('/conversations/:id/members'), async ({ request, params }) => {

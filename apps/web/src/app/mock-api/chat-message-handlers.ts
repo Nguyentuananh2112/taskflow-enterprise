@@ -175,7 +175,8 @@ export function createChatMessageHandlers(
       const upload = msgs.uploads.get(String(params.id));
       const message = upload?.messageId ? msgs.find(upload.messageId) : undefined;
       const conv = message && chat.conversations.get(message.conversationId);
-      if (!upload || !conv || !chat.canRead(conv, ctx.ok.user.id)) {
+      // Ảnh đã có previewUrl / thumbUrl ký sẵn ⇒ download-url chỉ cho FILE, ảnh ⇒ 404 (server T-069, G 18/10).
+      if (!upload || upload.kind === 'IMAGE' || !conv || !chat.canRead(conv, ctx.ok.user.id)) {
         return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'attachment' });
       }
       const exp = Math.floor(chat.now() / 1000) + 60;

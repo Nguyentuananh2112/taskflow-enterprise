@@ -8,6 +8,7 @@ const BY_RULE: Readonly<Record<string, string>> = {
   REPLY_OTHER_CONVERSATION: 'Không trả lời được tin này.',
   IDEMPOTENCY_KEY_REUSED: 'Tin đã gửi trước đó khác nội dung — hãy gửi lại.',
   NOT_ACTIVE_MEMBER: 'Bạn không còn ở cuộc trò chuyện này.',
+  ATTACHMENT_UNAVAILABLE: 'Tệp đính kèm không còn trên máy chủ — hãy đính kèm lại.',
 };
 
 export function sendErrorText(error: unknown): string {

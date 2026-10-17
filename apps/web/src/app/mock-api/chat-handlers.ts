@@ -104,11 +104,12 @@ export function createChatHandlers(baseUrl: string, db: MockDb, chat: MockChat):
       if (!chat.activeInCompany(other)) return rule('RECIPIENT_INACTIVE');
       const key = [me, other].sort().join(':');
       const existing = [...chat.conversations.values()].find((c) => c.directKey === key);
-      if (existing) return ok(ConversationDto, dto(existing, me));
+      // Như server T-069 (G 18/10): 201 khi mới tạo, 200 khi đã có — cả hai trả ConversationDetailDto (có members).
+      if (existing) return ok(ConversationDetailDto, chat.toDetail(existing, me));
       const conv = chat.create('DIRECT', { directKey: key });
       chat.addParticipant(conv.id, me, 'MEMBER');
       chat.addParticipant(conv.id, other, 'MEMBER');
-      return ok(ConversationDto, dto(conv, me), { status: 201 });
+      return ok(ConversationDetailDto, chat.toDetail(conv, me), { status: 201 });
     }),
 
     http.post(url('/groups'), async ({ request }) => {
@@ -124,7 +125,7 @@ export function createChatHandlers(baseUrl: string, db: MockDb, chat: MockChat):
       const conv = chat.create('GROUP', { title: body.data.title });
       chat.addParticipant(conv.id, me, 'OWNER');
       others.forEach((id) => chat.addParticipant(conv.id, id, 'MEMBER'));
-      return ok(ConversationDto, dto(conv, me), { status: 201 });
+      return ok(ConversationDetailDto, chat.toDetail(conv, me), { status: 201 });
     }),
 
     // Phòng của workspace: tạo lười; thành viên = workspace_members hiện tại (ADR-143).
@@ -136,10 +137,11 @@ export function createChatHandlers(baseUrl: string, db: MockDb, chat: MockChat):
       if (!db.workspaces.active(wsId) || !db.workspaces.member(wsId, ctx.ok.user.id)) {
         return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'workspace' });
       }
-      const conv =
-        [...chat.conversations.values()].find((c) => c.workspaceId === wsId) ??
-        chat.create('WORKSPACE', { workspaceId: wsId });
-      return ok(ConversationDto, dto(conv, ctx.ok.user.id));
+      const existing = [...chat.conversations.values()].find((c) => c.workspaceId === wsId);
+      const conv = existing ?? chat.create('WORKSPACE', { workspaceId: wsId });
+      return ok(ConversationDetailDto, chat.toDetail(conv, ctx.ok.user.id), {
+        status: existing ? 200 : 201,
+      });
     }),
 
     http.get(url('/conversations/:id'), ({ request, params }) => {

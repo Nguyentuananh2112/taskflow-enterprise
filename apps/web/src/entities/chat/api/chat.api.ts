@@ -41,13 +41,14 @@ export const chatApi = {
   unreadCount: () => http.get('/chat/unread-count', { schema: UnreadCountDto }),
   people: (q: string) => http.get('/chat/people', { schema: z.array(ChatPersonDto), query: { q } }),
   direct: (userId: string) =>
-    http.post('/chat/direct', { schema: ConversationDto, body: { userId } }),
-  group: (body: CreateGroupBody) => http.post('/chat/groups', { schema: ConversationDto, body }),
+    http.post('/chat/direct', { schema: ConversationDetailDto, body: { userId } }),
+  group: (body: CreateGroupBody) =>
+    http.post('/chat/groups', { schema: ConversationDetailDto, body }),
   workspaceRoom: (wsId: string) =>
-    http.put(`/chat/workspaces/${wsId}/conversation`, { schema: ConversationDto }),
+    http.put(`/chat/workspaces/${wsId}/conversation`, { schema: ConversationDetailDto }),
   detail: (id: string) => http.get(c(id), { schema: ConversationDetailDto }),
   rename: (id: string, title: string) =>
-    http.patch(c(id), { schema: ConversationDto, body: { title } }),
+    http.patch(c(id), { schema: ConversationDetailDto, body: { title } }),
   addMembers: (id: string, userIds: string[]) =>
     http.post(`${c(id)}/members`, { schema: ConversationDetailDto, body: { userIds } }),
   removeMember: (id: string, userId: string) =>

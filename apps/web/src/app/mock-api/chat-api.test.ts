@@ -94,9 +94,11 @@ describe('mock chat — DIRECT + IDOR (SEC-CH-01/03)', () => {
   it('tạo-hoặc-lấy; chính mình ⇒ SELF_DIRECT; người lạ / Admin đọc, gửi, đánh dấu ⇒ 404', async () => {
     const { call, mia, vic, otto, ada, send, direct, data } = setup();
     const id = await direct();
-    expect(
-      data<{ id: string }>(await call(vic.token, 'POST', '/chat/direct', { userId: mia.id })).id,
-    ).toBe(id);
+    // Như server T-069: 201 mới / 200 đã có, cả hai là ConversationDetailDto (có members).
+    const again = await call(vic.token, 'POST', '/chat/direct', { userId: mia.id });
+    expect(again.status).toBe(200);
+    expect(data<{ id: string; members: unknown[] }>(again)).toMatchObject({ id });
+    expect(Array.isArray(data<{ members: unknown[] }>(again).members)).toBe(true); // DIRECT: [] (dùng `peer`)
     expect(
       (await call(mia.token, 'POST', '/chat/direct', { userId: mia.id })).body.error?.details?.rule,
     ).toBe('SELF_DIRECT');
@@ -202,6 +204,10 @@ describe('mock chat — tin nhắn (ADR-144)', () => {
     );
     const media = m.attachments[0]?.previewUrl.slice(BASE.length) ?? '';
     expect((await call(vic.token, 'GET', media)).status).toBe(200);
+    // download-url chỉ cho FILE — ảnh đã có URL ký sẵn ⇒ 404 (T-069).
+    expect(
+      (await call(vic.token, 'POST', `/chat/attachments/${up.uploadId}/download-url`)).status,
+    ).toBe(404);
     await call(mia.token, 'DELETE', `/chat/messages/${m.id}`);
     expect((await call(vic.token, 'GET', media)).status).toBe(404);
     expect(api.chat.messages.uploads.has(up.uploadId)).toBe(false);
@@ -293,10 +299,13 @@ describe('mock chat — nhóm, phòng ws, danh bạ (ADR-143)', () => {
     const wsId = api.db.createWorkspace('Kho Bắc', undefined, mia.id);
     const membership = api.db.membershipIn(mia.id, wsId)!;
     api.db.setMembership(vic.id, membership, 'VIEWER');
-    const room = data<{ id: string; title: string; memberCount: number }>(
-      await call(vic.token, 'PUT', `/chat/workspaces/${wsId}/conversation`),
-    );
+    const created = await call(vic.token, 'PUT', `/chat/workspaces/${wsId}/conversation`);
+    expect(created.status).toBe(201);
+    const room = data<{ id: string; title: string; memberCount: number }>(created);
     expect(room).toMatchObject({ title: 'Kho Bắc', memberCount: 2 });
+    const reopened = await call(mia.token, 'PUT', `/chat/workspaces/${wsId}/conversation`);
+    expect(reopened.status).toBe(200);
+    expect(data<{ id: string; members: unknown[] }>(reopened).members).toHaveLength(2);
     expect((await send(vic, room.id, { body: 'viewer nói' })).status).toBe(201);
     api.db.workspaces.removeMember(wsId, vic.id);
     expect((await send(vic, room.id, { body: 'x' })).status).toBe(404);

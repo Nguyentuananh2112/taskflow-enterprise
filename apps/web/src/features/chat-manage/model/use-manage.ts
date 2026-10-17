@@ -23,7 +23,7 @@ export function useManage(convId: string) {
     }),
     rename: useMutation({
       mutationFn: (title: string) => chatApi.rename(convId, title),
-      onSuccess: refresh,
+      onSuccess: setDetail,
     }),
     add: useMutation({
       mutationFn: (ids: string[]) => chatApi.addMembers(convId, ids),

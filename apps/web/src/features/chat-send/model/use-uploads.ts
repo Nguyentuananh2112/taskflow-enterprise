@@ -35,7 +35,9 @@ export const uploadErrorText = (error: unknown): string => {
   if (code === 'UNSUPPORTED_FILE_TYPE' || code === 'UNSUPPORTED_MEDIA_TYPE')
     return 'Loại tệp này không gửi được.';
   if (code === 'STORAGE_FULL') return 'Kho lưu trữ đã đầy — hãy báo quản trị viên.';
-  if (code === 'RATE_LIMITED') return 'Bạn gửi tệp quá nhanh, thử lại sau ít phút.';
+  // 429 có hai nguồn: gửi dồn dập, hoặc hết hạn mức 200 MB/ngày (Retry-After tới 0 giờ VN — T-069).
+  if (code === 'RATE_LIMITED')
+    return 'Bạn đã gửi quá nhiều tệp — thử lại sau. Hạn mức 200 MB mỗi ngày tính lại lúc 0 giờ.';
   if (code === CLIENT_ERROR_CODES.network) return 'Mất kết nối — thử lại.';
   return 'Chưa tải lên được.';
 };
