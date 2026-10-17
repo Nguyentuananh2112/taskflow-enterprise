@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream';
 
-import type { FileKey } from './domain/file-key';
+import type { FileKey, FileNamespace } from './domain/file-key';
 import type { ImageType } from './domain/sniff-type';
 import type { RandomAccessSource } from './domain/inspect-zip';
 
@@ -14,7 +14,11 @@ import type { RandomAccessSource } from './domain/inspect-zip';
  */
 export interface IFileStore {
   stage(data: Buffer | Readable, options: { maxBytes: number }): Promise<StagedFile>;
-  put(data: Buffer | Readable, options: { maxBytes: number; key?: FileKey }): Promise<StoredFile>;
+  /** `key`: khóa cho trước (avatar) hoặc namespace của module ⇒ khóa ngẫu nhiên `<ns>/<26>`. */
+  put(
+    data: Buffer | Readable,
+    options: { maxBytes: number; key: FileKey | FileNamespace },
+  ): Promise<StoredFile>;
   /** ENOENT ⇒ `FileMissingError` (blob mất trên đĩa — `/media` trả 404 + log, không 500). */
   open(key: FileKey): Promise<{ stream: Readable; sizeBytes: number }>;
   /** Idempotent: không có ⇒ bỏ qua. */
@@ -24,8 +28,14 @@ export interface IFileStore {
   purgeStaleTemp(before: Date): Promise<number>;
   /** Đặt mốc sửa đổi = `at` (T-068: avatar bị gỡ ⇒ blob giữ 30 ngày TỪ lúc gỡ — D13, B). Không có ⇒ bỏ qua. */
   touch(key: FileKey, at: Date): Promise<void>;
-  /** Blob có khóa bắt đầu bằng `prefix` kèm mốc sửa đổi — cho bước sweep của module (avatar: T-068). */
-  list(prefix: `avatars/${string}`): AsyncIterable<{ key: FileKey; modifiedAt: Date }>;
+  /**
+   * Blob kèm mốc sửa đổi — cho bước sweep của module: `avatars/…` theo tiền tố (T-068); namespace (`chat`) = mọi blob
+   * khóa ngẫu nhiên CỦA module đó (T-069). RÀNG BUỘC (B M1): bước dọn của một module chỉ được quét namespace / tiền
+   * tố của chính nó — không bao giờ liệt kê cả kho rồi xóa "khóa không có trong bảng của tôi".
+   */
+  list(
+    prefix: `avatars/${string}` | FileNamespace,
+  ): AsyncIterable<{ key: FileKey; modifiedAt: Date }>;
 }
 
 export interface StoredFile {
@@ -44,10 +54,10 @@ export interface StagedFile extends RandomAccessSource {
   /** Đọc toàn bộ vào bộ nhớ (ảnh ≤ 20 MB cho worker sharp — ADR-141). */
   readAll(): Promise<Buffer>;
   /**
-   * Đưa vào kho với khóa mới (hoặc `key` cho trước). Gọi một lần. KHÔNG BAO GIỜ ghi đè: đích đã có ⇒
+   * Đưa vào kho: namespace ⇒ khóa ngẫu nhiên mới `<ns>/<26>`; hoặc khóa cho trước (avatar). Gọi một lần. KHÔNG BAO GIỜ ghi đè: đích đã có ⇒
    * `FileExistsError` (hai upload avatar đua cùng version — B M-a). Bản tạm đã bị sweep xóa ⇒ 503.
    */
-  commit(key?: FileKey): Promise<StoredFile>;
+  commit(target: FileKey | FileNamespace): Promise<StoredFile>;
   /** Xóa bản tạm; idempotent, gọi sau `commit` không làm gì. */
   discard(): Promise<void>;
 }

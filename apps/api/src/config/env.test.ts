@@ -398,6 +398,9 @@ describe('Mốc 6 — kho tệp (ADR-141)', () => {
     ['FILES_SWEEP_ON_START', 'true'],
     ['FILES_SWEEP_INTERVAL_MS', '1000'],
     ['FILES_IMAGE_PIPELINE_DISABLED', '1'],
+    ['CHAT_EDIT_WINDOW_SECONDS', '2'],
+    ['CHAT_UPLOAD_DAILY_BYTES', '2097152'],
+    ['CHAT_SEND_HOURLY', '5'],
   ])('%s: được ở APP_ENV=test, bị từ chối ở local / production', (key, value) => {
     expect(variablesOf(testEnvVars({ [key]: value }))).toEqual([]);
     expect(

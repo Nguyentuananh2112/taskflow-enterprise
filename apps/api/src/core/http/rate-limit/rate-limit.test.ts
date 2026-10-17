@@ -151,6 +151,7 @@ describe('createRateLimit', () => {
       'refresh',
       'changePassword',
       'avatar',
+      'chatUpload',
     ] as const;
     for (const name of closed) {
       expect(RATE_LIMIT_RULES[name].every((r) => r.failMode === 'closed')).toBe(true);

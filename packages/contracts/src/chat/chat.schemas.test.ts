@@ -64,8 +64,16 @@ describe('SendMessageBody (ADR-144)', () => {
   });
 
   it('11 đính kèm vẫn qua schema ⇒ server 422 TOO_MANY_ATTACHMENTS (không phải 400)', () => {
-    const ids = Array.from({ length: 11 }, () => ID2);
+    const ids = Array.from(
+      { length: 11 },
+      (_, i) => `00000000-0000-4000-8000-${i.toString().padStart(12, '0')}`,
+    );
     expect(SendMessageBody.safeParse({ clientMsgId: ID, attachmentIds: ids }).success).toBe(true);
+  });
+
+  it('đính kèm trùng ⇒ 400 rõ ràng (B soát T-069a)', () => {
+    const dup = [ID2, ID2];
+    expect(SendMessageBody.safeParse({ clientMsgId: ID, attachmentIds: dup }).success).toBe(false);
   });
 
   it('strict: trường lạ ⇒ sai', () => {

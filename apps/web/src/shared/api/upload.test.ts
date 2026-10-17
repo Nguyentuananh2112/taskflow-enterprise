@@ -261,11 +261,18 @@ describe('http.upload — XHR nhị phân (avatar-chat.md ADR-141, §7 E2)', () 
     expect(auth.onSessionEnded).not.toHaveBeenCalled();
   });
 
-  it('envelope lỗi có mã mới (STORAGE_FULL — contracts chưa có) ⇒ ApiError giữ status + serverCode', async () => {
+  it('envelope lỗi có mã contracts CHƯA có ⇒ ApiError giữ status + serverCode', async () => {
+    const { http } = setup([respondFail(503, 'SOME_FUTURE_CODE')]);
+    await expect(
+      http.upload('PUT', '/me/avatar', { schema: Schema, body: blob, name: 'a' }),
+    ).rejects.toMatchObject({ status: 503, serverCode: 'SOME_FUTURE_CODE' });
+  });
+
+  it('507 STORAGE_FULL (T-067 đã có trong contracts) ⇒ code giữ nguyên', async () => {
     const { http } = setup([respondFail(507, 'STORAGE_FULL')]);
     await expect(
       http.upload('PUT', '/me/avatar', { schema: Schema, body: blob, name: 'a' }),
-    ).rejects.toMatchObject({ status: 507, serverCode: 'STORAGE_FULL' });
+    ).rejects.toMatchObject({ status: 507, code: 'STORAGE_FULL' });
   });
 
   it('413 PAYLOAD_TOO_LARGE (mã đã có) ⇒ code giữ nguyên', async () => {
@@ -310,5 +317,55 @@ describe('http.upload — XHR nhị phân (avatar-chat.md ADR-141, §7 E2)', () 
       'Bearer new',
       'Bearer new',
     ]);
+  });
+
+  describe('refresh chủ động trước tệp lớn (TL chốt — T-072)', () => {
+    it('token còn < minTokenValidityMs ⇒ refresh TRƯỚC, gửi bằng token mới, chỉ 1 lượt XHR', async () => {
+      const auth = { ...fakeAuth(), expiresAt: () => Date.now() + 30_000 };
+      const { http, made } = setup([respondOk({ avatarUrl: 'u' })], auth);
+      await http.upload('POST', '/chat/uploads', {
+        schema: Schema,
+        body: blob,
+        name: 'a.pdf',
+        minTokenValidityMs: 60_000,
+      });
+      expect(auth.refresh).toHaveBeenCalledTimes(1);
+      expect(made).toHaveLength(1);
+      expect(made[0]!.headers['authorization']).toBe('Bearer new');
+    });
+
+    it('token còn lâu, hoặc không truyền minTokenValidityMs (avatar) ⇒ không refresh', async () => {
+      const auth = { ...fakeAuth(), expiresAt: () => Date.now() + 10 * 60_000 };
+      const soon = { ...fakeAuth(), expiresAt: () => Date.now() + 1_000 };
+      const a = setup([respondOk({ avatarUrl: 'u' })], auth);
+      await a.http.upload('POST', '/x', {
+        schema: Schema,
+        body: blob,
+        name: 'a',
+        minTokenValidityMs: 60_000,
+      });
+      const b = setup([respondOk({ avatarUrl: 'u' })], soon);
+      await b.http.upload('PUT', '/me/avatar', { schema: Schema, body: blob, name: 'a' });
+      expect(auth.refresh).not.toHaveBeenCalled();
+      expect(soon.refresh).not.toHaveBeenCalled();
+    });
+
+    it('refresh trước lỗi (mạng) ⇒ vẫn gửi, không kết thúc phiên', async () => {
+      const auth = {
+        ...fakeAuth({ refresh: vi.fn(() => Promise.reject(new Error('mạng'))) }),
+        expiresAt: () => Date.now() + 1_000,
+      };
+      const { http, made } = setup([respondOk({ avatarUrl: 'u' })], auth);
+      await expect(
+        http.upload('POST', '/x', {
+          schema: Schema,
+          body: blob,
+          name: 'a',
+          minTokenValidityMs: 60_000,
+        }),
+      ).resolves.toEqual({ avatarUrl: 'u' });
+      expect(made).toHaveLength(1);
+      expect(auth.onSessionEnded).not.toHaveBeenCalled();
+    });
   });
 });

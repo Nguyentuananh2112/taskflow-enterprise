@@ -96,7 +96,11 @@ export type ResourceKind =
   // Mốc 3 (T-040)
   | 'notification'
   // Mốc 3.5: chưa `admin:bootstrap` ⇒ chưa có dòng `companies`
-  | 'company';
+  | 'company'
+  // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)
+  | 'conversation'
+  | 'message'
+  | 'attachment';
 
 /** 404 — không tồn tại **hoặc** thuộc tenant khác (ADR-020): cùng một hình dạng cho cả hai. */
 export class ResourceNotFoundError extends AppError {

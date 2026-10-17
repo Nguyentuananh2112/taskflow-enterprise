@@ -9,7 +9,9 @@ import { assertPersistenceAllowed, createMemoryPersistence } from './composition
 import { createPrismaPersistence } from './composition/prisma-persistence';
 import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
 import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
+import { chatSettingsFromEnv } from './composition/chat-wiring';
 import { createFiles } from './composition/files-setup';
+import { valkeyByteCounter } from './core/files/upload-byte-budget';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter, createRateLimit } from './core/http/rate-limit/rate-limit';
@@ -76,6 +78,7 @@ export async function startServer(
       userIdOf: () => undefined,
     }),
     webOrigin: env.CORS_ORIGINS[0] ?? 'http://localhost:3001',
+    byteCounter: valkeyByteCounter(valkey),
   });
   const container = createContainer({
     config: {
@@ -100,6 +103,7 @@ export async function startServer(
     metrics,
     errorReporter: reporter,
     files,
+    chat: chatSettingsFromEnv(env),
   });
 
   const server = createHttpServer(container.app);
@@ -115,8 +119,7 @@ export async function startServer(
   const gateway = new RealtimeGateway(server, {
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
-    authenticator: container.socketAuth,
-    accessChecker: container.workspace.accessChecker,
+    ...container.gateway,
     handshakeLimiter: createHitLimiter(RATE_LIMIT_RULES.socketHandshake[0], {
       storeFor: rateLimitStore,
       logger,

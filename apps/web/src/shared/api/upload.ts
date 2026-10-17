@@ -18,6 +18,8 @@ export type UploadOptions<S extends z.ZodType> = Readonly<{
   query?: Readonly<Record<string, string | number | boolean | null | undefined>>;
   signal?: AbortSignal;
   onProgress?: UploadProgress;
+  /** Tệp lớn (chat 20 MB): token còn ít hơn ngần này ms ⇒ refresh TRƯỚC khi gửi. Avatar (~100 KB) không cần. */
+  minTokenValidityMs?: number;
 }>;
 
 export const defaultCreateXhr: CreateXhr = () => new XMLHttpRequest();

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { AppHeader } from '@/widgets/app-header';
+import { ChatEntry } from '@/widgets/chat-entry';
 import { NotificationBell } from '@/widgets/notification-bell';
 
 import { RealtimeSessionEffects } from './realtime-session-effects';
@@ -10,7 +11,14 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <div className="flex min-h-screen flex-col">
       <RealtimeSessionEffects />
-      <AppHeader actions={<NotificationBell />} />
+      <AppHeader
+        actions={
+          <>
+            <ChatEntry />
+            <NotificationBell />
+          </>
+        }
+      />
       {children}
     </div>
   );

@@ -22,6 +22,8 @@ export type AuthHooks = Readonly<{
   refresh: () => Promise<boolean>;
   /** Phiên chấm dứt: refresh thất bại (`expired`) hoặc server từ chối token (`revoked`). */
   onSessionEnded: (reason: 'expired' | 'revoked') => void;
+  /** Thời điểm access token hết hạn (ms epoch, đồng hồ máy này; 0 = chưa có) — cho refresh chủ động trước upload lớn. */
+  expiresAt?: () => number;
 }>;
 
 export type HttpDeps = Readonly<{
@@ -83,6 +85,16 @@ export function createHttpClient(deps: HttpDeps) {
     }
   }
 
+  /**
+   * TL chốt (T-072): tệp lớn trên mạng chậm mà token hết hạn giữa chừng ⇒ server chỉ trả 401 sau khi nhận HẾT body ⇒
+   * tải 2 lần. Token còn < `minMs` ⇒ refresh trước. Refresh lỗi ⇒ vẫn gửi (đường TOKEN_EXPIRED lo phần còn lại).
+   */
+  async function refreshIfExpiring(minMs: number | undefined): Promise<void> {
+    const expiresAt = deps.auth?.expiresAt?.() ?? 0;
+    if (!minMs || !refresh || expiresAt === 0 || expiresAt - Date.now() >= minMs) return;
+    await refresh.run().catch(() => undefined);
+  }
+
   /** Upload nhị phân qua XHR (header: `uploadHeaders`). */
   async function sendUpload(
     method: 'PUT' | 'POST',
@@ -90,6 +102,7 @@ export function createHttpClient(deps: HttpDeps) {
     opts: UploadOptions<z.ZodType>,
   ): Promise<Sent> {
     await refresh?.inflight()?.catch(() => undefined); // như `send`: chờ refresh đang chạy
+    await refreshIfExpiring(opts.minTokenValidityMs);
     const token = deps.auth?.getAccessToken() ?? null;
     const headers = uploadHeaders(opts.name, deps.clientId(), token);
     const url = buildUrl(deps.baseUrl(), path, opts.query);

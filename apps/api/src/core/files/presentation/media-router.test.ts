@@ -50,7 +50,8 @@ beforeEach(async () => {
       key: avatarFileKey(USER, 3, '64'),
     })
   ).key;
-  fileKey = (await store.put(Buffer.from('%PDF-1.4 nội dung'), { maxBytes: 1_000 })).key;
+  fileKey = (await store.put(Buffer.from('%PDF-1.4 nội dung'), { maxBytes: 1_000, key: 'chat' }))
+    .key;
   resolved = new Map<string, ResolvedMedia>([
     [`avatars/${USER}/64/3`, { key: avatarKey, as: 'image' }],
     [`chat/${ATT}/file/1`, { key: fileKey, as: 'download', name: 'Báo cáo tháng 10.pdf' }],
@@ -266,7 +267,10 @@ describe('/media — từ chối: 404 HTML giống hệt nhau, không lộ lý d
 
 describe('/media — client hủy giữa chừng (B L-b)', () => {
   it('stream của blob bị đóng (fd không rò)', async () => {
-    const big = await store.put(Buffer.alloc(8 * 1024 * 1024, 7), { maxBytes: 10 * 1024 * 1024 });
+    const big = await store.put(Buffer.alloc(8 * 1024 * 1024, 7), {
+      maxBytes: 10 * 1024 * 1024,
+      key: 'chat',
+    });
     resolved.set(`chat/${ATT}/file/1`, { key: big.key, as: 'download', name: 'big.pdf' });
     let opened: Readable | undefined;
     const realOpen = store.open.bind(store);

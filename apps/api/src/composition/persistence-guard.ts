@@ -10,6 +10,7 @@ export const allModules = (kind: StorageKind) =>
     company: kind,
     attendance: kind,
     leave: kind,
+    chat: kind,
   }) as const;
 
 /**

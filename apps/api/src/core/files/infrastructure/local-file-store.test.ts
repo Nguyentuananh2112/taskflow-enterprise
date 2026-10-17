@@ -7,7 +7,7 @@ import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PayloadTooLargeError, ServiceUnavailableError, StorageFullError } from '../../errors';
-import { avatarFileKey, type FileKey } from '../domain/file-key';
+import { avatarFileKey, relativePathOf, type FileKey } from '../domain/file-key';
 import { SNIFF_HEAD_BYTES } from '../domain/sniff-type';
 import { FileExistsError, FileMissingError } from '../ports';
 import {
@@ -92,7 +92,7 @@ describe('LocalFileStore.create — kiểm lúc khởi động', () => {
         },
       },
     });
-    await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
+    await expect(store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' })).rejects.toMatchObject({
       code: 'EXDEV',
     });
     expect(calls).toBe(1);
@@ -105,13 +105,13 @@ describe('LocalFileStore.create — kiểm lúc khởi động', () => {
 });
 
 describe('LocalFileStore — ghi', () => {
-  it('put Buffer ⇒ khóa 26 ký tự, ab/cd/<khóa>, sha256 + kích thước đúng, không sót tmp', async () => {
+  it('put Buffer ⇒ khóa chat/<26>, chat/ab/cd/<26>, sha256 + kích thước đúng, không sót tmp', async () => {
     const store = await make();
     const data = Buffer.from('xin chào');
-    const stored = await store.put(data, { maxBytes: 100 });
-    expect(stored.key).toMatch(/^[a-z2-7]{26}$/);
+    const stored = await store.put(data, { maxBytes: 100, key: 'chat' });
+    expect(stored.key).toMatch(/^chat\/[a-z2-7]{26}$/);
     expect(stored).toMatchObject({ sizeBytes: data.length, sha256: sha(data) });
-    const onDisk = path.join(root, stored.key.slice(0, 2), stored.key.slice(2, 4), stored.key);
+    const onDisk = path.join(root, ...relativePathOf(stored.key).split('/'));
     expect(await fsp.readFile(onDisk)).toEqual(data);
     expect(await tmpEntries()).toEqual([]);
   });
@@ -148,14 +148,14 @@ describe('LocalFileStore — ghi', () => {
     const store = await make();
     const staged = await store.stage(Buffer.from('abc'), { maxBytes: 10 });
     await staged.discard();
-    await expect(staged.commit()).rejects.toBeInstanceOf(ServiceUnavailableError);
+    await expect(staged.commit('chat')).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
   it('bản tạm bị sweep xóa trước commit ⇒ 503 có kiểm soát, không 500 trần (B M-b)', async () => {
     const store = await make();
     const staged = await store.stage(Buffer.from('abc'), { maxBytes: 10 });
     for (const name of await tmpEntries()) await fsp.unlink(path.join(root, 'tmp', name));
-    await expect(staged.commit()).rejects.toBeInstanceOf(ServiceUnavailableError);
+    await expect(staged.commit('chat')).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
   it('stream nhiều chunk: head giữ đúng SNIFF_HEAD_BYTES đầu, read/readAll trên bản tạm', async () => {
@@ -186,10 +186,10 @@ describe('LocalFileStore — ghi', () => {
   it('commit rồi discard không xóa blob; commit lần hai ⇒ ném', async () => {
     const store = await make();
     const staged = await store.stage(Buffer.from('abc'), { maxBytes: 10 });
-    const stored = await staged.commit();
+    const stored = await staged.commit('chat');
     await staged.discard();
     expect(await store.exists(stored.key)).toBe(true);
-    await expect(staged.commit()).rejects.toThrow();
+    await expect(staged.commit('chat')).rejects.toThrow();
   });
 
   it('Buffer vượt trần ⇒ 413 trước khi mở tmp', async () => {
@@ -253,7 +253,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
         ),
       },
     });
-    const stored = await store.put(Buffer.from('x'), { maxBytes: 10 });
+    const stored = await store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' });
     expect(calls).toBe(5);
     expect(sleep).toHaveBeenCalledTimes(4);
     expect(sleep).toHaveBeenCalledWith(50);
@@ -268,7 +268,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
         link: afterProbe((f, t) => (++calls === 1 ? Promise.reject(errno(code)) : realLink(f, t))),
       },
     });
-    await store.put(Buffer.from('x'), { maxBytes: 10 });
+    await store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' });
     expect(calls).toBe(2);
   });
 
@@ -278,7 +278,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
       sleep: () => Promise.resolve(),
       fs: { link: afterProbe(() => (++calls, Promise.reject(errno('EPERM')))) },
     });
-    await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
+    await expect(store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' })).rejects.toMatchObject({
       code: 'EPERM',
     });
     expect(calls).toBe(PLACE_RETRIES + 1);
@@ -291,7 +291,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
       sleep: () => Promise.resolve(),
       fs: { link: afterProbe(() => (++calls, Promise.reject(errno('ENOSPC')))) },
     });
-    await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
+    await expect(store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' })).rejects.toMatchObject({
       code: 'ENOSPC',
     });
     expect(calls).toBe(1);
@@ -302,7 +302,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
 describe('LocalFileStore — đọc / xóa', () => {
   it('open ⇒ stream + kích thước', async () => {
     const store = await make();
-    const { key } = await store.put(Buffer.from('nội dung'), { maxBytes: 100 });
+    const { key } = await store.put(Buffer.from('nội dung'), { maxBytes: 100, key: 'chat' });
     const { stream, sizeBytes } = await store.open(key);
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(c as Buffer);
@@ -312,15 +312,15 @@ describe('LocalFileStore — đọc / xóa', () => {
 
   it('blob mất ⇒ FileMissingError (F-09)', async () => {
     const store = await make();
-    const { key } = await store.put(Buffer.from('x'), { maxBytes: 10 });
-    await fsp.unlink(path.join(root, key.slice(0, 2), key.slice(2, 4), key));
+    const { key } = await store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' });
+    await fsp.unlink(path.join(root, ...relativePathOf(key).split('/')));
     await expect(store.open(key)).rejects.toBeInstanceOf(FileMissingError);
     expect(await store.exists(key)).toBe(false);
   });
 
   it('delete idempotent', async () => {
     const store = await make();
-    const { key } = await store.put(Buffer.from('x'), { maxBytes: 10 });
+    const { key } = await store.put(Buffer.from('x'), { maxBytes: 10, key: 'chat' });
     await store.delete(key);
     await store.delete(key);
     expect(await store.exists(key)).toBe(false);
@@ -361,7 +361,7 @@ describe('LocalFileStore.purgeStaleTemp', () => {
 describe('storeUsageBytes — số đo cho STORAGE_FULL', () => {
   it('cộng mọi blob (khóa ngẫu nhiên + avatar), bỏ qua tmp/', async () => {
     const store = await make();
-    await store.put(Buffer.alloc(100), { maxBytes: 1_000 });
+    await store.put(Buffer.alloc(100), { maxBytes: 1_000, key: 'chat' });
     await store.put(Buffer.alloc(30), {
       maxBytes: 1_000,
       key: avatarFileKey('0b6f2c1e-7f6a-4c1d-9a3e-2b1c0d9e8f7a', 1, '64'),
@@ -380,7 +380,7 @@ describe('LocalFileStore.touch / list (T-068 — avatar gỡ giữ 30 ngày)', (
     const k64 = avatarFileKey(USER, 2, '64');
     await store.put(Buffer.from('a'), { maxBytes: 10, key: k64 });
     await store.put(Buffer.from('b'), { maxBytes: 10, key: avatarFileKey(USER, 2, '256') });
-    await store.put(Buffer.from('random'), { maxBytes: 10 }); // khóa ngẫu nhiên — không thuộc avatars/
+    await store.put(Buffer.from('random'), { maxBytes: 10, key: 'chat' }); // khóa ngẫu nhiên — không thuộc avatars/
     const removedAt = new Date('2026-01-01T00:00:00.000Z');
     await store.touch(k64, removedAt);
     await store.touch(avatarFileKey(USER, 9, '64'), removedAt); // không có ⇒ không ném

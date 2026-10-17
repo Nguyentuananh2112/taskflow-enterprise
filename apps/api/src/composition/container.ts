@@ -24,10 +24,10 @@ import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { wireLeave } from './leave-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
-import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
-import { LateBoundRealtime } from './late-realtime';
+import { gatedSocketAuth, gatewayOptions, LateBoundRealtime } from './late-realtime';
 import type { Container, ContainerDeps } from './container-types';
 import { avatarAuthDeps, ME_PATH, withAvatarRefs } from './avatar-refs';
+import { chatRouters } from './chat-wiring';
 
 export type { Container, ContainerConfig, ContainerDeps } from './container-types';
 
@@ -174,6 +174,7 @@ export function createContainer(d: ContainerDeps): Container {
   );
   approvedLeaves.bind(leave.approvedLeaves);
 
+  const chat = chatRouters(d, { persistence, auth, company, responder, limit, business, realtime });
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
@@ -187,6 +188,7 @@ export function createContainer(d: ContainerDeps): Container {
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
     ...(auth.avatar ? [{ path: ME_PATH, router: auth.avatar.meRouter }] : []),
+    ...chat.routers,
   ];
   const app = createApp({
     config,
@@ -201,10 +203,7 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.files ? { media: d.files.media } : {}),
     routers,
   });
-  const socketAuth = companyGatedSocketAuthenticator(
-    socketAuthenticatorFrom(auth.authenticator),
-    (userId) => company.sessionGate.isActive(userId),
-  );
+  const socketAuth = gatedSocketAuth(auth.authenticator, company.sessionGate);
   return {
     app,
     auth,
@@ -217,5 +216,6 @@ export function createContainer(d: ContainerDeps): Container {
     socketAuth,
     realtime,
     routers,
+    gateway: gatewayOptions(socketAuth, workspace.accessChecker, chat.typing),
   };
 }

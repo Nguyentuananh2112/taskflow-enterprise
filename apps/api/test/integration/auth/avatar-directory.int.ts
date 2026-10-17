@@ -19,7 +19,7 @@ async function seed(
   const prisma = testPrisma();
   const user = await prisma.user.create({
     data: {
-      email: `${name}-${randomUUID()}@example.com`,
+      email: `${name.toLowerCase()}-${randomUUID()}@example.com`,
       fullName: name,
       passwordHash: HASH,
       avatarVersion: o.version ?? null,

@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
+
+import { resetRuntimeConfigForTest, setRuntimeConfig } from '@/shared/config';
 
 import { AVATAR_COLORS, avatarColorIndex, initialsOf } from './avatar-utils';
 import { Avatar } from './index';
@@ -29,7 +31,17 @@ describe('initialsOf', () => {
 });
 
 describe('Avatar', () => {
-  afterEach(cleanup);
+  beforeEach(() =>
+    setRuntimeConfig({
+      apiUrl: 'http://localhost:4000/api/v1',
+      wsUrl: 'http://localhost:4000',
+      appEnv: 'test',
+    }),
+  );
+  afterEach(() => {
+    cleanup();
+    resetRuntimeConfigForTest();
+  });
 
   it('mặc định là ảnh có tên truy cập = họ tên', async () => {
     const { container } = render(<Avatar name="Nguyễn Văn An" />);
@@ -102,6 +114,18 @@ describe('Avatar', () => {
       expect(container.querySelector('img')?.hasAttribute('loading')).toBe(false);
       rerender(<Avatar name="A B" src={URL_A} loading="lazy" />);
       expect(container.querySelector('img')?.getAttribute('loading')).toBe('lazy');
+    });
+
+    it('B L2: URL không thuộc /media/avatars của API (data:, blob:, origin lạ) ⇒ chữ cái, không <img>', () => {
+      for (const src of [
+        'data:image/png;base64,AAAA',
+        'blob:http://localhost:4000/x',
+        'https://evil.example/api/v1/media/avatars/u/64',
+      ]) {
+        const { container } = render(<Avatar name="Mai Hoa" src={src} />);
+        expect(container.querySelector('img')).toBeNull();
+        cleanup();
+      }
     });
 
     it('size lg ⇒ 96 px', () => {
