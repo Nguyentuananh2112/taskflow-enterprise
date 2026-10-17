@@ -169,6 +169,21 @@ describe('SetAvatarUseCase (ADR-142)', () => {
       new SetAvatarUseCase(t.deps).execute({ userId: USER, upload }),
     ).rejects.toBeInstanceOf(UnauthorizedError);
     expect(t.blobs.place).not.toHaveBeenCalled();
+    expect(t.notifier.avatarChanged).not.toHaveBeenCalled();
+  });
+
+  it('gọi lồng trong transaction khác rồi bên ngoài lỗi ⇒ KHÔNG xóa blob cũ, không event (afterCommit — B L2)', async () => {
+    const t = setup(2);
+    const set = new SetAvatarUseCase(t.deps);
+    await expect(
+      t.deps.uow.run(async () => {
+        await set.execute({ userId: USER, upload });
+        throw new Error('outer failed');
+      }),
+    ).rejects.toThrow('outer failed');
+    expect(t.version()).toBe(2);
+    expect(t.blobs.discard).not.toHaveBeenCalled();
+    expect(t.notifier.avatarChanged).not.toHaveBeenCalled();
   });
 
   it('bước sau commit lỗi (xóa blob cũ / phát event) không làm hỏng kết quả — chỉ log', async () => {

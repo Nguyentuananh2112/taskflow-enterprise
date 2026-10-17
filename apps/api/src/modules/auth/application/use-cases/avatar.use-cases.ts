@@ -33,7 +33,7 @@ function logAfterCommit(logger: ILogger, step: string) {
 /**
  * `PUT /me/avatar` (ADR-142). sharp chạy TRƯỚC transaction (không giữ khóa trong lúc chờ worker). Trong transaction:
  * khóa dòng ⇒ version mới ⇒ đặt blob (vẫn giữ khóa) ⇒ ghi version; đặt blob lỗi ⇒ rollback tự trả version (B). Sau
- * commit: xóa version cũ, phát `user:avatar-changed`.
+ * commit (`afterCommit`): xóa version cũ, phát `user:avatar-changed`.
  */
 export class SetAvatarUseCase {
   constructor(private readonly d: AvatarUseCaseDeps) {}
@@ -41,7 +41,7 @@ export class SetAvatarUseCase {
   async execute(input: { userId: string; upload: AvatarUpload }): Promise<AvatarUrls> {
     const variants = await this.d.images.render(input.upload);
     const now = this.d.clock.now();
-    const { version, previous } = await this.d.uow.run(async () => {
+    return this.d.uow.run(async () => {
       const locked = await this.d.users.lockAvatar(input.userId);
       if (!locked) throw new UnauthorizedError();
       // Không dùng lại version còn blob trên đĩa (đã gỡ / mồ côi) — tránh URL trùng ảnh cũ trong cache + va khóa.
@@ -51,18 +51,21 @@ export class SetAvatarUseCase {
       if (!(await this.d.users.setAvatarVersion({ id: input.userId, version: next, at: now }))) {
         throw new UnauthorizedError();
       }
-      return { version: next, previous: locked.version };
+      const urls = this.d.urls.urlsOf(input.userId, next);
+      const previous = locked.version;
+      // Cùng cách với RemoveAvatar (B L2): chỉ khi transaction NGOÀI CÙNG commit — kể cả khi bị gọi lồng.
+      this.d.uow.afterCommit(async () => {
+        if (previous !== null) {
+          await this.d.blobs
+            .discard(input.userId, previous)
+            .catch(logAfterCommit(this.d.logger, 'discard'));
+        }
+        await this.d.notifier
+          .avatarChanged({ userId: input.userId, avatarUrl: urls.avatarUrl, actorId: input.userId })
+          .catch(logAfterCommit(this.d.logger, 'notify'));
+      });
+      return urls;
     });
-    const urls = this.d.urls.urlsOf(input.userId, version);
-    if (previous !== null) {
-      await this.d.blobs
-        .discard(input.userId, previous)
-        .catch(logAfterCommit(this.d.logger, 'discard'));
-    }
-    await this.d.notifier
-      .avatarChanged({ userId: input.userId, avatarUrl: urls.avatarUrl, actorId: input.userId })
-      .catch(logAfterCommit(this.d.logger, 'notify'));
-    return urls;
   }
 }
 

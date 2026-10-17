@@ -1,6 +1,6 @@
 // T-068 — ảnh đại diện qua route thật (ADR-142): PUT / DELETE /me/avatar, /media, gỡ của HR (SEC-CH-17), avatarUrl trong
 // UserDto / MemberDto / EmployeeDto, người đã nghỉ ⇒ null (AV-04). Lưu trữ InMemory + kho tệp tạm + sharp THẬT.
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,7 +8,7 @@ import type { EmployeeDto, MeResponse } from '@taskflow/contracts';
 import { AvatarUploadResponseDto, MemberDto } from '@taskflow/contracts';
 import sharp from 'sharp';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFiles, type FilesBundle } from '../../src/composition/files-setup';
 import { loadEnv } from '../../src/config/env';
@@ -141,6 +141,19 @@ describe('PUT /me/avatar (ADR-142)', () => {
       .set('X-Upload-Name', 'a.png')
       .send(fx.png({ w: 2, h: 2 }));
     expect(anon.status).toBe(401);
+  });
+
+  it('B L1: user bị xóa giữa xác thực và khóa dòng ⇒ 401, không blob, tmp sạch, không event', async () => {
+    const mia = await t.register('Mia');
+    vi.spyOn(t.persistence.auth.users, 'lockAvatar').mockResolvedValueOnce(null);
+    const emit = vi.spyOn(t.container.realtime, 'broadcastAvatarChanged');
+    const res = await putAvatar(mia, fx.png({ w: 8, h: 8 }));
+    expect(res.status).toBe(401);
+    expect(await blobs(mia.id)).toEqual([]);
+    await expect
+      .poll(async () => (await readdir(join(dir, 'tmp'))).filter((f) => !f.startsWith('.probe')))
+      .toEqual([]);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('không còn thuộc công ty ⇒ 401 SESSION_REVOKED (cổng công ty — ADR-146)', async () => {
