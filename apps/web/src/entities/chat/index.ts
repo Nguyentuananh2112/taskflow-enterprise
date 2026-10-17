@@ -20,3 +20,4 @@ export {
 } from './model/use-chat';
 export { PeoplePicker } from './ui/people-picker';
 export { chatErrorText } from './lib/chat-errors';
+export { conversationSubtitle, conversationTitle } from './lib/conversation-title';
