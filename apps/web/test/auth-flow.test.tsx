@@ -1,3 +1,4 @@
+import { QueryClient } from '@tanstack/react-query';
 import { act, configure, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSyncExternalStore, type ReactNode } from 'react';
@@ -12,6 +13,7 @@ import { AppShell, AuthGate, GuestGate } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import { createOfflineRealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
+import { AttendancePage } from '@/views/attendance';
 import { LoginPage } from '@/views/login';
 import { WorkspacePickerPage } from '@/views/workspace-picker';
 
@@ -30,6 +32,13 @@ const ROUTES: Record<string, () => ReactNode> = {
     <AuthGate>
       <AppShell>
         <WorkspacePickerPage />
+      </AppShell>
+    </AuthGate>
+  ),
+  '/attendance': () => (
+    <AuthGate>
+      <AppShell>
+        <AttendancePage />
       </AppShell>
     </AuthGate>
   ),
@@ -165,6 +174,33 @@ describe('luồng xác thực trên mock API', () => {
     await user.click(await screen.findByRole('button', { name: 'Đăng xuất tất cả' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Đăng nhập' })).toBeDefined();
     expect(screen.queryByText('Lê Bình')).toBeNull();
+  });
+
+  it('SEC-HR-67: đang đăng nhập mà bị cho nghỉ việc ⇒ request kế tiếp 401 SESSION_REVOKED ⇒ về /login, xóa cache (gồm nhánh company), KHÔNG gọi refresh', async () => {
+    const user = userEvent.setup({ delay: null });
+    const { user: cuong } = mock.db.createUser({
+      email: 'cuong@example.com',
+      password: BINH_PASSWORD,
+      fullName: 'Trịnh Cường',
+    });
+    openPage('/login?next=%2Fw');
+    await user.type(await screen.findByLabelText(/Email/), 'cuong@example.com');
+    await user.type(screen.getByLabelText(/Mật khẩu/), BINH_PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Trang chính' })).toBeDefined();
+
+    // Nghỉ việc hoàn tất (ADR-137) — access token trong bộ nhớ CÒN hạn nhưng không còn thuộc công ty.
+    act(() => mock.db.company.remove(cuong.id));
+    const rotate = vi.spyOn(mock.db, 'rotateRefresh');
+    const clear = vi.spyOn(QueryClient.prototype, 'clear');
+    act(() => testRouter.push('/attendance'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Đăng nhập' })).toBeDefined();
+    expect(window.location.pathname).toBe('/login');
+    expect(await screen.findByText('Phiên đăng nhập đã hết')).toBeDefined();
+    expect(clear).toHaveBeenCalled(); // SessionEffects: queryClient.clear() ⇒ mọi nhánh ['company', …] mất
+    expect(rotate, 'SESSION_REVOKED không được vào vòng refresh').not.toHaveBeenCalled();
+    rotate.mockRestore();
+    clear.mockRestore();
   });
 
   it('?next= trỏ ra ngoài (open redirect) ⇒ bị bỏ, vào /w', async () => {
