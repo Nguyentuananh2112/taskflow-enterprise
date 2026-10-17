@@ -63,7 +63,7 @@ Mỗi ca ghi tiền dùng một **số đánh dấu** duy nhất (vd `7 031 117`
 
 | Env | Ai | Vì sao |
 |---|---|---|
-| Kích hoạt job nhắc `PAYROLL_REMINDER` theo yêu cầu (vd `PAYROLL_REMINDER_ON_START`, `…_INTERVAL_MS`, log `maintenance.run_done {job}`) | A (T-049) | CLK-PAY-02…04: nhắc từ ngày 5, chống lặp `(period, ngày)` |
+| `PAYROLL_REMINDER_ON_START=1` (một lượt khi khởi động), `PAYROLL_REMINDER_INTERVAL_MS` (mặc định 1 giờ) — **A nhận 18/10**; job maintenance interval, theo `businessClock`, chống lặp `(period, ngày VN)` | A (T-049) | CLK-PAY-02…04 |
 | Hạ mốc retention chấm công (vd `RETENTION_ATTENDANCE_DAYS` nhỏ) — hoặc xác nhận chỉ kiểm ở tầng I | A / B | RD-06: kỳ quá retention ⇒ cấm Tính lại công; điều chỉnh copy `paidHalfDays` |
 
 ## 2. PD — `payrollDaysOf` (tầng U, Stryker `attendance-domain` ≥ 90 %; vế S ở PD-20)
@@ -99,7 +99,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 |---|---|---|
 | SD-01 | tháng lịch mặc định T2–T7: số ngày làm việc theo lịch; lễ rơi ngày làm **vẫn tính** vào `S` (ADR-126: "gồm ngày lễ rơi vào ngày làm") | đúng |
 | SD-02 | đổi lịch công ty giữa tháng ⇒ tổng hai đoạn | đúng |
-| SD-03 | tháng không có ngày làm việc nào (lịch toàn OFF) ⇒ `standardDaysOf` ném lỗi; tạo nháp ⇒ 422 (mã do A chốt — §11 câu 3), không chia cho 0 | đúng |
+| SD-03 | tháng không có ngày làm việc nào (lịch toàn OFF) ⇒ `standardDaysOf` ném lỗi; tạo nháp ⇒ 422 `NO_WORKING_DAYS` (A — use case ánh xạ, không 500), không chia cho 0 | đúng |
 | SD-04 | (S) người vào ngày 15 / nghỉ ngày 10 cùng kỳ ⇒ cùng `standardDays` với người đủ tháng; phiếu hiện "công thực tế / công chuẩn" | đúng |
 | SD-05 | (S) `standardDays` là ảnh chụp: HR đổi lịch sau khi tạo nháp ⇒ nháp giữ; "Tính lại công" ⇒ cập nhật | đúng |
 
@@ -113,7 +113,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | PE-04 | Quinn nghỉ `last_day` = ngày cuối tháng | có phiếu tháng đó, không có phiếu tháng sau |
 | PE-05 | nghỉ tháng M, nhận lại tháng M+2 | tháng M+1 không có phiếu |
 | PE-06 | "Thêm người còn thiếu": người có đoạn EMPLOYEE giao kỳ được thêm sau khi tạo nháp ⇒ thêm đúng người đó, người đã có không bị nhân đôi, chạy 2 lần idempotent | đúng |
-| PE-07 | người thiếu hồ sơ lương / thiếu `hireDate` ⇒ vẫn có dòng, gắn cờ, phát hành ⇒ 422 (mã theo contract) | đúng |
+| PE-07 | người thiếu hồ sơ lương / thiếu `hireDate` ⇒ vẫn có dòng, gắn cờ; phát hành ⇒ 422 `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (`MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`) — A đề xuất 18/10, chờ TL | đúng |
 
 ## 5. SN — thâm niên (U `completedYears` / `seniorityAllowanceOf` + S)
 
@@ -138,7 +138,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | PR-01 | half-up một lần: base 7 000 001, `S` = 26, h = 43 ⇒ `floor((2·base·h + 2S)/(4S))`; so với tính bằng BigInt chính xác cho 10 000 bộ ngẫu nhiên có seed | khớp |
 | PR-02 | trần `h ≤ 2S` áp sau sửa tay (h = 62, S = 20 ⇒ dùng 40) | đúng |
 | PR-03 | biên `2·1e12·62` an toàn; `baseSalary` 1e12 + 1 / âm / 0,5 ⇒ ném lỗi | đúng |
-| PR-04 | `netPay = income + bonus − deduction`; âm được trả về (không ném) — chặn ở phát hành (`NEGATIVE_NET_PAY`) | đúng |
+| PR-04 | `netPay = income + bonus − deduction`; âm được trả về (không ném) — chặn ở phát hành (reason `NEGATIVE_NET_PAY` trong `PUBLISH_BLOCKED` — RD-04) | đúng |
 | PR-05 | 51 dòng ⇒ `computePayslip` ném; contract ⇒ 400 (S) | đúng |
 | PR-06 | 50 dòng × 1e12 + thâm niên lớn ⇒ tổng `isSafeInteger` hoặc ném lỗi (không trả số sai) | đúng |
 | PR-07 | parity: phiếu đọc lại qua API ⇒ `computePayslip(dòng đọc lại)` = tổng đã lưu (S, mọi ca có phiếu — `expectTotals`) | khớp |
@@ -150,9 +150,9 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Tầng | Ca | Mong đợi |
 |---|---|---|---|
 | RD-01 | I + S | tạo nháp kỳ M (M đã kết thúc) ⇒ 201; tạo lại ⇒ cùng bảng (idempotent, unique `(period)`) | đúng |
-| RD-02 | S | tạo nháp tháng hiện tại / tương lai ⇒ 422 (mã theo contract) | đúng |
+| RD-02 | S | tạo nháp tháng hiện tại / tương lai ⇒ 422 `PERIOD_NOT_ENDED` | đúng |
 | RD-03 | A + S | sửa phiếu với `lockVersion` cũ ⇒ 409 `VERSION_CONFLICT`; sửa công không lý do ⇒ 400; bước 0,5 ngày (số lẻ nửa ngày được, 0,25 ⇒ 400) | đúng |
-| RD-04 | A + S | phát hành: chặn khi còn cờ (thiếu hồ sơ / `hireDate` / sau kỳ, `NEGATIVE_NET_PAY`) — body lỗi liệt kê lý do; còn MISSING_OUT ⇒ cảnh báo, không chặn; phát hành thành công đếm 1, lần 2 ⇒ 409 | đúng |
+| RD-04 | A + S | phát hành bị chặn ⇒ 422 `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (`MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`) — A đề xuất 18/10, chờ TL; bảng có 3 người, mỗi người một tổ hợp lý do (1 người 2 lý do) ⇒ body liệt kê đủ; còn MISSING_OUT ⇒ chỉ cảnh báo ở preview / modal, **không** chặn; phát hành thành công đếm 1, lần 2 ⇒ 409 | đúng |
 | RD-05 | I + S | phiếu PUBLISHED bất biến: mọi lệnh sửa ⇒ 409/422; UPDATE thẳng cột tiền bằng SQL ⇒ trigger chặn (I) | đúng |
 | RD-06 | I (+ K nếu có env §1.3) | kỳ có ngày quá retention ⇒ Tính lại công 422 `ATTENDANCE_RETENTION_EXPIRED`; bản điều chỉnh copy `paidHalfDays` của bản trước | đúng |
 | RD-07 | A + S | "Tính lại công" preview ⇒ "N người thay đổi"; áp ⇒ đúng N phiếu đổi; override có lý do được giữ | khớp |
@@ -198,7 +198,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Mốc | Ca | Mong đợi |
 |---|---|---|---|
 | CLK-PAY-01 | `'*-L'` 23:59:30 | tạo nháp kỳ tháng hiện tại ⇒ 422; sau 00:00 cùng lệnh ⇒ 201 | đúng |
-| CLK-PAY-02 | `'*-05'` 00:00:30 (cần env §1.3) | bảng kỳ trước còn NHÁP ⇒ nhắc `PAYROLL_REMINDER` tới Kay, Kim, Ada (không Hana, không Mia); chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
+| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | bảng kỳ trước còn NHÁP ⇒ nhắc `PAYROLL_REMINDER` tới Kay, Kim, Ada (không Hana, không Mia); chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
 | CLK-PAY-03 | `'*-04'` 23:59:30 | trước 00:00 không nhắc; sau ⇒ nhắc | đúng |
 | CLK-PAY-04 | restart mốc `'*-11'` 10:00 | quá ngày 10 vẫn nhắc mỗi ngày; phát hành ⇒ hết nhắc | đúng |
 
@@ -221,7 +221,7 @@ Selector theo E (T-050) — chờ E gửi.
 ### 11.1 Stryker (chỉ khi TL báo "máy rảnh")
 
 - `attendance-domain` ≥ 90 % (gồm `payroll-days.ts`) — sau T-049.
-- Nhóm mới **`payroll-math`**: `packages/contracts/src/payroll/payslip-math.ts` ≥ 90 %. Cấu hình Stryker hiện chỉ ở `apps/api/stryker/` ⇒ F thêm group cho package `contracts` (hoặc A chuyển file) — chốt khi chạy.
+- Nhóm mới **`payroll-math`**: `packages/contracts/src/payroll/payslip-math.ts` ≥ 90 % — A đã cấu hình (feat/T-049-payroll-domain 3d9c876, break < 90 %); chạy khi có lượt máy.
 - `payroll-domain` (module `apps/api/src/modules/payroll/domain`, nếu có) — báo cáo, chưa ngưỡng.
 - Mutant sống ⇒ `docs/reviews/F3-mutation-report.md` theo chủ (A).
 
@@ -244,6 +244,6 @@ Selector theo E (T-050) — chờ E gửi.
 ### 11.3 Câu hỏi mở (hỏi thẳng tác giả — chỉ báo TL nếu bất đồng thiết kế)
 
 1. ~~A: CSV hay .xlsx~~ — **chốt (TL 18/10):** .xlsx qua `ISpreadsheetWriter` (bộ ghi `fflate` dùng chung, luật ADR-130), không CSV. Đã sửa §1.1, RD-12.
-2. **A (T-049):** job nhắc `PAYROLL_REMINDER` chạy thế nào (interval maintenance như `leave-carryover`?) và có cờ test-only `…_ON_START` / `…_INTERVAL_MS` không (CLK-PAY-02…04)?
-3. **A (T-049):** mã lỗi khi tạo nháp kỳ chưa kết thúc (RD-02) và kỳ không có ngày làm việc (SD-03); mã cờ chặn phát hành (PE-07, RD-04).
+2. ~~A: job nhắc~~ — **chốt (A 18/10):** job maintenance interval + `PAYROLL_REMINDER_ON_START` / `PAYROLL_REMINDER_INTERVAL_MS` test-only. Đã sửa §1.3, CLK-PAY-02.
+3. **A đề xuất 18/10, chờ TL** (lệch `payroll.md` ADR-125 "422 `NEGATIVE_NET_PAY`"): `PERIOD_NOT_ENDED` (RD-02), `NO_WORKING_DAYS` (SD-03), `PUBLISH_BLOCKED` + `details.blockers` (PE-07, RD-04) với `NEGATIVE_NET_PAY` là một reason. F ủng hộ: một body liệt kê đủ lý do thì dễ kiểm và dễ cho web hiện "ghi rõ lý do". TL giữ rule riêng ⇒ RD-04 thêm vế "chỉ âm lương ⇒ 422 `NEGATIVE_NET_PAY`".
 4. **B (T-048):** route + DTO (contracts) để dựng `PAYROLL` ở harness; sửa công đi qua route payroll (override trên phiếu) hay route attendance?
