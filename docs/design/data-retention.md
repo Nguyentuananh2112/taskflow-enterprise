@@ -57,7 +57,7 @@ Một job bảo trì `retention` theo mẫu T-033 (scheduler trong process API):
 - ngưỡng cấu hình qua env (mặc định = phương án được chốt); bật mặc định ở staging/production;
 - thao tác:
   - D1: `UPDATE attendance_events SET ip = NULL, user_agent = NULL WHERE occurred_at < now() - <D1> AND (ip IS NOT NULL OR user_agent IS NOT NULL)`;
-  - D3: `UPDATE leave_requests SET reason = NULL WHERE end_date < <ngày> AND reason IS NOT NULL` (CHECK not-blank của migration 4 cho phép NULL);
+  - D3: `UPDATE leave_requests SET reason = NULL, decision_note = NULL WHERE end_date < <ngày> AND status <> 'PENDING'` — ghi chú quyết định của HR cũng có thể nhắc sức khỏe (góp ý D, T-043); CHECK not-blank của migration 4 cho phép NULL;
   - D2/D4/D5/D6/D7: `DELETE` theo mốc; xóa `leave_balances` của năm đã hết hạn cùng đơn;
 - metrics/log: số dòng mỗi loại, thời gian chạy; không log nội dung dữ liệu;
 - test tầng I: đúng ngưỡng (biên ±1 ngày), 2 instance chỉ 1 lượt chạy, không đụng dòng chưa hết hạn, đơn đang PENDING không bị xóa lý do.

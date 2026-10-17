@@ -72,7 +72,13 @@ const event = (occurredAt: Date) =>
       createdById: user,
     },
   });
-const leave = (start: string, end: string, status: 'PENDING' | 'APPROVED', reason = 'sốt cao') =>
+const leave = (
+  start: string,
+  end: string,
+  status: 'PENDING' | 'APPROVED' | 'REJECTED',
+  reason: string | null = 'sốt cao',
+  decisionNote: string | null = null,
+) =>
   testPrisma().leaveRequest.create({
     data: {
       workspaceId: ws,
@@ -82,6 +88,8 @@ const leave = (start: string, end: string, status: 'PENDING' | 'APPROVED', reaso
       endDate: new Date(end),
       status,
       reason,
+      decisionNote,
+      ...(status === 'PENDING' ? {} : { decidedById: user, decidedAt: new Date(start) }),
     },
   });
 
@@ -113,6 +121,17 @@ describe('job retention (T-043, phương án B)', () => {
     expect(reasons.get(scrubbed.id)).toBeNull();
     expect(reasons.get(kept.id)).toBe('sốt cao');
     expect(reasons.get(pending.id)).toBe('sốt cao');
+  });
+
+  it('D3: ghi chú quyết định của HR cũng NULL cùng mốc — kể cả đơn không có lý do', async () => {
+    const noted = await leave('2025-10-30', '2025-10-30', 'REJECTED', null, 'đã xem giấy khám');
+    const recent = await leave('2025-11-02', '2025-11-02', 'APPROVED', null, 'ok');
+    await instance().job.execute();
+    const notes = new Map(
+      (await testPrisma().leaveRequest.findMany()).map((r) => [r.id, r.decisionNote]),
+    );
+    expect(notes.get(noted.id)).toBeNull();
+    expect(notes.get(recent.id)).toBe('ok');
   });
 
   it('D4: xóa đơn + số dư theo CẢ năm (mốc 2024-12-01 ⇒ năm < 2024); năm 2024 giữ nguyên', async () => {

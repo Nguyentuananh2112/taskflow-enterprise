@@ -9,14 +9,17 @@ export class PrismaLeaveRetention {
   constructor(private readonly db: DbProvider) {}
 
   /**
-   * D3: lý do nghỉ (có thể là dữ liệu sức khỏe) của đơn có `end_date < cutoffDate` ⇒ NULL. Đơn PENDING
-   * giữ lý do (HR còn cần để duyệt / từ chối). `cutoffDate` = `YYYY-MM-DD`.
+   * D3: lý do nghỉ (có thể là dữ liệu sức khỏe) + ghi chú quyết định của HR (cũng có thể nhắc sức khỏe —
+   * góp ý D) của đơn có `end_date < cutoffDate` ⇒ NULL. Đơn PENDING giữ lý do (HR còn cần để duyệt).
+   * `save` của repository không ghi `reason` ⇒ không lệnh nào ghi đè lại dòng vừa scrub. `cutoffDate` =
+   * `YYYY-MM-DD`.
    */
   scrubReasons(cutoffDate: string, limit: number): Promise<number> {
     return this.db().$executeRaw`
-      UPDATE leave_requests SET reason = NULL WHERE id IN (
+      UPDATE leave_requests SET reason = NULL, decision_note = NULL WHERE id IN (
         SELECT id FROM leave_requests
-         WHERE end_date < ${cutoffDate}::date AND reason IS NOT NULL AND status <> 'PENDING'
+         WHERE end_date < ${cutoffDate}::date AND status <> 'PENDING'
+           AND (reason IS NOT NULL OR decision_note IS NOT NULL)
          ORDER BY end_date
          LIMIT ${limit}
          FOR UPDATE SKIP LOCKED

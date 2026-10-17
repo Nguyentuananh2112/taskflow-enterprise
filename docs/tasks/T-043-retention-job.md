@@ -11,7 +11,7 @@
    | Env | Dữ liệu | Mặc định (B) | Min |
    |---|---|---|---|
    | `RETENTION_CLIENT_INFO_DAYS` | D1 IP/UA lượt chấm ⇒ NULL (mốc `occurred_at`) | 395 (≈ 13 tháng) | 30 |
-   | `RETENTION_LEAVE_REASON_DAYS` | D3 lý do nghỉ ⇒ NULL (mốc `end_date`; KHÔNG đụng đơn PENDING) | 395 | 30 |
+   | `RETENTION_LEAVE_REASON_DAYS` | D3 lý do nghỉ + ghi chú quyết định của HR (`decision_note`, góp ý D) ⇒ NULL (mốc `end_date`; KHÔNG đụng đơn PENDING) | 395 | 30 |
    | `RETENTION_RECORDS_DAYS` | D2 lượt chấm, D4 đơn + số dư, D5 departures ⇒ DELETE | 730 (2 năm) | 365 |
    | `RETENTION_NOTIFICATIONS_DAYS` | D6 thông báo ⇒ DELETE | 180 | 30 |
    | `RETENTION_HR_AUDIT_DAYS` | D7 HrAuditLog ⇒ DELETE | 1826 (5 năm) | 365 |
