@@ -22,8 +22,8 @@ export function punchErrorMessage(error: unknown): string {
 }
 
 /**
- * Thêm / hủy lượt: server trả `{ event, day }` ⇒ thay đúng 1 ô bảng tháng (TL chốt, không refetch cả
- * bảng), tải lại danh sách lượt của ngày đó và "Hôm nay".
+ * Thêm / hủy lượt: server trả `{ event, day, totals }` ⇒ thay đúng 1 ô + dòng tổng của người đó (TL chốt, không
+ * refetch cả bảng, không tự cộng), tải lại danh sách lượt của ngày đó và "Hôm nay".
  */
 export function usePunchChange<V>(
   wsId: string,
@@ -35,7 +35,7 @@ export function usePunchChange<V>(
   return useMutation({
     mutationFn: run,
     onSuccess: (change, _v, _r, context) => {
-      replaceTimesheetDay(context.client, wsId, userId, change.day);
+      replaceTimesheetDay(context.client, wsId, userId, change);
       void context.client.invalidateQueries({ queryKey: hrKeys.events(wsId, userId, date) });
       void context.client.invalidateQueries({ queryKey: hrKeys.today(wsId) });
       toast({ title: done, tone: 'success' });
