@@ -149,7 +149,7 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 | SEC-CH-08 | F | `chat-upload-limits.sec.ts` (NẶNG) | Mỗi vế ≤ 2 s: pixel bomb ⇒ 422; 21 MB ⇒ 413 (ngay theo `Content-Length`); chunked 25 MB ⇒ 413; avatar 6 MB ⇒ 413. `expectNoTmp`. Bỏ vế RAM (TL) |
 | SEC-CH-09 | F | `chat-upload-limits.sec.ts` | `../../etc/passwd`, U+202E, NUL ⇒ 201 + `filename*` sạch (không `/`, `\`, bidi, NUL) + `outsideWrites` rỗng; thiếu / `%E0%A4%A` / 256 byte ⇒ 400 `INVALID_UPLOAD_NAME`, không ghi |
 | SEC-CH-10 | F | `chat-media.sec.ts` | Header từng loại đúng bảng ADR-141; CORP = giá trị `MEDIA_CORP` của env test (`same-site` mặc định; một ca chạy `cross-origin`) |
-| SEC-CH-11 | F | `chat-media.sec.ts` | Sửa `exp` / `sig` / path / `v` / URL hết hạn (chờ khung test) / `download-url` sau TTL ⇒ `expectMedia404`, body giống hệt |
+| SEC-CH-11 | F | `chat-media.sec.ts` | Sửa `exp` / `sig` / path / `v` / URL hết hạn (chờ khung test) / `download-url` sau TTL ⇒ `expectMedia404`, body giống hệt · **Thước đo hộp đen (TL 18/10):** log debug `media.sig_invalid {reason: format \| signature \| expired}` — có ⇒ bị chặn trước DB / đĩa; không có ⇒ qua chữ ký. **Giới hạn:** "404 không chạm DB / đĩa" KHÔNG quan sát trực tiếp được từ hộp đen — dựa vào thứ tự trong `media-router.ts` + unit test của G (`media-router.test.ts`); S chỉ khẳng định log + trang lỗi giống hệt |
 | SEC-CH-12 | F | `chat-upload-limits.sec.ts` | multipart / text/plain có Bearer ⇒ 415; không Bearer ⇒ 401; không ghi |
 | SEC-CH-13 | H | `e2e/specs/chat.e2e.ts` (E) + `chat-idor.sec.ts` (S: thân lưu nguyên văn) | E: `arm()` + `assertInert`; link chỉ `http(s)`; `a[href^="javascript:"]` = 0 |
 | SEC-CH-14 | F | `chat-limits.sec.ts` | 31 tin / phút ⇒ 429 + `Retry-After`, tin 31 không có trong `messages`; 31 upload / 10 phút ⇒ 429; vượt 2 MB / ngày ⇒ 429; `FILE_STORE_MAX_BYTES` 3 MB ⇒ 507 `STORAGE_FULL` (file riêng env) |
@@ -255,8 +255,8 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 | `chat-people.sec.ts` | F | SEC-CH-18 | chưa |
 | `chat-realtime.sec.ts` | F | SEC-CH-19 | chưa |
 | `chat-logs.sec.ts` | F | SEC-CH-20 (API) | chưa |
-| `chat-media.sec.ts` | F | SEC-CH-10, 11, 31, 35 (B); 22 (F) | chưa |
-| `chat-media-rotate.sec.ts` | F | SEC-CH-35 (xoay khóa) | chưa |
+| `chat-media.sec.ts` | F | SEC-CH-10, 11, 20 (vế /media), 31 (vế IP), 35 (đổi tuple / purpose) — **5/5 xanh** trên `feat/T-067` f8ae89e7; vế cần tệp thật (header ảnh, `deleteBlob`, SEC-CH-22) chờ T-068 / T-069 | một phần |
+| `chat-media-rotate.sec.ts` | F | SEC-CH-35r (xoay khóa `_PREVIOUS`) — **1/1 xanh** | xong |
 | `chat-upload-types.sec.ts` | F | SEC-CH-06, 07, 21, 23, 32, 33, 36 | chưa |
 | `chat-upload-limits.sec.ts` (NẶNG) | F | SEC-CH-08, 09, 12, 24, 26, 27, 34 (đã viết, pending `T-067`, chưa chạy); SEC-CH-37, CC-CH-09 chưa | một phần |
 | `chat-races.sec.ts` | F | CC-CH-01, 02, 03, 05, 06 (F); 04, 07, 08 (B) | chưa |
