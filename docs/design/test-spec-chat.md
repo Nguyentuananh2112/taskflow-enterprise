@@ -226,6 +226,8 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 - **Đính kèm:** `button "Đính kèm"` (input file ẩn nhãn "Chọn tệp đính kèm" ⇒ `setInputFiles`); chip `data-testid="upload-chip-<n>"` (đang tải: `progressbar "Đang tải <tên>"`; gỡ: `button "Bỏ tệp <tên>"`); ảnh: `button "Xem ảnh <tên>"` ⇒ `dialog "Xem ảnh"`; tệp: `button "Tải xuống <tên>"` (POST download-url ⇒ `location.assign` ⇒ `waitForEvent('download')`).
 - **Hành động trên tin:** `button "Trả lời tin của <người>"`, "Sửa", "Xóa" ⇒ `dialog "Xóa tin nhắn"`; tin đã xóa: text "Tin nhắn đã bị xóa"; "(đã sửa)"; "Đã xem" (DIRECT); `separator "Tin chưa đọc"`; "Tải tin cũ hơn"; gửi lỗi: `alert` "Chưa gửi được" + `button "Thử lại"` / "Bỏ".
 - **Nhóm:** `button "Thành viên"` ⇒ `dialog "Thành viên nhóm"` ("Bớt <tên>", "Giao trưởng nhóm cho <tên>", "Rời nhóm"); `button "Tắt tiếng"` / "Bỏ tắt tiếng" (`aria-pressed`).
+- **Giờ (H 18/10):** HH:mm trên nhãn tin / cạnh tin / danh sách theo **múi giờ trình duyệt** (giờ cá nhân, khác bảng công theo lịch công ty) ⇒ E2E đặt `timezoneId: 'Asia/Ho_Chi_Minh'`. Danh sách: cùng ngày hiện HH:mm, khác ngày hiện dd/MM.
+- **Chọn tin:** theo `data-testid="chat-message-<id>"`, id lấy từ API / event — nhãn article có thể trùng (cùng người, cùng phút). Tin lạc quan có testid tạm `chat-message-<clientMsgId>` rồi đổi sang id thật ⇒ ca bám tin vừa gửi chờ `page.waitForResponse(POST …/messages)` rồi mới chọn.
 - **a11y (E2E-CH-07):** vùng `[aria-live="polite"].sr-only` riêng chỉ đọc tin ĐẾN sau lúc mở ("Vic Phạm: …"); `log` có `aria-live="off"`.
 
 ## 7. Hiệu năng (tầng P — F; máy rảnh, ADR-107)
