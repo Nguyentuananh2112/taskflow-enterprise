@@ -112,6 +112,13 @@ export class InMemoryMembershipRepository
       .map((r) => r.userId);
     return Promise.resolve(owners);
   }
+  listWorkspaceIdsOfUser(userId: string): Promise<string[]> {
+    return Promise.resolve(
+      this.rows()
+        .filter((r) => r.userId === userId)
+        .map((r) => r.workspaceId),
+    );
+  }
   listUserIds(workspaceId: string): Promise<string[]> {
     return Promise.resolve(
       this.rows()

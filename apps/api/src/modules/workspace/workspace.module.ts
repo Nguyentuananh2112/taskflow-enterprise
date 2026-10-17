@@ -9,6 +9,7 @@ import { WorkspaceMembershipReader } from './application/adapters/membership-rea
 import { WorkspaceProjectAccessChecker } from './application/adapters/project-access-checker';
 import { WorkspaceAccess } from './application/adapters/workspace-access';
 import { DefaultWorkspaceProvisioner } from './application/adapters/workspace-provisioner';
+import { WorkspaceExit } from './application/adapters/workspace-exit';
 import type {
   ITaskAssignmentCleaner,
   ICompanyMembershipGate,
@@ -93,6 +94,8 @@ export interface WorkspaceModule {
   accessChecker: WorkspaceProjectAccessChecker;
   provisioner: DefaultWorkspaceProvisioner;
   membershipReader: WorkspaceMembershipReader;
+  /** `IWorkspaceExitPort` của company — rời mọi ws khi hoàn tất nghỉ việc (T-062). */
+  exit: WorkspaceExit;
 }
 
 /** Composition của module Workspace/Member/Project (ADR-016). */
@@ -178,5 +181,15 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     }),
     provisioner: new DefaultWorkspaceProvisioner({ creator, projects, random, ids, clock }),
     membershipReader: new WorkspaceMembershipReader({ queries }),
+    exit: new WorkspaceExit({
+      workspaces,
+      memberships,
+      projects,
+      queries,
+      cleaner,
+      notifier,
+      uow,
+      logger,
+    }),
   };
 }

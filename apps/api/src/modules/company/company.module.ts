@@ -22,6 +22,9 @@ import type {
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
 import { HrController, hrRoutes } from './presentation/hr.routes';
+import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
+import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
+import { createEmployment, lateCollaborators } from './employment.wiring';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -44,6 +47,7 @@ export interface CompanyRepositories {
   members: ICompanyMemberRepository;
   tenures: ICompanyTenureReader;
   hrAudit: IHrAuditLog;
+  offboarding: ICompanyOffboardingRepository;
 }
 
 export interface CompanyModuleDeps {
@@ -60,6 +64,8 @@ export interface CompanyModuleDeps {
    * request; composition gán `current` trước khi app nhận request.
    */
   accounts: { current: ICompanyAccounts | null };
+  /** T-062: workspace / leave / notifications / realtime — cũng tạo SAU company ⇒ tham chiếu trễ. */
+  collaborators: { current: EmploymentCollaborators | null };
   /** Múi giờ lịch hiện hành (ADR-120) — attendance (T-063) nối; mặc định Asia/Ho_Chi_Minh. */
   timeZone?: () => Promise<string>;
 }
@@ -75,7 +81,9 @@ export interface CompanyModule {
   meOf(userId: string): Promise<MeCompanyView | null>;
   /** `admin:bootstrap` (CLI) — một transaction, khóa `company:admins`. */
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
-  /** Router `/api/v1/hr` (thêm nhân viên — T-061; phần còn lại T-062). */
+  /** Job hoàn tất nghỉ việc mỗi phút (R40) — composition đăng ký vào scheduler bảo trì. */
+  completeDueOffboardings(signal?: AbortSignal): Promise<{ completed: number; failed: number }>;
+  /** Router `/api/v1/hr` (nhân viên — T-061 / T-062). */
   hrRoutes(authenticate: RequestHandler): Router;
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
@@ -101,6 +109,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     findById: (userId) => accountsOf().findById(userId),
     profiles: (userIds) => accountsOf().profiles(userIds),
     revokeSessions: (userId, reason) => accountsOf().revokeSessions(userId, reason),
+    revokeActivations: (userId) => accountsOf().revokeActivations(userId),
     createPending: (input) => accountsOf().createPending(input),
     issueActivation: (input) => accountsOf().issueActivation(input),
   };
@@ -108,6 +117,8 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     if (!d.accounts.current) throw new Error('company: chưa nối port tài khoản (composition)');
     return d.accounts.current;
   }
+  const collaborators = lateCollaborators(d.collaborators);
+  const timeZone = d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE));
   const hire = new HireEmployeeUseCase({
     access,
     members,
@@ -116,8 +127,9 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     audit,
     uow: d.uow,
     clock,
-    timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
+    timeZone,
     logger: d.logger,
+    rehireLeave: () => collaborators().rehireLeave,
   });
   const active = async (userId: string) => {
     const m = await members.find(userId);
@@ -131,7 +143,25 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     uow: d.uow,
     ids,
     clock,
-    timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
+    timeZone,
+  });
+  const permissionsOf = async (userId: string) => {
+    const m = await active(userId);
+    return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
+  };
+  const employment = createEmployment({
+    access,
+    members,
+    offboarding: d.repos.offboarding,
+    accounts,
+    collaborators,
+    audit,
+    uow: d.uow,
+    ids,
+    clock,
+    timeZone,
+    logger: d.logger,
+    permissionsOf,
   });
   const meOf = async (userId: string): Promise<MeCompanyView | null> => {
     const m = await active(userId);
@@ -152,9 +182,10 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     members,
     hrAudit: audit,
     bootstrapAdmin: (input) => bootstrap.execute(input),
+    completeDueOffboardings: (signal) => employment.completer.runDue(signal),
     hrRoutes: (authenticate) =>
       hrRoutes({
-        controller: new HrController({ hire, responder: d.responder }),
+        controller: new HrController({ hire, employment, responder: d.responder }),
         authenticate,
         limit: d.limit,
       }),
@@ -163,10 +194,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
       meOf,
       companyName: async () => (await d.repos.company.get())?.name ?? null,
     },
-    async permissionsOf(userId) {
-      const m = await active(userId);
-      return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
-    },
+    permissionsOf,
     meOf,
     notificationAudience: {
       async accessOf(userId) {

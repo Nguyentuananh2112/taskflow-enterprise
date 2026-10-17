@@ -48,7 +48,13 @@ describe('createPrismaPersistence (T-023)', () => {
       attendance: 'prisma',
       leave: 'prisma',
     });
-    expect(Object.keys(p.company).sort()).toEqual(['company', 'hrAudit', 'members', 'tenures']);
+    expect(Object.keys(p.company).sort()).toEqual([
+      'company',
+      'hrAudit',
+      'members',
+      'offboarding',
+      'tenures',
+    ]);
     expect(Object.keys(p.task ?? {}).sort()).toEqual([
       'assignees',
       'audit',

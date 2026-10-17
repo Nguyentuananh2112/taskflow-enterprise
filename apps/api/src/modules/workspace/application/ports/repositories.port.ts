@@ -38,6 +38,8 @@ export interface IMembershipRepository {
    */
   lockOwners(workspaceId: string): Promise<string[]>;
   listUserIds(workspaceId: string): Promise<string[]>;
+  /** Mọi workspace (kể cả đã xóa mềm) user là thành viên — rời hết khi nghỉ việc (T-062). */
+  listWorkspaceIdsOfUser(userId: string): Promise<string[]>;
   /**
    * Mốc 3 (B-H3a): đọc membership + khóa dòng `FOR SHARE` — gọi TRONG transaction. UPDATE dòng đó
    * (thu grant, đổi role) song song phải chờ ta commit và ngược lại. InMemory: như `find`.

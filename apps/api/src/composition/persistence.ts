@@ -7,6 +7,7 @@ import {
   type AttendanceRepositories,
 } from '../modules/attendance/attendance.module';
 import type { CompanyRepositories } from '../modules/company/company.module';
+import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
@@ -125,7 +126,13 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       store: notificationStore,
       context: notificationContextFrom({ users: task.users, leaves: leave.readModel }),
     },
-    company: { company: companyStore, members: companyStore, tenures: companyStore, hrAudit },
+    company: {
+      company: companyStore,
+      members: companyStore,
+      tenures: companyStore,
+      hrAudit,
+      offboarding: new InMemoryCompanyOffboarding(companyStore),
+    },
     companyStore,
     attendance,
     leave,

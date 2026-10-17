@@ -35,6 +35,8 @@ export interface AuthAccounts {
   ): Promise<
     ReadonlyMap<string, { fullName: string; email: string; hasPassword: boolean; deleted: boolean }>
   >;
+  /** Thu hồi mọi token kích hoạt còn sống (nghỉ việc). Trả số token. */
+  revokeActivations(userId: string): Promise<number>;
   /** ADR-105: tv + 1, thu hồi refresh token, Valkey TRƯỚC commit (lỗi ⇒ 503 rollback), ngắt socket SAU commit. */
   revokeSessions(userId: string, reason: 'OFFBOARDED' | 'LOGOUT_ALL'): Promise<void>;
 }
@@ -45,7 +47,7 @@ export function createAuthAccounts(d: {
   refreshTokens: IRefreshTokenRepository;
   store: ISessionRevocationStore;
   notifier: IAuthRealtimeNotifier;
-  activationIssuer: Pick<ActivationIssuer, 'issue'>;
+  activationIssuer: Pick<ActivationIssuer, 'issue' | 'revokeAll'>;
   ids: IIdGenerator;
   clock: IClock;
   uow: IUnitOfWork;
@@ -99,6 +101,7 @@ export function createAuthAccounts(d: {
       return { userId: user.id };
     },
     issueActivation: (input) => activationIssuer.issue(input),
+    revokeActivations: (userId) => activationIssuer.revokeAll(userId),
     async revokeSessions(userId, reason) {
       const now = clock.now();
       const tokenVersion = await users.bumpTokenVersion(userId, now);

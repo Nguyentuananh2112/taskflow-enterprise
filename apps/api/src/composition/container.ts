@@ -17,7 +17,7 @@ import {
   createNotificationsModule,
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
-import type { ICompanyAccounts } from '../modules/company';
+import type { EmploymentCollaborators, ICompanyAccounts } from '../modules/company';
 import { HR_PATH } from '../modules/company/presentation/hr.routes';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
@@ -78,6 +78,7 @@ export function createContainer(d: ContainerDeps): Container {
   // Mốc 3.5 (ADR-133…137): quyền công ty đọc DB mỗi lần, `access_until` theo giờ nghiệp vụ (R31).
   // Auth cần cổng công ty; company cần tài khoản của auth (thêm nhân viên) ⇒ tham chiếu trễ một chiều.
   const accountsRef: { current: ICompanyAccounts | null } = { current: null };
+  const employmentRef: { current: EmploymentCollaborators | null } = { current: null };
   const company = createCompanyModule({
     repos: persistence.company,
     ids,
@@ -87,6 +88,7 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
+    collaborators: employmentRef,
   });
   // Trước Workspace: publisher là port ghi thông báo (cùng UoW) cho leave / attendance / company.
   const notifications = createNotificationsModule({
@@ -162,6 +164,14 @@ export function createContainer(d: ContainerDeps): Container {
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
+  // T-062: vòng đời nhân viên ← workspace (rời ws), leave (dọn / nhận lại), notifications, realtime.
+  employmentRef.current = {
+    workspaceExit: workspace.exit,
+    offboardLeave: leave.employment,
+    rehireLeave: leave.employment,
+    notifier: notifications.publisher,
+    realtime,
+  };
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [

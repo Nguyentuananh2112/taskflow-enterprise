@@ -5,6 +5,7 @@ export type { HrAuditInput, HrAuditWriter } from './application/hr-audit-writer'
 export type { HrAuditAction } from './domain/hr-audit';
 export type { CompanyModule, MeCompanyView } from './company.module';
 export type { ICompanyAccounts } from './application/ports/accounts.port';
+export type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 export type {
   CompanyActor,
   CompanyProfile,
