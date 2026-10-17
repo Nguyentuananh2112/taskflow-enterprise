@@ -83,8 +83,11 @@ export const PutEmployeeProfileBody = z.strictObject({
 });
 export type PutEmployeeProfileBody = z.infer<typeof PutEmployeeProfileBody>;
 
-/** Phép năm bị âm do đổi `hireDate` (T-057 nối; rỗng tới khi đó). */
-export const NegativeBalanceDto = z.object({ year: z.int(), remaining: z.number() });
+/**
+ * Phép năm bị âm do đổi `hireDate` (T-057 nối; rỗng tới khi đó). Cùng tên/đơn vị với `negativeBalances` của
+ * PUT leave/policy (`remainingDays`).
+ */
+export const NegativeBalanceDto = z.object({ year: z.int(), remainingDays: z.number() });
 export type NegativeBalanceDto = z.infer<typeof NegativeBalanceDto>;
 
 export const ProfileWarning = z.enum(['ADJUSTMENT_DAYS_REVIEW']);
