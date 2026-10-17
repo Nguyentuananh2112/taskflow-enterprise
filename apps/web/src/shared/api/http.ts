@@ -1,16 +1,17 @@
-import {
-  ApiError as ApiErrorEnvelope,
-  ApiErrorBody,
-  ErrorCode,
-  apiSuccess,
-  type PageMeta,
-} from '@taskflow/contracts/common';
 import * as z from 'zod';
 
-import { serverClock } from '@/shared/lib/server-clock';
-
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from './api-error';
+import { parseEnvelope as parse, readFile } from './envelope';
 import { createSingleFlight } from './single-flight';
+import {
+  defaultCreateXhr,
+  sendViaXhr,
+  uploadHeaders,
+  type CreateXhr,
+  type UploadOptions,
+} from './upload';
+
+export type { ApiResult, DownloadResult } from './envelope';
 
 // Fetch wrapper duy nhất của web (ADR-060: không axios; frontend.md §3.3). Nơi duy nhất được gọi fetch.
 
@@ -28,16 +29,10 @@ export type HttpDeps = Readonly<{
   baseUrl: () => string;
   clientId: () => string;
   fetch?: typeof fetch;
+  /** Tạo XHR cho `upload` (test inject). Mặc định `new XMLHttpRequest()`. */
+  xhr?: CreateXhr;
   auth?: AuthHooks;
 }>;
-
-/**
- * Envelope lỗi của contracts nhưng `code` là string bất kỳ (ADR-102): vỏ vẫn parse chặt, chỉ nới
- * enum mã lỗi để web cũ không hỏng khi API mới thêm mã.
- */
-const ErrorEnvelopeAnyCode = ApiErrorEnvelope.extend({
-  error: ApiErrorBody.extend({ code: z.string().min(1) }),
-});
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 type Query = Readonly<Record<string, string | number | boolean | null | undefined>>;
@@ -57,25 +52,6 @@ export type RequestOptions<S extends z.ZodType> = Readonly<{
   accept?: string;
 }>;
 
-/** File tải về (`download`): tên lấy từ `Content-Disposition`, không có ⇒ `null`. */
-export type DownloadResult = { blob: Blob; filename: string | null };
-
-export type ApiResult<T> = { data: T; page: PageMeta | undefined; requestId: string | undefined };
-
-/** RFC 6266: `filename*=UTF-8''…` (tên có dấu) ưu tiên hơn `filename="…"`. */
-function filenameOf(headers: Headers): string | null {
-  const disposition = headers.get('Content-Disposition') ?? '';
-  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
-  if (encoded) {
-    try {
-      return decodeURIComponent(encoded.trim());
-    } catch {
-      // %-mã hóa hỏng ⇒ dùng filename= thường
-    }
-  }
-  return /filename="([^"]+)"/i.exec(disposition)?.[1] ?? null;
-}
-
 const buildUrl = (base: string, path: string, query: Query | undefined) => {
   if (!path.startsWith('/')) throw new Error(`Đường dẫn API phải bắt đầu bằng "/": ${path}`);
   const url = new URL(base + path);
@@ -87,7 +63,42 @@ const buildUrl = (base: string, path: string, query: Query | undefined) => {
 
 export function createHttpClient(deps: HttpDeps) {
   const doFetch = deps.fetch ?? ((input, init) => fetch(input, init));
+  const createXhr: CreateXhr = deps.xhr ?? defaultCreateXhr;
   const refresh = deps.auth ? createSingleFlight(deps.auth.refresh) : null;
+
+  type Sent = { response: Response; sentToken: string | null };
+
+  /** Gửi qua transport; AbortError ném lại nguyên dạng, lỗi khác ⇒ NETWORK_ERROR (status 0). */
+  async function transmit(go: () => Promise<Response>): Promise<Response> {
+    try {
+      return await go();
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+      throw new ApiError({
+        status: 0,
+        code: CLIENT_ERROR_CODES.network,
+        message: 'Không kết nối được máy chủ.',
+        cause,
+      });
+    }
+  }
+
+  /** Upload nhị phân qua XHR (header: `uploadHeaders`). */
+  async function sendUpload(
+    method: 'PUT' | 'POST',
+    path: string,
+    opts: UploadOptions<z.ZodType>,
+  ): Promise<Sent> {
+    await refresh?.inflight()?.catch(() => undefined); // như `send`: chờ refresh đang chạy
+    const token = deps.auth?.getAccessToken() ?? null;
+    const headers = uploadHeaders(opts.name, deps.clientId(), token);
+    const url = buildUrl(deps.baseUrl(), path, opts.query);
+    const { body, signal, onProgress } = opts;
+    const response = await transmit(() =>
+      sendViaXhr(createXhr, { method, url, headers, body, signal, onProgress }),
+    );
+    return { response, sentToken: token };
+  }
 
   async function send(method: Method, path: string, opts: RequestOptions<z.ZodType>) {
     await refresh?.inflight()?.catch(() => undefined); // hàng đợi: chờ refresh đang chạy
@@ -104,9 +115,8 @@ export function createHttpClient(deps: HttpDeps) {
     if (opts.idempotencyKey) headers.set('Idempotency-Key', opts.idempotencyKey);
 
     const url = buildUrl(deps.baseUrl(), path, opts.query); // lỗi lập trình: ném thẳng, không bọc
-    let response: Response;
-    try {
-      response = await doFetch(url, {
+    const response = await transmit(() =>
+      doFetch(url, {
         method,
         headers,
         body: body === undefined ? null : JSON.stringify(body),
@@ -114,62 +124,9 @@ export function createHttpClient(deps: HttpDeps) {
         // duyệt gửi cho mọi path nên FE tự giới hạn `include`); dev: `tf_rt; Path=/api/v1/auth`.
         credentials: path.startsWith('/auth/') ? 'include' : 'omit',
         signal: opts.signal ?? null,
-      });
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
-      throw new ApiError({
-        status: 0,
-        code: CLIENT_ERROR_CODES.network,
-        message: 'Không kết nối được máy chủ.',
-        cause,
-      });
-    }
+      }),
+    );
     return { response, sentToken: token };
-  }
-
-  async function parse<S extends z.ZodType>(response: Response, schema: S) {
-    const headerRequestId = response.headers.get('X-Request-Id') ?? undefined;
-    const bad = (cause: unknown) =>
-      new ApiError({
-        status: response.status,
-        code: CLIENT_ERROR_CODES.badResponse,
-        message: 'Phản hồi từ máy chủ không hợp lệ.',
-        requestId: headerRequestId,
-        cause,
-      });
-
-    if (response.status === 204) {
-      const empty = schema.safeParse(undefined);
-      if (!empty.success) throw bad(empty.error);
-      return { data: empty.data, page: undefined, requestId: headerRequestId };
-    }
-    // Envelope theo @taskflow/contracts (data-and-api §3.1): rẽ theo `success`, rồi parse chặt.
-    const body: unknown = await response.json().catch((e: unknown) => e);
-    const isFailure =
-      typeof body === 'object' && body !== null && 'success' in body && body.success === false;
-    if (isFailure) {
-      const failure = ErrorEnvelopeAnyCode.safeParse(body);
-      if (!failure.success) throw bad(failure.error);
-      const { code, message, details } = failure.data.error;
-      const requestId = failure.data.meta.requestId;
-      serverClock.observe(failure.data.meta.timestamp);
-      const known = ErrorCode.safeParse(code);
-      throw new ApiError({
-        status: response.status,
-        code: known.success ? known.data : CLIENT_ERROR_CODES.unknown,
-        message,
-        details,
-        requestId,
-        ...(known.success ? {} : { serverCode: code }),
-      });
-    }
-    const success = apiSuccess(schema).safeParse(body);
-    if (!success.success) throw bad(success.error);
-    // Với S generic, TS không suy được khóa `data` của z.object({ data: S }) ⇒ ép về output của S
-    // (giá trị đã được chính `schema` parse ở trên).
-    const { data, meta } = success.data as { data: z.output<S>; meta: typeof success.data.meta };
-    serverClock.observe(meta.timestamp);
-    return { data, page: meta.page, requestId: meta.requestId };
   }
 
   /** Có token mới hơn token đã gửi chưa? Request khác vừa refresh xong ⇒ dùng luôn, không refresh lại. */
@@ -193,20 +150,16 @@ export function createHttpClient(deps: HttpDeps) {
           cause,
         });
 
-  /** File (CSV) thành công ⇒ Blob; lỗi vẫn là envelope JSON ⇒ `parse` ném ApiError như mọi request. */
-  async function readFile(response: Response): Promise<DownloadResult> {
-    if (!response.ok) await parse(response, z.never());
-    return { blob: await response.blob(), filename: filenameOf(response.headers) };
-  }
-
-  async function request<S extends z.ZodType, T = ApiResult<z.output<S>>>(
-    method: Method,
-    path: string,
-    opts: RequestOptions<S>,
+  /**
+   * Chính sách xác thực DUY NHẤT cho mọi transport (fetch JSON, download, upload XHR): gửi `attempt`, đọc bằng
+   * `read`; TOKEN_EXPIRED ⇒ refresh rồi gửi lại `attempt` đúng 1 lần (upload gửi lại cùng Blob).
+   */
+  async function authed<T>(
+    attempt: () => Promise<Sent>,
+    read: (response: Response) => Promise<T>,
     retried = false,
-    read: (response: Response) => Promise<T> = (r) => parse(r, opts.schema) as Promise<T>,
   ): Promise<T> {
-    const { response, sentToken } = await send(method, path, opts);
+    const { response, sentToken } = await attempt();
     try {
       return await read(response);
     } catch (error) {
@@ -217,7 +170,7 @@ export function createHttpClient(deps: HttpDeps) {
           const ok = await renewed(sentToken).catch((cause: unknown) => {
             throw refreshUnavailable(cause);
           });
-          if (ok) return request(method, path, opts, true, read);
+          if (ok) return authed(attempt, read, true);
         }
         deps.auth.onSessionEnded('expired');
       } else if (
@@ -232,6 +185,12 @@ export function createHttpClient(deps: HttpDeps) {
     }
   }
 
+  const request = <S extends z.ZodType>(method: Method, path: string, opts: RequestOptions<S>) =>
+    authed(
+      () => send(method, path, opts),
+      (r) => parse(r, opts.schema),
+    );
+
   const call =
     (method: Method) =>
     async <S extends z.ZodType>(path: string, opts: RequestOptions<S>) =>
@@ -244,11 +203,25 @@ export function createHttpClient(deps: HttpDeps) {
     patch: call('PATCH'),
     delete: call('DELETE'),
     /** Khi cần `meta.page` (danh sách phân trang cursor) hoặc `requestId`. */
-    request: <S extends z.ZodType>(method: Method, path: string, opts: RequestOptions<S>) =>
-      request(method, path, opts),
+    request,
     /** GET một file (CSV — attendance-leave §5): Bearer + tự refresh như mọi request, trả Blob. */
     download: (path: string, opts: Readonly<{ query?: Query; accept: string }>) =>
-      request('GET', path, { schema: z.never(), ...opts }, false, readFile),
+      authed(() => send('GET', path, { schema: z.never(), ...opts }), readFile),
+    /**
+     * Tải lên nhị phân có tiến độ + hủy (XHR). Cùng Bearer / refresh / kết thúc phiên như `request`; hủy ⇒
+     * AbortError, KHÔNG kết thúc phiên. Trả `data` đã parse bằng `schema`.
+     */
+    upload: async <S extends z.ZodType>(
+      method: 'PUT' | 'POST',
+      path: string,
+      opts: UploadOptions<S>,
+    ) =>
+      (
+        await authed(
+          () => sendUpload(method, path, opts),
+          (r) => parse(r, opts.schema),
+        )
+      ).data,
   };
 }
 

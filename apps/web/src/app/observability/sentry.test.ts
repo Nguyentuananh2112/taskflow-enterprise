@@ -57,6 +57,14 @@ describe('beforeSend web — allow-list (T-035 mục 2)', () => {
       value: 'bad [REDACTED_EMAIL]',
     });
     expect(scrubUrl('/board?task=1#x')).toBe('/board');
+    // Mốc 6 (F-11, SEC-CH-20): chữ ký URL media trong chuỗi tự do (lỗi tải ảnh có src) bị che, kể cả chữ ký ngắn.
+    const media = sanitizeWebEvent({
+      type: undefined,
+      message: 'img https://api.test/api/v1/media/avatars/u/64?v=2&exp=9&sig=abc123 failed',
+    });
+    expect(media.message).toBe(
+      'img https://api.test/api/v1/media/avatars/u/64?v=2&exp=9&sig=[REDACTED] failed',
+    );
     // ADR-137 / B MEDIUM-1: token kích hoạt ở fragment không bao giờ tới Sentry.
     expect(scrubUrl('https://app.example.com/activate#t=Zm9vYmFy-token')).toBe(
       'https://app.example.com/activate',

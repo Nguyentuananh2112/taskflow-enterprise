@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
@@ -49,6 +49,65 @@ describe('Avatar', () => {
 
   it('màu ổn định theo colorKey', () => {
     expect(avatarColorIndex('user-1')).toBe(avatarColorIndex('user-1'));
+  });
+
+  describe('ảnh (src — avatar-chat.md ADR-142, §7 E1)', () => {
+    const URL_A = 'http://localhost:4000/api/v1/media/avatars/u1/64?v=1&exp=1&sig=a';
+    const URL_B = 'http://localhost:4000/api/v1/media/avatars/u1/64?v=2&exp=1&sig=b';
+
+    it('có src ⇒ <img> alt = họ tên, kích thước cố định, không gửi Referer', async () => {
+      const { container } = render(<Avatar name="Nguyễn Văn An" src={URL_A} size="sm" />);
+      const img = screen.getByRole('img', { name: 'Nguyễn Văn An' });
+      expect(img.tagName).toBe('IMG');
+      expect(img.getAttribute('src')).toBe(URL_A);
+      expect(img.getAttribute('width')).toBe('24');
+      expect(img.getAttribute('height')).toBe('24');
+      expect(img.getAttribute('referrerpolicy')).toBe('no-referrer');
+      expect(container.querySelector('[style]')).toBeNull();
+      await expectNoA11yViolations(container);
+    });
+
+    it('decorative ⇒ alt rỗng + aria-hidden', () => {
+      const { container } = render(<Avatar name="Trần Lan" src={URL_A} decorative />);
+      expect(screen.queryByRole('img')).toBeNull();
+      const img = container.querySelector('img');
+      expect(img?.getAttribute('alt')).toBe('');
+      expect(img?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('null / undefined ⇒ chữ cái', () => {
+      render(
+        <>
+          <Avatar name="Mai Hoa" src={null} />
+          <Avatar name="Lê Bình" />
+        </>,
+      );
+      expect(screen.getByRole('img', { name: 'Mai Hoa' }).textContent).toBe('MH');
+      expect(screen.getByRole('img', { name: 'Lê Bình' }).textContent).toBe('LB');
+    });
+
+    it('ảnh lỗi (URL hết khung) ⇒ chữ cái cùng nhãn; src mới ⇒ thử lại ảnh', () => {
+      const { rerender } = render(<Avatar name="Nguyễn Văn An" src={URL_A} />);
+      fireEvent.error(screen.getByRole('img', { name: 'Nguyễn Văn An' }));
+      const fallback = screen.getByRole('img', { name: 'Nguyễn Văn An' });
+      expect(fallback.tagName).toBe('SPAN');
+      expect(fallback.textContent).toBe('NA');
+
+      rerender(<Avatar name="Nguyễn Văn An" src={URL_B} />);
+      expect(screen.getByRole('img', { name: 'Nguyễn Văn An' }).getAttribute('src')).toBe(URL_B);
+    });
+
+    it('loading chỉ đặt khi truyền (header không lazy)', () => {
+      const { container, rerender } = render(<Avatar name="A B" src={URL_A} />);
+      expect(container.querySelector('img')?.hasAttribute('loading')).toBe(false);
+      rerender(<Avatar name="A B" src={URL_A} loading="lazy" />);
+      expect(container.querySelector('img')?.getAttribute('loading')).toBe('lazy');
+    });
+
+    it('size lg ⇒ 96 px', () => {
+      render(<Avatar name="A B" src={URL_A} size="lg" />);
+      expect(screen.getByRole('img').getAttribute('width')).toBe('96');
+    });
   });
 
   it.each(AVATAR_COLORS.map((c) => c.hex))('nền %s đạt ≥ 4.5:1 với chữ trắng', (hex) => {

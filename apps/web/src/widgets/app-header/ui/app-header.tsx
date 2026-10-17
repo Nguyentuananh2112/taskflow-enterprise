@@ -43,7 +43,13 @@ export function AppHeader({ actions }: Props) {
           {user && (
             // Màn hẹp (360) không đủ chỗ cho avatar + chuông + 2 nút ⇒ ẩn avatar (tên vẫn ở trang Tài khoản).
             <span className="hidden items-center gap-2 text-sm sm:flex">
-              <Avatar name={user.fullName} colorKey={user.id} size="sm" decorative />
+              <Avatar
+                name={user.fullName}
+                colorKey={user.id}
+                src={user.avatarUrl}
+                size="sm"
+                decorative
+              />
               <span className="hidden sm:inline">{user.fullName}</span>
             </span>
           )}

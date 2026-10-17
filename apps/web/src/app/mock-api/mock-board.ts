@@ -22,8 +22,6 @@ export type BoardEvent = {
 
 type StoredTask = TaskDto & { deleted: boolean };
 
-const strip = ({ deleted: _deleted, ...task }: StoredTask): TaskDto => task;
-
 export class MockBoard {
   private readonly projects = new Map<string, ProjectDto>();
   private readonly tasks = new Map<string, StoredTask>();
@@ -31,7 +29,24 @@ export class MockBoard {
   private readonly numbers = new Map<string, number>();
   private readonly listeners = new Set<(event: BoardEvent) => void>();
 
+  /**
+   * Mốc 6 (ADR-142): URL avatar HIỆN TẠI (variant 64) của người dùng — server tính lúc đọc (`avatarUrlOf`), task không
+   * lưu URL. createMockApi nối vào MockAvatars. Không có ảnh ⇒ không thêm trường (giữ DTO cũ của các test trước).
+   */
+  avatarOf: (userId: string) => string | null = () => null;
+
   constructor(private readonly now: () => number) {}
+
+  private withAvatar<T extends { id: string } | null>(user: T): T {
+    const url = user && this.avatarOf(user.id);
+    return user && url ? { ...user, avatarUrl: url } : user;
+  }
+
+  private strip = ({ deleted: _deleted, ...task }: StoredTask): TaskDto => ({
+    ...task,
+    assignee: this.withAvatar(task.assignee),
+    createdBy: this.withAvatar(task.createdBy),
+  });
 
   iso(): string {
     return new Date(this.now()).toISOString();
@@ -76,12 +91,12 @@ export class MockBoard {
     return [...this.tasks.values()]
       .filter((t) => t.projectId === projectId && !t.deleted)
       .sort((a, b) => order(a.status) - order(b.status) || compareByRank(a, b))
-      .map(strip);
+      .map(this.strip);
   }
 
   getTask(projectId: string, taskId: string): TaskDto | undefined {
     const task = this.tasks.get(taskId);
-    return task && task.projectId === projectId && !task.deleted ? strip(task) : undefined;
+    return task && task.projectId === projectId && !task.deleted ? this.strip(task) : undefined;
   }
 
   /** Kể cả task đã xóa mềm — lịch sử vẫn đọc được (R16). */

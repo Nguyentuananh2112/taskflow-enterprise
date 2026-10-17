@@ -2,6 +2,7 @@
 
 import { useMe } from '@/entities/session';
 import { LogoutAllSection } from '@/features/auth-logout';
+import { AvatarSection } from '@/features/avatar-upload';
 import { ChangePasswordForm } from '@/features/change-password';
 import { ProfileForm } from '@/features/profile-edit';
 import { ThemeSelect } from '@/features/theme-switch';
@@ -12,7 +13,7 @@ import { PageMain } from '@/shared/ui/page';
 
 const CARD = 'flex flex-col gap-4 rounded-card border border-border bg-surface p-6 shadow-card';
 
-/** `/account` (frontend.md §1.2): hồ sơ (ADR-083), đổi mật khẩu, đăng xuất mọi thiết bị. */
+/** `/account` (frontend.md §1.2): hồ sơ (ADR-083), ảnh đại diện (ADR-142), đổi mật khẩu, đăng xuất mọi thiết bị. */
 export function AccountPage() {
   const me = useMe();
   return (
@@ -37,6 +38,14 @@ export function AccountPage() {
           </div>
         )}
       </section>
+      {me.data && (
+        <section aria-labelledby="avatar-heading" className={CARD}>
+          <h2 id="avatar-heading" className="text-base font-semibold">
+            Ảnh đại diện
+          </h2>
+          <AvatarSection user={me.data.user} />
+        </section>
+      )}
       <section aria-labelledby="password-heading" className={CARD}>
         <h2 id="password-heading" className="text-base font-semibold">
           Đổi mật khẩu
