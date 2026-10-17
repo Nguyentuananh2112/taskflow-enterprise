@@ -2,6 +2,7 @@ import * as z from 'zod';
 
 import { YearMonth } from '../attendance/attendance.schemas';
 import { DateOnly, IsoDateTime, singleLineText, Uuid } from '../common';
+import { MAX_PAYSLIP_LINES } from './payslip-math';
 
 // Mốc 4 — phiếu lương cấp công ty (docs/design/payroll.md v4, ADR-124…127; T-048 contract). Quyền: `payroll:manage`
 // (Kế toán + Admin) cho mọi route `payroll/*`; route nhân viên `payslips/*` chỉ EMPLOYEE (Admin ⇒ 403). Luật self tuyệt
@@ -210,8 +211,6 @@ export type PublishPayrollBody = z.infer<typeof PublishPayrollBody>;
 export const PayslipSection = z.enum(['INCOME', 'BONUS', 'DEDUCTION']);
 export type PayslipSection = z.infer<typeof PayslipSection>;
 
-export const PAYSLIP_MAX_LINES = 50;
-
 /** Dòng kế toán gõ tay (nhãn bắt buộc); dấu do mục quyết định ⇒ `amount ≥ 0`. Thâm niên KHÔNG phải dòng. */
 export const PayslipLineInput = z.strictObject({
   section: PayslipSection,
@@ -229,7 +228,7 @@ export const PayslipLineDto = z.object({
 export type PayslipLineDto = z.infer<typeof PayslipLineDto>;
 
 const payslipEdit = {
-  lines: z.array(PayslipLineInput).max(PAYSLIP_MAX_LINES),
+  lines: z.array(PayslipLineInput).max(MAX_PAYSLIP_LINES),
   note: z.string().trim().min(1).max(1000).nullable(),
   /** Sửa công (bước nửa ngày); null = theo chấm công. */
   overrideHalfDays: HalfDays.nullable(),

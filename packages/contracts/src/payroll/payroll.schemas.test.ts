@@ -6,13 +6,13 @@ import {
   MoneyVnd,
   MyPayslipDto,
   MyPayslipRevisionParams,
-  PAYSLIP_MAX_LINES,
   PayrollPeriod,
   PublishBlockedDetails,
   PublishPayrollBody,
   PutPayrollSettingsBody,
   PutPayslipBody,
 } from './payroll.schemas';
+import { MAX_PAYSLIP_LINES } from './payslip-math';
 
 const line = { section: 'BONUS', label: 'Thưởng kênh online', amount: 1_500_000 } as const;
 const edit = { lines: [line], note: null, overrideHalfDays: null, overrideReason: null };
@@ -34,7 +34,7 @@ describe('payroll contracts (T-048, payroll.md ADR-124…127)', () => {
 
   it('PUT phiếu: ≤ 50 dòng; nhãn bắt buộc; sửa công ⇔ có lý do; strict', () => {
     expect(PutPayslipBody.parse({ ...edit, expectedLockVersion: 1 }).lines).toHaveLength(1);
-    const many = Array.from({ length: PAYSLIP_MAX_LINES + 1 }, () => line);
+    const many = Array.from({ length: MAX_PAYSLIP_LINES + 1 }, () => line);
     expect(PutPayslipBody.safeParse({ ...edit, lines: many, expectedLockVersion: 1 }).success).toBe(
       false,
     );
