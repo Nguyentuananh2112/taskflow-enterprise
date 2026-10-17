@@ -39,11 +39,11 @@
 | Phép năm đầu của người vào giữa năm | Người dùng 17/10 | **Đủ** phép năm (không tỷ lệ) — có lợi hơn mức tối thiểu Đ.113 k.2 nên hợp lệ |
 | Mốc thâm niên phép | Người dùng 17/10 | Đủ 5 năm trong năm Y (tính tới 31/12/Y) ⇒ +1 ngày ngay năm Y |
 | Cửa sổ đơn bổ sung giờ | Người dùng 17/10 | Tháng này + tháng trước |
-| Vào làm / nghỉ việc / kích hoạt / nhận lại | Người dùng 17/10 | Ở **Mốc 3.5** (`company-level.md` ADR-137, T-062) — Mốc 5 chỉ thêm 4 trường hồ sơ vào form "Thêm nhân viên" |
+| Vào làm / nghỉ việc / kích hoạt / nhận lại | Người dùng 17/10 | Ở **Mốc 3.5** (`company-level.md` ADR-137, T-062) — Mốc 5 (T-054) chỉ **mở rộng** `POST hr/employees` bằng trường hồ sơ tùy chọn |
 
 ## 1. Phạm vi v1
 
-**Có:** hồ sơ nhân viên (4 trường) + "Hồ sơ của tôi"; 4 trường hồ sơ trong form "Thêm nhân viên" / "Nhận lại" của Mốc 3.5; đơn bổ sung giờ (gửi/hủy/duyệt/từ chối, thông báo); 2 báo cáo .xlsx; chính sách phép theo năm, phép thâm niên tự tính, cộng dồn có hạn; phân rã số phép cho nhân viên và HR.
+**Có:** hồ sơ nhân viên (4 trường) + "Hồ sơ của tôi"; trường hồ sơ **tùy chọn** mở rộng form/route "Thêm nhân viên" / "Nhận lại" của Mốc 3.5 (T-054, T-058a); đơn bổ sung giờ (gửi/hủy/duyệt/từ chối, thông báo); 2 báo cáo .xlsx; chính sách phép theo năm, phép thâm niên tự tính, cộng dồn có hạn; phân rã số phép cho nhân viên và HR.
 
 **Không:** phòng ban dạng bảng / sơ đồ tổ chức / quản lý trực tiếp duyệt; danh bạ đồng nghiệp; thay giờ đã chấm qua đơn; thanh toán phép chưa nghỉ khi nghỉ việc (Đ.113 k.3 — kế toán gõ dòng lương); nhập Excel; xuất PDF; báo cáo tùy biến cột; đổi vai trò dự án từ trang Nhân sự (thuộc workspace); vòng đời nhân viên (Mốc 3.5).
 
