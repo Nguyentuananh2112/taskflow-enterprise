@@ -200,4 +200,19 @@ describe('nhận lại + tạo lại link (ADR-137)', () => {
       errorOf(await as(hana).post(`/${employee.userId}/activation-link`)).details,
     ).toMatchObject({ rule: 'ALREADY_ACTIVATED' });
   });
+
+  it('SEC-HR-63b: tạo lại link cho MỘT người lần 11 trong giờ ⇒ 429; người khác vẫn được (hạn mức theo người đích)', async () => {
+    const pending = async (email: string) =>
+      envelopeOf<{ employee: { userId: string } }>(
+        await as(admin).post('', { email, fullName: email.split('@')[0] }),
+      ).data!.employee.userId;
+    const pat = await pending('pat@example.com');
+    const quinn = await pending('quinn@example.com');
+    for (let i = 1; i <= 10; i += 1) {
+      expect((await as(admin).post(`/${pat}/activation-link`)).status, `lần ${i}`).toBe(200);
+    }
+    const eleventh = await as(hana).post(`/${pat}/activation-link`); // actor khác vẫn chung bộ đếm của người đích
+    expect([eleventh.status, errorOf(eleventh).code]).toEqual([429, 'RATE_LIMITED']);
+    expect((await as(admin).post(`/${quinn}/activation-link`)).status).toBe(200);
+  });
 });

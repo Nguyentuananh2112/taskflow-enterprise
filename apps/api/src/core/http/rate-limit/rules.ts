@@ -9,7 +9,9 @@ export type RateLimitKey =
   | 'user'
   /** SHA-256 của email (trim + lowercase) trong body. */
   | 'email'
-  | 'ip+email';
+  | 'ip+email'
+  /** `:userId` của route — người BỊ tác động (vd tạo lại link cho MỘT người, bất kể ai làm). */
+  | 'target';
 
 export interface RateLimitRule {
   /** Tiền tố khóa Valkey, duy nhất. */
@@ -108,6 +110,16 @@ export const RATE_LIMIT_RULES = {
       windowMs: HOUR,
       limit: 60,
       key: 'user',
+      failMode: 'open',
+    }),
+  ],
+  /** `POST hr/employees/:userId/activation-link` — 10/giờ cho MỖI người đích (SEC-HR-63), tách khỏi hạn mức thêm. */
+  activationLink: [
+    rule({
+      id: 'activation-link-target',
+      windowMs: HOUR,
+      limit: 10,
+      key: 'target',
       failMode: 'open',
     }),
   ],

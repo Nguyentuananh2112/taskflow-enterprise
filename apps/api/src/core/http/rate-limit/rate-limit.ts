@@ -40,6 +40,8 @@ function keyOf(kind: RateLimitKey, req: Request, deps: RateLimitDeps): string {
       return hashEmail(body?.email);
     case 'ip+email':
       return `${ipKey(req.ip)}|${hashEmail(body?.email)}`;
+    case 'target':
+      return `t:${(req.params as { userId?: string }).userId ?? ''}`;
   }
 }
 

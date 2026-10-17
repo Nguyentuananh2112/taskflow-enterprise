@@ -15,9 +15,12 @@ export async function authorizeOnEmployee(
   d: { access: CompanyAccess; members: ICompanyMemberRepository },
   actorId: string,
   userId: string,
+  /** Khóa bậc 3 (leave / punch) khi lệnh sẽ đụng dòng người đích — sau bậc 2, TRƯỚC bậc 5 (ADR-136). */
+  beforeRowLocks?: () => Promise<void>,
 ): Promise<{ actor: CompanyActor; target: CompanyMemberSnapshot }> {
   const peek = await d.members.find(userId);
   if (peek?.role === 'ADMIN') await d.members.lockAdmins();
+  await beforeRowLocks?.();
   const actor = await d.access.authorizeWrite({ actorId, targetUserId: userId });
   const target = await d.members.find(userId);
   if (!target) throw new ResourceNotFoundError('user');
