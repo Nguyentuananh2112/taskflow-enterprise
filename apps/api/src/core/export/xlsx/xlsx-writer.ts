@@ -2,6 +2,7 @@ import { Zip, ZipDeflate, strToU8 } from 'fflate';
 
 import { rowXml, sheetName, type CellValue } from './xlsx-cells';
 import {
+  CORE_PROPS_XML,
   ROOT_RELS_XML,
   SHEET_TAIL_XML,
   STYLES_XML,
@@ -79,6 +80,7 @@ export class FflateXlsxWriter implements ISpreadsheetWriter {
     const names = sheets.map((s) => sheetName(s.name, used));
     await addWhole('[Content_Types].xml', contentTypesXml(sheets.length));
     await addWhole('_rels/.rels', ROOT_RELS_XML);
+    await addWhole('docProps/core.xml', CORE_PROPS_XML);
     await addWhole('xl/workbook.xml', workbookXml(names));
     await addWhole('xl/_rels/workbook.xml.rels', workbookRelsXml(sheets.length));
     await addWhole('xl/styles.xml', STYLES_XML);
