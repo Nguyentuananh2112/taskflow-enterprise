@@ -8,7 +8,7 @@ import {
   type ScheduledJob,
 } from './maintenance-jobs';
 import type { Persistence } from './persistence';
-import { retentionJob, retentionPolicyFrom } from './retention-job';
+import { recordsRetentionCutoff, retentionJob, retentionPolicyFrom } from './retention-job';
 
 /**
  * Danh sách job bảo trì của process API (ADR-095) — chỉ những job mà lưu trữ hiện tại hỗ trợ (bộ nhớ
@@ -49,7 +49,7 @@ export function maintenanceJobs(d: {
     jobs.push(purgeRefreshTokensJob({ purger: p.refreshTokenPurger, uow: p.uow, clock, logger }));
   }
   // T-043 / R27: thời hạn lưu dữ liệu cá nhân Mốc 3 — mỗi ngày, khóa advisory theo lô.
-  if (p.retention && retentionEnabled(env)) {
+  if (p.retention && isRetentionActive(env, p)) {
     jobs.push(
       retentionJob({
         stores: p.retention,
@@ -61,6 +61,31 @@ export function maintenanceJobs(d: {
     );
   }
   return jobs;
+}
+
+/**
+ * Job retention THẬT SỰ chạy ở process này: lưu trữ có bước dọn (Prisma) VÀ cờ cho phép. Một điều kiện duy nhất cho
+ * cả `maintenanceJobs` lẫn mốc API (T-047, TL d9) — job tắt thì dữ liệu cũ còn nguyên, API không được che / chặn.
+ */
+export function isRetentionActive(
+  env: Pick<Env, 'APP_ENV' | 'MAINTENANCE_JOBS_ENABLED' | 'RETENTION_JOB_ENABLED'>,
+  persistence: Pick<Persistence, 'retention'>,
+): boolean {
+  return persistence.retention !== undefined && retentionEnabled(env);
+}
+
+/**
+ * Mốc lưu dữ liệu chấm công cho API (T-047): CHÍNH hàm mốc của job (`recordsRetentionCutoff`, theo giờ NGHIỆP VỤ như
+ * job — R31) ⇒ API không lệch job. Job không chạy ⇒ luôn `null`.
+ */
+export function retentionCutoffFor(d: {
+  env: Env;
+  persistence: Pick<Persistence, 'retention'>;
+  businessClock: IClock;
+}): () => string | null {
+  if (!isRetentionActive(d.env, d.persistence)) return () => null;
+  const policy = retentionPolicyFrom(d.env);
+  return () => recordsRetentionCutoff(policy, d.businessClock.now()).cutoffDate;
 }
 
 /**

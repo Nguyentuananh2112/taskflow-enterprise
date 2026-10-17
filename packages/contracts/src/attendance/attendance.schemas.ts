@@ -8,11 +8,13 @@ import { AttendanceKind, AttendanceSource } from '../hr/hr.schemas';
 // Giờ trả về là ISO UTC; web hiển thị theo `timezone` của LỊCH hiệu lực (ADR-120), không theo máy.
 
 /**
- * Trạng thái ngày — thứ tự ưu tiên NOT_EMPLOYED > HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT >
+ * Trạng thái ngày — thứ tự ưu tiên RETENTION_EXPIRED > NOT_EMPLOYED > HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT >
  * PENDING. `NOT_EMPLOYED`: ngày trước khi gia nhập / sau khi rời mà không có lượt chấm — không phải ngày
  * công, 0 ở mọi tổng và CSV (TL chốt).
  */
 export const DayStatus = z.enum([
+  /** Ngày công cũ hơn thời hạn lưu (job retention ĐANG BẬT đã / sẽ xóa — T-047, R27): không có số liệu. */
+  'RETENTION_EXPIRED',
   'NOT_EMPLOYED',
   'HOLIDAY',
   'OFF',
@@ -102,11 +104,37 @@ export const AttendanceDayDto = z.object({
 });
 export type AttendanceDayDto = z.infer<typeof AttendanceDayDto>;
 
+const HalfDays = z.number().min(0).multipleOf(0.5);
+
+/**
+ * Tổng tháng của một người — CÙNG một hàm cho `me?month=` và bảng HR (T-046, TL d9). Chỉ đếm ngày `date ≤ hôm nay`
+ * (theo lịch) ở mọi cột; NOT_EMPLOYED / OFF / HOLIDAY tính 0; vắng / nghỉ theo bước 0,5 ngày. `workedMin` chỉ có ở
+ * ngày đã có giờ ra (hôm nay đang làm hiện riêng ở thẻ hôm nay). Web KHÔNG tự cộng.
+ */
+export const AttendanceTotalsDto = z.object({
+  workedMin: z.int().min(0),
+  lateDays: z.int().min(0),
+  lateMin: z.int().min(0),
+  earlyDays: z.int().min(0),
+  earlyMin: z.int().min(0),
+  absentDays: HalfDays,
+  leaveDays: HalfDays,
+  missingOutDays: z.int().min(0),
+  /** Ngày công có đi làm: PRESENT + MISSING_OUT (nghỉ nửa ngày, làm nửa kia vẫn là 1). */
+  presentDays: z.int().min(0),
+  /** Phép đã duyệt SAU hôm nay (ngày công), bước 0,5 — cột "Phép sắp tới". */
+  upcomingLeaveDays: HalfDays,
+  /** Ngày cuối được tính (= hôm nay, hoặc cuối tháng nếu tháng đã qua); tháng chưa tới ⇒ `null`. */
+  throughDate: DateOnly.nullable(),
+});
+export type AttendanceTotalsDto = z.infer<typeof AttendanceTotalsDto>;
+
 /** `GET attendance/me?month=` — `days` đủ mọi ngày của tháng (kể cả OFF / PENDING tương lai). */
 export const AttendanceMonthDto = z.object({
   month: YearMonth,
   timezone: z.string().min(1),
   days: z.array(AttendanceDayDto),
+  totals: AttendanceTotalsDto,
 });
 export type AttendanceMonthDto = z.infer<typeof AttendanceMonthDto>;
 
@@ -173,6 +201,8 @@ export type VoidAttendanceBody = z.infer<typeof VoidAttendanceBody>;
 export const AttendanceEventChangeDto = z.object({
   event: AttendanceEventDto,
   day: AttendanceDayDto,
+  /** Tổng THÁNG của `day` (người đó) tính lại ở server — web thay dòng tổng, không tự cộng (T-046, TL d9). */
+  totals: AttendanceTotalsDto,
 });
 export type AttendanceEventChangeDto = z.infer<typeof AttendanceEventChangeDto>;
 
@@ -283,21 +313,6 @@ export const AttendanceCompanyTodayDto = z.object({
   members: z.array(z.object({ ...HrMemberRef, day: AttendanceDayDto })),
 });
 export type AttendanceCompanyTodayDto = z.infer<typeof AttendanceCompanyTodayDto>;
-
-const HalfDays = z.number().min(0).multipleOf(0.5);
-
-/** Tổng tháng của một người; NOT_EMPLOYED / OFF / HOLIDAY tính 0. Vắng / nghỉ theo bước 0,5 ngày. */
-export const AttendanceTotalsDto = z.object({
-  workedMin: z.int().min(0),
-  lateDays: z.int().min(0),
-  lateMin: z.int().min(0),
-  earlyDays: z.int().min(0),
-  earlyMin: z.int().min(0),
-  absentDays: HalfDays,
-  leaveDays: HalfDays,
-  missingOutDays: z.int().min(0),
-});
-export type AttendanceTotalsDto = z.infer<typeof AttendanceTotalsDto>;
 
 /** Một dòng của `GET attendance?month=` (envelope `data[]` + `meta.page`). */
 export const AttendanceMemberMonthDto = z.object({

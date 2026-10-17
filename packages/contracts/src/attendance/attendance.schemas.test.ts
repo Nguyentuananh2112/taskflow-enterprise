@@ -49,11 +49,34 @@ describe('attendance contracts', () => {
   it('AttendanceMonthDto: ngày có phút làm; phút âm bị từ chối', () => {
     const { serverNow: _s, isHoliday: _h, schedule: _sc, ...day } = today;
     const row = { ...day, holidayName: null, workedMin: 480, lateMin: 0, earlyMin: 0 };
-    const month = { month: '2026-11', timezone: 'Asia/Ho_Chi_Minh', days: [row] };
+    const totals = {
+      workedMin: 480,
+      lateDays: 0,
+      lateMin: 0,
+      earlyDays: 0,
+      earlyMin: 0,
+      absentDays: 0.5,
+      leaveDays: 1.5,
+      missingOutDays: 0,
+      presentDays: 1,
+      upcomingLeaveDays: 1,
+      throughDate: '2026-11-17',
+    };
+    const month = { month: '2026-11', timezone: 'Asia/Ho_Chi_Minh', days: [row], totals };
     expect(AttendanceMonthDto.parse(month)).toEqual(month);
     expect(
       AttendanceMonthDto.safeParse({ ...month, days: [{ ...row, workedMin: -1 }] }).success,
     ).toBe(false);
+    // T-046: tháng chưa tới ⇒ throughDate null; bước 0,5 bắt buộc cho phép sắp tới; thiếu totals ⇒ sai hợp đồng.
+    expect(
+      AttendanceMonthDto.safeParse({ ...month, totals: { ...totals, throughDate: null } }).success,
+    ).toBe(true);
+    expect(
+      AttendanceMonthDto.safeParse({ ...month, totals: { ...totals, upcomingLeaveDays: 0.3 } })
+        .success,
+    ).toBe(false);
+    const { totals: _t, ...withoutTotals } = month;
+    expect(AttendanceMonthDto.safeParse(withoutTotals).success).toBe(false);
   });
 
   it('AttendanceMonthQuery: chỉ YYYY-MM tháng 01–12, không nhận khóa lạ', () => {
@@ -100,7 +123,23 @@ describe('attendance contracts', () => {
   it('AttendanceEventChangeDto: { event, day }', () => {
     const { serverNow: _s, isHoliday: _h, schedule: _sc, ...day } = today;
     const row = { ...day, holidayName: null, workedMin: 0, lateMin: 0, earlyMin: 0 };
-    const change = { event, day: row };
+    const change = {
+      event,
+      day: row,
+      totals: {
+        workedMin: 0,
+        lateDays: 0,
+        lateMin: 0,
+        earlyDays: 0,
+        earlyMin: 0,
+        absentDays: 0,
+        leaveDays: 0,
+        missingOutDays: 0,
+        presentDays: 0,
+        upcomingLeaveDays: 0,
+        throughDate: '2026-11-17',
+      },
+    };
     expect(AttendanceEventChangeDto.parse(change)).toEqual(change);
   });
 
@@ -137,8 +176,8 @@ describe('attendance contracts', () => {
     ).toBe(false);
   });
 
-  it('DayStatus có NOT_EMPLOYED (TL: ngoài nhiệm kỳ, không lượt)', () => {
-    expect(DayStatus.options[0]).toBe('NOT_EMPLOYED');
+  it('DayStatus: RETENTION_EXPIRED (T-047) rồi NOT_EMPLOYED đứng đầu thứ tự ưu tiên', () => {
+    expect(DayStatus.options.slice(0, 2)).toEqual(['RETENTION_EXPIRED', 'NOT_EMPLOYED']);
   });
 
   it('CreateWorkScheduleBody: AT-19 múi giờ lạ ⇒ từ chối; ca / giờ nghỉ / workdays / grace trong miền', () => {

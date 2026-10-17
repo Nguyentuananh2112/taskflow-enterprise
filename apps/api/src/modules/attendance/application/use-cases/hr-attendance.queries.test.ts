@@ -112,8 +112,41 @@ describe('HrAttendanceQueries.month', () => {
       absentDays: 15.5,
       leaveDays: 0.5,
       missingOutDays: 0,
+      presentDays: 1,
+      upcomingLeaveDays: 0,
+      throughDate: '2026-11-30',
     });
     expect(mia.days.filter((x) => x.status === 'NOT_EMPLOYED')).toHaveLength(9);
+  });
+
+  it('T-046 giữa tháng: chỉ đếm tới HÔM NAY; phép sau hôm nay ⇒ upcomingLeaveDays; tổng của HR = tổng của me?month', async () => {
+    const t = await setup('2026-11-17 10:00');
+    t.leaves.rows.push(
+      { workspaceId: W1, userId: MIA, date: '2026-11-16', part: 'FULL' },
+      { workspaceId: W1, userId: MIA, date: '2026-11-20', part: 'FULL' },
+      { workspaceId: W1, userId: MIA, date: '2026-11-23', part: 'PM' },
+    );
+    t.at('2026-11-17 08:10');
+    await t.punch('IN', key(1)); // hôm nay vào muộn, đang làm
+    t.at('2026-11-17 10:00');
+    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    const mia = r.data.find((x) => x.user.id === MIA)!;
+    // 1..17/11: CN 1/11, 8/11, 15/11 nghỉ; 2..7, 9..14 = 12 ngày vắng; 16/11 phép; 17/11 đi làm (muộn 10').
+    expect(mia.totals).toEqual({
+      workedMin: 0, // hôm nay chưa ra ⇒ chưa cộng
+      lateDays: 1,
+      lateMin: 10,
+      earlyDays: 0,
+      earlyMin: 0,
+      absentDays: 12,
+      leaveDays: 1,
+      missingOutDays: 0,
+      presentDays: 1,
+      upcomingLeaveDays: 1.5,
+      throughDate: '2026-11-17',
+    });
+    const mine = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    expect(mine.totals).toEqual(mia.totals);
   });
 
   it('phân trang: limit 2 ⇒ 2 trang theo tên, cursor opaque; cursor hỏng / của endpoint khác ⇒ 400', async () => {

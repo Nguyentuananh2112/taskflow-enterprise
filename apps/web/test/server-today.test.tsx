@@ -35,15 +35,14 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
     expect(new Date().toISOString().slice(0, 7)).not.toBe('2031-03');
   });
 
-  it('/attendance: tháng mặc định 3/2031, hàng 10/03 được đánh dấu "hôm nay" (aria-current=date)', async () => {
+  it('/attendance: tháng mặc định 3/2031, ô 10/03 được đánh dấu "hôm nay" (aria-current=date)', async () => {
     open('/attendance');
     const table = await screen.findByRole('table', { name: 'Bảng công tháng 3/2031' });
-    const current = table.querySelectorAll('tr[aria-current="date"]');
+    const current = table.querySelectorAll('td[aria-current="date"]');
     expect(current).toHaveLength(1);
-    const header = within(current[0] as HTMLElement).getByRole('rowheader');
-    expect(header.textContent).toMatch(/10\/03.*hôm nay/);
-    // Tên truy cập KHÔNG đổi (chữ "hôm nay" aria-hidden) ⇒ locator theo "dd/MM" ở cuối vẫn khớp.
-    expect(within(table).getByRole('rowheader', { name: /10\/03$/ })).toBe(header);
+    const button = within(current[0] as HTMLElement).getByRole('button');
+    expect(button.getAttribute('aria-label')).toMatch(/^Ngày 10\/3, hôm nay/);
+    expect(button.textContent).toMatch(/^10/);
   });
 
   it('/leave: ngày mặc định của form = hôm nay của server; năm số phép = 2031', async () => {

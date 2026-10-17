@@ -9,7 +9,9 @@ import { ResourceConflictError, ResourceNotFoundError } from '../../../../core/e
 import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
 import { effectiveSchedule } from '../../domain/work-schedule';
 import { toEventDtos } from '../attendance-event-dto';
-import { summarizeRange, type AttendanceDeps } from '../attendance-days';
+import type { AttendanceDeps } from '../attendance-days';
+import { monthTotalsOf } from '../attendance-totals';
+import { assertInsideRetention } from '../retention-guard';
 import type { AttendanceEventRecord } from '../ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
@@ -71,6 +73,8 @@ export class AttendanceEventsUseCases {
       if (!(await d.hrAccess.isEmployee({ workspaceId, userId: body.userId }))) {
         throw new ResourceNotFoundError('user');
       }
+      // Thứ tự lỗi đã chốt: 404 tài nguyên con TRƯỚC 422 (review B, LOW-1).
+      assertInsideRetention(d.retention, body.date);
       const versions = await d.calendar.scheduleVersions(workspaceId);
       const { timezone } = effectiveSchedule(versions, body.date);
       const [h, m] = body.time.split(':').map(Number) as [number, number];
@@ -133,6 +137,7 @@ export class AttendanceEventsUseCases {
         targetUserId: event.userId,
         reason: q.reason,
       });
+      assertInsideRetention(d.retention, event.workDate);
       const ok = await d.events.void({
         workspaceId,
         id: q.id,
@@ -183,13 +188,12 @@ export class AttendanceEventsUseCases {
   async #change(workspaceId: string, id: string): Promise<AttendanceEventChangeDto> {
     const event = (await this.d.events.findById(workspaceId, id))!;
     const [dto] = await this.#toDtos([event]);
-    const [day] = await summarizeRange(this.d, {
+    const { day, totals } = await monthTotalsOf(this.d, {
       workspaceId,
       userId: event.userId,
-      from: event.workDate,
-      to: event.workDate,
+      date: event.workDate,
     });
-    return { event: dto!, day: day! };
+    return { event: dto!, day, totals };
   }
 
   #toDtos(events: AttendanceEventRecord[]): Promise<AttendanceEventDto[]> {

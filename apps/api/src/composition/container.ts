@@ -15,10 +15,7 @@ import {
   type RateLimitDeps,
 } from '../core/http/rate-limit/rate-limit';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
-import {
-  createAttendanceModule,
-  type AttendanceModule,
-} from '../modules/attendance/attendance.module';
+import type { AttendanceModule } from '../modules/attendance/attendance.module';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { createAuthModule, type AuthModule } from '../modules/auth/auth.module';
 import type { IAccessTokenService } from '../modules/auth/application/ports/access-token-service.port';
@@ -36,11 +33,11 @@ import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
-import { attendanceMembership } from './attendance-adapters';
+import { wireAttendance } from './attendance-adapters';
 import { LateBoundRealtime } from './late-realtime';
 import { LateApprovedLeaves, wireLeave } from './leave-wiring';
 import type { Persistence } from './persistence';
-import { attendanceNotifierFrom, hrGrantNotifierFrom } from './notification-adapters';
+import { hrGrantNotifierFrom } from './notification-adapters';
 import { AuthUserDirectory } from './users';
 
 export interface ContainerConfig extends AppConfig {
@@ -61,6 +58,11 @@ export interface ContainerDeps {
    * auth/JWT, task, rate limit, meta.timestamp, socket luôn theo `clock` (giờ thật).
    */
   businessClock?: IClock;
+  /**
+   * T-047: mốc lưu dữ liệu chấm công (`YYYY-MM-DD`) — `retentionCutoffFor` của maintenance-setup, CHỈ khác null khi job
+   * retention thật sự bật. Thiếu ⇒ không áp (test HTTP, chế độ bộ nhớ).
+   */
+  retentionCutoff?: () => string | null;
   ids: IIdGenerator;
   random: IRandom;
   hasher: IPasswordHasher;
@@ -162,21 +164,11 @@ export function createContainer(d: ContainerDeps): Container {
   });
   workspaceRef.current = workspace;
   const lateLeaves = new LateApprovedLeaves(); // leave ↔ attendance phụ thuộc vòng ⇒ gắn leave sau
-  const attendance = createAttendanceModule({
-    repos: persistence.attendance,
-    leaves: lateLeaves,
-    tenures: workspace.tenure,
-    users: persistence.task.users,
-    hrAccess: workspace.hrAccess,
-    audit: workspace.hrAudit,
-    notifier: attendanceNotifierFrom(notifications.publisher),
-    membership: attendanceMembership(() => workspace),
-    uow: persistence.uow,
-    clock: business,
-    ids,
-    responder,
-    limit,
-  });
+  const attendance = wireAttendance(
+    { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
+    { workspace, notifications, leaves: lateLeaves },
+    { responder, limit },
+  );
   const auth = createAuthModule({
     repos: persistence.auth,
     hasher: d.hasher,

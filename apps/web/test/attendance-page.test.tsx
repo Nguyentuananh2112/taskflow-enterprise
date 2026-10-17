@@ -32,29 +32,86 @@ function open(path = '') {
 }
 
 describe('bảng công tháng', () => {
-  it('mặc định THÁNG CỦA SERVER; <table> có tiêu đề cột + hàng; trạng thái chữ + biểu tượng; a11y', async () => {
+  it('mặc định THÁNG CỦA SERVER, dạng LỊCH T2→CN: hôm nay nổi bật, tổng kết từ server, ngày trước khi vào làm gộp 1 câu, tương lai trống; a11y', async () => {
     open();
     const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
     expect(
       within(table)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['Ngày', 'Trạng thái', 'Vào', 'Ra', 'Giờ làm', 'Muộn / sớm']);
-    const rows = within(table).getAllByRole('rowheader');
-    expect(rows).toHaveLength(31);
-    // Người dùng gia nhập 15/10 ⇒ ngày trước đó KHÔNG phải "Vắng" (TL chốt NOT_EMPLOYED).
-    const before = within(table)
-      .getByRole('rowheader', { name: /14\/10/ })
-      .closest('tr');
-    expect(before?.textContent).toContain('Chưa/không làm việc');
-    expect(before?.textContent).not.toContain('Vắng');
-    const sun = within(table)
-      .getByRole('rowheader', { name: /18\/10/ })
-      .closest('tr');
-    expect(sun?.textContent).toContain('Không phải ngày làm');
-    // Biểu tượng chỉ để nhìn (trung tính, không màu vắng) — trình đọc màn hình đọc chữ.
-    expect(before?.querySelector('[aria-hidden="true"]')?.textContent).toContain('·');
+    ).toEqual(['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']);
+    // Người dùng gia nhập 15/10 ⇒ MỘT câu thay vì 14 ô "Chưa/không làm việc".
+    expect(screen.getByText('Bạn bắt đầu làm từ 15/10')).toBeTruthy();
+    expect(table.textContent).not.toContain('Chưa/không làm việc');
+    expect(table.textContent).not.toContain('Vắng');
+    const today = table.querySelectorAll('td[aria-current="date"]');
+    expect(today).toHaveLength(1);
+    expect(
+      within(today[0] as HTMLElement)
+        .getByRole('button')
+        .getAttribute('aria-label'),
+    ).toBe('Ngày 15/10, hôm nay, Chưa chấm');
+    // Ngày tương lai: chỉ số ngày, không chữ trạng thái ("Chưa tới giờ" đã bỏ).
+    const future = within(table).getByRole('button', { name: /^Ngày 20\/10$/ });
+    expect(future.textContent).toBe('20');
+    expect(table.textContent).not.toContain('Chưa tới giờ');
+    // Ô "Hôm nay" + tổng kết (số do server tính).
+    const box = screen.getByRole('region', { name: /^Hôm nay, / });
+    expect(box.textContent).toContain('Bạn chưa chấm vào');
+    expect(within(box).getByRole('button', { name: 'Chấm vào' })).toBeTruthy();
+    const summary = screen.getByRole('region', { name: 'Tổng kết tháng 10/2026' });
+    expect(summary.textContent).toContain('Ngày đi làm0 ngày');
+    expect(summary.textContent).toContain('Tính đến hết ngày 15/10.');
+    expect(screen.getByRole('list', { name: 'Chú thích' })).toBeTruthy();
     await expectNoA11yViolations();
+  });
+
+  it('bàn phím: lưới chỉ MỘT điểm dừng Tab (hôm nay); ←/→ một ngày, ↑/↓ một tuần; Enter mở chi tiết', async () => {
+    open();
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    const tabbable = within(table)
+      .getAllByRole('button')
+      .filter((b) => b.tabIndex === 0);
+    expect(tabbable.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Ngày 15/10, hôm nay, Chưa chấm',
+    ]);
+    const u = userEvent.setup({ delay: null });
+    tabbable[0]?.focus();
+    await u.keyboard('{ArrowRight}');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Ngày 16/10');
+    await u.keyboard('{ArrowDown}');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Ngày 23/10');
+    await u.keyboard('{ArrowUp}{ArrowUp}{ArrowLeft}');
+    expect(document.activeElement?.getAttribute('aria-label')).toMatch(/^Ngày 8\/10/);
+    // Ô đang focus nhận tabindex 0 (roving) ⇒ Tab ra rồi vào lại về đúng ô.
+    expect((document.activeElement as HTMLButtonElement).tabIndex).toBe(0);
+    await u.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog', { name: /^Ngày .*08\/10/ })).toBeTruthy();
+  });
+
+  it('chuyển "Danh sách" ⇒ bảng có tiêu đề hàng, câu chữ đời thường; NHỚ lựa chọn khi vào lại', async () => {
+    open();
+    await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    const u = userEvent.setup({ delay: null });
+    await u.click(screen.getByRole('button', { name: 'Danh sách' }));
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Ngày', 'Trạng thái', 'Giờ vào', 'Giờ ra', 'Số giờ làm']);
+    // 1–14/10 ngoài nhiệm kỳ ⇒ một dòng câu; còn 15–31 là 17 hàng ngày.
+    expect(within(table).getAllByRole('rowheader')).toHaveLength(17);
+    expect(table.textContent).toContain('Bạn bắt đầu làm từ 15/10');
+    expect(screen.getByRole('button', { name: 'Danh sách' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    cleanupApp();
+    open();
+    expect(
+      (await screen.findByRole('button', { name: 'Danh sách' })).getAttribute('aria-pressed'),
+    ).toBe('true');
+    await u.click(screen.getByRole('button', { name: 'Lịch' }));
   });
 
   it('?month= chọn tháng khác; liên kết tháng trước/sau', async () => {
@@ -90,8 +147,10 @@ describe('bảng công tháng', () => {
     const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
     await userEvent
       .setup({ delay: null })
-      .click(within(table).getByRole('button', { name: /15\/10/ }));
-    const dialog = await screen.findByRole('dialog', { name: /Lượt chấm/ });
+      .click(within(table).getByRole('button', { name: /^Ngày 15\/10/ }));
+    const dialog = await screen.findByRole('dialog', { name: /^Ngày .*15\/10/ });
+    // Lời thường trước: Giờ vào / Giờ ra / Số giờ làm (giờ "10:00" theo lịch), rồi mới tới lượt chấm thô.
+    expect(dialog.textContent).toContain('Giờ vào10:00');
     expect(await within(dialog).findByText(/Vào lúc 10:00 · Web/)).toBeTruthy();
     expect(within(dialog).getByText(/IP 10\.0\.0\.7/).textContent).toContain(
       'Thiết bị: Firefox/141',

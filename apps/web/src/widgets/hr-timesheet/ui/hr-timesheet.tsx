@@ -14,7 +14,16 @@ import { PersonMonth } from './person-month';
 
 type Props = Readonly<{ wsId: string; today: string; isOwner: boolean; viewerId: string | null }>;
 
-const COLUMNS = ['Giờ làm', 'Đi muộn', 'Về sớm', 'Vắng', 'Nghỉ phép', 'Chưa chấm ra'] as const;
+const COLUMNS = [
+  'Ngày đi làm',
+  'Giờ làm',
+  'Đi muộn',
+  'Về sớm',
+  'Vắng',
+  'Nghỉ phép',
+  'Phép sắp tới',
+  'Chưa chấm ra',
+] as const;
 const monthTitle = (m: string) => `tháng ${Number(m.slice(5))}/${m.slice(0, 4)}`;
 
 /**
@@ -87,6 +96,7 @@ export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
                     </button>
                     {left && <span className="text-text-muted"> (đã rời)</span>}
                   </th>
+                  <td className="py-2 pr-3">{t.presentDays > 0 ? daysText(t.presentDays) : '—'}</td>
                   <td className="py-2 pr-3">{t.workedMin > 0 ? duration(t.workedMin) : '—'}</td>
                   <td className="py-2 pr-3">
                     {t.lateDays > 0 ? `${t.lateDays} lần · ${duration(t.lateMin)}` : '—'}
@@ -96,6 +106,10 @@ export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
                   </td>
                   <td className="py-2 pr-3">{t.absentDays > 0 ? daysText(t.absentDays) : '—'}</td>
                   <td className="py-2 pr-3">{t.leaveDays > 0 ? daysText(t.leaveDays) : '—'}</td>
+                  {/* TL d9: HR xếp lịch người theo phép đã duyệt SAU hôm nay (T-046). */}
+                  <td className="py-2 pr-3">
+                    {t.upcomingLeaveDays > 0 ? daysText(t.upcomingLeaveDays) : '—'}
+                  </td>
                   <td className="py-2 pr-3">{t.missingOutDays > 0 ? t.missingOutDays : '—'}</td>
                 </tr>
               ))}

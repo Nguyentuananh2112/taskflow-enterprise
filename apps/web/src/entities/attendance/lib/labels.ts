@@ -7,6 +7,8 @@ import type { DayStatus } from '@taskflow/contracts/attendance';
 export const DAY_STATUS: Readonly<
   Record<DayStatus, { label: string; icon: string; tone: string }>
 > = {
+  // T-047: quá thời hạn lưu (job retention đã / sẽ xóa) — không có số liệu, không phải "vắng".
+  RETENTION_EXPIRED: { label: 'Ngoài thời hạn lưu', icon: '⌛', tone: 'text-text-muted' },
   // Trước khi gia nhập / sau khi rời, không có lượt chấm (TL chốt): trung tính, không tính vào tổng.
   NOT_EMPLOYED: { label: 'Chưa/không làm việc', icon: '·', tone: 'text-text-muted' },
   PRESENT: { label: 'Có mặt', icon: '✓', tone: 'text-success' },
