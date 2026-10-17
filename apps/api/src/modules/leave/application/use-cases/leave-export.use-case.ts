@@ -9,7 +9,9 @@ import { BusinessRuleViolationError } from '../../../../core/errors';
 import type { IReadSnapshot } from '../../../../core/persistence/read-snapshot';
 import { halfDaysToDecimal } from '../../domain/leave-balance';
 import { countLeaveHalfDays } from '../../domain/leave-days';
-import { countingTenure, yearOf, type LeaveKit } from '../leave-kit';
+import { latestTenure } from '../balance-prefetch';
+import { yearOf, type LeaveKit } from '../leave-kit';
+import type { BalanceView } from '../annual-balance';
 import type { ILeaveEmployeeDirectory, ILeaveReadModel } from '../ports/leave-read-model.port';
 
 // GET leave/export.xlsx (T-057, ADR-130/131; B review): báo cáo phép một năm — sheet 1 số dư phân rã của nhân viên
@@ -148,34 +150,34 @@ export class LeaveExportUseCase {
     }
   }
 
+  /**
+   * T-057d: theo LÔ `batchSize` — mỗi lô một truy vấn nhiệm kỳ + bộ tính nạp sẵn (ngày vào, số dư, đơn, năm trước) ⇒
+   * số truy vấn theo số LÔ, không theo số người. Nhiệm kỳ chọn như trang số dư (`latestTenure`).
+   */
   private async *balanceRows(people: readonly Person[], year: number): AsyncGenerator<CellValue[]> {
-    const calc = this.kit.readCalculator(this.readModel);
     const today = await this.kit.today();
-    const n = halfDaysToDecimal;
-    for (const [i, user] of people.entries()) {
+    const size = this.x.limits.batchSize;
+    for (let i = 0; i < people.length; i += size) {
       await this.pause(i);
-      const v = await calc.compute({
-        userId: user.id,
-        year,
-        today,
-        tenure: countingTenure(await this.kit.d.company.employmentOf(user.id)),
-      });
-      const notes = [
-        v.entitlement.missingHireDate ? 'Thiếu ngày vào công ty' : null,
-        v.carriedFinal ? null : 'Phép chuyển sang tạm tính',
-      ].filter(Boolean);
-      yield [
-        user.fullName,
-        n(v.entitlement.entitled),
-        n(v.entitlement.bonus),
-        n(v.adjustment),
-        n(v.carried),
-        v.expiresOn === null ? null : xlsxDate(v.expiresOn),
-        n(v.used),
-        n(v.pending),
-        n(v.balance.remaining),
-        notes.length > 0 ? notes.join('; ') : null,
-      ];
+      const batch = people.slice(i, i + size);
+      const userIds = batch.map((p) => p.id);
+      const [calc, tenures] = await Promise.all([
+        this.kit.readCalculatorFor(this.readModel, { userIds, year, currentYearLoaded: false }),
+        this.kit.d.company.tenuresOf({
+          userIds,
+          from: `${String(year)}-01-01`,
+          to: `${String(year)}-12-31`,
+        }),
+      ]);
+      for (const user of batch) {
+        const v = await calc.compute({
+          userId: user.id,
+          year,
+          today,
+          tenure: latestTenure(tenures.get(user.id)),
+        });
+        yield balanceRow(user, v);
+      }
     }
   }
 
@@ -201,4 +203,24 @@ export class LeaveExportUseCase {
       }
     }
   }
+}
+
+function balanceRow(user: Person, v: BalanceView): CellValue[] {
+  const n = halfDaysToDecimal;
+  const notes = [
+    v.entitlement.missingHireDate ? 'Thiếu ngày vào công ty' : null,
+    v.carriedFinal ? null : 'Phép chuyển sang tạm tính',
+  ].filter(Boolean);
+  return [
+    user.fullName,
+    n(v.entitlement.entitled),
+    n(v.entitlement.bonus),
+    n(v.adjustment),
+    n(v.carried),
+    v.expiresOn === null ? null : xlsxDate(v.expiresOn),
+    n(v.used),
+    n(v.pending),
+    n(v.balance.remaining),
+    notes.length > 0 ? notes.join('; ') : null,
+  ];
 }
