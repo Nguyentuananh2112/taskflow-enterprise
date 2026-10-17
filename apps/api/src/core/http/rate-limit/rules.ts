@@ -190,6 +190,11 @@ export const RATE_LIMIT_RULES = {
   socketHandshake: [
     rule({ id: 'socket-handshake-ip', windowMs: MINUTE, limit: 20, key: 'ip', failMode: 'open' }),
   ],
+  /**
+   * `/media` (ADR-141, F-10): không Bearer — hạn mức IP nhẹ. Một trang chat tải vài chục ảnh ⇒ 600/phút đủ
+   * rộng; Valkey lỗi ⇒ cho qua (chữ ký + kiểm DB vẫn chặn truy cập trái phép).
+   */
+  media: [rule({ id: 'media-ip', windowMs: MINUTE, limit: 600, key: 'ip', failMode: 'open' })],
 } as const satisfies Record<string, readonly RateLimitRule[]>;
 
 /** `project:join`: 30 lần/phút/socket — đếm trong bộ nhớ của socket (trạng thái gắn với kết nối). */

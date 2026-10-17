@@ -48,17 +48,39 @@ export type ChangePasswordBody = z.infer<typeof ChangePasswordBody>;
 export const UpdateMeBody = z.strictObject({ fullName: FullName });
 export type UpdateMeBody = z.infer<typeof UpdateMeBody>;
 
+/**
+ * URL ký tuyệt đối tới `/api/v1/media/avatars/:userId/:variant?v&exp&sig` (Mốc 6, ADR-141/142). Chữ ký phủ
+ * cả variant ⇒ web KHÔNG tự đổi `64` ⇄ `256`. `null` / thiếu ⇒ hiện chữ cái. URL hết khung ⇒ `onError` ⇒ chữ cái.
+ */
+export const AvatarUrl = z.url({ protocol: /^https?$/ }).nullable();
+export type AvatarUrl = z.infer<typeof AvatarUrl>;
+
 export const UserDto = z.object({
   id: Uuid,
   email: z.string(),
   fullName: z.string(),
   createdAt: IsoDateTime,
+  /** Mốc 6: variant 64 (chỗ nhỏ). Tùy chọn — server cũ / người đã nghỉ ⇒ thiếu hoặc null. */
+  avatarUrl: AvatarUrl.optional(),
+  /** Mốc 6: variant 256 (`/account`) — chỉ trong UserDto (người đang đăng nhập), không ở UserRefDto. */
+  avatarUrlLarge: AvatarUrl.optional(),
 });
 export type UserDto = z.infer<typeof UserDto>;
 
-/** Tham chiếu nhẹ trong task/audit. */
-export const UserRefDto = z.object({ id: Uuid, fullName: z.string() });
+/** Tham chiếu nhẹ trong task/audit/thành viên/thông báo/chat. `avatarUrl` = variant 64 (Mốc 6). */
+export const UserRefDto = z.object({
+  id: Uuid,
+  fullName: z.string(),
+  avatarUrl: AvatarUrl.optional(),
+});
 export type UserRefDto = z.infer<typeof UserRefDto>;
+
+/** `PUT /me/avatar` (octet-stream ≤ `AVATAR_MAX_BYTES`, header `X-Upload-Name`) ⇒ 200. */
+export const AvatarUploadResponseDto = z.object({
+  avatarUrl: z.url({ protocol: /^https?$/ }),
+  avatarUrlLarge: z.url({ protocol: /^https?$/ }),
+});
+export type AvatarUploadResponseDto = z.infer<typeof AvatarUploadResponseDto>;
 
 export const AuthTokenDto = z.object({
   accessToken: z.string().min(1),

@@ -20,6 +20,7 @@ import type { IErrorReporter } from '../core/observability/sentry';
 import type { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
 import type { ISocketAuthenticator } from '../core/realtime/ports';
+import type { FilesBundle } from './files-setup';
 
 export interface ContainerConfig extends AppConfig {
   cookieSecure: boolean;
@@ -57,6 +58,8 @@ export interface ContainerDeps {
   /** Observability (T-035) — thiếu ⇒ không đo / không báo Sentry (test). */
   metrics?: AppMetrics;
   errorReporter?: IErrorReporter;
+  /** Mốc 6 (ADR-141): kho tệp + `/media` — thiếu ⇒ không gắn `/media` (test HTTP cũ). */
+  files?: FilesBundle;
 }
 
 export interface Container {

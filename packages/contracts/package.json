@@ -17,6 +17,7 @@
     "./realtime": "./src/realtime/events.ts",
     "./hr": "./src/hr/hr.schemas.ts",
     "./company": "./src/company/index.ts",
+    "./chat": "./src/chat/index.ts",
     "./system": "./src/system/healthz.schemas.ts"
   },
   "scripts": {

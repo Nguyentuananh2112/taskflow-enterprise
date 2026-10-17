@@ -200,6 +200,7 @@ export function createContainer(d: ContainerDeps): Container {
     rateLimit: createGlobalRateLimit(rateLimitDeps),
     ...(d.metrics ? { metrics: d.metrics } : {}),
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
+    ...(d.files ? { media: d.files.media } : {}),
     routers,
   });
   const socketAuth = companyGatedSocketAuthenticator(

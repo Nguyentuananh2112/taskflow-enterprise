@@ -9,8 +9,9 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends age awscli ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY backup.sh restore-drill.sh /usr/local/bin/
-RUN chmod 0755 /usr/local/bin/backup.sh /usr/local/bin/restore-drill.sh
+# backup-files.sh: kho tệp Mốc 6 (ADR-141) — tar | age | s3, cùng thiết kế backup.sh.
+COPY backup.sh backup-files.sh restore-drill.sh /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/backup.sh /usr/local/bin/backup-files.sh /usr/local/bin/restore-drill.sh
 
 # Không chạy bằng root: script chỉ cần mạng + /tmp.
 USER postgres

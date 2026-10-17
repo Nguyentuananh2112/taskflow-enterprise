@@ -53,6 +53,8 @@ catalog:
   # Prisma pin CHÍNH XÁC 7.10.0 (ADR-060); chỉ chạy CLI bằng `pnpm exec prisma` (ADR-061).
   prisma: 7.10.0
   rate-limit-redis: 6.0.1
+  # Mốc 6 (ADR-141): ghim CHÍNH XÁC; libvips LGPL-3.0 liên kết động (prebuilt @img/*) — NOTICE ở THIRD_PARTY.
+  sharp: 0.35.5
   react: 19.3.1
   react-dom: 19.3.1
   redis: 6.3.0

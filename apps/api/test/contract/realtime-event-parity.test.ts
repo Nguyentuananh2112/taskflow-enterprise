@@ -29,9 +29,30 @@ const SERVER_EVENTS_RECORD: Record<keyof ServerToClientEvents, true> = {
   'member:role-changed': true,
   'company:access-changed': true,
   'notification:new': true,
+  'user:avatar-changed': true,
+  'chat:message:new': true,
+  'chat:message:updated': true,
+  'chat:read': true,
+  'chat:conversation:updated': true,
+  'chat:conversation:removed': true,
+  'chat:typing': true,
 };
 const SERVER_EVENTS = new Set<string>(Object.keys(SERVER_EVENTS_RECORD));
-const CLIENT_EVENTS = new Set(['project:join', 'project:leave', 'auth:renew']);
+/**
+ * Event đã vào hợp đồng SỚM (để web dựng mock — Mốc 6) nhưng chỗ emit thuộc vé sau. PHẢI rỗng ở cổng gộp
+ * cuối của nhánh tích hợp; server đã emit mà còn trong danh sách ⇒ test đỏ (buộc xóa).
+ */
+const PENDING_SERVER_EMIT: Readonly<Record<string, string>> = {
+  'user:avatar-changed': 'T-068',
+  'chat:message:new': 'T-070',
+  'chat:message:updated': 'T-070',
+  'chat:read': 'T-070',
+  'chat:conversation:updated': 'T-070',
+  'chat:conversation:removed': 'T-070',
+  'chat:typing': 'T-070',
+};
+// `chat:typing` hai chiều (cùng tên client→server và server→client — ADR-145).
+const CLIENT_EVENTS = new Set(['project:join', 'project:leave', 'auth:renew', 'chat:typing']);
 const EVENT = String.raw`([a-z]+:[a-z-]+)`;
 
 function sourceFiles(dir: string, keep: (path: string) => boolean = () => true): string[] {
@@ -87,12 +108,23 @@ describe('(a) hợp đồng', () => {
 });
 
 describe('(b) server ↔ hợp đồng', () => {
-  it.each([...SERVER_EVENTS])('server có ít nhất một chỗ emit thật cho %s', (event) => {
-    expect(
-      apiEmitted.get(event),
-      `không tìm thấy chỗ emit '${event}' trong apps/api/src`,
-    ).toBeDefined();
-  });
+  it.each([...SERVER_EVENTS].filter((e) => !(e in PENDING_SERVER_EMIT)))(
+    'server có ít nhất một chỗ emit thật cho %s',
+    (event) => {
+      expect(
+        apiEmitted.get(event),
+        `không tìm thấy chỗ emit '${event}' trong apps/api/src`,
+      ).toBeDefined();
+    },
+  );
+
+  it.each(Object.entries(PENDING_SERVER_EMIT))(
+    'chờ emit: %s (vé %s) — server đã emit ⇒ xóa khỏi PENDING_SERVER_EMIT',
+    (event) => {
+      expect(SERVER_EVENTS.has(event)).toBe(true);
+      expect(apiEmitted.get(event)).toBeUndefined();
+    },
+  );
 
   it('server không emit event nằm ngoài hợp đồng', () => {
     const outside = [...apiEmitted.keys()].filter((e) => !SERVER_EVENTS.has(e));
