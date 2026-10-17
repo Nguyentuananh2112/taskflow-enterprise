@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { auditKeys } from '@/entities/audit-log';
 import { projectKeys } from '@/entities/project';
-import { taskKeys, type TaskScope } from '@/entities/task';
+import { boardSnapshotStartedAt, taskKeys, type TaskScope } from '@/entities/task';
 import { LruSet } from '@/shared/lib/lru-set';
 import { useRealtimeClient } from '@/shared/socket';
 
@@ -15,6 +15,13 @@ import { parseTaskEvent } from './parse-task-event';
 import { isStaleProjectEvent } from './project-event-order';
 
 const TASK_EVENTS = ['task:created', 'task:updated', 'task:moved', 'task:deleted'] as const;
+
+/**
+ * Snapshot board gửi trước lúc join phòng quá ngần này ⇒ refetch MỘT lần sau lần join đầu (T-044 S3, review E): event
+ * trong khe "snapshot → join" không có replay. Dưới ngưỡng (điều hướng trong app: fetch và join cách nhau vài ms, như
+ * trước T-044) ⇒ không tải lại. Hướng đúng hơn (việc sau): ack của project:join trả mốc phiên bản board.
+ */
+export const JOIN_SNAPSHOT_GAP_MS = 150;
 
 type Options = Readonly<{
   /** Task đang mở trong drawer — event chạm nó ⇒ làm mới lịch sử; bị xóa ⇒ `onOpenTaskDeleted`. */
@@ -46,10 +53,43 @@ export function useBoardRealtime(scope: TaskScope, options: Options) {
   useEffect(() => {
     const ctx = { ...merge, myClientId: client.clientId };
     const boardScope = { wsId, projectId };
-    const join = () =>
-      void client.joinProject({ workspaceId: wsId, projectId }).then((ack) => {
-        if (!ack.ok && ack.code === 'RESOURCE_NOT_FOUND') setNotFound(true);
+    const boardKey = taskKeys.board(wsId, projectId);
+    const cleanups: (() => void)[] = [];
+    let firstJoin = true;
+    /** Snapshot (đã về hoặc đang bay) gửi trước `joinStartedAt` quá ngưỡng ⇒ refetch một lần khi nó về. */
+    const refreshIfSnapshotPredates = (joinStartedAt: number) => {
+      const check = () => {
+        const started = boardSnapshotStartedAt(boardScope);
+        if (started !== undefined && joinStartedAt - started > JOIN_SNAPSHOT_GAP_MS) {
+          void queryClient.invalidateQueries({ queryKey: boardKey, exact: true });
+        }
+      };
+      const cache = queryClient.getQueryCache();
+      const query = cache.find({ queryKey: boardKey, exact: true });
+      if (query?.state.fetchStatus !== 'fetching') {
+        check();
+        return;
+      }
+      // Đang bay: KHÔNG hủy (giữ thẻ đầu sớm) — đợi nó về rồi mới quyết.
+      const unsubscribe = cache.subscribe((event) => {
+        if (event.query !== query || query.state.fetchStatus === 'fetching') return;
+        unsubscribe();
+        check();
       });
+      cleanups.push(unsubscribe);
+    };
+    const join = () => {
+      const joinStartedAt = Date.now();
+      void client.joinProject({ workspaceId: wsId, projectId }).then((ack) => {
+        if (!ack.ok) {
+          if (ack.code === 'RESOURCE_NOT_FOUND') setNotFound(true);
+          return;
+        }
+        if (!firstJoin) return; // join lại sau reconnect đã có invalidate riêng (onReconnect)
+        firstJoin = false;
+        refreshIfSnapshotPredates(joinStartedAt);
+      });
+    };
     // Gom theo frame (perf/board-500 P1): burst rebalance N `task:moved` ⇒ 1 lần ghi cache + 1 commit.
     const sink = createBoardEventSink({
       queryClient,
@@ -93,6 +133,7 @@ export function useBoardRealtime(scope: TaskScope, options: Options) {
     if (client.status() === 'connected') join();
     return () => {
       offs.forEach((off) => off());
+      cleanups.forEach((cleanup) => cleanup());
       sink.flush(); // board không tự refetch (staleTime Infinity) ⇒ không bỏ event đang chờ
       if (client.status() === 'connected') void client.leaveProject({ projectId });
     };

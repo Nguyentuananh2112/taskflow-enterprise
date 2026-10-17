@@ -16,7 +16,14 @@ export { canAssignAnyone, canAssignTask, canDeleteTask, type Can } from './model
 export { taskKeys } from './model/query-keys';
 export { tempRankBetween } from './model/temp-rank';
 export { allowedTargets, canTransition } from './model/transitions';
-export { boardQuery, readBoardTask, updateBoard, useBoard, useTask } from './model/use-board';
+export {
+  boardQuery,
+  boardSnapshotStartedAt,
+  readBoardTask,
+  updateBoard,
+  useBoard,
+  useTask,
+} from './model/use-board';
 export {
   conflictCurrent,
   handleTaskWriteError,
