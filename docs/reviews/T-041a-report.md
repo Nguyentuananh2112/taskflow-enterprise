@@ -1,5 +1,7 @@
 # T-041a — Web chấm công: thẻ, bảng công, chuông, quyền HR
 
+> **Đã merge** — trạng thái cuối, cổng và việc còn mở: `T-041-report.md`. Phần dưới viết trước merge.
+
 Engineer E · 2026-10-16 · branch `feat/T-041a-attendance-web` (từ main `dd58774`, rebase `f8ddb7b`).
 
 ## Đã làm

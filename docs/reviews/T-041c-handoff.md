@@ -1,5 +1,7 @@
 # T-041c — Bàn giao cho Engineer E (từ Engineer H, đêm 2026-10-16)
 
+> **Đã merge** — trạng thái cuối, cổng và việc còn mở: `T-041-report.md`. Phần dưới viết trước merge.
+
 **Nhánh:** `feat/T-041c-hr-web` (không push) · **Dựng trên:** `feat/T-041b-leave-web` @ `7817d42` → T-041a `268c7d4` → main `cfd2a05` (đã có T-037, T-038 attendance thật, T-040). Lần rebase cuối: `git rebase --onto feat/T-041b-leave-web 8483104 feat/T-041c-hr-web`, không xung đột; sau đó `b8571b3` (mock chuông lọc thông báo HR theo role ∪ grants — E nhờ).
 **Worktree của H:** `C:\Users\Padoma1\AppData\Local\Temp\claude\d--TaskFlow-Enterprise\047c1980-aea3-41ae-a71e-564c65515379\scratchpad\h41c` — E nên tạo worktree riêng từ nhánh, không làm tiếp trong thư mục này (scratchpad của phiên H có thể bị dọn).
 
