@@ -27,3 +27,11 @@ export {
 } from './domain-errors';
 export { InternalError, ServiceUnavailableError } from './server-errors';
 export { ActivationGoneError, ActivationInvalidError, SessionRevokedError } from './account-errors';
+export {
+  ActiveContentError,
+  ImageProcessingBusyError,
+  ImageProcessingUnavailableError,
+  InvalidUploadNameError,
+  StorageFullError,
+  UnsupportedFileTypeError,
+} from './file-errors';

@@ -30,6 +30,13 @@ export const ErrorCode = z.enum([
   'SESSION_REVOKED',
   'ACTIVATION_INVALID',
   'ACTIVATION_GONE',
+  // Mốc 6 — kho tệp (ADR-141)
+  'INVALID_UPLOAD_NAME',
+  'UNSUPPORTED_FILE_TYPE',
+  'MACRO_OR_ACTIVE_CONTENT',
+  'IMAGE_PROCESSING_BUSY',
+  'IMAGE_PROCESSING_UNAVAILABLE',
+  'STORAGE_FULL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
