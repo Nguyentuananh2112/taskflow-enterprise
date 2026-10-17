@@ -1,5 +1,6 @@
 import * as z from 'zod';
 
+import { UserRefDto } from '../auth/auth.schemas';
 import { Cursor, DateOnly, IsoDateTime, Uuid, limitQuery } from '../common/primitives';
 
 /**
@@ -49,7 +50,8 @@ export const NotificationDto = z.object({
   id: Uuid,
   type: NotificationType,
   refId: Uuid,
-  actor: z.object({ id: Uuid, fullName: z.string() }).nullable(),
+  /** Mốc 6 (ADR-142): `UserRefDto` ⇒ có `avatarUrl` (variant 64) tùy chọn. */
+  actor: UserRefDto.nullable(),
   leave: z.object({ type: LeaveType, startDate: DateOnly, endDate: DateOnly }).nullable(),
   readAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,

@@ -1,3 +1,4 @@
+import type { IEmployeeAvatars } from './application/use-cases/employees.queries';
 import type { RequestHandler, Router } from 'express';
 
 import type { IClock, IIdGenerator } from '../../core/domain';
@@ -77,6 +78,8 @@ export interface CompanyModuleDeps {
   accessEvents: ICompanyAccessEvents;
   /** Dữ liệu workspace cho Admin (module workspace — dựng SAU company ⇒ đọc trễ). */
   adminWorkspaces: () => IAdminWorkspaces;
+  /** Mốc 6 (ADR-142): URL ký variant 64 cho `EmployeeDto.avatarUrl`; thiếu ⇒ không gắn. */
+  avatars?: IEmployeeAvatars | undefined;
 }
 
 export interface CompanyModule {
@@ -141,6 +144,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     timeZone,
     logger: d.logger,
     permissionsOf,
+    avatars: d.avatars,
   });
   const meOf = async (userId: string): Promise<MeCompanyView | null> => {
     const m = await active(userId);

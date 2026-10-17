@@ -1,4 +1,3 @@
-import { ROLE_PERMISSIONS } from '@taskflow/contracts';
 import { createApp } from '../app';
 import { InProcessEventBus } from '../core/events/event-bus';
 import { HttpResponder } from '../core/http/envelope';
@@ -10,7 +9,7 @@ import {
 } from '../core/http/rate-limit/rate-limit';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import { createAuthModule } from '../modules/auth/auth.module';
-import type { IRolePermissions } from '../modules/task/application/task-actor';
+import { rolePermissions } from './role-permissions';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import {
   NOTIFICATIONS_PATH,
@@ -27,23 +26,18 @@ import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
 import { LateBoundRealtime } from './late-realtime';
-import { AuthUserDirectory } from './users';
 import type { Container, ContainerDeps } from './container-types';
-import { avatarAuthDeps, ME_PATH } from './avatar-adapters';
+import { avatarAuthDeps, ME_PATH, withAvatarRefs } from './avatar-refs';
 
 export type { Container, ContainerConfig, ContainerDeps } from './container-types';
-
-/** Ma trận quyền dùng chung (contracts) — nguồn của `IRolePermissions` cho module Task. */
-const rolePermissions: IRolePermissions = {
-  allows: (role, permission) => ROLE_PERMISSIONS[role].includes(permission),
-};
 
 /**
  * Composition root (ADR-016): wire mọi module với nhau qua port (ADR-093) và gắn router vào app.
  * Dùng chung cho `main.ts` (production/dev) và test HTTP (InMemory, store rate limit bộ nhớ).
  */
 export function createContainer(d: ContainerDeps): Container {
-  const { config, logger, clock, ids, random, persistence } = d;
+  const { config, logger, clock, ids, random } = d;
+  const persistence = withAvatarRefs(d.persistence, d.files); // Mốc 6: ảnh trong UserRefDto (T-068)
   const business = d.businessClock ?? clock;
   // meta.timestamp của MỌI envelope theo giờ nghiệp vụ: web suy độ lệch giờ server từ đó (E).
   const responder = new HttpResponder(business);
@@ -80,6 +74,7 @@ export function createContainer(d: ContainerDeps): Container {
   // Auth cần cổng công ty; company cần tài khoản của auth (thêm nhân viên) ⇒ tham chiếu trễ một chiều.
   const accountsRef: { current: ICompanyAccounts | null } = { current: null };
   const company = createCompanyModule({
+    avatars: persistence.avatarRefs,
     repos: persistence.company,
     // ADR-120: ngày công / access_until theo múi giờ lịch công ty (attendance dựng sau ⇒ đọc trễ lúc chạy).
     timeZone: () => attendance.timeZoneNow(),
@@ -111,7 +106,7 @@ export function createContainer(d: ContainerDeps): Container {
   });
   const workspace = createWorkspaceModule({
     repos: persistence.workspace,
-    users: new AuthUserDirectory(persistence.auth.users),
+    users: persistence.userDirectory,
     notifier: realtime,
     // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
     // người chưa có lịch nghỉ (ADR-134).
