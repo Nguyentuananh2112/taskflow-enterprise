@@ -40,9 +40,10 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
     const table = await screen.findByRole('table', { name: 'Bảng công tháng 3/2031' });
     const current = table.querySelectorAll('tr[aria-current="date"]');
     expect(current).toHaveLength(1);
-    expect(within(current[0] as HTMLElement).getByRole('rowheader').textContent).toMatch(
-      /10\/03.*hôm nay/,
-    );
+    const header = within(current[0] as HTMLElement).getByRole('rowheader');
+    expect(header.textContent).toMatch(/10\/03.*hôm nay/);
+    // Tên truy cập KHÔNG đổi (chữ "hôm nay" aria-hidden) ⇒ locator theo "dd/MM" ở cuối vẫn khớp.
+    expect(within(table).getByRole('rowheader', { name: /10\/03$/ })).toBe(header);
   });
 
   it('/leave: ngày mặc định của form = hôm nay của server; năm số phép = 2031', async () => {

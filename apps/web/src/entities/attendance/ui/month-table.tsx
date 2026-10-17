@@ -75,7 +75,13 @@ export function MonthTable({ month, caption, onSelectDay, today }: Props) {
                   ) : (
                     dayLabel(d.date)
                   )}
-                  {d.date === today && <span className="text-text-muted"> · hôm nay</span>}
+                  {/* Chỉ để nhìn: trình đọc màn hình đã nghe `aria-current="date"`; tên rowheader giữ dạng "Th 3, 21/10" (locator E2E neo "dd/MM" ở cuối). */}
+                  {d.date === today && (
+                    <span aria-hidden="true" className="text-text-muted">
+                      {' '}
+                      · hôm nay
+                    </span>
+                  )}
                 </th>
                 <td className={cn('py-2 pr-3', s.tone)}>
                   <span aria-hidden="true">{s.icon} </span>
