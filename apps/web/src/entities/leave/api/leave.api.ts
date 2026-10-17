@@ -17,6 +17,12 @@ export const leaveApi = {
       schema: z.array(LeaveRequestDto),
       query: { mine: 1, cursor, limit: 50 },
     }),
+  /** Đơn CHỜ DUYỆT của tôi — chỉ để đếm (lối tắt trên thẻ Chấm công, T-045). */
+  minePending: (wsId: string) =>
+    http.request('GET', `${base(wsId)}/leave-requests`, {
+      schema: z.array(LeaveRequestDto),
+      query: { mine: 1, status: 'PENDING', limit: 50 },
+    }),
   create: (wsId: string, body: SubmitLeaveBody) =>
     http.post(`${base(wsId)}/leave-requests`, { schema: LeaveRequestDto, body }),
   cancel: (wsId: string, id: string, expectedVersion: number) =>

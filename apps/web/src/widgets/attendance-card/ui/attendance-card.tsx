@@ -1,7 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-
 import {
   DAY_STATUS,
   LEAVE_PART_LABEL,
@@ -17,6 +15,8 @@ import type { AttendanceTodayDto } from '@taskflow/contracts/attendance';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
+
+import { AttendanceShortcuts } from './attendance-shortcuts';
 
 type Props = Readonly<{ wsId: string; enabled: boolean }>;
 
@@ -112,20 +112,9 @@ export function AttendanceCard({ wsId, enabled }: Props) {
         </dl>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 whitespace-nowrap sm:ml-auto">
           <CheckButtons wsId={wsId} today={t} />
-          <Link href={`/w/${wsId}/attendance`} className="text-sm text-primary hover:underline">
-            Bảng công của tôi
-          </Link>
-          <Link href={`/w/${wsId}/leave`} className="text-sm text-primary hover:underline">
-            Nghỉ phép
-          </Link>
-          {/* T-041c: lối vào /hr hiện NGAY khi được cấp (myGrants đổi realtime — E2E-HR-03). */}
-          {canManageHr && (
-            <Link href={`/w/${wsId}/hr`} className="text-sm text-primary hover:underline">
-              Nhân sự
-            </Link>
-          )}
         </div>
       </div>
+      <AttendanceShortcuts wsId={wsId} today={t.date} canManageHr={canManageHr} />
     </section>
   );
 }

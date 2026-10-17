@@ -11,6 +11,7 @@ type Draft = Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>
 export const leaveKeys = {
   all: (wsId: string) => ['ws', wsId, 'leave'] as const,
   mine: (wsId: string) => ['ws', wsId, 'leave', 'mine'] as const,
+  minePending: (wsId: string) => ['ws', wsId, 'leave', 'mine-pending'] as const,
   balance: (wsId: string, year: number) => ['ws', wsId, 'leave', 'balance', year] as const,
   preview: (wsId: string, d: Draft | null) => ['ws', wsId, 'leave', 'preview', d] as const,
 };
@@ -24,6 +25,17 @@ export function useMyLeaveRequests(wsId: string, enabled: boolean) {
     getNextPageParam: (last) =>
       last.page?.hasMore ? (last.page.nextCursor ?? undefined) : undefined,
     select: (d) => d.pages.flatMap((p) => p.data),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** Số đơn chờ duyệt của tôi (trang đầu ≤ 50; `more` ⇒ hiện "50+"). Dưới `leaveKeys.all` ⇒ gửi/hủy/duyệt làm mới. */
+export function useMyPendingLeaveCount(wsId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: leaveKeys.minePending(wsId),
+    queryFn: () => leaveApi.minePending(wsId),
+    select: (r) => ({ count: r.data.length, more: r.page?.hasMore ?? false }),
     enabled,
     staleTime: 30_000,
   });

@@ -8,6 +8,7 @@ export {
   useHolidays,
   useHrEvents,
   useHrLeaveRequests,
+  useHrPendingLeaveCount,
   useLeaveBalances,
   useSchedules,
   useTimesheet,

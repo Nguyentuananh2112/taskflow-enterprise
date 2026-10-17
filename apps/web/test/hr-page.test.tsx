@@ -53,11 +53,11 @@ describe('trang Nhân sự — quyền', () => {
     await screen.findByRole('region', { name: 'Chấm công' });
     expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull();
     await act(() => grantHr(an));
-    // Header (mọi route có wsId) + thẻ Chấm công (màn hẹp).
+    // Header (mọi route có wsId) + lối tắt dưới thẻ Chấm công (T-045: mở thẳng tab Đơn nghỉ; 0 đơn chờ ⇒ không ghi số).
     const links = await screen.findAllByRole('link', { name: 'Nhân sự' });
     expect(links.map((l) => l.getAttribute('href'))).toEqual([
       `/w/${f.wsId}/hr`,
-      `/w/${f.wsId}/hr`,
+      `/w/${f.wsId}/hr?tab=leave`,
     ]);
     cleanupApp();
 

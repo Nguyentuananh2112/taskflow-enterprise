@@ -11,5 +11,6 @@ export {
   leaveKeys,
   useLeavePreview,
   useMyLeaveBalance,
+  useMyPendingLeaveCount,
   useMyLeaveRequests,
 } from './model/use-leave';
