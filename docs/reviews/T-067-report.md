@@ -61,6 +61,11 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
   `Connection: close` + xả có trần (5 s VÀ 2 MB, chạm trần ⇒ `destroy`), để client đang gửi vẫn đọc được
   response. Riêng 415 ở `rawUpload` không xả (Content-Type sai — body không phải upload).
 - Ngoại lệ content-type so path sau khi bỏ `/` cuối + chữ thường (cùng cách Express định tuyến).
+- Soát B (edc564ae): **L1** nhánh 415 cũng `Connection: close` + xả; **L2** khi `req` bị pause vì backpressure
+  (ổ ghi chậm) thì không tính là im lặng — trần tổng 180 s vẫn áp dụng (test kho giả ghi chậm; gỡ bản sửa ⇒
+  test đỏ); **L3** trần chung **12 upload đồng thời / tiến trình** trong `UploadSlots` (429 + `Retry-After`).
+- Bước 4 (ghi chú B): worker đọc bản tạm (`readAll`) trước khi có thể bị discard do response đóng; client hủy
+  sau khi body đủ mà worker còn chạy ⇒ commit gặp ENOENT ⇒ 503 có kiểm soát — thêm test ở bước 4.
 
 ## Còn lại
 4 worker sharp · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose

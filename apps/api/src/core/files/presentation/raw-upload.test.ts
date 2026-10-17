@@ -167,12 +167,13 @@ describe('rawUpload — thứ tự lỗi trước khi đọc body', () => {
     expect(await tmpFiles()).toEqual([]);
   });
 
-  it('JSON tới route upload ⇒ 415 ở rawUpload', async () => {
+  it('JSON tới route upload ⇒ 415 ở rawUpload, kèm Connection: close (B L1)', async () => {
     const res = await request(build()).put('/api/v1/me/avatar').send({ a: 1 });
     expect([res.status, (res.body as { code: string }).code]).toEqual([
       415,
       'UNSUPPORTED_MEDIA_TYPE',
     ]);
+    expect(res.headers.connection).toBe('close');
   });
 
   it.each([
@@ -284,6 +285,37 @@ describe('rawUpload — luồng body (SEC-CH-08/26/27)', () => {
     expect(result.status).toBeUndefined();
     expect(Date.now() - started).toBeLessThan(1_500);
     await waitNoTmp();
+  });
+});
+
+describe('rawUpload — backpressure không phải im lặng (B L2)', () => {
+  it('kho ghi chậm hơn idle timeout ⇒ req bị pause nhưng upload vẫn xong', async () => {
+    // Kho giả: đọc từng chunk rồi "ghi" 150 ms — lâu hơn idle 100 ms ⇒ backpressure dừng `data` của req.
+    const slowStore = {
+      async stage(data: NodeJS.ReadableStream) {
+        let size = 0;
+        for await (const chunk of data as AsyncIterable<Buffer>) {
+          size += chunk.length;
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        return {
+          size,
+          sizeBytes: size,
+          sha256: '',
+          head: Buffer.alloc(0),
+          read: () => Promise.resolve(new Uint8Array()),
+          readAll: () => Promise.resolve(Buffer.alloc(0)),
+          commit: () => Promise.reject(new Error('không dùng')),
+          discard: () => Promise.resolve(),
+        };
+      },
+    } as unknown as RawUploadOptions['store'];
+    const port = await listen({ store: slowStore, idleTimeoutMs: 100, totalTimeoutMs: 10_000 });
+    const result = await rawRequest(port, { 'content-length': String(MAX) }, (req) => {
+      req.end(Buffer.alloc(MAX, 1)); // gửi hết một lần ⇒ socket đầy, req bị pause chờ kho
+    });
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body ?? '{}')).toMatchObject({ sizeBytes: MAX });
   });
 });
 

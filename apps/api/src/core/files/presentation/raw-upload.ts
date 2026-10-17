@@ -69,6 +69,7 @@ export function rawUpload(options: RawUploadOptions): RequestHandler {
   return (req, res, next) => {
     const { type } = parseContentType(req.headers['content-type']);
     if (type !== RAW_UPLOAD_CONTENT_TYPE) {
+      rejectBody(req, res, options, setTimer); // B L1: đồng nhất với các nhánh từ chối khác
       next(new UnsupportedMediaTypeError('Chỉ chấp nhận Content-Type: application/octet-stream.'));
       return;
     }
@@ -121,11 +122,17 @@ function receive(
     req.unpipe(body);
     body.destroy(err);
   };
-  let idle = setTimer(() => fail(new UploadTimeoutError()), options.idleTimeoutMs);
+  // B L2: ổ ghi chậm (Defender) ⇒ backpressure ⇒ `req` bị pause, không phát `data` dù client vẫn gửi ⇒
+  // không tính là im lặng; trần TỔNG thời gian vẫn áp dụng.
+  const onIdle = () => {
+    if (req.isPaused() || body.writableNeedDrain) idle = setTimer(onIdle, options.idleTimeoutMs);
+    else fail(new UploadTimeoutError());
+  };
+  let idle = setTimer(onIdle, options.idleTimeoutMs);
   const total = setTimer(() => fail(new UploadTimeoutError()), options.totalTimeoutMs);
   const onData = () => {
     clearTimeout(idle);
-    idle = setTimer(() => fail(new UploadTimeoutError()), options.idleTimeoutMs);
+    idle = setTimer(onIdle, options.idleTimeoutMs);
   };
   // `aborted` đã deprecated: `close` trước khi nhận đủ body (`complete`) = client hủy giữa chừng.
   const onClose = () => {
