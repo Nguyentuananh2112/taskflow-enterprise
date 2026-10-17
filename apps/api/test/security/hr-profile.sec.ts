@@ -117,7 +117,7 @@ describe('quyền và thứ tự lỗi', () => {
       ] as const) {
         const res = await call(mia, method, path, body);
         expectStatus(res, 403, `Mia ${method} ${path}`);
-        expect(errorOf(res).code).toBe('FORBIDDEN');
+        expect(errorOf(res).code).toBe('FORBIDDEN_ACCESS');
       }
     },
   );
@@ -147,7 +147,7 @@ describe('quyền và thứ tự lỗi', () => {
 
       const adaMe = await call(actors.ada, 'GET', PROFILE.me);
       expectStatus(adaMe, 403, 'Ada /me');
-      expect(errorOf(adaMe).code).toBe('FORBIDDEN');
+      expect(errorOf(adaMe).code).toBe('FORBIDDEN_ACCESS');
 
       // HR (là nhân viên) có /me; /departments trả gợi ý, không phải 400 "uuid sai".
       expectStatus(await call(hana, 'GET', PROFILE.me), 200, 'Hana /me');
@@ -173,7 +173,7 @@ describe('quyền và thứ tự lỗi', () => {
         expectedVersion: 0,
       });
       expectStatus(self, 403, 'Hana tự sửa');
-      expect(errorOf(self).code).toBe('FORBIDDEN');
+      expect(errorOf(self).code).toBe('FORBIDDEN_ACCESS');
       expect((await getProfile(hugo, hana.userId)).version).toBe(0);
 
       await putProfile(hugo, hana.userId, { department: 'Nhân sự', expectedVersion: 0 });
