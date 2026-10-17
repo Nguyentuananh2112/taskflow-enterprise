@@ -80,7 +80,7 @@ Bộ đọc **độc lập** với bộ ghi của API: unzip bằng `node:zlib` 
 |---|---|---|
 | `EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS` | B (T-055) | XL-05 vế 422: dựng 1 001 người ở local quá nặng ⇒ hạ trần còn 3 / 5 |
 | `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS` | B (T-055) | giữ export "đang chạy" đủ lâu, hộp đen: export thứ 3 đồng thời ⇒ 429 (SEC-HR-54), ghi song song trong lúc xuất (XL-07) |
-| Kích hoạt job 01/01 theo yêu cầu (vd `LEAVE_CARRYOVER_ON_START`, log `maintenance.run_done`) hoặc D báo giờ chạy cố định | D (T-057) | CLK-HR-13: "trước job ⇒ `carriedFinal:false`, sau job ⇒ chụp" |
+| `LEAVE_CARRYOVER_ON_START=1` (một lượt trước `/readyz`, log `maintenance.run_done {job: 'leave-carryover', snapshotted}`), `LEAVE_CARRYOVER_INTERVAL_MS` (≥ 1000) — **D nhận 18/10** | D (T-057) | CLK-HR-13, CC-HR-24. Job `leave-carryover` **luôn đăng ký** (cả test): mỗi 1 giờ + jitter ≤ 5 phút, lượt đầu 5–10 s sau start, chụp năm hiện tại cho nhân viên đang làm còn NULL ⇒ ca S nào cần `carriedFinal:false` (LP-12) phải tạo người **sau** lượt đầu (chờ log `maintenance.run_done` job `leave-carryover`) |
 
 Chưa có env ⇒ ca khai pending theo vé, không bỏ.
 
@@ -166,7 +166,7 @@ U: `entitlementOf`, `carried`, kiểm số dư, hạn E — Stryker `leave-domai
 | LP-09b | A + S | đơn Y−1 PENDING từ tháng 12, duyệt trong tháng 1 ⇒ `carried(Y)` tính lại | đúng |
 | LP-10 | A + S | hạ chính sách năm nay ⇒ `negativeBalances` có người đã dùng nhiều; đơn đã duyệt không đổi trạng thái | đúng |
 | LP-11 | S | đơn vắt 2 năm ⇒ 422 `LEAVE_SPANS_YEARS` (giữ Mốc 3) | đúng |
-| LP-12 | A + S | GET khi `carried_over_days` NULL ⇒ tính tạm, `carriedFinal: false`, **không ghi** (GET lần 2 vẫn false); job 01/01 chạy 2 lần ⇒ idempotent | đúng |
+| LP-12 | A + S | GET khi `carried_over_days` NULL ⇒ tính tạm, `carriedFinal: false`, **không ghi** (GET lần 2 vẫn false); job chạy 2 lần (restart `LEAVE_CARRYOVER_ON_START=1` ×2) ⇒ giá trị không đổi, `snapshotted` lần 2 = 0. Người tạo sau lượt đầu của job (§1.3) | đúng |
 | LP-13 | U + S | nhận lại: nhiệm kỳ trước ở năm khác ⇒ đủ `base` năm Y; cùng năm Y ⇒ không cấp lại, đơn trước `start_date` hiện tại không trừ, `adjustmentDays` về 0 (audit `BALANCE_ADJUST`) | đúng |
 | LP-14 | S | phân rã DTO `leave/balances/me`: `base`, `seniorityBonus`, `seniorityYears`, `entitled`, `adjustment`, `carriedOver`, `carriedFinal`, `carriedExpiresOn`, `carriedUsable`, `used`, `pending`, `remaining` + trường cũ; công thức "Còn" = §5 thiết kế | đúng |
 
@@ -201,7 +201,7 @@ U: `entitlementOf`, `carried`, kiểm số dư, hạn E — Stryker `leave-domai
 | CC-HR-22 | 2 submit cùng (user, ngày, loại), **khác** `Idempotency-Key` | đúng 1 PENDING (201), bên kia 409 `correction_pending_exists` |
 | CC-HR-22b | 2 submit cùng `Idempotency-Key` cùng body | cùng 1 đơn, 1 dòng DB (kiểm qua `?mine=1`) |
 | CC-HR-23 | Hugo `PUT` hồ sơ ‖ Ada `PUT` hồ sơ, cùng `expectedVersion` | đúng 1 × 200, 1 × 409 `VERSION_CONFLICT`; audit 1 dòng |
-| CC-HR-24 | đầu năm Y (mốc 01/01 sau 00:00, trước job): submit Y ‖ PATCH Y−1 ‖ GET ‖ job (nếu có trigger) | `carried(Y)` cuối cùng một giá trị = hàm thuần trên dữ liệu cuối; không 500 |
+| CC-HR-24 | đầu năm Y (mốc 01/01 sau 00:00, trước job): submit Y ‖ PATCH Y−1 ‖ GET ‖ job (`LEAVE_CARRYOVER_INTERVAL_MS=1000`) | `carried(Y)` cuối cùng một giá trị = hàm thuần trên dữ liệu cuối; không 500 |
 | CC-HR-25 | `PUT leave/policy` hạ `annualDays` ‖ approve đơn dùng gần hết phép | đơn không vượt **cả hai** chính sách: approve thắng ⇒ có trong `negativeBalances` của PUT; PUT thắng ⇒ approve 422 `INSUFFICIENT_BALANCE` nếu vượt |
 
 CC-HR-24 / 25 cần chính sách riêng ⇒ file `hr-extended-races-policy.sec.ts` (K, mốc đầu năm); CC-HR-20…23 ở `hr-extended-races.sec.ts`.
@@ -213,7 +213,7 @@ CC-HR-24 / 25 cần chính sách riêng ⇒ file `hr-extended-races-policy.sec.t
 | CLK-HR-10 | `'*-L'` 23:59:30 (cuối tháng M) | nhân viên `startDate` −31 (vào ngày cuối tháng M−1 hoặc sớm hơn); gửi đơn cho ngày trong M−1 ⇒ 201; chờ server qua 00:00 ⇒ duyệt ⇒ 422 `CORRECTION_DATE_OUT_OF_RANGE`, reject ⇒ 200; gửi đơn mới cho cùng ngày ⇒ 422 | đúng |
 | CLK-HR-11 | thứ Tư 05:58:30 (`nextVnAnchor`) | đơn OUT `nextDay` 05:59 cho hôm qua (thứ Ba MISSING_OUT) ⇒ 422 `CORRECTION_IN_FUTURE`; chờ ≥ 06:00:00 ⇒ gửi lại (key mới) ⇒ 201 | đúng |
 | CLK-HR-12 | `'03-L'` 23:59:30 năm Y (dựng Y−1 qua restart §1.1) | `carriedUsable > 0` trước 00:00; sau 00:00 (E+1) ⇒ `carriedUsable = 0`, `remaining` giảm đúng phần chưa dùng; đơn ANNUAL ngày E+1 dùng phần chuyển sang ⇒ 422 `INSUFFICIENT_BALANCE` nếu vượt `B` | đúng |
-| CLK-HR-13 | `'12-31'` 23:59:30 | sau 00:00, trước job: GET Y ⇒ `carriedFinal: false` (GET lặp không ghi); job chạy (§1.3) ⇒ `carriedFinal: true`, cùng giá trị | đúng |
+| CLK-HR-13 | `'12-31'` 23:59:30 | sau 00:00, trước job: GET Y ⇒ `carriedFinal: false` (GET lặp không ghi); interval mặc định (1 giờ — lượt đầu 5–10 s sau start rơi vào 23:59:3x, chụp năm Y−1, không chạm Y); restart `LEAVE_CARRYOVER_ON_START=1` ⇒ `carriedFinal: true`, cùng giá trị | đúng |
 | CLK-HR-14 | `'*-L'` 23:59:30 | export tháng M+1 ⇒ 422 `PERIOD_NOT_STARTED`; sau 00:00 cùng tham số ⇒ 200 (tháng hiện tại) | đúng |
 
 CLK-HR-10 và 14 cùng mốc ⇒ chung file `hr-extended-clock-month.sec.ts`.
@@ -267,6 +267,6 @@ Kiểm kê tự động khi ca có code: `grep -o "SEC-HR-[0-9]*\|CC-HR-[0-9]*b\
 ## 12. Câu hỏi mở (chờ tác giả trả lời — không chặn harness)
 
 1. **B (T-055):** nhận 4 env test-only §1.3 (`EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS`, `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS`), từ chối khởi động khi `APP_ENV ≠ test`?
-2. **D (T-057):** job 01/01 chạy lúc nào (giờ lịch công ty) và có cách kích hoạt test-only (`LEAVE_CARRYOVER_ON_START` + log `maintenance.run_done` như Mốc 6) cho CLK-HR-13 / CC-HR-24?
+2. ~~D (T-057): job 01/01~~ — **chốt (D 18/10):** job interval `leave-carryover` (1 giờ, luôn đăng ký) + `LEAVE_CARRYOVER_ON_START` / `LEAVE_CARRYOVER_INTERVAL_MS` test-only. Đã sửa §1.3, LP-12, CC-HR-24, CLK-HR-13.
 3. ~~A (T-056): `nextDay` ≥ 06:00~~ — **chốt (A 18/10):** 400 Zod (`refine`, path `nextDay`), IN `nextDay` cũng 400; CHECK DB là chốt cuối. Đã sửa CR-04.
 4. ~~A (T-056): bấm Ra sau OUT đã duyệt~~ — **chốt (A 18/10):** 201 (luật `decidePunch` Mốc 3 chỉ cần IN còn hiệu lực). Đã sửa CC-HR-21.
