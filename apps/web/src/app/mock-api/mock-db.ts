@@ -56,7 +56,8 @@ export class MockDb {
     return this.users.get(id);
   }
 
-  createUser(input: { email: string; password: string; fullName: string }) {
+  /** `workspace: false` = tài khoản HR thêm (ADR-137: chờ kích hoạt, `password` rỗng, chưa có workspace). */
+  createUser(input: { email: string; password: string; fullName: string; workspace?: boolean }) {
     const user: MockUser = {
       id: crypto.randomUUID(),
       email: input.email,
@@ -67,6 +68,7 @@ export class MockDb {
     };
     this.users.set(user.id, user);
     this.company.add(user.id, user.createdAt);
+    if (input.workspace === false) return { user, defaultWorkspaceId: '' };
     const workspaceId = this.createWorkspace(`Workspace của ${input.fullName}`, undefined, user.id);
     return { user, defaultWorkspaceId: workspaceId };
   }

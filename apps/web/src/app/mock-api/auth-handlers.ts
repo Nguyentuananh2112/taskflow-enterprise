@@ -21,7 +21,12 @@ import { fail, noContent, ok, parseBody, ruleViolation } from './respond';
 
 const COOKIE = 'tf_rt';
 /** Mẫu nhỏ của danh sách mật khẩu phổ biến (server thật dùng file ~10k mục — security.md §6.5). */
-const COMMON_PASSWORDS = new Set(['password1234', '123456789012', 'qwertyuiop12', 'matkhau12345']);
+export const COMMON_PASSWORDS = new Set([
+  'password1234',
+  '123456789012',
+  'qwertyuiop12',
+  'matkhau12345',
+]);
 const LOGIN_FAILURE_LIMIT = 5;
 
 const readCookie = (request: Request): string | undefined =>
@@ -32,7 +37,7 @@ const readCookie = (request: Request): string | undefined =>
     .find(([name]) => name === COOKIE)?.[1];
 
 /** `basePath` = pathname của API_URL (vd `/api/v1`) — cookie chỉ gửi cho `${basePath}/auth`. */
-const cookieHeader = (basePath: string, token: string | null) =>
+export const cookieHeader = (basePath: string, token: string | null) =>
   `${COOKIE}=${token ?? ''}; Path=${basePath}/auth; HttpOnly; SameSite=Strict; Max-Age=${token ? 30 * 86_400 : 0}`;
 
 export function createAuthHandlers(
@@ -90,7 +95,8 @@ export function createAuthHandlers(
         );
       }
       const user = db.findUserByEmail(email);
-      if (!user || user.password !== password) {
+      // ADR-137: chờ kích hoạt (mật khẩu rỗng) hoặc đã nghỉ (không thuộc công ty) ⇒ như sai thông tin.
+      if (!user || user.password === '' || user.password !== password || !db.company.of(user.id)) {
         loginFailures.set(email, failures + 1);
         return fail(401, 'INVALID_CREDENTIALS');
       }

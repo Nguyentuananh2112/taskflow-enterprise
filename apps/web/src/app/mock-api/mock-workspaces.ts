@@ -11,6 +11,8 @@ export type WorkspaceRow = {
   updatedAt: string;
   deletedAt: string | null;
   purgeAt: string | null;
+  /** Mốc 3.5: Admin lưu trữ workspace mồ côi không còn thành viên (ADR-134). */
+  archivedAt?: string | null;
 };
 export type MemberRow = {
   workspaceId: string;
@@ -96,6 +98,15 @@ export class MockWorkspaces {
     this.rows.set(row.id, row);
     this.setMember(row.id, ownerId, 'OWNER');
     return row;
+  }
+
+  /** Mọi workspace (kể cả đã xóa mềm) — `/admin/workspaces` (ADR-134). */
+  all(): WorkspaceRow[] {
+    return [...this.rows.values()];
+  }
+
+  archive(id: string): WorkspaceRow {
+    return Object.assign(this.update(id, {}), { archivedAt: this.iso() });
   }
 
   /** Chưa xóa. */
