@@ -7,6 +7,8 @@ import {
   type MeCompanyDto,
 } from '@taskflow/contracts/company';
 
+import { MockProfiles } from './mock-profiles';
+
 // Mốc 3.5 (ADR-133/137): MỘT công ty — dòng `company_members` có ⇔ đang thuộc công ty; nghỉ việc = xóa dòng + ghi
 // departure. Mock giữ vai trò, quyền cấp thêm, nhiệm kỳ, lịch nghỉ việc, token kích hoạt (chỉ lưu SHA-256 như server);
 // KHÔNG phải mã phân quyền thật (server tính `permissions`, web chỉ đọc).
@@ -31,6 +33,8 @@ export class MockCompany {
   /** Người đã nghỉ: ngày làm cuối (departure gần nhất). */
   readonly departures = new Map<string, { lastDay: string }>();
   private readonly tokens = new Map<string, Token>();
+  /** Hồ sơ nhân viên (Mốc 5, ADR-128) — sống độc lập với dòng công ty. */
+  readonly profiles = new MockProfiles();
 
   /** Mọi tài khoản mock vào công ty là nhân viên (như backfill migration 5); test đổi bằng `setAccess`. */
   add(userId: string, joinedAt: string, startDate = joinedAt.slice(0, 10)): void {

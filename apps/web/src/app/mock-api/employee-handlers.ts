@@ -43,7 +43,8 @@ export function createEmployeeHandlers(baseUrl: string, hr: MockHr): HttpHandler
   const linkOf = (request: Request, token: string) =>
     `${request.headers.get('origin') ?? 'http://localhost:3000'}/activate#t=${token}`;
 
-  const employee = (userId: string, withAdmin = false) => toEmployee(db, userId, withAdmin);
+  const employee = (userId: string, withAdmin = false) =>
+    toEmployee(db, userId, today(), withAdmin);
   const all = () =>
     [...new Set([...company.members().map(([id]) => id), ...company.departures.keys()])]
       .flatMap((id) => employee(id) ?? [])
@@ -98,6 +99,7 @@ export function createEmployeeHandlers(baseUrl: string, hr: MockHr): HttpHandler
         existing ?? db.createUser({ email, fullName, password: '', workspace: false }).user;
       // Nhận lại: nhiệm kỳ mới; có mật khẩu cũ ⇒ đăng nhập luôn, không link.
       company.add(user.id, `${startDate}T00:00:00+07:00`, startDate);
+      company.profiles.applyHire(user.id, body.data);
       const needsLink = user.password === '';
       const issued = needsLink ? company.issueToken(user.id, db.now(), EMPLOYEE_TTL) : null;
       return ok(

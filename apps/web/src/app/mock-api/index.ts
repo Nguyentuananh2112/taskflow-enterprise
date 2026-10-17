@@ -14,6 +14,7 @@ import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
 import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
+import { createProfileHandlers } from './profile-handlers';
 import { createProjectHandlers } from './project-handlers';
 import { contentTypeGuard, createRateLimiter } from './request-guards';
 import { setMockClock } from './respond';
@@ -75,6 +76,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createHrAttendanceHandlers(baseUrl, hr),
       ...createHrCalendarHandlers(baseUrl, hr),
       ...createEmployeeHandlers(baseUrl, hr),
+      ...createProfileHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
     ],
   };
