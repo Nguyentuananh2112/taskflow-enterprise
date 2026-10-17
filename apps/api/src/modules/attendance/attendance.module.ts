@@ -1,6 +1,10 @@
 import type { RequestHandler, Router } from 'express';
 
 import type { IClock, IIdGenerator } from '../../core/domain';
+import type { ExportLimits } from '../../core/export/export-limits';
+import type { ExportSlots } from '../../core/export/export-slots';
+import type { ISpreadsheetWriter } from '../../core/export/xlsx/xlsx-writer';
+import type { IReadSnapshot } from '../../core/persistence/read-snapshot';
 import type { HttpResponder } from '../../core/http/envelope';
 import type { RateLimitRule } from '../../core/http/rate-limit/rules';
 import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
@@ -22,6 +26,7 @@ import type { IWorkCalendarStore } from './application/ports/work-calendar-store
 import { AttendanceEventsUseCases } from './application/use-cases/attendance-events.use-cases';
 import { AttendanceExportUseCase } from './application/use-cases/attendance-export.use-case';
 import { CheckInOutUseCase } from './application/use-cases/check-in-out.use-case';
+import { AttendanceXlsxExportUseCase } from './application/use-cases/attendance-xlsx-export.use-case';
 import { CorrectionRequestsUseCases } from './application/use-cases/correction-requests.use-cases';
 import { DecideCorrectionUseCases } from './application/use-cases/decide-correction.use-cases';
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
@@ -83,6 +88,14 @@ export interface AttendanceModuleDeps {
   notifier: AttendanceNotifier & CorrectionNotifier;
   membership: AttendanceCompanyMembership;
   uow: IUnitOfWork;
+  /** Xuất .xlsx (ADR-130): snapshot đọc, suất export của công ty, trần / nhịp đọc, bộ ghi. */
+  exports: {
+    snapshot: IReadSnapshot;
+    slots: Pick<ExportSlots, 'acquire'>;
+    limits: ExportLimits;
+    writer: ISpreadsheetWriter;
+    sleep: (ms: number) => Promise<void>;
+  };
   clock: IClock;
   ids: IIdGenerator;
   responder: HttpResponder;
@@ -131,6 +144,8 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
     events: new AttendanceEventsUseCases({ ...deps, ...collaborators }),
     calendar: new WorkCalendarUseCases({ ...deps, ...collaborators }),
     exporter: new AttendanceExportUseCase({ ...deps, ...collaborators }),
+    xlsx: new AttendanceXlsxExportUseCase({ ...deps, ...collaborators, ...d.exports }),
+    writer: d.exports.writer,
     responder: d.responder,
   });
   const correctionDeps = { ...deps, ...collaborators, corrections: d.repos.corrections };

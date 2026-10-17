@@ -24,6 +24,7 @@ import {
   WorkScheduleDto,
 } from '../attendance/attendance.schemas';
 import {
+  AttendanceExportXlsxQuery,
   CancelCorrectionBody,
   CorrectionApprovedDto,
   CorrectionDto,
@@ -721,6 +722,17 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     query: AttendanceMonthQuery,
     response: { status: 200, csv: true },
+  },
+  {
+    method: 'get',
+    path: `/attendance/export.xlsx`,
+    summary:
+      'Xuất Excel bảng công tháng cả công ty (hr:manage, ADR-130) — tháng chưa bắt đầu / quá trần người ⇒ 422 trước header; 429 chung hạn mức CSV + 2 export đồng thời/công ty',
+    tag: 'hr',
+    security: 'bearer',
+    query: AttendanceExportXlsxQuery,
+    response: { status: 200, xlsx: true },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RATE_LIMITED'],
   },
   {
     method: 'post',

@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import type { IReadSnapshot } from '../core/persistence/read-snapshot';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
@@ -68,7 +69,8 @@ export interface Persistence {
   refreshTokenPurger?: IRefreshTokenPurger;
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
-  uow: IUnitOfWork;
+  /** `snapshot`: ảnh chụp đọc REPEATABLE READ READ ONLY cho báo cáo .xlsx (ADR-130, T-055y). */
+  uow: IUnitOfWork & { snapshot: IReadSnapshot };
 }
 
 /** Lưu trữ trong bộ nhớ — chỉ local/test, MẤT DỮ LIỆU khi khởi động lại. */

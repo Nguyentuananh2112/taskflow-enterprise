@@ -3,6 +3,7 @@ import {
   AttendanceCompanyMonthQuery,
   AttendanceEventParams,
   AttendanceEventsQuery,
+  AttendanceExportXlsxQuery,
   AttendanceMonthQuery,
   CancelCorrectionBody,
   CorrectionParams,
@@ -20,7 +21,11 @@ import {
 import { Router, type RequestHandler } from 'express';
 import type * as z from 'zod';
 
-import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
+import {
+  EXPORT_RATE_LIMIT,
+  RATE_LIMIT_RULES,
+  type RateLimitRule,
+} from '../../../core/http/rate-limit/rules';
 import { validate } from '../../../core/http/validate';
 import {
   permitCompany,
@@ -81,6 +86,12 @@ export function attendanceRoutes(d: AttendanceRouteDeps): Router {
     '/export.csv',
     ...guard(HR, { query: AttendanceMonthQuery }, d.limit(RATE_LIMIT_RULES.attendanceExport)),
     c.exportCsv,
+  );
+  // ADR-130: cùng bucket hạn mức với CSV (20/giờ/user); suất 2 đồng thời + 422 + audit trong use case.
+  router.get(
+    '/export.xlsx',
+    ...guard(HR, { query: AttendanceExportXlsxQuery }, d.limit(EXPORT_RATE_LIMIT)),
+    c.exportXlsx,
   );
   router.get('/events', ...guard(HR, { query: AttendanceEventsQuery }), c.listEvents);
   router.post('/events', ...guard(HR, { body: AdjustAttendanceBody }), c.adjust);

@@ -20,7 +20,7 @@ import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
-import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
+import { attendanceShared, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { wireLeave } from './leave-wiring';
 import { wireHrProfile } from './hr-profile-wiring';
@@ -128,11 +128,11 @@ export function createContainer(d: ContainerDeps): Container {
   });
   workspaceRef.current = workspace;
   // Chấm công (T-063). Đơn nghỉ gắn trễ: leave cần lịch của attendance + `authenticate` của auth ⇒ dựng sau, `bind`.
-  const approvedLeaves = new LateApprovedLeavePort();
+  const { approvedLeaves, exportSlots } = attendanceShared();
   const attendance = wireAttendance(
     { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
     { company: () => company, notifications, leaves: approvedLeaves },
-    { responder, limit },
+    { responder, limit, exports: { limits: config.exportLimits, slots: exportSlots } },
   );
   const auth = createAuthModule({
     repos: persistence.auth,
