@@ -654,11 +654,7 @@ describe('Biên HTTP', () => {
     },
   );
 
-  secCase(
-    'SEC-HR-23',
-    'X-Forwarded-For giả khi TRUST_PROXY_HOPS=0 ⇒ IP lưu là IP socket (cần process API riêng hops=0)',
-    AREA,
-  );
+  // SEC-HR-23 ở hr-proxy.sec.ts (process API riêng TRUST_PROXY_HOPS=0).
 
   secCase('SEC-HR-24', 'User-Agent 10 KB ⇒ cắt ≤ 256, không 500', AREA, async () => {
     const t = await hr();

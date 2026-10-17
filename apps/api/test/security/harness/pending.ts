@@ -29,8 +29,7 @@ export const PENDING_PREFIX = '[PENDING ';
  * trong cùng PR để danh sách trung thực). Chỉ được THÊM mục khi thêm ca mới chưa viết, có review.
  */
 export const TODO_BUDGET: Readonly<Record<string, string>> = {
-  // T-042: SEC-HR-23 cần process API riêng hops=0. (CC-HR-13 đã có thân sau T-038/T-039.)
-  'SEC-HR-23': 'hr.sec.ts',
+  // T-042: SEC-HR-23 (hr-proxy.sec.ts) và CC-HR-13 đã có thân — hiện không còn ca HR todo.
 };
 
 export interface OutOfScopeCase {
