@@ -29,6 +29,7 @@ import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../cor
 import { LateBoundRealtime } from './late-realtime';
 import { AuthUserDirectory } from './users';
 import type { Container, ContainerDeps } from './container-types';
+import { avatarAuthDeps, ME_PATH } from './avatar-adapters';
 
 export type { Container, ContainerConfig, ContainerDeps } from './container-types';
 
@@ -161,6 +162,7 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
+    ...avatarAuthDeps(d, persistence.avatarDirectory, realtime, business),
   });
   accountsRef.current = auth.accounts;
   // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
@@ -189,6 +191,7 @@ export function createContainer(d: ContainerDeps): Container {
     { path: LEAVE_PATH, router: leave.router },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
+    ...(auth.avatar ? [{ path: ME_PATH, router: auth.avatar.meRouter }] : []),
   ];
   const app = createApp({
     config,

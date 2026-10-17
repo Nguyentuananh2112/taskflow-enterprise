@@ -43,7 +43,6 @@ const SERVER_EVENTS = new Set<string>(Object.keys(SERVER_EVENTS_RECORD));
  * cuối của nhánh tích hợp; server đã emit mà còn trong danh sách ⇒ test đỏ (buộc xóa).
  */
 const PENDING_SERVER_EMIT: Readonly<Record<string, string>> = {
-  'user:avatar-changed': 'T-068',
   'chat:message:new': 'T-070',
   'chat:message:updated': 'T-070',
   'chat:read': 'T-070',

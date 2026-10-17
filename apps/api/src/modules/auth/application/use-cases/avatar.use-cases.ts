@@ -44,7 +44,9 @@ export class SetAvatarUseCase {
     const { version, previous } = await this.d.uow.run(async () => {
       const locked = await this.d.users.lockAvatar(input.userId);
       if (!locked) throw new UnauthorizedError();
-      const next = (locked.version ?? 0) + 1;
+      // Không dùng lại version còn blob trên đĩa (đã gỡ / mồ côi) — tránh URL trùng ảnh cũ trong cache + va khóa.
+      const next =
+        Math.max(locked.version ?? 0, await this.d.blobs.latestVersion(input.userId)) + 1;
       await this.d.blobs.place(input.userId, next, variants);
       if (!(await this.d.users.setAvatarVersion({ id: input.userId, version: next, at: now }))) {
         throw new UnauthorizedError();

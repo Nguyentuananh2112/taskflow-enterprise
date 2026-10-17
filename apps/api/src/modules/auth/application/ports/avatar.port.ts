@@ -22,9 +22,12 @@ export interface IAvatarImages {
 
 export interface IAvatarBlobs {
   /**
-   * Đặt 2 biến thể của `version` — gọi TRONG transaction khi đang giữ khóa dòng user (`lockAvatar`). `version` lớn hơn
-   * mọi version đã commit ⇒ blob cũ cùng khóa (nếu có) chắc chắn mồ côi của một lần rollback trước — được thay (B).
+   * Version lớn nhất CÒN trên đĩa của user (0 nếu không có) — gồm ảnh đã gỡ đang giữ 30 ngày và blob mồ côi của lần
+   * rollback. Version mới = max(đã commit, cái này) + 1 ⇒ KHÔNG BAO GIỜ dùng lại version còn blob / còn URL trong cache
+   * trình duyệt (URL cùng v + cùng khung exp sẽ trả ảnh cũ) và không va khóa (commit không ghi đè — B).
    */
+  latestVersion(userId: string): Promise<number>;
+  /** Đặt 2 biến thể của `version` — gọi TRONG transaction khi đang giữ khóa dòng user (`lockAvatar`). */
   place(
     userId: string,
     version: number,

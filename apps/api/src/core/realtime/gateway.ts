@@ -186,6 +186,8 @@ export class RealtimeGateway {
     this.#users.companyAccessChanged(i, m);
   readonly notifyNotification: UserNotifications['notification'] = (i, m) =>
     this.#users.notification(i, m);
+  readonly broadcastAvatarChanged: UserNotifications['avatarChanged'] = (i, m) =>
+    this.#users.avatarChanged(i, m);
 
   /** Workspace xóa mềm: báo từng thành viên qua phòng user, rồi rời mọi phòng project (data-and-api §1.7). */
   closeWorkspace(

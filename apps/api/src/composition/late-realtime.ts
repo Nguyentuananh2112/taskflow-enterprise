@@ -16,6 +16,7 @@ type Notifications = Pick<
   | 'notifyNotification'
   | 'closeWorkspace'
   | 'emitToProject'
+  | 'broadcastAvatarChanged'
 >;
 
 /**
@@ -79,5 +80,12 @@ export class LateBoundRealtime implements Notifications {
     meta: RealtimeEventMeta,
   ): Promise<void> {
     return this.#target?.closeWorkspace(input, meta) ?? Promise.resolve();
+  }
+
+  broadcastAvatarChanged(
+    input: { userId: string; avatarUrl: string | null },
+    meta: RealtimeEventMeta,
+  ): Promise<void> {
+    return this.#target?.broadcastAvatarChanged(input, meta) ?? Promise.resolve();
   }
 }

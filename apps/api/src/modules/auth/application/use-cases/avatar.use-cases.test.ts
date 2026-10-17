@@ -50,9 +50,13 @@ function setup(initial: number | null = null, exists = true) {
     }),
   };
   const placed: [number, AvatarVariant[]][] = [];
+  let onDisk = 0; // version lớn nhất còn blob
   const blobs = {
+    latestVersion: vi.fn(() => Promise.resolve(onDisk)),
+    setOnDisk: (v: number) => (onDisk = v),
     place: vi.fn((_u: string, v: number, variants: ReadonlyMap<AvatarVariant, Buffer>) => {
       placed.push([v, [...variants.keys()]]);
+      onDisk = Math.max(onDisk, v);
       return Promise.resolve();
     }),
     discard: vi.fn(() => Promise.resolve()),
@@ -129,14 +133,23 @@ describe('SetAvatarUseCase (ADR-142)', () => {
     expect(t.notifier.avatarChanged).not.toHaveBeenCalled();
   });
 
-  it('version bị rollback được DÙNG LẠI ở lần sau (blob mồ côi cùng khóa do adapter thay — có test ở adapter)', async () => {
+  it('rollback mà KHÔNG còn blob ⇒ version được dùng lại; còn blob mồ côi ⇒ version kế tiếp (không va khóa — B)', async () => {
     const t = setup(2);
-    t.blobs.place.mockRejectedValueOnce(new Error('boom'));
+    t.blobs.place.mockRejectedValueOnce(new Error('boom')); // lỗi trước khi ghi gì
     const set = new SetAvatarUseCase(t.deps);
     await expect(set.execute({ userId: USER, upload })).rejects.toThrow();
     await set.execute({ userId: USER, upload });
-    expect(t.blobs.place.mock.calls.map(([, v]) => v)).toEqual([3, 3]); // lần lỗi + lần thành công
-    expect(t.version()).toBe(3);
+    expect(t.blobs.place.mock.calls.map(([, v]) => v)).toEqual([3, 3]);
+    t.blobs.setOnDisk(9); // blob v9 mồ côi của một lần commit DB lỗi
+    await set.execute({ userId: USER, upload });
+    expect(t.version()).toBe(10);
+  });
+
+  it('sau khi gỡ (version NULL) ảnh mới KHÔNG dùng lại version còn giữ 30 ngày (URL không trùng ảnh cũ trong cache)', async () => {
+    const t = setup(null);
+    t.blobs.setOnDisk(4); // ảnh v4 đã gỡ, blob còn giữ
+    await new SetAvatarUseCase(t.deps).execute({ userId: USER, upload });
+    expect(t.version()).toBe(5);
   });
 
   it('ảnh hỏng ⇒ lỗi của bộ xử lý ảnh, KHÔNG mở transaction / không khóa dòng', async () => {

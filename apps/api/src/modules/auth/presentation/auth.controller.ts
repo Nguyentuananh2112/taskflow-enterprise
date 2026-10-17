@@ -23,6 +23,7 @@ import type { LogoutAllUseCase } from '../application/use-cases/logout-all.use-c
 import type { LogoutUseCase } from '../application/use-cases/logout.use-case';
 import type { RefreshSessionUseCase } from '../application/use-cases/refresh-session.use-case';
 import type { UpdateMeUseCase } from '../application/use-cases/update-me.use-case';
+import type { AvatarUrls } from '../application/ports/avatar.port';
 import { MAX_REFRESH_COOKIES, type RefreshCookie } from './refresh-cookie';
 
 export interface AuthControllerDeps {
@@ -38,11 +39,24 @@ export interface AuthControllerDeps {
   cookie: RefreshCookie;
   responder: HttpResponder;
   logger: ILogger;
+  /** Mốc 6 (ADR-142): ảnh của người đang đăng nhập (64 + 256) cho `UserDto`; thiếu ⇒ không gắn (test cũ). */
+  avatarOf?: (userId: string) => Promise<AvatarUrls | null>;
 }
 
 /** Controller mỏng (ADR-015): parse đã xong ở `validate`, chỉ gọi use case + dựng response/cookie. */
 export class AuthController {
   constructor(private readonly d: AuthControllerDeps) {}
+
+  /** `UserDto.avatarUrl` (64) + `avatarUrlLarge` (256) — null khi chưa có ảnh. */
+  async #withAvatar<T extends { id: string }>(user: T) {
+    if (!this.d.avatarOf) return user;
+    const urls = await this.d.avatarOf(user.id);
+    return {
+      ...user,
+      avatarUrl: urls?.avatarUrl ?? null,
+      avatarUrlLarge: urls?.avatarUrlLarge ?? null,
+    };
+  }
 
   #issue(res: Response, session: IssuedSession) {
     this.d.cookie.set(res, session.refreshToken, session.refreshExpiresAt);
@@ -57,13 +71,15 @@ export class AuthController {
   activate = async (req: Request, res: Response) => {
     const body = req.body as ActivateBody;
     const result = await this.d.activate.execute({ ...body, meta: sessionMetaOf(req) });
-    this.d.responder.ok(res, { ...this.#issue(res, result.session), user: result.user });
+    const user = await this.#withAvatar(result.user);
+    this.d.responder.ok(res, { ...this.#issue(res, result.session), user });
   };
 
   login = async (req: Request, res: Response) => {
     const body = req.body as LoginBody;
     const result = await this.d.login.execute({ ...body, meta: sessionMetaOf(req) });
-    this.d.responder.ok(res, { ...this.#issue(res, result.session), user: result.user });
+    const user = await this.#withAvatar(result.user);
+    this.d.responder.ok(res, { ...this.#issue(res, result.session), user });
   };
 
   /** Lỗi `REFRESH_TOKEN_INVALID` ⇒ xóa cookie (security §1.4); `REFRESH_IN_PROGRESS` giữ cookie. */
@@ -135,15 +151,14 @@ export class AuthController {
   };
 
   me = async (req: Request, res: Response) => {
-    this.d.responder.ok(res, await this.d.getMe.execute({ userId: requireUser(req).id }));
+    const me = await this.d.getMe.execute({ userId: requireUser(req).id });
+    this.d.responder.ok(res, { ...me, user: await this.#withAvatar(me.user) });
   };
 
   updateMe = async (req: Request, res: Response) => {
     const { fullName } = req.body as UpdateMeBody;
-    this.d.responder.ok(
-      res,
-      await this.d.updateMe.execute({ userId: requireUser(req).id, fullName }),
-    );
+    const user = await this.d.updateMe.execute({ userId: requireUser(req).id, fullName });
+    this.d.responder.ok(res, await this.#withAvatar(user));
   };
 
   changePassword = async (req: Request, res: Response) => {

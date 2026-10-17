@@ -158,6 +158,11 @@ export class InMemoryUserRepository implements IUserRepository {
   }
 
   restore(snapshot: unknown): void {
+    // Fixture của test (như `UPDATE users …` ở Prisma) ghi đè bằng Map các dòng — giữ nguyên avatar.
+    if (snapshot instanceof Map) {
+      this.#rows = snapshot as Map<string, UserSnapshot>;
+      return;
+    }
     const s = snapshot as { rows: Map<string, UserSnapshot>; avatars: Map<string, number> };
     this.#rows = s.rows;
     this.#avatars = s.avatars;

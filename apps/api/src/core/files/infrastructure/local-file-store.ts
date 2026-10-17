@@ -154,8 +154,11 @@ export class LocalFileStore implements IFileStore {
     });
   }
 
-  async *list(prefix: 'avatars/'): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
-    for await (const f of walkFiles(this.#root, prefix.slice(0, -1))) {
+  async *list(prefix: `avatars/${string}`): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
+    // Chỉ tiền tố an toàn: `avatars/` hoặc `avatars/<uuid>/` (không `..`, không ký tự lạ) — trước mọi thao tác đĩa.
+    if (!/^avatars\/(?:[0-9a-f-]{36}\/)?$/.test(prefix))
+      throw new RangeError('tiền tố không hợp lệ');
+    for await (const f of walkFiles(this.#root, prefix.replace(/\/$/, ''))) {
       if (isFileKey(f.relative)) yield { key: f.relative, modifiedAt: f.modifiedAt };
     }
   }

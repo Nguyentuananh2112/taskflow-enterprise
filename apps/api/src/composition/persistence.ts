@@ -7,6 +7,9 @@ import {
   type AttendanceRepositories,
 } from '../modules/attendance/attendance.module';
 import type { CompanyRepositories } from '../modules/company/company.module';
+import type { IAvatarDirectory } from '../modules/auth/application/ports/avatar-directory.port';
+import { SystemClock } from '../core/infrastructure/system';
+import { memoryAvatarDirectory } from './avatar-sweep';
 import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
@@ -64,6 +67,8 @@ export interface Persistence {
   refreshTokenPurger?: IRefreshTokenPurger;
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
+  /** Mốc 6 (T-068): avatar theo lô — hiển thị, `/media`, sweep. */
+  avatarDirectory: IAvatarDirectory;
   uow: IUnitOfWork;
 }
 
@@ -138,6 +143,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     companyStore,
     attendance,
     leave,
+    avatarDirectory: memoryAvatarDirectory(users, companyStore, new SystemClock()),
     uow,
   };
 }
