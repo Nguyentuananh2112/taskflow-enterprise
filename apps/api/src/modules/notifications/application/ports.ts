@@ -30,9 +30,13 @@ export interface NotificationKey {
  */
 export interface INotificationAudience {
   /** null = không còn thuộc công ty / quá `access_until`. `since` = đầu tư cách hiện tại. */
-  accessOf(userId: string): Promise<{ since: Date; canManageHr: boolean } | null>;
+  accessOf(
+    userId: string,
+  ): Promise<{ since: Date; canManageHr: boolean; canManagePayroll: boolean } | null>;
   /** Người có `hr:manage` HIỆN TẠI (Admin + nhân viên có grant HR), còn quyền — đọc trong transaction bên gọi. */
   hrRecipients(): Promise<string[]>;
+  /** Người có `payroll:manage` HIỆN TẠI (Admin + nhân viên có grant Kế toán) — nhắc làm lương (T-049). */
+  payrollRecipients(): Promise<string[]>;
 }
 
 export interface LeaveSummary {
@@ -54,6 +58,8 @@ export interface ILeaveSummaryReader {
 export interface INotificationContextReader {
   actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   leaveSummaries(refIds: readonly string[]): Promise<ReadonlyMap<string, LeaveSummary>>;
+  /** Kỳ lương `YYYY-MM` theo id phiếu (PAYSLIP_*) — KHÔNG số tiền. Module payroll hiện thực (T-049). */
+  payslipPeriods(refIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 /** `notification:new` tới `user:{id}` — gateway (`UserNotifications.notification`) qua LateBoundRealtime. */

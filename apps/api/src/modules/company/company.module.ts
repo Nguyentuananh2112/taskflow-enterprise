@@ -33,6 +33,10 @@ import type { EmploymentCollaborators } from './application/ports/employment-col
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
 import { createEmployment, employeeRefOf, lateAccounts } from './employment.wiring';
 import {
+  companyNotificationAudience,
+  type CompanyNotificationAudience,
+} from './notification-audience';
+import {
   effectiveCompanyPermissions,
   type CompanyGrant,
   type CompanyPermission,
@@ -113,10 +117,7 @@ export interface CompanyModule {
     companyName(): Promise<string | null>;
   };
   /** `INotificationAudience` của notifications (khớp cấu trúc — ADR-093). */
-  notificationAudience: {
-    accessOf(userId: string): Promise<{ since: Date; canManageHr: boolean } | null>;
-    hrRecipients(): Promise<string[]>;
-  };
+  notificationAudience: CompanyNotificationAudience;
 }
 
 /** Composition của module company (Mốc 3.5, ADR-133…137). Route admin / hr ở các vé T-061 / T-062 sau. */
@@ -211,21 +212,6 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     },
     permissionsOf,
     meOf,
-    notificationAudience: {
-      async accessOf(userId) {
-        const m = await active(userId);
-        if (!m) return null;
-        return {
-          since: m.createdAt,
-          canManageHr: effectiveCompanyPermissions(m.role, m.grants).has('hr:manage'),
-        };
-      },
-      async hrRecipients() {
-        const now = clock.now();
-        return (await members.listHrManagerCandidates())
-          .filter((m) => isCompanyAccessActive(m, now))
-          .map((m) => m.userId);
-      },
-    },
+    notificationAudience: companyNotificationAudience({ active, members, clock }),
   };
 }

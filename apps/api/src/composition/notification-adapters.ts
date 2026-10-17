@@ -13,11 +13,15 @@ export interface UserRefs {
 export function notificationContextFrom(d: {
   users: UserRefs;
   leaves: ILeaveSummaryReader;
+  /** Kỳ lương theo id phiếu (module payroll — T-049); thiếu ⇒ không có ngữ cảnh phiếu. */
+  payslips?: { payslipPeriods(refIds: readonly string[]): Promise<ReadonlyMap<string, string>> };
 }): INotificationContextReader {
   return {
     actorNames: async (ids) =>
       new Map([...(await d.users.findRefs(ids))].map(([id, ref]) => [id, ref.fullName])),
     leaveSummaries: (refIds) => d.leaves.leaveSummaries(refIds),
+    payslipPeriods: (refIds) =>
+      d.payslips ? d.payslips.payslipPeriods(refIds) : Promise.resolve(new Map<string, string>()),
   };
 }
 

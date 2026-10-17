@@ -3,7 +3,11 @@ import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type { NotificationRecord, NotificationType } from '../domain/notification';
 import type { INotificationAudience, INotificationRealtime, INotificationStore } from './ports';
 
-export type NotificationRecipient = { kind: 'user'; userId: string } | { kind: 'hr' };
+export type NotificationRecipient =
+  | { kind: 'user'; userId: string }
+  | { kind: 'hr' }
+  /** Mọi người có `payroll:manage` hiện tại (nhắc làm lương — T-049). */
+  | { kind: 'payroll' };
 
 export interface NotifyInput {
   type: NotificationType;
@@ -74,6 +78,9 @@ export class NotificationPublisher {
 
   async #recipientsOf(input: NotifyInput): Promise<string[]> {
     if (input.recipient.kind === 'user') return [input.recipient.userId];
+    if (input.recipient.kind === 'payroll') {
+      return [...new Set(await this.d.audience.payrollRecipients())];
+    }
     return [...new Set(await this.d.audience.hrRecipients())];
   }
 }

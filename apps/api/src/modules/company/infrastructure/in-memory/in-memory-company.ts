@@ -74,6 +74,12 @@ export class InMemoryCompanyStore
     );
   }
 
+  listPayrollManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
+    return Promise.resolve(
+      this.members().filter((m) => m.role === 'ADMIN' || m.grants.includes('PAYROLL_MANAGE')),
+    );
+  }
+
   insert(input: NewCompanyMember): Promise<CompanyMemberSnapshot> {
     if (this.#state.members.has(input.userId)) {
       return Promise.reject(

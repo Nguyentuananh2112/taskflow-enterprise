@@ -57,6 +57,11 @@ export const NotificationDto = z.object({
   refId: Uuid,
   actor: z.object({ id: Uuid, fullName: z.string() }).nullable(),
   leave: z.object({ type: LeaveType, startDate: DateOnly, endDate: DateOnly }).nullable(),
+  /** PAYSLIP_PUBLISHED / PAYSLIP_REVISED (`refId` = id phiếu): kỳ lương để mở `/payslips/YYYY-MM` — KHÔNG số tiền. */
+  payslip: z
+    .object({ period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })
+    .nullable()
+    .optional(),
   readAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
 });

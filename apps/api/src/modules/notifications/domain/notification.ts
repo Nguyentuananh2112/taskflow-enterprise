@@ -28,6 +28,15 @@ export const HR_AUDIENCE_TYPES: readonly NotificationType[] = [
   'OFFBOARD_CLEANUP',
 ];
 
+/**
+ * Loại "dành cho Kế toán" (nhắc làm lương — T-049): chỉ thấy khi HIỆN TẠI còn `payroll:manage` (như B-H3b của HR) —
+ * thu grant Kế toán ⇒ nhắc cũ biến khỏi chuông.
+ */
+export const PAYROLL_AUDIENCE_TYPES: readonly NotificationType[] = ['PAYROLL_REMINDER'];
+
+/** Loại có ngữ cảnh phiếu lương (`refId` = id phiếu) — DTO join `period`, KHÔNG số tiền. */
+export const PAYSLIP_TYPES: readonly NotificationType[] = ['PAYSLIP_PUBLISHED', 'PAYSLIP_REVISED'];
+
 /** Loại có ngữ cảnh đơn nghỉ (`refId` = id đơn) — DTO join loại + khoảng ngày, KHÔNG lý do (B-H2). */
 export const LEAVE_TYPES: readonly NotificationType[] = [
   'LEAVE_SUBMITTED',
@@ -55,12 +64,14 @@ export interface NotificationRecord {
  */
 export interface VisibilityScope {
   recipientId: string;
-  access: { since: Date; hr: boolean } | null;
+  /** `payroll` bỏ trống ⇒ false (ẩn loại Kế toán). */
+  access: { since: Date; hr: boolean; payroll?: boolean } | null;
 }
 
 /** Hàm thuần — bản InMemory dùng trực tiếp; bản Prisma dịch cùng điều kiện sang WHERE. */
 export function isVisible(n: NotificationRecord, scope: VisibilityScope): boolean {
   if (n.recipientId !== scope.recipientId || !scope.access) return false;
   if (n.createdAt < scope.access.since) return false;
-  return scope.access.hr || !HR_AUDIENCE_TYPES.includes(n.type);
+  if (!scope.access.hr && HR_AUDIENCE_TYPES.includes(n.type)) return false;
+  return scope.access.payroll === true || !PAYROLL_AUDIENCE_TYPES.includes(n.type);
 }

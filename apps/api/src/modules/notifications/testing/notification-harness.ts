@@ -24,6 +24,8 @@ export const U = {
 interface Member {
   since: Date;
   hr: boolean;
+  /** `payroll:manage` hiện tại (T-049). */
+  payroll?: boolean;
 }
 
 /** Thành viên seed vào từ "thuở đầu" — mọi thông báo của test đều thuộc tư cách hiện tại. */
@@ -34,8 +36,8 @@ export class FakeAudience implements INotificationAudience {
   readonly members = new Map<string, Member>();
 
   /** Đổi quyền HR GIỮ nguyên tư cách (như UPDATE dòng); người mới vào từ EPOCH. */
-  set(userId: string, hr: boolean): void {
-    this.members.set(userId, { since: this.members.get(userId)?.since ?? EPOCH, hr });
+  set(userId: string, hr: boolean, payroll = false): void {
+    this.members.set(userId, { since: this.members.get(userId)?.since ?? EPOCH, hr, payroll });
   }
 
   /** Nghỉ việc rồi được nhận lại lúc `at` ⇒ tư cách MỚI (thông báo cũ ẩn). */
@@ -50,11 +52,19 @@ export class FakeAudience implements INotificationAudience {
 
   accessOf(userId: string) {
     const m = this.members.get(userId);
-    return Promise.resolve(m ? { since: m.since, canManageHr: m.hr } : null);
+    return Promise.resolve(
+      m ? { since: m.since, canManageHr: m.hr, canManagePayroll: m.payroll === true } : null,
+    );
   }
 
   hrRecipients(): Promise<string[]> {
     return Promise.resolve([...this.members].filter(([, m]) => m.hr).map(([id]) => id));
+  }
+
+  payrollRecipients(): Promise<string[]> {
+    return Promise.resolve(
+      [...this.members].filter(([, m]) => m.payroll === true).map(([id]) => id),
+    );
   }
 }
 
@@ -62,6 +72,16 @@ export class FakeContext implements INotificationContextReader {
   readonly users = new Map<string, string>();
   /** khóa = id đơn (leave cấp công ty — không còn ws). */
   readonly leaves = new Map<string, LeaveSummary>();
+  /** khóa = id phiếu ⇒ kỳ `YYYY-MM` (PAYSLIP_* — T-049). */
+  readonly payslips = new Map<string, string>();
+
+  payslipPeriods(refIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    return Promise.resolve(
+      new Map(
+        refIds.flatMap((id) => (this.payslips.has(id) ? [[id, this.payslips.get(id)!]] : [])),
+      ),
+    );
+  }
 
   actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
     return Promise.resolve(
