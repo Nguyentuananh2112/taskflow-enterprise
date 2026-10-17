@@ -23,6 +23,8 @@ export interface E2EUser {
   fullName: string;
   email: string;
   password: string;
+  /** Gán khi tạo qua API (`apiCreateUser` / `apiRegister`) — `apiAddMember` thêm theo id (Mốc 3.5). */
+  userId?: string;
 }
 
 export function newUser(label: string): E2EUser {
@@ -34,17 +36,32 @@ export function newUser(label: string): E2EUser {
   };
 }
 
-/** Đăng ký qua UI thật và chờ request tới đúng API (không phải mock — APP_MOCK_API không đặt). */
-export async function registerViaUi(page: Page, user: E2EUser): Promise<void> {
-  await page.goto('/register');
-  await page.getByLabel('Họ tên').fill(user.fullName);
-  await page.getByLabel('Email').fill(user.email);
-  await page.getByLabel('Mật khẩu').fill(user.password);
-  const registered = page.waitForResponse(
-    (res) => res.url() === `${API_URL}/auth/register` && res.request().method() === 'POST',
+/**
+ * Ca phụ thuộc nhánh web/API chưa merge: chạy khi `E2E_RUN_PENDING` (phân cách dấu phẩy, hoặc `all`) chứa vé — như
+ * `SEC_RUN_PENDING` của suite bảo mật. Dùng `test.fixme(awaiting('T-065b'), '[PENDING T-065b] …')` ⇒ không xanh giả.
+ */
+export function awaiting(ticket: string): boolean {
+  const tags = (process.env.E2E_RUN_PENDING ?? '').split(',').map((t) => t.trim());
+  return !tags.includes('all') && !tags.includes(ticket);
+}
+
+/**
+ * Mốc 3.5 thay `registerViaUi` (trang /register bỏ — ADR-137): mở link kích hoạt (token ở fragment) ⇒ đặt mật khẩu
+ * ⇒ `/w`. Trang `/activate` thuộc T-065b (E, selector 17/10).
+ */
+export async function activateViaUi(page: Page, user: E2EUser, token: string): Promise<void> {
+  await page.goto(`/activate#t=${token}`);
+  await expect(
+    page.getByRole('heading', { level: 1, name: `Chào ${user.fullName}!` }),
+  ).toBeVisible();
+  // Fragment bị xóa ngay khi mở (ADR-137): token không nằm lại trên thanh địa chỉ / lịch sử.
+  expect(await page.evaluate(() => location.hash)).toBe('');
+  await page.getByLabel('Mật khẩu mới').fill(user.password);
+  const activated = page.waitForResponse(
+    (res) => res.url() === `${API_URL}/auth/activate` && res.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: /tạo tài khoản|đăng ký/i }).click();
-  expect((await registered).status()).toBe(201);
+  await page.getByRole('button', { name: 'Kích hoạt tài khoản' }).click();
+  expect((await activated).status()).toBe(200);
   await expect(page).toHaveURL(/\/w(\/|$)/);
 }
 
@@ -70,7 +87,7 @@ declare global {
 export const checkinPrompt = (page: Page) => page.getByRole('dialog', { name: /^Chào buổi/ });
 
 /**
- * T-045: dialog hiện khi vào /projects nếu hôm nay (theo server) phải chấm mà chưa chấm — với mốc thứ Ba 10:00 thì
+ * T-045: dialog hiện khi vào trang chính /w (Mốc 3.5, E T-065a; trước là /projects) nếu hôm nay (theo server) phải chấm mà chưa chấm — với mốc thứ Ba 10:00 thì
  * gần như mọi ca đều gặp. Handler bấm "Để sau" mỗi khi dialog hiện ra (Playwright chạy handler trước hành động /
  * khẳng định kế tiếp). Dialog ghi "đã hiện trong ngày" ngay lúc mở ⇒ đóng thế nào cũng không hiện lại trong ngày.
  */
