@@ -1,6 +1,5 @@
 import {
   AccessDto,
-  AdminWorkspaceDto,
   CompanyDto,
   EmployeeDto,
   HireEmployeeResponse,
@@ -15,6 +14,7 @@ import {
 import * as z from 'zod';
 
 import { http } from '@/shared/api';
+import { AdminWorkspaceWithMembersDto } from '@/shared/api/pending-contracts/company';
 
 const enc = encodeURIComponent;
 
@@ -42,14 +42,17 @@ export const adminApi = {
   access: () => http.get('/admin/access', { schema: z.array(AccessDto) }),
   setAccess: (userId: string, body: SetAccessBody) =>
     http.put(`/admin/access/${enc(userId)}`, { schema: AccessDto, body }),
-  workspaces: () => http.get('/admin/workspaces', { schema: z.array(AdminWorkspaceDto) }),
+  workspaces: () =>
+    http.get('/admin/workspaces', { schema: z.array(AdminWorkspaceWithMembersDto) }),
   assignOwner: (workspaceId: string, userId: string) =>
     http.post(`/admin/workspaces/${enc(workspaceId)}/owner`, {
-      schema: AdminWorkspaceDto,
+      schema: AdminWorkspaceWithMembersDto,
       body: { userId },
     }),
   archive: (workspaceId: string) =>
-    http.post(`/admin/workspaces/${enc(workspaceId)}/archive`, { schema: AdminWorkspaceDto }),
+    http.post(`/admin/workspaces/${enc(workspaceId)}/archive`, {
+      schema: AdminWorkspaceWithMembersDto,
+    }),
   company: () => http.get('/company', { schema: CompanyDto }),
   updateCompany: (body: UpdateCompanyBody) => http.patch('/company', { schema: CompanyDto, body }),
 };

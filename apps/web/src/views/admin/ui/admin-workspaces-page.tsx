@@ -1,6 +1,6 @@
 'use client';
 
-import { useAccessList, useAdminWorkspaces } from '@/entities/company';
+import { useAdminWorkspaces } from '@/entities/company';
 import { useCompanyPermission } from '@/entities/session';
 import { WorkspaceActions } from '@/features/admin-workspace';
 import { Badge } from '@/shared/ui/badge';
@@ -13,10 +13,6 @@ import { AdminFrame, Loading } from './admin-frame';
 export function AdminWorkspacesPage() {
   const allowed = useCompanyPermission().can('company:admin');
   const list = useAdminWorkspaces(allowed);
-  const people = useAccessList(allowed).data ?? [];
-  const candidates = people
-    .filter((p) => p.status === 'ACTIVE' || p.status === 'OFFBOARDING')
-    .map((p) => ({ value: p.userId, label: `${p.fullName} · ${p.email}` }));
   return (
     <AdminFrame title="Workspace">
       {list.isPending ? (
@@ -52,7 +48,7 @@ export function AdminWorkspacesPage() {
                   · {ws.memberCount} thành viên
                 </p>
               </div>
-              <WorkspaceActions workspace={ws} candidates={candidates} />
+              <WorkspaceActions workspace={ws} />
             </li>
           ))}
         </ul>

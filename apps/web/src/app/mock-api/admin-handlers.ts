@@ -1,7 +1,6 @@
 import { Uuid } from '@taskflow/contracts/common';
 import {
   AccessDto,
-  AdminWorkspaceDto,
   AssignWorkspaceOwnerBody,
   CompanyDto,
   SetAccessBody,
@@ -9,6 +8,8 @@ import {
 } from '@taskflow/contracts/company';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
+
+import { AdminWorkspaceWithMembersDto } from '@/shared/api/pending-contracts/company';
 
 import type { MockDb } from './mock-db';
 import { requireCompany } from './mock-guard';
@@ -36,7 +37,7 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
       version: row.version,
     };
   };
-  const workspace = (id: string): AdminWorkspaceDto | undefined => {
+  const workspace = (id: string): AdminWorkspaceWithMembersDto | undefined => {
     const row = db.workspaces.all().find((w) => w.id === id);
     if (!row) return undefined;
     const members = db.workspaces.membersOf(id);
@@ -52,6 +53,15 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
       owners,
       memberCount: members.length,
       orphan: owners.length === 0,
+      // TL chốt: mồ côi ⇒ kèm thành viên còn lại (chỉ tên) để Admin giao OWNER.
+      ...(owners.length === 0
+        ? {
+            members: members.map((m) => ({
+              userId: m.userId,
+              fullName: db.getUser(m.userId)?.fullName ?? 'Người dùng đã xóa',
+            })),
+          }
+        : {}),
       deletedAt: row.deletedAt,
       archivedAt: row.archivedAt ?? null,
     };
@@ -98,7 +108,7 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
         .flatMap((w) => workspace(w.id) ?? [])
         // Mồ côi lên đầu — việc Admin cần làm.
         .sort((a, b) => Number(b.orphan) - Number(a.orphan) || a.name.localeCompare(b.name, 'vi'));
-      return ok(z.array(AdminWorkspaceDto), rows);
+      return ok(z.array(AdminWorkspaceWithMembersDto), rows);
     }),
 
     http.post(`${baseUrl}/admin/workspaces/:id/owner`, async ({ request, params }) => {
@@ -116,7 +126,7 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
         return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'NOT_WORKSPACE_MEMBER' });
       }
       db.workspaces.setMember(ws.id, body.data.userId, 'OWNER');
-      return ok(AdminWorkspaceDto, workspace(ws.id) ?? ws);
+      return ok(AdminWorkspaceWithMembersDto, workspace(ws.id) ?? ws);
     }),
 
     http.post(`${baseUrl}/admin/workspaces/:id/archive`, ({ request, params }) => {
@@ -127,7 +137,7 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
       if (!ws) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'workspace' });
       if (ws.memberCount > 0) return conflict('workspace_has_members');
       db.workspaces.archive(ws.id);
-      return ok(AdminWorkspaceDto, workspace(ws.id) ?? ws);
+      return ok(AdminWorkspaceWithMembersDto, workspace(ws.id) ?? ws);
     }),
 
     http.get(`${baseUrl}/company`, ({ request }) => {

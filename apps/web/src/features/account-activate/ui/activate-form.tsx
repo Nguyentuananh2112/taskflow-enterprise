@@ -22,17 +22,20 @@ type Props = Readonly<{
   onDone: () => void;
 }>;
 
-/** Câu lỗi mật khẩu từ 422 `details.issues` (PasswordPolicy của server) — gắn vào ô mật khẩu. */
+/** Câu lỗi mật khẩu từ 400 VALIDATION_ERROR `issues[path=password]` (PasswordPolicy — B chốt) — gắn vào ô mật khẩu. */
 function passwordIssue(error: unknown): string | null {
-  if (!isApiError(error) || error.status !== 422) return null;
-  const issues = (error.details as { issues?: Array<{ message?: string }> } | null)?.issues;
-  return issues?.[0]?.message ?? 'Mật khẩu chưa đạt yêu cầu.';
+  if (!isApiError(error, 'VALIDATION_ERROR')) return null;
+  const issues = (
+    error.details as { issues?: Array<{ path?: unknown[]; message?: string }> } | null
+  )?.issues;
+  const hit = issues?.find((i) => i.path?.[0] === 'password');
+  return hit ? (hit.message ?? 'Mật khẩu chưa đạt yêu cầu.') : null;
 }
 
 /**
  * Đặt mật khẩu lần đầu (`POST auth/activate` — chỉ bước này tiêu token). Ô username ẩn mang email ⇒ trình quản lý mật
  * khẩu lưu đúng cặp (link hay mở trong trình duyệt của Zalo / Messenger, lần sau người dùng vào Chrome — E B3). Mật
- * khẩu yếu ⇒ 422, token VẪN sống, giữ nguyên trang.
+ * khẩu yếu ⇒ 400 VALIDATION_ERROR, token VẪN sống, giữ nguyên trang.
  */
 export function ActivateForm({ token, account, onGone, onDone }: Props) {
   const [password, setPassword] = useState('');

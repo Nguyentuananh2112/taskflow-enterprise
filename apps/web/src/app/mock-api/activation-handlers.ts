@@ -13,7 +13,8 @@ import { fail, ok, parseBody } from './respond';
 
 // Kích hoạt tài khoản (ADR-137 điều khoản token, B1–B7 của E): công khai. `inspect` CHỈ ĐỌC (bot xem trước link không
 // làm hỏng link); chỉ `activate` tiêu token. Token sai / rác ⇒ cùng một 400 ACTIVATION_INVALID; đã dùng / hết hạn /
-// thu hồi ⇒ 410 ACTIVATION_GONE. Mật khẩu yếu ⇒ 422, token VẪN sống.
+// thu hồi ⇒ 410 ACTIVATION_GONE. Mật khẩu yếu ⇒ 400 VALIDATION_ERROR issues[password] (B chốt — như đổi mật khẩu),
+// token VẪN sống.
 
 export function createActivationHandlers(baseUrl: string, db: MockDb): HttpHandler[] {
   const url = (path: string) => `${baseUrl}${path}`;
@@ -46,9 +47,9 @@ export function createActivationHandlers(baseUrl: string, db: MockDb): HttpHandl
       const hit = resolve(token);
       if (hit.response) return hit.response;
       const { user } = hit;
-      // PasswordPolicy (kèm email) — 422 với `details.issues` như lỗi validate ⇒ web gắn vào ô mật khẩu.
+      // PasswordPolicy (kèm email) — 400 `details.issues` như lỗi validate ⇒ web gắn vào ô mật khẩu.
       const weak = (code: string, message: string) =>
-        fail(422, 'VALIDATION_ERROR', { issues: [{ path: ['password'], code, message }] });
+        fail(400, 'VALIDATION_ERROR', { issues: [{ path: ['password'], code, message }] });
       if (COMMON_PASSWORDS.has(password.toLowerCase())) {
         return weak('common_password', 'Mật khẩu quá phổ biến.');
       }

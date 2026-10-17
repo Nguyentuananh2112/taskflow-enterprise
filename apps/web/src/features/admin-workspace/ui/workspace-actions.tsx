@@ -1,16 +1,16 @@
 'use client';
 
-import type { AdminWorkspaceDto } from '@taskflow/contracts/company';
 import { useMutation, type QueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { adminApi, companyKeys } from '@/entities/company';
+import type { AdminWorkspaceWithMembersDto as AdminWorkspaceDto } from '@/shared/api/pending-contracts/company';
 import { isApiError } from '@/shared/api';
 import { serverErrorMessage } from '@/shared/lib/form-errors';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
 import { Dialog } from '@/shared/ui/dialog';
-import { Select, type SelectOption } from '@/shared/ui/select';
+import { Select } from '@/shared/ui/select';
 import { toast } from '@/shared/ui/toast';
 
 function workspaceError(error: unknown): string {
@@ -24,20 +24,15 @@ function workspaceError(error: unknown): string {
   return serverErrorMessage(error);
 }
 
-type Props = Readonly<{
-  workspace: AdminWorkspaceDto;
-  /**
-   * Người có thể nhận (v2.1: thành viên CÒN LẠI của workspace). Tạm thời: nhân viên đang làm — server kiểm và trả 422
-   * NOT_WORKSPACE_MEMBER (đang hỏi B nguồn danh sách thành viên của workspace mồ côi).
-   */
-  candidates: readonly SelectOption[];
-}>;
+type Props = Readonly<{ workspace: AdminWorkspaceDto }>;
 
 /**
  * Việc của Admin với workspace mồ côi (ADR-134): còn thành viên ⇒ "Giao chủ sở hữu" (Admin không tự vào workspace
  * mình không ở); không còn ai ⇒ "Lưu trữ". Workspace còn chủ / đã xóa / đã lưu trữ ⇒ không có nút.
  */
-export function WorkspaceActions({ workspace: ws, candidates }: Props) {
+export function WorkspaceActions({ workspace: ws }: Props) {
+  // Người nhận = thành viên CÒN LẠI của workspace mồ côi (TL chốt) — Admin không tự vào ws mình không ở.
+  const candidates = (ws.members ?? []).map((m) => ({ value: m.userId, label: m.fullName }));
   const [open, setOpen] = useState<'assign' | 'archive' | null>(null);
   const [userId, setUserId] = useState('');
   const apply = (client: QueryClient, next: AdminWorkspaceDto, title: string) => {

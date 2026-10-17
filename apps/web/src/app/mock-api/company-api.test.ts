@@ -59,7 +59,7 @@ const activation = (r: { body: Json }) =>
   r.body.data.activation as { token: string; link: string; expiresAt: string } | null;
 
 describe('mock nhân viên + kích hoạt', () => {
-  it('thêm ⇒ 201 no-store, link #t=; inspect 2 lần không tiêu token; mật khẩu yếu 422 token vẫn sống; kích hoạt ⇒ phiên; dùng lại ⇒ 410', async () => {
+  it('thêm ⇒ 201 no-store, link #t=; inspect 2 lần không tiêu token; mật khẩu yếu 400 token vẫn sống; kích hoạt ⇒ phiên; dùng lại ⇒ 410', async () => {
     const { send, hire } = setup();
     const res = await hire('nina@example.com', 'Nina');
     expect(res.status).toBe(201);
@@ -84,7 +84,7 @@ describe('mock nhân viên + kích hoạt', () => {
       token,
       password: 'nina-mat-khau-dai',
     });
-    expect(weak.status).toBe(422);
+    expect(weak.status).toBe(400);
     const done = await send('POST', '/auth/activate', undefined, { token, password: PW });
     expect(done.status).toBe(200);
     expect(done.body.data.accessToken).toBeTruthy();
