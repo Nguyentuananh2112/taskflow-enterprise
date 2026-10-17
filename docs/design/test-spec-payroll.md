@@ -169,13 +169,13 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 |---|---|---|
 | SEC-PAY-01 | Mia, Hana (chỉ `HR_MANAGE`) gọi mọi route `payroll/…`, `salary-profiles`, `payroll-settings` (body sai) | 403 (không 400) |
 | SEC-PAY-02 | Ada gọi `GET /payslips`, `/payslips/:period`, `/payslips/:period/revisions/:n` (quyền `payslip:self` chỉ EMPLOYEE — B) ⇒ 403; Mia `GET /payslips` ⇒ danh sách **không có số tiền** (`MyPayslipSummaryDto`), chỉ bản hiệu lực; `/payslips/:period` của kỳ còn NHÁP ⇒ 404 (nhân viên chỉ thấy PUBLISHED) | đúng |
-| SEC-PAY-03 | Mia `GET /payslips/:period` của mình ⇒ 200 chỉ bản hiệu lực của mình; đổi `userId` / id phiếu sang Max ⇒ 404 (body giống phiếu không tồn tại) | đúng |
+| SEC-PAY-03 | Mia `GET /payslips/:period` của mình ⇒ 200 chỉ bản hiệu lực của mình; đổi `userId` / id phiếu sang Max ⇒ 404 (body giống phiếu không tồn tại); phiếu của Mia có `overrideReason` (lý do sửa công) — **TL chốt 18/10: nhân viên xem được lý do sửa công của chính mình** | đúng |
 | SEC-PAY-04 | luật self tuyệt đối: Kay sửa phiếu / dòng / ghi chú / công / hồ sơ lương / bản điều chỉnh **của chính Kay** ⇒ 403; Kim hoặc Ada ⇒ 200; Kay vẫn **phát hành** được cả bảng (gồm phiếu của Kay) | đúng |
 | SEC-PAY-05 | thu `PAYROLL_MANAGE` của Kim giữa lúc mở form và lưu ⇒ 403, không đổi số (đọc lại quyền FOR SHARE) | đúng |
 | SEC-PAY-06 | Quinn sau `access_until` ⇒ 401 `SESSION_REVOKED` cả route self | đúng |
 | SEC-PAY-07 | mass assignment: body phiếu có `netPay`, `incomeTotal`, `seniorityAllowance`, `salaryByDays`, `userId`, `revision`, `status` ⇒ 400 strict (tổng chỉ do server tính) | đúng |
 | SEC-PAY-08 | tiền: `-1`, `1e12 + 1`, `1.5`, `"7000000"`, `1e21`, `NaN` ⇒ 400; 51 dòng ⇒ 400; nhãn rỗng / 121 ký tự / ký tự điều khiển ⇒ 400 | đúng |
-| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số | đúng |
+| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số; **lý do sửa công / lý do điều chỉnh** (chuỗi đánh dấu) chỉ có ở phiếu (kế toán + chính nhân viên), không có trong thông báo, log, audit đọc bởi người khác Admin | đúng |
 | SEC-PAY-10 | audit `PAYROLL_*` có before/after số tiền; `GET hr/audit-logs` chỉ Admin (Kay, Hana ⇒ 403) | đúng |
 | SEC-PAY-11 | header: mọi route lương `Cache-Control: no-store`; export có header tải file + `nosniff` | đúng |
 | SEC-PAY-12 | `payroll_settings`: chỉ `payroll:manage`; `seniorityPerYear` âm / > 1e12 ⇒ 400; luôn một dòng (CHECK `id = 1` — I) | đúng |
