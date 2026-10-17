@@ -11,6 +11,7 @@ export const NOTIFICATION_TYPES = [
   'ACCESS_CHANGED',
   'OFFBOARD_SCHEDULED',
   'OFFBOARD_CLEANUP',
+  'PROFILE_UPDATED',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

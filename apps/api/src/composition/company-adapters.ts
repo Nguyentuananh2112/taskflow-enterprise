@@ -1,4 +1,4 @@
-import type { EmploymentCollaborators } from '../modules/company';
+import type { CompanyModule, EmploymentCollaborators } from '../modules/company';
 import type { ICompanyAccessEvents } from '../modules/company/application/ports/access-events.port';
 import type { IAdminWorkspaces } from '../modules/company/application/ports/admin-workspaces.port';
 import type { IOffboardLeavePort } from '../modules/company/application/ports/offboard-leave.port';
@@ -56,6 +56,18 @@ export function companyAccessEvents(
   };
 }
 
+/**
+ * Cổng công ty của workspace (HIGH-2): loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`;
+ * thêm thành viên chỉ người chưa có lịch nghỉ (ADR-134).
+ */
+export function workspaceGate(company: Pick<CompanyModule, 'sessionGate' | 'members'>) {
+  return {
+    isActive: (userId: string) => company.sessionGate.isActive(userId),
+    canJoinWorkspace: async (userId: string) =>
+      (await company.members.find(userId))?.offboardLastDay === null,
+  };
+}
+
 /** T-062: cộng tác vòng đời nhân viên — gọi trễ (module workspace / leave / notifications dựng SAU company). */
 export function employmentCollaborators(m: {
   workspace: { exit: EmploymentCollaborators['workspaceExit'] };
@@ -64,6 +76,10 @@ export function employmentCollaborators(m: {
   };
   notifications: Pick<NotificationsModule, 'publisher'>;
   realtime: Pick<LateBoundRealtime, 'notifyCompanyAccessChanged'>;
+  hrProfile: {
+    hire: EmploymentCollaborators['hireProfile'];
+    columnsOf: EmploymentCollaborators['profileColumns']['columnsOf'];
+  };
 }): EmploymentCollaborators {
   return {
     workspaceExit: m.workspace.exit,
@@ -71,5 +87,7 @@ export function employmentCollaborators(m: {
     rehireLeave: m.leave.employment,
     notifier: m.notifications.publisher,
     realtime: m.realtime,
+    hireProfile: m.hrProfile.hire,
+    profileColumns: { columnsOf: (userIds) => m.hrProfile.columnsOf(userIds) },
   };
 }

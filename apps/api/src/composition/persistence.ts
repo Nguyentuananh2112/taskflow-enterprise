@@ -10,6 +10,8 @@ import type { CompanyRepositories } from '../modules/company/company.module';
 import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
+import type { HrProfileRepositories } from '../modules/hr-profile/hr-profile.module';
+import { InMemoryEmployeeProfiles } from '../modules/hr-profile/infrastructure/in-memory/in-memory-employee-profiles';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import {
@@ -56,6 +58,8 @@ export interface Persistence {
   attendance: AttendanceRepositories;
   /** Module leave (T-039/T-064): đơn nghỉ + số dư + phía đọc + danh bạ nhân viên. */
   leave: LeaveRepositories;
+  /** Hồ sơ nhân viên (Mốc 5, T-054). */
+  hrProfile: HrProfileRepositories;
   /** Chỉ bộ nhớ: bảng công ty để seed / harness (Prisma: dữ liệu ở DB). */
   companyStore?: InMemoryCompanyStore;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
@@ -94,6 +98,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const notificationStore = createInMemoryNotificationStore();
   const attendance = createInMemoryAttendanceRepositories();
   const leaveStore = new InMemoryLeaveRepository();
+  const profiles = new InMemoryEmployeeProfiles();
   const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
   const uow = new InMemoryUnitOfWork(
     [
@@ -110,6 +115,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       attendance.events,
       attendance.calendar,
       leaveStore,
+      profiles,
     ],
     logger,
   );
@@ -138,6 +144,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     companyStore,
     attendance,
     leave,
+    hrProfile: { profiles, locks: profiles },
     uow,
   };
 }

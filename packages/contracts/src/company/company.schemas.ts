@@ -4,6 +4,7 @@ import { AuthTokenDto, Email, FullName, Password, UserDto } from '../auth/auth.s
 import { Cursor, DateOnly, IsoDateTime, limitQuery, searchQuery, Uuid, Version } from '../common';
 import { WorkspaceRole } from '../rbac/permissions';
 import { CompanyGrant, CompanyRole, EmployeeStatus } from './company-roles';
+import { EmployeeProfileFields, SeniorityDto } from './employee-profile.schemas';
 
 // Mốc 3.5 — cấp công ty (docs/design/company-level.md, ADR-133…140). Dữ liệu thuần cho FE / harness;
 // nguồn sự thật là `company/domain/roles.ts` của API, có test parity (ADR-080).
@@ -32,6 +33,13 @@ export const EmployeeDto = z.object({
   offboardLastDay: DateOnly.nullable(),
   /** `company_members.version`; null với LEFT (không còn dòng). */
   version: Version.nullable(),
+  // Mốc 5 (T-054, ADR-128): hồ sơ phẳng cho danh sách — server tính `seniority` theo hôm nay nghiệp vụ; KHÔNG có
+  // `workPhone` (chỉ ở GET hr/employee-profiles/:userId).
+  hireDate: DateOnly.nullable(),
+  department: z.string().nullable(),
+  jobTitle: z.string().nullable(),
+  missingHireDate: z.boolean(),
+  seniority: SeniorityDto.nullable(),
 });
 export type EmployeeDto = z.infer<typeof EmployeeDto>;
 
@@ -49,6 +57,10 @@ export const HireEmployeeBody = z.strictObject({
   fullName: FullName,
   /** Mặc định hôm nay; lùi ≤ 31 ngày, không tương lai (kiểm ở server theo giờ nghiệp vụ). */
   startDate: DateOnly.optional(),
+  // Mốc 5 (T-054, ADR-128): hồ sơ TÙY CHỌN ghi cùng transaction — không gửi ⇒ hành vi Mốc 3.5 (không tạo hồ sơ).
+  ...EmployeeProfileFields,
+  /** Nhận lại người có hồ sơ cũ: `true` giữ `hireDate` cũ (thâm niên tính tiếp); `false` + `hireDate` mới thay. */
+  keepHireDate: z.boolean().optional(),
 });
 export type HireEmployeeBody = z.infer<typeof HireEmployeeBody>;
 

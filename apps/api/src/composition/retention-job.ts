@@ -73,6 +73,8 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
     { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(recordsDate, n) },
     { name: 'leave_requests', run: (n) => s.leave.deleteRequestsBeforeYear(recordsYear, n) },
     { name: 'leave_balances', run: (n) => s.leave.deleteBalancesBeforeYear(recordsYear, n) },
+    // D8 TRƯỚC D5: căn cứ giữ hồ sơ là departure có `last_day ≥ mốc D5` (D5 xóa departure đó).
+    { name: 'employee_profiles', run: (n) => s.hrProfile.deleteProfiles(recordsDate, n) },
     { name: 'member_departures', run: (n) => s.company.deleteDepartures(recordsDate, n) },
     {
       name: 'notifications',
