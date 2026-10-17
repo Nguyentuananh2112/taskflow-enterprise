@@ -17,12 +17,14 @@ type Item = Readonly<{
   manage?: boolean;
 }>;
 
-// "Bảng lương" (`payroll:manage`) thêm ở Mốc 4 — chưa có trang thì không có lối vào.
 const ITEMS: readonly Item[] = [
   { href: '/w', label: 'Trang chính' },
   { href: '/attendance', label: 'Bảng công của tôi', needs: 'attendance:self' },
   { href: '/leave', label: 'Nghỉ phép', needs: 'leave:self' },
+  // TẠM: `payslip:self` (T-048 B) chưa có — cùng tập người với `attendance:self` (chỉ nhân viên).
+  { href: '/payslips', label: 'Phiếu lương', needs: 'attendance:self' },
   { href: '/hr', label: 'Nhân sự', needs: 'hr:manage', manage: true },
+  { href: '/payroll', label: 'Bảng lương', needs: 'payroll:manage', manage: true },
   { href: '/admin', label: 'Quản trị', needs: 'company:admin', manage: true },
 ];
 

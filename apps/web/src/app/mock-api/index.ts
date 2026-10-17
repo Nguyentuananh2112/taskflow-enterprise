@@ -12,6 +12,8 @@ import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
+import { MockPayroll } from './mock-payroll';
+import { createPayslipHandlers } from './payslip-handlers';
 import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
 import { createProjectHandlers } from './project-handlers';
@@ -52,6 +54,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const notifications = new MockNotifications(board, options.now ?? Date.now);
   const leave = new MockLeave(attendance, options.now ?? Date.now);
   const hr = new MockHr(db, attendance, leave);
+  const payroll = new MockPayroll(hr);
   return {
     db,
     board,
@@ -59,6 +62,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     notifications,
     leave,
     hr,
+    payroll,
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins),
@@ -76,6 +80,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createHrCalendarHandlers(baseUrl, hr),
       ...createEmployeeHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
+      ...createPayslipHandlers(baseUrl, payroll, db),
     ],
   };
 }

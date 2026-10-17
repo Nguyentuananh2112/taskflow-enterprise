@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import type { PayslipDto, PayslipSection } from '@/shared/api/pending-contracts/payroll';
+import type { MyPayslipDto as PayslipDto, PayslipSection } from '@taskflow/contracts/payroll';
 import { cn } from '@/shared/lib/cn';
 import { formatVnd } from '@/shared/lib/money';
 
@@ -97,8 +97,16 @@ export function PayslipSheet({ payslip: p }: Readonly<{ payslip: PayslipDto }>) 
               {workDays(days, p.standardDays)}
             </td>
           </tr>
+          {p.overrideHalfDays !== null && p.overrideReason && (
+            <tr className="border-t border-border">
+              <th scope="row" className="px-3 py-1.5 pl-6 text-left font-normal">
+                Công đã sửa — lý do
+              </th>
+              <td className="px-3 py-1.5 text-right">{p.overrideReason}</td>
+            </tr>
+          )}
           <Section title="(1) Tiền lương chi tiết" total={p.incomeTotal} />
-          <Row label="Lương cơ bản (đủ công)" value={p.baseSalary} sub />
+          <Row label="Lương cơ bản (đủ công)" value={p.baseSalary ?? 0} sub />
           <Row label="Lương theo công" value={p.salaryByDays} sub />
           <Row
             label={`Phụ cấp thâm niên (${p.seniorityYears} năm)`}

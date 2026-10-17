@@ -1,4 +1,4 @@
-import type { TodoDto } from '@/shared/api/pending-contracts/payroll';
+import type { PayrollTodoDto as TodoDto, PublishBlockReason } from '@taskflow/contracts/payroll';
 
 /** "9/2026" (tháng không số 0 đầu) — dùng cho title tab: "Phiếu lương tháng 9/2026". */
 export const monthLabel = (period: string) => `${Number(period.slice(5, 7))}/${period.slice(0, 4)}`;
@@ -36,8 +36,6 @@ export function todoText(t: TodoDto): string {
       return 'Mức thâm niên đã đổi — tính lại';
     case 'MISSING_OUT':
       return `${who(t)}: ngày ${dm(t.date)} quên chấm ra (chưa tính công)`;
-    case 'NEGATIVE_NET_PAY':
-      return `${who(t)}: thực lĩnh âm`;
     case 'ATTENDANCE_CHANGED_AFTER_PUBLISH':
       return `${who(t)}: công đã thay đổi sau phát hành`;
     case 'PROFILE_CHANGED_AFTER_PUBLISH':
@@ -45,10 +43,12 @@ export function todoText(t: TodoDto): string {
   }
 }
 
-/** Việc chặn phát hành (khác cảnh báo). */
-export const BLOCKING: ReadonlySet<TodoDto['kind']> = new Set([
-  'MISSING_SALARY_PROFILE',
-  'MISSING_HIRE_DATE',
-  'HIRE_DATE_AFTER_PERIOD',
-  'NEGATIVE_NET_PAY',
-]);
+/** Lý do chặn phát hành một phiếu (bằng lời thường — nút Phát hành bị chặn phải ghi rõ lý do, §5.2). */
+export const BLOCK_REASON: Readonly<Record<PublishBlockReason, string>> = {
+  NEGATIVE_NET_PAY: 'thực lĩnh âm',
+  MISSING_SALARY_PROFILE: 'chưa có hồ sơ lương',
+  MISSING_HIRE_DATE: 'thiếu ngày vào công ty',
+  HIRE_DATE_AFTER_PERIOD: 'ngày vào công ty sau kỳ lương',
+  HIRE_DATE_CHANGED: 'ngày vào công ty đã đổi — cần tính lại',
+  SENIORITY_RATE_CHANGED: 'mức thâm niên đã đổi — cần tính lại',
+};

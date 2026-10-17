@@ -15,6 +15,7 @@ import { HrEmployeesPage } from '@/views/hr-employees';
 import { LeavePage } from '@/views/leave';
 import { BoardPage } from '@/views/board';
 import { MembersPage } from '@/views/members';
+import { MyPayslipsPage } from '@/views/my-payslips';
 import { ProjectListPage } from '@/views/project-list';
 import { ProjectSettingsPage } from '@/views/project-settings';
 import { WorkspaceNewPage } from '@/views/workspace-new';
@@ -33,6 +34,7 @@ const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/leave$/, () => <LeavePage />],
   [/^\/hr$/, () => <HrPage />],
   [/^\/hr\/employees$/, () => <HrEmployeesPage />],
+  [/^\/payslips(\/\d{4}-\d{2})?$/, () => <MyPayslipsPage />],
   [/^\/admin$/, () => <AdminPage />],
   [/^\/admin\/access$/, () => <AdminAccessPage />],
   [/^\/admin\/workspaces$/, () => <AdminWorkspacesPage />],

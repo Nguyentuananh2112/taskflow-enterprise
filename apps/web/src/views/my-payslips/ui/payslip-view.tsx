@@ -1,11 +1,11 @@
 'use client';
 
+import type { MyPayslipDto } from '@taskflow/contracts/payroll';
 import Link from 'next/link';
 import { useEffect } from 'react';
 
 import { PayslipSheet, monthLabel, useMyPayslip, useMyPayslipRevision } from '@/entities/payroll';
 import { isApiError } from '@/shared/api';
-import type { PayslipDto } from '@/shared/api/pending-contracts/payroll';
 import { formatVnd } from '@/shared/lib/money';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
@@ -73,7 +73,7 @@ export function PayslipView({ period, revision }: Props) {
   return <Loaded payslip={q.data} isOld={revision !== null} />;
 }
 
-function Loaded({ payslip: p, isOld }: Readonly<{ payslip: PayslipDto; isOld: boolean }>) {
+function Loaded({ payslip: p, isOld }: Readonly<{ payslip: MyPayslipDto; isOld: boolean }>) {
   const superseded = isOld || p.supersededAt !== null;
   return (
     <div className="flex flex-col gap-4">

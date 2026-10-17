@@ -1,5 +1,12 @@
 export { payrollApi, payslipApi } from './api/payroll.api';
-export { BLOCKING, monthLabel, sheetMonth, shiftPeriod, todoText, workDays } from './lib/labels';
+export {
+  BLOCK_REASON,
+  monthLabel,
+  sheetMonth,
+  shiftPeriod,
+  todoText,
+  workDays,
+} from './lib/labels';
 export { payrollKeys, payslipKeys } from './model/query-keys';
 export {
   useMyPayslip,

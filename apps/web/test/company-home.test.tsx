@@ -52,6 +52,7 @@ describe('header công ty', () => {
       ['Trang chính', '/w'],
       ['Bảng công của tôi', '/attendance'],
       ['Nghỉ phép', '/leave'],
+      ['Phiếu lương', '/payslips'],
     ]);
     expect(screen.getByRole('button', { name: 'Menu' }).getAttribute('aria-expanded')).toBe('true');
     await expectNoA11yViolations();
@@ -73,6 +74,7 @@ describe('header công ty', () => {
     expect(await menuLabels()).toEqual([
       ['Trang chính', '/w'],
       ['Nhân sự', '/hr'],
+      ['Bảng lương', '/payroll'],
       ['Quản trị', '/admin'],
     ]);
   });
