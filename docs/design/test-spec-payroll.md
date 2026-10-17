@@ -54,10 +54,11 @@ Mỗi ca ghi tiền dùng một **số đánh dấu** duy nhất (vd `7 031 117`
 
 ### 1.2 Thêm (viết cùng ca, `harness/payroll.ts`)
 
-- `PAYROLL` — bản đồ route lấy từ contracts T-048 (B), không lặp chuỗi trong ca: `runs`, `run(period)`, `createRun(period)`, `recompute(period)` + `recomputePreview(period)`, `addMissing(period)`, `publish(period)`, `payslip(period, userId)`, `payslipLines`, `revise`, `salaryProfiles`, `salaryProfile(userId)`, `settings`, `export(period)`, `mySlips`, `mySlip(period)`.
-- `seedMonth(actors, who, period, plan)` — dựng một tháng công theo kế hoạch `{ 'YYYY-MM-DD': 'P' | 'MO' | 'A' | { leave: 'ANNUAL', part: 'AM' } … }` bằng `adjust` + đơn nghỉ. Kỳ dùng phải là **tháng đã kết thúc** theo mốc.
-- `expectNoMoney(marker, sources)` — bất biến §0.5.
-- `expectTotals(slip)` — so tổng trong DTO với `computePayslip` của `@taskflow/contracts` (cùng package web dùng) trên dòng đọc lại.
+- **Đã có** (`harness/payroll.ts` + `payroll.test.ts`, 12 test): `PAYROLL` — route theo contracts T-048 (B, `feat/T-048-payroll-schema` 3d1e482): `settings`, `salaryProfiles`, `salaryProfile(userId)` (POST phiên bản), `runs`, `run(period)` (POST tạo nháp idempotent / GET), `recalculatePreview`, `recalculate`, `addMissing`, `publish` (body `{confirmed: true}`), `exportXlsx`, `payslip(period, userId)` (GET / PUT — **sửa công** = `overrideHalfDays` + `overrideReason` đi cùng nhau), `revisions`, `mySlips`, `mySlip`, `mySlipRevision`.
+- **Đã có** `payrollMonth({from?, after?, runDay?})` ⇒ `{period, startAnchor, runAnchor, days}`. Kỳ dựng được bằng hộp đen theo 2 pha vì `startDate` chỉ lùi ≤ 31 ngày (CLK-HR-07) và không chấm công tương lai: (1) API ở `startAnchor` = ngày 1 của kỳ, ≥ hôm nay + 2 — tạo người (`startDate` = ngày 1), nộp + duyệt đơn nghỉ trong kỳ (`seedLeaves`); (2) `api.restart({TEST_CLOCK_ANCHOR: runAnchor})` (ngày `runDay` tháng sau) — HR `adjust` các ngày đã qua (`seedPunches`), tạo bảng. Kỳ sau trong cùng file: `payrollMonth({after: prev})` (mốc chỉ tiến). Người có nhiệm kỳ trước ngày 1 (PE-03…05): tạo ở kỳ trước.
+- **Đã có** `seedLeaves(actors, hr, employee, plan)` / `seedPunches(actors, hr, userId, plan)` — kế hoạch `{ 'YYYY-MM-DD': 'P' | 'MO' | 'A' | { leave, part?, present? } }`.
+- **Đã có** `moneyMarker()`, `moneySpellings()` (`7031117`, `7.031.117`, `7,031,117`, cách bằng space / NBSP / NNBSP), `expectNoMoney(marker, sources)` — khớp theo **biên chữ số** (`7031117` trong `70311170` không tính). `publishBlockers(res)` — đọc 422 `PUBLISH_BLOCKED`, kiểm `code`, `rule`, sắp theo `userId`, `reasons` không rỗng.
+- `expectTotals(slip)` — so tổng trong DTO với `computePayslip` của `@taskflow/contracts` (cùng package web dùng) trên dòng đọc lại. — viết khi `payslip-math` (A, T-049) vào `feat/m4-payroll`.
 
 ### 1.3 Env test-only cần hỏi tác giả (chỉ nhận khi `APP_ENV=test`)
 
@@ -127,7 +128,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | SN-06 | hàm thuần chuỗi: chạy test U với `TZ=Pacific/Kiritimati` và `TZ=Pacific/Pago_Pago` ⇒ cùng kết quả (không `Date` — grep cấm `new Date` trong file) | đúng |
 | SN-07 | hireDate sau ngày cuối kỳ | cờ, chặn phát hành |
 | SN-08 | đổi `seniorityPerYear` khi **nháp** ⇒ nháp giữ số cũ + việc còn lại "Mức thâm niên đã đổi — tính lại"; Tính lại công ⇒ số mới; đổi sau phát hành ⇒ phiếu cũ không đổi | đúng |
-| SN-09 | HR đổi `hireDate` khi nháp ⇒ "Ngày vào công ty đã đổi — tính lại"; sau PUBLISHED ⇒ cờ "hồ sơ đã thay đổi sau phát hành" (so `Payslip.hireDate`), phiếu không đổi | đúng |
+| SN-09 | HR đổi `hireDate` khi nháp ⇒ `todo` `HIRE_DATE_CHANGED`; sau PUBLISHED ⇒ `todo` `PROFILE_CHANGED_AFTER_PUBLISH` (so `Payslip.hireDate`), phiếu không đổi | đúng |
 | SN-10 | không chia theo công: `h = 0`, nghỉ việc giữa tháng, lên Admin giữa tháng ⇒ thâm niên đủ | đúng |
 | SN-11 | `seniorityAllowanceOf` vượt trần (1e12 × 80) ⇒ ném lỗi, không trả số sai | đúng |
 
@@ -151,13 +152,13 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 |---|---|---|---|
 | RD-01 | I + S | tạo nháp kỳ M (M đã kết thúc) ⇒ 201; tạo lại ⇒ cùng bảng (idempotent, unique `(period)`) | đúng |
 | RD-02 | S | tạo nháp tháng hiện tại / tương lai ⇒ 422 `PERIOD_NOT_ENDED` | đúng |
-| RD-03 | A + S | sửa phiếu với `lockVersion` cũ ⇒ 409 `VERSION_CONFLICT`; sửa công không lý do ⇒ 400; bước 0,5 ngày (số lẻ nửa ngày được, 0,25 ⇒ 400) | đúng |
-| RD-04 | A + S | phát hành bị chặn ⇒ 422 `BUSINESS_RULE_VIOLATION` rule `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (TL chốt 18/10; enum reason lấy từ contracts — ít nhất `MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`). Bảng 3 người bị chặn, mỗi người một tổ hợp (Mia: thiếu hồ sơ lương; Max: thiếu `hireDate` **và** âm lương; Quinn: `hireDate` sau kỳ) + 1 người hợp lệ ⇒ `blockers` có đúng 3 phần tử, đủ lý do, người hợp lệ không có mặt, không phiếu nào đổi trạng thái; nếu contracts đưa "đã đổi — cần tính lại" (mức thâm niên / `hireDate`) vào enum thì thêm vế: đổi mức khi nháp ⇒ mọi phiếu bị chặn với reason đó tới khi Tính lại công. MISSING_OUT: theo `payroll.md` chỉ là cảnh báo ở preview / modal, **không** chặn — nếu enum có reason này thì báo TL (lệch thiết kế). Sửa hết lý do ⇒ phát hành 200 đếm 1, lần 2 ⇒ 409 | đúng |
+| RD-03 | A + S | sửa phiếu với `expectedLockVersion` cũ ⇒ 409 `VERSION_CONFLICT` (tương tự `expectedVersion` của settings, `expectedRevision` của bản điều chỉnh); `overrideHalfDays` thiếu `overrideReason` hoặc ngược lại ⇒ 400 path `overrideReason`; sửa công không lý do ⇒ 400; bước 0,5 ngày (số lẻ nửa ngày được, 0,25 ⇒ 400) | đúng |
+| RD-04 | A + S | phát hành bị chặn ⇒ 422 `BUSINESS_RULE_VIOLATION` rule `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (TL chốt 18/10; enum reason lấy từ contracts — ít nhất `MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`). Bảng 3 người bị chặn, mỗi người một tổ hợp (Mia: thiếu hồ sơ lương; Max: thiếu `hireDate` **và** âm lương; Quinn: `hireDate` sau kỳ) + 1 người hợp lệ ⇒ `blockers` có đúng 3 phần tử, đủ lý do, người hợp lệ không có mặt, không phiếu nào đổi trạng thái; contracts có `HIRE_DATE_CHANGED`, `SENIORITY_RATE_CHANGED` (B 3d1e482) ⇒ thêm vế: đổi mức thâm niên khi nháp ⇒ mọi phiếu bị chặn `SENIORITY_RATE_CHANGED` tới khi Tính lại công; HR đổi `hireDate` của Mia ⇒ chỉ phiếu Mia `HIRE_DATE_CHANGED`. Bảng tháng `payslips[].blockReasons` khớp `blockers` của lệnh phát hành. `publish` thiếu `confirmed: true` ⇒ 400. MISSING_OUT: theo `payroll.md` chỉ là cảnh báo ở preview / modal, **không** chặn — nếu enum có reason này thì báo TL (lệch thiết kế). Sửa hết lý do ⇒ phát hành 200 đếm 1, lần 2 ⇒ 409 | đúng |
 | RD-05 | I + S | phiếu PUBLISHED bất biến: mọi lệnh sửa ⇒ 409/422; UPDATE thẳng cột tiền bằng SQL ⇒ trigger chặn (I) | đúng |
 | RD-06 | I (+ K nếu có env §1.3) | kỳ có ngày quá retention ⇒ Tính lại công 422 `ATTENDANCE_RETENTION_EXPIRED`; bản điều chỉnh copy `paidHalfDays` của bản trước | đúng |
 | RD-07 | A + S | "Tính lại công" preview ⇒ "N người thay đổi"; áp ⇒ đúng N phiếu đổi; override có lý do được giữ | khớp |
 | RD-08 | A + S | bản điều chỉnh: lý do bắt buộc; bản cũ `supersededAt`, bản mới `revision + 1`; một bản hiệu lực (partial unique); nhân viên thấy lý do + bản cũ có nhãn | đúng |
-| RD-09 | S | sau phát hành, HR `adjust` công tháng đó ⇒ cờ "công đã thay đổi sau phát hành", phiếu không đổi | đúng |
+| RD-09 | S | sau phát hành, HR `adjust` công tháng đó ⇒ việc còn lại `ATTENDANCE_CHANGED_AFTER_PUBLISH` (`todo[]`), phiếu không đổi | đúng |
 | RD-10 | S | thông báo `PAYSLIP_PUBLISHED` đúng 1 / nhân viên có phiếu, link `/payslips/YYYY-MM`, **không số tiền** (§0.5); gửi sau commit (phát hành lỗi ⇒ không thông báo) | đúng |
 | RD-11 | I | bảng payroll + audit `PAYROLL_*` ngoài mọi bước retention hiện có (chạy retention ⇒ không xóa dòng nào) | đúng |
 | RD-12 | S | export bảng lương **.xlsx** qua `ISpreadsheetWriter` (TL chốt 18/10 — không CSV): `expectXlsxHeaders` + `readXlsx` + `expectSafeWorkbook` (luật ADR-130: không `<f>`, `quotePrefix` cho nhãn `= + - @ TAB CR`, không metadata thừa); chỉ bản hiệu lực + cột revision; cột tiền là **ô số** nguyên (không chuỗi, không ₫, không `'`), tổng khớp `computePayslip`; no-store; audit `EXPORT` chỉ khi stream bắt đầu; hạn mức chung với export HR; kiểm thủ công 1 lần trên Excel vi-VN + LibreOffice cùng D (như XL-08) | đúng |
@@ -167,18 +168,18 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Ca | Mong đợi |
 |---|---|---|
 | SEC-PAY-01 | Mia, Hana (chỉ `HR_MANAGE`) gọi mọi route `payroll/…`, `salary-profiles`, `payroll-settings` (body sai) | 403 (không 400) |
-| SEC-PAY-02 | Ada gọi `GET /payslips`, `/payslips/:period` | 403 |
-| SEC-PAY-03 | Mia `GET /payslips/:period` của mình ⇒ 200 chỉ bản hiệu lực của mình; đổi `userId` / id phiếu sang Max ⇒ 404 (body giống phiếu không tồn tại) | đúng |
+| SEC-PAY-02 | Ada gọi `GET /payslips`, `/payslips/:period`, `/payslips/:period/revisions/:n` (quyền `payslip:self` chỉ EMPLOYEE — B) ⇒ 403; Mia `GET /payslips` ⇒ danh sách **không có số tiền** (`MyPayslipSummaryDto`), chỉ bản hiệu lực; `/payslips/:period` của kỳ còn NHÁP ⇒ 404 (nhân viên chỉ thấy PUBLISHED) | đúng |
+| SEC-PAY-03 | Mia `GET /payslips/:period` của mình ⇒ 200 chỉ bản hiệu lực của mình; đổi `userId` / id phiếu sang Max ⇒ 404 (body giống phiếu không tồn tại); phiếu của Mia có `overrideReason` (lý do sửa công) — **TL chốt 18/10: nhân viên xem được lý do sửa công của chính mình** | đúng |
 | SEC-PAY-04 | luật self tuyệt đối: Kay sửa phiếu / dòng / ghi chú / công / hồ sơ lương / bản điều chỉnh **của chính Kay** ⇒ 403; Kim hoặc Ada ⇒ 200; Kay vẫn **phát hành** được cả bảng (gồm phiếu của Kay) | đúng |
 | SEC-PAY-05 | thu `PAYROLL_MANAGE` của Kim giữa lúc mở form và lưu ⇒ 403, không đổi số (đọc lại quyền FOR SHARE) | đúng |
 | SEC-PAY-06 | Quinn sau `access_until` ⇒ 401 `SESSION_REVOKED` cả route self | đúng |
 | SEC-PAY-07 | mass assignment: body phiếu có `netPay`, `incomeTotal`, `seniorityAllowance`, `salaryByDays`, `userId`, `revision`, `status` ⇒ 400 strict (tổng chỉ do server tính) | đúng |
 | SEC-PAY-08 | tiền: `-1`, `1e12 + 1`, `1.5`, `"7000000"`, `1e21`, `NaN` ⇒ 400; 51 dòng ⇒ 400; nhãn rỗng / 121 ký tự / ký tự điều khiển ⇒ 400 | đúng |
-| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số | đúng |
+| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số; **lý do sửa công / lý do điều chỉnh** (chuỗi đánh dấu) chỉ có ở phiếu (kế toán + chính nhân viên), không có trong thông báo, log, audit đọc bởi người khác Admin | đúng |
 | SEC-PAY-10 | audit `PAYROLL_*` có before/after số tiền; `GET hr/audit-logs` chỉ Admin (Kay, Hana ⇒ 403) | đúng |
 | SEC-PAY-11 | header: mọi route lương `Cache-Control: no-store`; export có header tải file + `nosniff` | đúng |
 | SEC-PAY-12 | `payroll_settings`: chỉ `payroll:manage`; `seniorityPerYear` âm / > 1e12 ⇒ 400; luôn một dòng (CHECK `id = 1` — I) | đúng |
-| SEC-PAY-13 | parity (bổ sung SEC-HR-34): `PAYROLL_MANAGE` ∌ `hr:*`, `company:*`; Kay gọi `hr/…` ⇒ 403 | đúng |
+| SEC-PAY-13 | parity (bổ sung SEC-HR-34): `PAYROLL_MANAGE` ∌ `hr:*`, `company:*`; ADMIN ∌ `payslip:self`; Kay gọi `hr/…` ⇒ 403 | đúng |
 | SEC-PAY-14 | redact Sentry / log body các route `/payroll`, `/payslips`, `/salary-profiles`, `/payroll-settings` (tầng H — B) | đúng |
 
 ## 9. CC — đua (tầng C, ×20, gom vòng đỏ, `SEC_HR_RACE_RUNS`)
@@ -186,7 +187,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Ca | Mong đợi |
 |---|---|---|
 | CC-PAY-01 | 2 lệnh tạo nháp cùng kỳ song song | 1 bảng; cả hai 200/201 cùng id hoặc 1 × 409 — không 500, không 2 bảng |
-| CC-PAY-02 | Kim sửa phiếu ‖ Ada sửa cùng phiếu, cùng `lockVersion` | 1 × 200, 1 × 409 |
+| CC-PAY-02 | Kim sửa phiếu ‖ Ada sửa cùng phiếu, cùng `expectedLockVersion` | 1 × 200, 1 × 409 |
 | CC-PAY-03 | phát hành ‖ sửa phiếu | sửa thắng ⇒ phát hành thấy số mới; phát hành thắng ⇒ sửa 409/422; không phiếu nào PUBLISHED mang số nửa cũ nửa mới (parity PR-07) |
 | CC-PAY-04 | 2 lệnh phát hành song song | đúng 1 × 200; thông báo 1 lần / người |
 | CC-PAY-05 | 2 bản điều chỉnh song song cùng phiếu | đúng 1 thắng (`revision + 1`), bên kia 409; một bản hiệu lực |
@@ -232,7 +233,7 @@ Selector theo E (T-050) — chờ E gửi.
 | (A) `attendance/domain/payroll-days.test.ts` | PD-01…19, SD-01…03 (U) | T-049 | F |
 | (A) `contracts/src/payroll/payslip-math.test.ts` | SN-01…07, 11, PR-01…06, 09 (U) | T-049 | F |
 | (A/B) `*.test.ts`, `test/integration/payroll/**`, `test/http/payroll*.test.ts` | PE (A/I), RD-05/06/11 (I), SEC-PAY-12 (I), SEC-PAY-14 (H) | T-048 / T-049 | F |
-| `test/security/harness/payroll.ts` | `PAYROLL`, `seedMonth`, `expectNoMoney`, `expectTotals` | T-048 contracts | D |
+| `test/security/harness/payroll.ts` | `PAYROLL`, `seedMonth`, `expectNoMoney`, `expectTotals` | đã có (trừ `expectTotals` — T-049) | D |
 | `test/security/payroll.sec.ts` | PD-20, SD-04/05, PE-01…07 (S), SN-08…10 (S), PR-05/07 (S), RD-01…04, 07…10, 12 | T-048 + T-049 | D |
 | `test/security/payroll-access.sec.ts` | SEC-PAY-01…11, 13 | T-048 + T-049 | D |
 | `test/security/payroll-settings.sec.ts` | SEC-PAY-12 (S), SN-08 (vế đổi mức) | T-049 | D |
@@ -246,4 +247,4 @@ Selector theo E (T-050) — chờ E gửi.
 1. ~~A: CSV hay .xlsx~~ — **chốt (TL 18/10):** .xlsx qua `ISpreadsheetWriter` (bộ ghi `fflate` dùng chung, luật ADR-130), không CSV. Đã sửa §1.1, RD-12.
 2. ~~A: job nhắc~~ — **chốt (A 18/10):** job maintenance interval + `PAYROLL_REMINDER_ON_START` / `PAYROLL_REMINDER_INTERVAL_MS` test-only. Đã sửa §1.3, CLK-PAY-02.
 3. ~~Mã lỗi~~ — **chốt (A đề xuất, TL 18/10):** `PERIOD_NOT_ENDED` (RD-02), `NO_WORKING_DAYS` (SD-03), `PUBLISH_BLOCKED` + `details.blockers` (PE-07, RD-04), `NEGATIVE_NET_PAY` là một reason (A sửa ADR-125). Enum reason cuối cùng theo contracts T-048/T-049.
-4. **B (T-048):** route + DTO (contracts) để dựng `PAYROLL` ở harness; sửa công đi qua route payroll (override trên phiếu) hay route attendance?
+4. ~~B: route + DTO~~ — **chốt (B 18/10, 3d1e482):** route ở comment đầu `payroll.schemas.ts`; sửa công qua `PUT payroll/runs/:period/payslips/:userId` (`overrideHalfDays` + `overrideReason`), không qua attendance; quyền mới `payslip:self` (EMPLOYEE); 51 dòng ⇒ 400 ở contract (spec PR-05 đã ghi 400).

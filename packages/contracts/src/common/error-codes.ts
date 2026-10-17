@@ -62,6 +62,8 @@ export const BusinessRule = z.enum([
   'START_DATE_OUT_OF_RANGE',
   'LAST_DAY_OUT_OF_RANGE',
   'ALREADY_ACTIVATED',
+  // Mốc 5 (T-054, ADR-128): `hireDate` sau "hôm nay" của giờ nghiệp vụ — cùng kiểu START_DATE_OUT_OF_RANGE.
+  'HIRE_DATE_IN_FUTURE',
   // Mốc 4 (payroll.md ADR-125/126/127, T-048): tạo nháp khi tháng chưa hết (kỳ không có ngày làm
   // dùng lại NO_WORKING_DAYS của Mốc 3); phát hành bị chặn
   // (`details.blockers` — PublishBlockedDetails); kỳ có ngày quá hạn lưu chấm công ⇒ cấm tính lại công.

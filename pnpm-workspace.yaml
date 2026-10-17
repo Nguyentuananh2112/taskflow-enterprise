@@ -38,6 +38,8 @@ catalog:
   eslint-plugin-react-hooks: 7.1.1
   express: 5.3.0
   express-rate-limit: 8.7.1
+  # T-055x (ADR-130): ghi .xlsx tối thiểu — B duyệt chuỗi cung ứng 17/10 (0 dependency, MIT, integrity ghim).
+  fflate: 0.8.3
   globals: 17.13.0
   helmet: 8.3.0
   jose: 6.2.12

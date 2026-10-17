@@ -21,13 +21,17 @@ import type {
   ICompanyTenureReader,
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
-import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
+import {
+  DEFAULT_COMPANY_TIME_ZONE,
+  isCompanyAccessActive,
+  type EmployeeStatus,
+} from './domain/company-member';
 import { companyProfileRouters } from './company-profile-routers';
 import { ADMIN_PATH, createAdminRouter } from './presentation/admin.routes';
 import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
-import { createEmployment, lateAccounts } from './employment.wiring';
+import { createEmployment, employeeRefOf, lateAccounts } from './employment.wiring';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -88,6 +92,11 @@ export interface CompanyModule {
   permissionsOf(userId: string): Promise<ReadonlySet<CompanyPermission> | null>;
   /** Phần `company` của `/auth/me`; `null` = không thuộc công ty / quá `access_until` (⇒ 401 SESSION_REVOKED). */
   meOf(userId: string): Promise<MeCompanyView | null>;
+  /**
+   * Người TỪNG có nhiệm kỳ EMPLOYEE (hồ sơ — ADR-128): tên + trạng thái suy ra; chưa từng (kể cả Admin chưa từng là
+   * nhân viên) / tài khoản đã xóa ⇒ `null`.
+   */
+  employeeRef(userId: string): Promise<{ fullName: string; status: EmployeeStatus } | null>;
   /** `admin:bootstrap` (CLI) — một transaction, khóa `company:admins`. */
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
   /** Job hoàn tất nghỉ việc mỗi phút (R40) — composition đăng ký vào scheduler bảo trì. */
@@ -160,6 +169,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     tenures,
     members,
     hrAudit: audit,
+    employeeRef: (userId) => employeeRefOf({ tenures, employees: employment.employees }, userId),
     bootstrapAdmin: (input) => employment.bootstrap.execute(input),
     completeDueOffboardings: (signal) => employment.completer.runDue(signal),
     routers: (authenticate) => [
