@@ -39,7 +39,7 @@ const urlWith = (secret: string) =>
 
 describe('xoay khóa', () => {
   secCase(
-    'SEC-CH-35',
+    'SEC-CH-35r',
     'trong lúc xoay: URL ký bằng khóa CŨ (`FILE_URL_SECRET_PREVIOUS`) và khóa mới đều qua chữ ký, khóa lạ thì không; bỏ `_PREVIOUS` (restart) ⇒ URL khóa cũ bị chặn, khóa mới vẫn qua',
     AREA,
     async () => {
