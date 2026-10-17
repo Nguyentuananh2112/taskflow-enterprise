@@ -10,11 +10,7 @@ import {
   createMemoryPersistence,
   createPrismaPersistence,
 } from './composition/persistence';
-import {
-  MaintenanceScheduler,
-  maintenanceEnabled,
-  type ScheduledJob,
-} from './composition/maintenance-jobs';
+import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
 import { maintenanceJobs } from './composition/maintenance-setup';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
@@ -138,10 +134,9 @@ export async function startServer(
       ),
   });
   const jobs = maintenanceJobs({ persistence, env, clock, logger });
+  // Tắt ở local/test (mặc định) ⇒ `jobs` rỗng ⇒ không có scheduler — xem `maintenanceJobs`.
   const maintenance =
-    maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED) && jobs.length > 0
-      ? new MaintenanceScheduler(jobs.map(measured), { logger })
-      : undefined;
+    jobs.length > 0 ? new MaintenanceScheduler(jobs.map(measured), { logger }) : undefined;
 
   const metricsServer = await startMetricsServer({
     port: env.METRICS_PORT,
