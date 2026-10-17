@@ -118,8 +118,18 @@ export function monthDays(month: string): string[] {
   return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
-export function totalsOf(days: readonly AttendanceDayDto[]): AttendanceMemberMonthDto['totals'] {
-  const sum = (f: (d: AttendanceDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
+/** Như `totalsOf` của API (T-046): `today` = hôm nay theo lịch của mock. */
+export function totalsOf(
+  days: readonly AttendanceDayDto[],
+  today: string,
+): AttendanceMemberMonthDto['totals'] {
+  // Ngày công (không NOT_EMPLOYED / HOLIDAY / OFF); chỉ đếm `date ≤ today`, phép sau đó ⇒ upcomingLeaveDays.
+  const workday = (d: AttendanceDayDto) =>
+    d.status !== 'NOT_EMPLOYED' && d.status !== 'HOLIDAY' && d.status !== 'OFF';
+  const counted = days.filter((d) => workday(d) && d.date <= today);
+  const sum = (f: (d: AttendanceDayDto) => number) => counted.reduce((n, d) => n + f(d), 0);
+  const leave = (d: AttendanceDayDto) => (d.leave === 'FULL' ? 1 : d.leave ? 0.5 : 0);
+  const lastCounted = days.filter((d) => d.date <= today).at(-1)?.date ?? null;
   return {
     workedMin: sum((d) => d.workedMin),
     lateDays: sum((d) => (d.late ? 1 : 0)),
@@ -127,8 +137,13 @@ export function totalsOf(days: readonly AttendanceDayDto[]): AttendanceMemberMon
     earlyDays: sum((d) => (d.early ? 1 : 0)),
     earlyMin: sum((d) => d.earlyMin),
     absentDays: sum((d) => (d.status === 'ABSENT' ? (d.absentHalf ? 0.5 : 1) : 0)),
-    leaveDays: sum((d) => (d.leave === 'FULL' ? 1 : d.leave ? 0.5 : 0)),
+    leaveDays: sum(leave),
     missingOutDays: sum((d) => (d.status === 'MISSING_OUT' ? 1 : 0)),
+    presentDays: sum((d) => (d.status === 'PRESENT' || d.status === 'MISSING_OUT' ? 1 : 0)),
+    upcomingLeaveDays: days
+      .filter((d) => workday(d) && d.date > today)
+      .reduce((n, d) => n + leave(d), 0),
+    throughDate: lastCounted,
   };
 }
 

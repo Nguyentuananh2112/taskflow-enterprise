@@ -325,6 +325,22 @@ describe('MyAttendanceQueries', () => {
     expect(of('2026-11-16')).toMatchObject({ status: 'ON_LEAVE', leave: 'FULL' });
     expect(of('2026-11-17')).toMatchObject({ status: 'ABSENT' });
     expect(lastDayOf('2028-02')).toBe('2028-02-29');
+    // T-046: tổng tháng do server tính (web không tự cộng) — tháng đã hết tới 30/11.
+    expect(month.totals).toMatchObject({ leaveDays: 1, presentDays: 0, throughDate: '2026-11-30' });
+  });
+
+  it('T-046 me?month: tháng đã qua ⇒ throughDate cuối tháng; tháng chưa tới ⇒ null, chỉ phép sắp tới', async () => {
+    const t = await setup('2026-11-17 10:00');
+    t.leaves.rows.push({ workspaceId: W1, userId: MIA, date: '2026-12-01', part: 'FULL' });
+    const october = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-10' });
+    expect(october.totals.throughDate).toBe('2026-10-31');
+    const december = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-12' });
+    expect(december.totals).toMatchObject({
+      throughDate: null,
+      absentDays: 0,
+      presentDays: 0,
+      upcomingLeaveDays: 1,
+    });
   });
 
   it('SD-37/38 qua bảng tháng: gia nhập 10/11 lúc 14:00 ⇒ 1..9/11 NOT_EMPLOYED (0 phút), từ 10/11 tính như thường', async () => {

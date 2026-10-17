@@ -49,11 +49,34 @@ describe('attendance contracts', () => {
   it('AttendanceMonthDto: ngày có phút làm; phút âm bị từ chối', () => {
     const { serverNow: _s, isHoliday: _h, schedule: _sc, ...day } = today;
     const row = { ...day, holidayName: null, workedMin: 480, lateMin: 0, earlyMin: 0 };
-    const month = { month: '2026-11', timezone: 'Asia/Ho_Chi_Minh', days: [row] };
+    const totals = {
+      workedMin: 480,
+      lateDays: 0,
+      lateMin: 0,
+      earlyDays: 0,
+      earlyMin: 0,
+      absentDays: 0.5,
+      leaveDays: 1.5,
+      missingOutDays: 0,
+      presentDays: 1,
+      upcomingLeaveDays: 1,
+      throughDate: '2026-11-17',
+    };
+    const month = { month: '2026-11', timezone: 'Asia/Ho_Chi_Minh', days: [row], totals };
     expect(AttendanceMonthDto.parse(month)).toEqual(month);
     expect(
       AttendanceMonthDto.safeParse({ ...month, days: [{ ...row, workedMin: -1 }] }).success,
     ).toBe(false);
+    // T-046: tháng chưa tới ⇒ throughDate null; bước 0,5 bắt buộc cho phép sắp tới; thiếu totals ⇒ sai hợp đồng.
+    expect(
+      AttendanceMonthDto.safeParse({ ...month, totals: { ...totals, throughDate: null } }).success,
+    ).toBe(true);
+    expect(
+      AttendanceMonthDto.safeParse({ ...month, totals: { ...totals, upcomingLeaveDays: 0.3 } })
+        .success,
+    ).toBe(false);
+    const { totals: _t, ...withoutTotals } = month;
+    expect(AttendanceMonthDto.safeParse(withoutTotals).success).toBe(false);
   });
 
   it('AttendanceMonthQuery: chỉ YYYY-MM tháng 01–12, không nhận khóa lạ', () => {

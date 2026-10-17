@@ -55,7 +55,7 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
     const days = monthDays(month);
     return hr.people(wsId, days[0] ?? month, days.at(-1) ?? month).map(({ user, left }) => {
       const list = days.map((d) => hr.day(wsId, user.id, d));
-      return { user, left, days: list, totals: totalsOf(list) };
+      return { user, left, days: list, totals: totalsOf(list, attendance.today()) };
     });
   };
   const change = (wsId: string, userId: string, date: string, id: string) => {

@@ -11,6 +11,7 @@ import {
 
 import type { MockAttendance } from './mock-attendance';
 import { MOCK_TZ, localDate } from './mock-attendance';
+import { totalsOf } from './mock-hr';
 import type { MockDb } from './mock-db';
 import { requireMember, type MemberContext } from './mock-guard';
 import { fail, ok, parseQuery } from './respond';
@@ -96,7 +97,12 @@ export function createAttendanceHandlers(
           joinedDate,
         ),
       );
-      return ok(AttendanceMonthDto, { month: query.data.month, timezone: MOCK_TZ, days });
+      return ok(AttendanceMonthDto, {
+        month: query.data.month,
+        timezone: MOCK_TZ,
+        days,
+        totals: totalsOf(days, attendance.today()), // như API (T-046)
+      });
     }),
     http.get(`${base}/me/events`, ({ request, params }) => {
       const ctx = requireMember(request, db, params);

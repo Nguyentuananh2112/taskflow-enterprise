@@ -6,9 +6,23 @@ import { hrKeys } from '../model/query-keys';
 
 type Pages = InfiniteData<ApiResult<AttendanceMemberMonthDto[]>>;
 
-/** Tổng của một người — CÙNG quy tắc với server (A chốt): vắng/nghỉ bước 0,5. */
-export function totalsOf(days: readonly AttendanceDayDto[]): AttendanceMemberMonthDto['totals'] {
-  const sum = (f: (d: AttendanceDayDto) => number) => days.reduce((n, d) => n + f(d), 0);
+/**
+ * Tổng của một người — CÙNG quy tắc với server (T-046, TL d9): chỉ đếm `date ≤ today`, phép sau đó vào
+ * `upcomingLeaveDays`, vắng/nghỉ bước 0,5. `today` lấy từ `throughDate` cũ của chính dòng đó (server đã tính: hôm
+ * nay, cuối tháng nếu tháng đã qua, `null` nếu tháng chưa tới ⇒ mọi ngày là tương lai) — không đọc đồng hồ máy.
+ */
+export function totalsOf(
+  days: readonly AttendanceDayDto[],
+  through: string | null,
+): AttendanceMemberMonthDto['totals'] {
+  const today = through ?? '';
+  // Ngày công (không NOT_EMPLOYED / HOLIDAY / OFF); chỉ đếm `date ≤ today`, phép sau đó ⇒ upcomingLeaveDays.
+  const workday = (d: AttendanceDayDto) =>
+    d.status !== 'NOT_EMPLOYED' && d.status !== 'HOLIDAY' && d.status !== 'OFF';
+  const counted = days.filter((d) => workday(d) && d.date <= today);
+  const sum = (f: (d: AttendanceDayDto) => number) => counted.reduce((n, d) => n + f(d), 0);
+  const leave = (d: AttendanceDayDto) => (d.leave === 'FULL' ? 1 : d.leave ? 0.5 : 0);
+  const lastCounted = days.filter((d) => d.date <= today).at(-1)?.date ?? null;
   return {
     workedMin: sum((d) => d.workedMin),
     lateDays: sum((d) => (d.late ? 1 : 0)),
@@ -16,8 +30,13 @@ export function totalsOf(days: readonly AttendanceDayDto[]): AttendanceMemberMon
     earlyDays: sum((d) => (d.early ? 1 : 0)),
     earlyMin: sum((d) => d.earlyMin),
     absentDays: sum((d) => (d.status === 'ABSENT' ? (d.absentHalf ? 0.5 : 1) : 0)),
-    leaveDays: sum((d) => (d.leave === 'FULL' ? 1 : d.leave ? 0.5 : 0)),
+    leaveDays: sum(leave),
     missingOutDays: sum((d) => (d.status === 'MISSING_OUT' ? 1 : 0)),
+    presentDays: sum((d) => (d.status === 'PRESENT' || d.status === 'MISSING_OUT' ? 1 : 0)),
+    upcomingLeaveDays: days
+      .filter((d) => workday(d) && d.date > today)
+      .reduce((n, d) => n + leave(d), 0),
+    throughDate: lastCounted,
   };
 }
 
@@ -41,7 +60,7 @@ export function replaceTimesheetDay(
           data: page.data.map((row) => {
             if (row.user.id !== userId) return row;
             const days = row.days.map((d) => (d.date === day.date ? { ...d, ...day } : d));
-            return { ...row, days, totals: totalsOf(days) };
+            return { ...row, days, totals: totalsOf(days, row.totals.throughDate) };
           }),
         })),
       },

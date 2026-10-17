@@ -179,9 +179,16 @@ describe('leave ↔ attendance (T-038 nối thật)', () => {
 
     const hr = await get(hana, '/attendance?month=2026-11');
     expect(hr.status).toBe(200);
-    const rows = envelopeOf<{ user: { id: string }; totals: { leaveDays: number } }[]>(hr).data;
-    expect(rows?.find((r) => r.user.id === mia.id)?.totals.leaveDays).toBe(2);
-    expect(rows?.find((r) => r.user.id === max.id)?.totals.leaveDays).toBe(0);
+    // T-046 (TL d9): tổng chỉ đếm tới hôm nay — đơn đã duyệt ở tương lai vào cột "Phép sắp tới".
+    const rows =
+      envelopeOf<
+        { user: { id: string }; totals: { leaveDays: number; upcomingLeaveDays: number } }[]
+      >(hr).data;
+    expect(rows?.find((r) => r.user.id === mia.id)?.totals).toMatchObject({
+      leaveDays: 0,
+      upcomingLeaveDays: 2,
+    });
+    expect(rows?.find((r) => r.user.id === max.id)?.totals.upcomingLeaveDays).toBe(0);
   });
 
   it('lịch thật của attendance: ngày lễ HR đặt giữa khoảng đơn ⇒ preview / số ngày đơn không tính ngày đó', async () => {

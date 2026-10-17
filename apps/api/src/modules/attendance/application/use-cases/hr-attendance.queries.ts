@@ -90,17 +90,17 @@ export class HrAttendanceQueries {
       : roster;
     const pageRows = rest.slice(0, q.limit);
     const hasMore = rest.length > q.limit;
-    const days = await summarizeUsers(this.d, {
-      workspaceId,
-      userIds: pageRows.map((r) => r.user.id),
-      from,
-      to,
-    });
+    const [days, versions] = await Promise.all([
+      summarizeUsers(this.d, { workspaceId, userIds: pageRows.map((r) => r.user.id), from, to }),
+      this.d.calendar.scheduleVersions(workspaceId),
+    ]);
+    // T-046: tổng chỉ đếm tới HÔM NAY theo lịch (cùng hàm với me?month).
+    const today = localToday(versions, this.d.clock.now()).date;
     const last = pageRows.at(-1);
     return {
       data: pageRows.map((r) => {
         const mine = days.get(r.user.id)!;
-        return { ...r, days: mine, totals: totalsOf(mine) };
+        return { ...r, days: mine, totals: totalsOf(mine, today) };
       }),
       page: {
         nextCursor:

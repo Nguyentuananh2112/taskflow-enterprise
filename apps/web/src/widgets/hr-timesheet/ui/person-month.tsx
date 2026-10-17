@@ -29,7 +29,7 @@ export function PersonMonth({ wsId, month, row, today, canEdit }: Props) {
       className="rounded-card border border-border bg-surface p-3"
     >
       <MonthTable
-        month={{ month, timezone, days: row.days }}
+        month={{ month, timezone, days: row.days, totals: row.totals }}
         caption={`${row.user.fullName}${row.left ? ' (đã rời)' : ''}`}
         onSelectDay={setDate}
         today={today}

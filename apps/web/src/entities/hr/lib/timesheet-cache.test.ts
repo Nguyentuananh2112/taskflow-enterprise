@@ -29,20 +29,23 @@ const row = (id: string, days: AttendanceDayDto[]): AttendanceMemberMonthDto => 
   user: { id, fullName: id },
   left: false,
   days,
-  totals: totalsOf(days),
+  totals: totalsOf(days, '2026-10-31'),
 });
 
 describe('totalsOf', () => {
   it('vắng nửa ngày = 0,5; nghỉ AM/PM = 0,5; muộn/sớm đếm lần + phút; quên chấm ra', () => {
-    const t = totalsOf([
-      day('2026-10-01', { status: 'PRESENT', workedMin: 450, late: true, lateMin: 10 }),
-      day('2026-10-02', { status: 'ABSENT', absentHalf: true, leave: 'AM' }),
-      day('2026-10-03', { status: 'ON_LEAVE', leave: 'FULL' }),
-      day('2026-10-05', { status: 'PRESENT', workedMin: 400, early: true, earlyMin: 30 }),
-      day('2026-10-06', { status: 'MISSING_OUT' }),
-      day('2026-10-07'),
-      day('2026-10-04', { status: 'OFF', isWorkday: false }),
-    ]);
+    const t = totalsOf(
+      [
+        day('2026-10-01', { status: 'PRESENT', workedMin: 450, late: true, lateMin: 10 }),
+        day('2026-10-02', { status: 'ABSENT', absentHalf: true, leave: 'AM' }),
+        day('2026-10-03', { status: 'ON_LEAVE', leave: 'FULL' }),
+        day('2026-10-05', { status: 'PRESENT', workedMin: 400, early: true, earlyMin: 30 }),
+        day('2026-10-06', { status: 'MISSING_OUT' }),
+        day('2026-10-07'),
+        day('2026-10-04', { status: 'OFF', isWorkday: false }),
+      ],
+      '2026-10-31',
+    );
     expect(t).toEqual({
       workedMin: 850,
       lateDays: 1,
@@ -52,6 +55,28 @@ describe('totalsOf', () => {
       absentDays: 1.5,
       leaveDays: 1.5,
       missingOutDays: 1,
+      presentDays: 3,
+      upcomingLeaveDays: 0,
+      throughDate: '2026-10-04',
+    });
+  });
+
+  it('T-046: chỉ đếm tới mốc (throughDate cũ); phép sau mốc ⇒ upcomingLeaveDays; tháng chưa tới (null) ⇒ chỉ phép sắp tới', () => {
+    const days = [
+      day('2026-10-05', { status: 'ABSENT' }),
+      day('2026-10-06', { status: 'ON_LEAVE', leave: 'FULL' }),
+      day('2026-10-07', { leave: 'PM' }),
+    ];
+    expect(totalsOf(days, '2026-10-05')).toMatchObject({
+      absentDays: 1,
+      leaveDays: 0,
+      upcomingLeaveDays: 1.5,
+      throughDate: '2026-10-05',
+    });
+    expect(totalsOf(days, null)).toMatchObject({
+      absentDays: 0,
+      upcomingLeaveDays: 1.5,
+      throughDate: null,
     });
   });
 });
