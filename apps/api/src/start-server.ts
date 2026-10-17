@@ -13,10 +13,9 @@ import {
 import {
   MaintenanceScheduler,
   maintenanceEnabled,
-  purgeRefreshTokensJob,
-  purgeWorkspacesJob,
   type ScheduledJob,
 } from './composition/maintenance-jobs';
+import { maintenanceJobs } from './composition/maintenance-setup';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
@@ -138,31 +137,7 @@ export async function startServer(
         },
       ),
   });
-  // G2 S2: dọn refresh token hết hạn mỗi ngày (security.md §2.2).
-  const jobs: ScheduledJob[] = [];
-  if (persistence.workspacePurger) {
-    jobs.push(
-      purgeWorkspacesJob({
-        workspaces: persistence.workspace.workspaces,
-        purger: persistence.workspacePurger,
-        uow: persistence.uow,
-        clock,
-        logger,
-        intervalMs: env.PURGE_INTERVAL_MS,
-        jitterMs: env.PURGE_JITTER_MS,
-      }),
-    );
-  }
-  if (persistence.refreshTokenPurger) {
-    jobs.push(
-      purgeRefreshTokensJob({
-        purger: persistence.refreshTokenPurger,
-        uow: persistence.uow,
-        clock,
-        logger,
-      }),
-    );
-  }
+  const jobs = maintenanceJobs({ persistence, env, clock, logger });
   const maintenance =
     maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED) && jobs.length > 0
       ? new MaintenanceScheduler(jobs.map(measured), { logger })
