@@ -29,7 +29,11 @@ import { arm, assertInert } from '../support/xss';
 // Cách ly §0.4: bảng lương CẢ CÔNG TY, unique (period) ⇒ MỘT kỳ cho cả file (= tháng trước của mốc — startDate chỉ lùi
 // ≤ 31 ngày), lane HR tuần tự (workers 1), tạo bảng ở beforeAll; mọi ca sửa NHÁP chạy trước, ca phát hành (03) rồi các
 // ca của nhân viên (01, 04, 05) sau. Chỉ khẳng định phiếu của người do file tạo; không đổi payroll_settings.
-// Hạn chế: chỉ có MỘT tháng có phiếu ⇒ ‹ › giữa hai tháng không dựng được bằng hộp đen (ca 01 khẳng định không có).
+// Ngoại lệ có chủ đích (TL duyệt 18/10): một công ty ⇒ bảng tháng trước gồm cả người của file HR (lùi startDate) thiếu
+// hồ sơ lương / hireDate ⇒ PUBLISH_BLOCKED cho cả bảng; beforeAll bổ sung đúng hai thứ đó CHỈ khi thiếu
+// (`apiUnblockOthers`), không đụng số liệu khác của họ.
+// Lệch spec (TL duyệt 18/10): (1) chỉ có MỘT tháng có phiếu ⇒ ‹ › giữa hai tháng không dựng được bằng hộp đen — phủ ở
+// test component của E (/payslips, T-050); ca 01 khẳng định không có link. (2) 02 không gắn @main (xem ca 02).
 
 const PENDING = awaiting('T-049', 'T-050');
 
