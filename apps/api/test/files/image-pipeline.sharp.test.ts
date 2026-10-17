@@ -147,6 +147,21 @@ describe('từ chối (SEC-CH-08/21/33)', () => {
     ).toBe(true);
   });
 
+  it('trần pixel THEO MỤC ĐÍCH (T-068): min(maxPixels, trần chung)', async () => {
+    const img = fx.png({ w: 20, h: 20 }); // 400 điểm
+    const spec = [{ name: 't', size: 16, fit: 'cover' as const }];
+    const err = await pipeline
+      .transform(img, 'png', spec, { maxPixels: 100 })
+      .catch((e: unknown) => e);
+    expect(ruleOf(err)).toBe('IMAGE_TOO_COMPLEX');
+    expect(await pipeline.transform(img, 'png', spec, { maxPixels: 1_000 })).toHaveLength(1);
+    // maxPixels lớn hơn trần chung không nới trần chung
+    const bomb = await pipeline
+      .transform(fx.pixelBombPng(), 'png', spec, { maxPixels: 10e9 })
+      .catch((e: unknown) => e);
+    expect(ruleOf(bomb)).toBe('IMAGE_TOO_COMPLEX');
+  });
+
   it('selfTest với sharp thật ⇒ true', async () => {
     expect(await pipeline.selfTest()).toBe(true);
   });

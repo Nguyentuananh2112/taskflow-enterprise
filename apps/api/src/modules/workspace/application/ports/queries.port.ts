@@ -18,6 +18,8 @@ export interface Page<T> {
 export interface MemberRow extends MembershipSnapshot {
   email: string;
   fullName: string;
+  /** Mốc 6 (ADR-142): URL ký variant 64 — composition gắn; thiếu ⇒ không có ảnh. */
+  avatarUrl?: string | null;
 }
 
 /** Một workspace cho màn Quản trị (T-061a): KHÔNG có dự án / task — chỉ tên, trạng thái, thành viên. */

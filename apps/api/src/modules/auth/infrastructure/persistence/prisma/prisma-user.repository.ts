@@ -127,6 +127,36 @@ export class PrismaUserRepository implements IUserRepository {
     });
     return row && row.deletedAt === null ? row.tokenVersion : null;
   }
+  async lockAvatar(userId: string): Promise<{ version: number | null } | null> {
+    const rows = await this.db().$queryRaw<{ avatar_version: number | null }[]>`
+      SELECT avatar_version FROM users
+      WHERE id = ${userId}::uuid AND deleted_at IS NULL
+      FOR UPDATE`;
+    const row = rows[0];
+    return row ? { version: row.avatar_version } : null;
+  }
+
+  async setAvatarVersion(input: {
+    id: string;
+    version: number | null;
+    at: Date;
+  }): Promise<boolean> {
+    const { count } = await this.db().user.updateMany({
+      where: { id: input.id, deletedAt: null },
+      data: { avatarVersion: input.version, updatedAt: input.at },
+    });
+    return count === 1;
+  }
+
+  async avatarVersions(ids: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db().user.findMany({
+      where: { id: { in: [...new Set(ids)] }, deletedAt: null, avatarVersion: { not: null } },
+      select: { id: true, avatarVersion: true },
+    });
+    return new Map(rows.map((r) => [r.id, r.avatarVersion ?? 0]));
+  }
+
   async lockTokenVersion(userId: string): Promise<number | null> {
     const rows = await this.db().$queryRaw<{ token_version: number }[]>`
       SELECT token_version FROM users

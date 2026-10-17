@@ -17,14 +17,13 @@ import {
 import {
   defaultFs,
   errCode,
-  FileStoreConfigError,
   FREE_SPACE_HEADROOM,
-  isInside,
   PLACE_RETRIES,
   PLACE_RETRY_DELAY_MS,
-  real,
   RETRYABLE_PLACE,
   TMP_DIR,
+  prepareStoreRoot,
+  walkFiles,
   type FileStoreFs,
   type LocalFileStoreOptions,
 } from './local-fs';
@@ -58,46 +57,10 @@ export class LocalFileStore implements IFileStore {
   }
 
   /** Kiểm lúc khởi động: tuyệt đối, là thư mục, ghi được, ngoài thư mục cấm. Sai ⇒ ném (từ chối khởi động). */
+  /** Kiểm lúc khởi động (`prepareStoreRoot`): tuyệt đối, là thư mục, ghi được, có hard link, ngoài thư mục cấm. */
   static async create(root: string, options: LocalFileStoreOptions = {}): Promise<LocalFileStore> {
-    if (!path.isAbsolute(root)) throw new FileStoreConfigError('phải là đường dẫn tuyệt đối');
-    const resolved = await real(root);
-    const parents = await Promise.all((options.forbiddenParents ?? []).map(real));
-    if (parents.some((p) => isInside(resolved, p))) {
-      throw new FileStoreConfigError('nằm trong thư mục ứng dụng');
-    }
-    const stat = await fsp.stat(resolved).catch(() => undefined);
-    if (!stat?.isDirectory())
-      throw new FileStoreConfigError('không tồn tại hoặc không phải thư mục');
-    const store = new LocalFileStore(resolved, options);
-    try {
-      await fsp.mkdir(store.#tmp, { recursive: true });
-      const probe = path.join(store.#tmp, `.probe-${randomBytes(6).toString('hex')}`);
-      await fsp.writeFile(probe, '', { flag: 'wx' });
-      await fsp.unlink(probe);
-    } catch {
-      throw new FileStoreConfigError('không ghi được');
-    }
-    await store.#probeHardLink();
-    return store;
-  }
-
-  /**
-   * `commit` đặt tệp bằng hard link (không ghi đè). FAT/exFAT, một số mount mạng, bind mount của Docker
-   * Desktop trả EPERM/ENOTSUP/EXDEV ⇒ phát hiện lúc khởi động thay vì mọi upload chậm rồi lỗi (B L-d).
-   */
-  async #probeHardLink(): Promise<void> {
-    const tag = randomBytes(6).toString('hex');
-    const from = path.join(this.#tmp, `.probe-${tag}`);
-    const to = path.join(this.#tmp, `.probe-${tag}-link`);
-    try {
-      await fsp.writeFile(from, '', { flag: 'wx' });
-      await this.#fs.link(from, to);
-    } catch {
-      throw new FileStoreConfigError('hệ thống tệp không hỗ trợ hard link (cần ext4/xfs/NTFS)');
-    } finally {
-      await fsp.unlink(to).catch(() => undefined);
-      await fsp.unlink(from).catch(() => undefined);
-    }
+    const fs = { ...defaultFs, ...options.fs };
+    return new LocalFileStore(await prepareStoreRoot(root, options, fs), options);
   }
 
   async stage(data: Buffer | Readable, options: { maxBytes: number }): Promise<StagedFile> {
@@ -183,6 +146,21 @@ export class LocalFileStore implements IFileStore {
         throw err;
       },
     );
+  }
+
+  async touch(key: FileKey, at: Date): Promise<void> {
+    await fsp.utimes(this.#pathOf(key), at, at).catch((err: unknown) => {
+      if (errCode(err) !== 'ENOENT') throw err;
+    });
+  }
+
+  async *list(prefix: `avatars/${string}`): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
+    // Chỉ tiền tố an toàn: `avatars/` hoặc `avatars/<uuid>/` (không `..`, không ký tự lạ) — trước mọi thao tác đĩa.
+    if (!/^avatars\/(?:[0-9a-f-]{36}\/)?$/.test(prefix))
+      throw new RangeError('tiền tố không hợp lệ');
+    for await (const f of walkFiles(this.#root, prefix.replace(/\/$/, ''))) {
+      if (isFileKey(f.relative)) yield { key: f.relative, modifiedAt: f.modifiedAt };
+    }
   }
 
   async purgeStaleTemp(before: Date): Promise<number> {

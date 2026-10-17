@@ -34,6 +34,7 @@ import { CryptoRefreshTokenFactory } from './infrastructure/security/crypto-refr
 import { JoseAccessTokenService } from './infrastructure/security/jose-access-token-service';
 import { AuthController } from './presentation/auth.controller';
 import { authRoutes } from './presentation/auth.routes';
+import { createAvatarWiring, type AuthAvatarDeps, type AvatarWiring } from './avatar.wiring';
 import { createAuthenticate } from './presentation/authenticate';
 import { RefreshCookie } from './presentation/refresh-cookie';
 
@@ -73,7 +74,11 @@ export interface AuthModuleDeps {
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
   /** Thay JWT thật trong test (cùng interface). */
   accessTokens?: IAccessTokenService;
+  /** Mốc 6 (ADR-142): ảnh đại diện — thiếu ⇒ không có `/me/avatar`, UserDto không có ảnh (test cũ). */
+  avatar?: AuthAvatarDeps;
 }
+
+export type { AuthAvatarDeps } from './avatar.wiring';
 
 export interface AuthModule {
   router: Router;
@@ -83,6 +88,8 @@ export interface AuthModule {
   authenticator: AccessTokenAuthenticator;
   /** Tài khoản cho module company (thêm nhân viên / bootstrap) — gọi TRONG transaction của bên gọi. */
   accounts: AuthAccounts;
+  /** Mốc 6: router `/me` (`/me/avatar`) + gỡ ảnh cho company (HR) — chỉ khi có `deps.avatar`. */
+  avatar?: AvatarWiring;
 }
 
 /** Composition của module auth (ADR-016): chỉ wire nội bộ module, port ngoài được tiêm vào. */
@@ -135,6 +142,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     logger,
   });
 
+  const avatar = d.avatar && createAvatarWiring({ ...d, avatar: d.avatar, users, authenticate });
   const controller = new AuthController({
     login: new LoginUseCase({ users, issuer, hasher, company, uow, clock, logger }),
     inspectActivation: activation.inspect,
@@ -188,6 +196,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     cookie: new RefreshCookie(d.cookieSecure, clock),
     responder: d.responder,
     logger,
+    ...(avatar ? { avatarOf: avatar.avatarOf } : {}),
   });
   const router = authRoutes({
     controller,
@@ -196,6 +205,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     limit: d.limit,
   });
   const accounts = createAuthAccounts({
+    ...(avatar ? { removeAvatar: (i) => avatar.removeAvatar.execute(i) } : {}),
     users,
     refreshTokens,
     store,
@@ -206,5 +216,5 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     uow,
     logger,
   });
-  return { router, authenticate, authenticator, accounts };
+  return { router, authenticate, authenticator, accounts, ...(avatar ? { avatar } : {}) };
 }

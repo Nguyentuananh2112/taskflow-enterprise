@@ -1,7 +1,9 @@
 import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
 
+import { imageTooComplexError, imageUnreadableError, UnsupportedFileTypeError } from '../../errors';
 import { IMAGE_TYPES } from '../domain/sniff-type';
+import type { ImageVariant } from '../ports';
 import { IMAGE_WORKER_SOURCE } from './image-worker-source';
 
 /** Phần của `Worker` mà pool dùng — test thay bằng worker giả. */
@@ -28,3 +30,27 @@ export function sharpWorkerFactory(): WorkerLike {
     resourceLimits: { maxOldGenerationSizeMb: IMAGE_WORKER_HEAP_MB },
   });
 }
+
+// ---- kiểu nội bộ của pool (image-pipeline.ts) ----
+export type Reply =
+  { id: number; ok: true; variants: ImageVariant[] } | { id: number; ok: false; error: string };
+export interface Job {
+  id: number;
+  message: Record<string, unknown>;
+  resolve: (v: ImageVariant[]) => void;
+  reject: (e: unknown) => void;
+}
+export interface Slot {
+  worker: WorkerLike;
+  ready: boolean;
+  dead: boolean;
+  job?: Job | undefined;
+  timer?: NodeJS.Timeout | undefined;
+  idle?: NodeJS.Timeout | undefined;
+}
+
+export const ERRORS: Readonly<Record<string, () => Error>> = {
+  FORMAT_MISMATCH: () => new UnsupportedFileTypeError(),
+  TOO_COMPLEX: () => imageTooComplexError(),
+  UNREADABLE: () => imageUnreadableError(),
+};

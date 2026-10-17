@@ -1,5 +1,6 @@
 import type { IClock, IIdGenerator } from '../../../core/domain';
 import type { ILogger } from '../../../core/logging/logger';
+import { ServiceUnavailableError } from '../../../core/errors';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import { Email } from '../domain/email';
 import { User } from '../domain/user';
@@ -39,6 +40,11 @@ export interface AuthAccounts {
   revokeActivations(userId: string): Promise<number>;
   /** ADR-105: tv + 1, thu hồi refresh token, Valkey TRƯỚC commit (lỗi ⇒ 503 rollback), ngắt socket SAU commit. */
   revokeSessions(userId: string, reason: 'OFFBOARDED' | 'LOGOUT_ALL'): Promise<void>;
+  /** Mốc 6: gỡ ảnh đại diện (HR) TRONG transaction của bên gọi; ảnh đại diện chưa bật ⇒ 503. */
+  removeAvatar(input: {
+    userId: string;
+    actorId: string;
+  }): Promise<{ previousVersion: number | null }>;
 }
 
 /** Tài khoản cho module company (Mốc 3.5) — mọi lệnh chạy TRONG transaction của bên gọi. */
@@ -52,6 +58,11 @@ export function createAuthAccounts(d: {
   clock: IClock;
   uow: IUnitOfWork;
   logger: ILogger;
+  /** Mốc 6: `RemoveAvatarUseCase` khi có kho tệp; thiếu ⇒ 503. */
+  removeAvatar?: (input: {
+    userId: string;
+    actorId: string;
+  }) => Promise<{ previousVersion: number | null }>;
 }): AuthAccounts {
   const { users, refreshTokens, store, notifier, activationIssuer, ids, clock, uow, logger } = d;
   const accountOf = (user: User | null) =>
@@ -102,6 +113,12 @@ export function createAuthAccounts(d: {
     },
     issueActivation: (input) => activationIssuer.issue(input),
     revokeActivations: (userId) => activationIssuer.revokeAll(userId),
+    removeAvatar(input) {
+      if (!d.removeAvatar) {
+        return Promise.reject(new ServiceUnavailableError('Ảnh đại diện chưa được bật.'));
+      }
+      return d.removeAvatar(input);
+    },
     async revokeSessions(userId, reason) {
       const now = clock.now();
       const tokenVersion = await users.bumpTokenVersion(userId, now);

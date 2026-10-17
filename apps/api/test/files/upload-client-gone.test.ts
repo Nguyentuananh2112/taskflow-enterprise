@@ -83,6 +83,11 @@ it('client đi khi "worker" còn chạy ⇒ commit 503 ServiceUnavailableError, 
   await finished;
   expect(readBytes).toBe(body.length);
   expect(commitError).toBeInstanceOf(ServiceUnavailableError);
+  // discard() đặt trạng thái NGAY (commit thấy 503) rồi mới unlink — chờ tmp rỗng như expectNoTmp (≤ 2 s).
+  const deadline = Date.now() + 2_000;
+  while ((await fsp.readdir(path.join(root, 'tmp'))).length > 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
   expect(await fsp.readdir(path.join(root, 'tmp'))).toEqual([]);
   expect(slots.inFlight('u')).toBe(0);
 });

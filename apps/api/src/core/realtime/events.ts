@@ -53,6 +53,11 @@ export const rooms = {
   user: (userId: string) => `user:${userId}`,
   session: (sid: string) => `session:${sid}`,
   project: (projectId: string) => `project:${projectId}`,
+  /**
+   * Mốc 6 (ADR-142): MỌI socket đã xác thực LẠI thành công (`joinPersonalRooms`) — một công ty ⇒ = mọi nhân viên đang
+   * hoạt động. Chỉ cho dữ liệu danh bạ (`user:avatar-changed` — R49).
+   */
+  company: () => 'company',
 };
 
 /** Tạo vỏ event: `eventId` uuid v7, `occurredAt` = thời điểm phát (sau commit). */
