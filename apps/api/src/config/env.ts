@@ -90,6 +90,9 @@ const EnvSchema = z
     PURGE_JITTER_MS: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
     // T-043: job retention XÓA dữ liệu ⇒ cờ riêng; local/test chỉ chạy khi = true (composition tính).
     RETENTION_JOB_ENABLED: z.stringbool().optional(),
+    // T-049 (F, CLK-PAY-02…04): job nhắc làm lương — CHỈ APP_ENV=test: chạy một lượt khi khởi động / đổi chu kỳ.
+    PAYROLL_REMINDER_ON_START: z.stringbool().optional(),
+    PAYROLL_REMINDER_INTERVAL_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
     // T-043 / R27 (data-retention.md §3): thời hạn lưu dữ liệu cá nhân Mốc 3, đơn vị NGÀY, mặc định =
     // phương án B. `min` chặn cấu hình nhầm (vd 0 ⇒ xóa sạch).
     RETENTION_CLIENT_INFO_DAYS: z.coerce.number().int().min(30).max(3_660).default(395),
@@ -115,6 +118,10 @@ const EnvSchema = z
     }
     if (env.TEST_CLOCK_ANCHOR !== undefined && env.APP_ENV !== 'test') {
       fail('TEST_CLOCK_ANCHOR', 'chỉ được đặt khi APP_ENV=test');
+    }
+    for (const key of ['PAYROLL_REMINDER_ON_START', 'PAYROLL_REMINDER_INTERVAL_MS'] as const) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
     if (env.NODE_ENV === 'production' && !isDeployed(env.APP_ENV)) {
       fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');

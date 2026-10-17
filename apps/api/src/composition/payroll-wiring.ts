@@ -44,7 +44,10 @@ export function wirePayroll(
     everEmployed: () => m.attendance.payroll.everEmployed(),
     users: d.persistence.task.users,
     audit: { record: (entry) => m.company.hrAudit.record(entry) },
-    notifier: { notify: (input) => m.notifications.publisher.notify(input) },
+    notifier: {
+      notify: (input) => m.notifications.publisher.notify(input),
+      notifyOnce: (input) => m.notifications.publisher.notifyOnce(input),
+    },
     company: { companyName: () => m.company.sessionGate.companyName() },
     timeZoneNow: () => m.attendance.timeZoneNow(),
     permissionsOf: (userId) => m.company.permissionsOf(userId),

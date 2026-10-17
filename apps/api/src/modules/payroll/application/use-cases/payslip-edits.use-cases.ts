@@ -79,11 +79,12 @@ export class PayslipEditsUseCases {
         targetUserId: q.userId,
         refId: p.id,
         before: { netPay: p.netPay, overrideHalfDays: p.overrideHalfDays },
+        // B L3: lý do sửa công chỉ khi có (không ghi `note: null`).
         after: {
           netPay: saved.netPay,
           lines: saved.lines.length,
           overrideHalfDays: saved.overrideHalfDays,
-          note: saved.overrideReason,
+          ...(saved.overrideReason ? { note: saved.overrideReason } : {}),
         },
       });
       return saved;

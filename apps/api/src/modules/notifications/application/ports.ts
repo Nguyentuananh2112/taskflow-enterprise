@@ -1,5 +1,5 @@
 import type { RealtimeEventMeta } from '../../workspace';
-import type { NotificationRecord, VisibilityScope } from '../domain/notification';
+import type { NotificationRecord, NotificationType, VisibilityScope } from '../domain/notification';
 
 /**
  * Bảng `notifications`. Ghi bằng `db()` của UoW ⇒ cùng transaction với thay đổi nghiệp vụ của bên gọi
@@ -17,6 +17,8 @@ export interface INotificationStore {
   /** Đánh dấu một thông báo (idempotent). `false` ⇒ không tồn tại / không thấy được ⇒ 404. */
   markRead(scope: VisibilityScope, id: string, at: Date): Promise<boolean>;
   markAllRead(scope: VisibilityScope, at: Date): Promise<number>;
+  /** Đã có thông báo nào `(type, refId)` (mọi người nhận) — `notifyOnce`. */
+  exists(q: { type: NotificationType; refId: string }): Promise<boolean>;
 }
 
 export interface NotificationKey {

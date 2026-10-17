@@ -138,6 +138,7 @@ export async function startServer(
     businessClock,
     logger,
     offboarding: container.company,
+    payroll: container.payroll,
   });
   // Job dọn dẹp tắt ở local/test (mặc định); job hoàn tất nghỉ việc luôn có — xem `maintenanceJobs`.
   const maintenance =

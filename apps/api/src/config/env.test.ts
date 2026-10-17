@@ -205,6 +205,25 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     }
   });
 
+  it('T-049 job nhắc làm lương: PAYROLL_REMINDER_ON_START / _INTERVAL_MS hợp lệ CHỈ khi APP_ENV=test', () => {
+    const env = loadEnv(
+      testEnvVars({
+        APP_ENV: 'test',
+        PAYROLL_REMINDER_ON_START: 'true',
+        PAYROLL_REMINDER_INTERVAL_MS: '2000',
+      }),
+    );
+    expect([env.PAYROLL_REMINDER_ON_START, env.PAYROLL_REMINDER_INTERVAL_MS]).toEqual([true, 2000]);
+    expect(
+      variablesOf(testEnvVars({ APP_ENV: 'test', PAYROLL_REMINDER_INTERVAL_MS: '10' })),
+    ).toEqual(['PAYROLL_REMINDER_INTERVAL_MS']);
+    for (const key of ['PAYROLL_REMINDER_ON_START', 'PAYROLL_REMINDER_INTERVAL_MS']) {
+      const value = key.endsWith('START') ? 'true' : '2000';
+      expect(variablesOf(testEnvVars({ APP_ENV: 'local', [key]: value }))).toEqual([key]);
+      expect(variablesOf(productionEnvVars({ [key]: value }))).toEqual([key]);
+    }
+  });
+
   it.each(['local', 'staging', 'production'])(
     'TEST_CLOCK_ANCHOR ở APP_ENV=%s ⇒ từ chối khởi động (không âm thầm bỏ qua)',
     (appEnv) => {

@@ -96,3 +96,26 @@ describe('ngữ cảnh phiếu lương', () => {
     expect(JSON.stringify(items)).not.toMatch(/netPay|amount|salary|Total/);
   });
 });
+
+describe('notifyOnce (job nhắc — chống lặp theo refId)', () => {
+  it('cùng (type, refId) lần 2 ⇒ false, không thêm dòng; refId khác ⇒ gửi; actor null (hệ thống) vẫn tới người nhận', async () => {
+    const h = withAccountant();
+    const remind = (refId: string) =>
+      h.uow.run(() =>
+        h.publisher.notifyOnce({
+          type: 'PAYROLL_REMINDER',
+          refId,
+          actorId: null,
+          recipient: { kind: 'payroll' },
+        }),
+      );
+    expect(await remind(RUN)).toBe(true);
+    expect(await remind(RUN)).toBe(false);
+    expect(await remind(SLIP)).toBe(true);
+    const items = (await h.queries.list(U.max, { limit: 20 })).items;
+    expect(items.map((n) => [n.type, n.refId, n.actor])).toEqual([
+      ['PAYROLL_REMINDER', SLIP, null],
+      ['PAYROLL_REMINDER', RUN, null],
+    ]);
+  });
+});

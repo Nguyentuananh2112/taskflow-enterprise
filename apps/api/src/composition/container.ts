@@ -11,19 +11,14 @@ import {
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import { createAuthModule } from '../modules/auth/auth.module';
 import type { IRolePermissions } from '../modules/task/application/task-actor';
-import { TASKS_PATH } from '../modules/task/presentation/task.routes';
-import {
-  NOTIFICATIONS_PATH,
-  createNotificationsModule,
-} from '../modules/notifications/notifications.module';
+import { createNotificationsModule } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
-import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
-import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { wireLeave } from './leave-wiring';
 import { wireProfileAndPayroll } from './payroll-wiring';
+import { apiRouters } from './api-routers';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
@@ -175,26 +170,27 @@ export function createContainer(d: ContainerDeps): Container {
   );
   approvedLeaves.bind(leave.approvedLeaves);
   // Hồ sơ nhân viên (Mốc 5, T-054): quyền / người / audit ← company; phép âm ← leave (T-057).
-  const { hrProfile, routers: people } = wireProfileAndPayroll(
+  const {
+    hrProfile,
+    payroll,
+    routers: people,
+  } = wireProfileAndPayroll(
     { persistence, clock: business, ids, logger },
     { company, notifications, attendance, timeZone: () => attendance.timeZoneNow() },
     { responder, limit },
   );
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
-  const routers = [
-    { path: '/auth', router: auth.router },
-    ...company.routers(auth.authenticate),
-    ...people(auth.authenticate),
-    // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
-    // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
-    { path: TASKS_PATH, router: task.routes(auth.authenticate) },
-    // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
-    { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
-    { path: LEAVE_PATH, router: leave.router },
-    { path: '/workspaces', router: workspace.routes(auth.authenticate) },
-    { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
-  ];
+  const routers = apiRouters({
+    auth,
+    company,
+    people,
+    task,
+    attendance,
+    leave,
+    workspace,
+    notifications,
+  });
   const app = createApp({
     config,
     logger,
@@ -218,6 +214,7 @@ export function createContainer(d: ContainerDeps): Container {
     task,
     notifications,
     company,
+    payroll,
     attendance,
     leave,
     socketAuth,

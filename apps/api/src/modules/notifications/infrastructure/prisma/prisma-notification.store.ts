@@ -43,6 +43,12 @@ const SELECT = {
 export class PrismaNotificationStore implements INotificationStore {
   constructor(private readonly db: DbProvider) {}
 
+  async exists(q: { type: NotificationRecord['type']; refId: string }): Promise<boolean> {
+    return (
+      (await this.db().notification.count({ where: { type: q.type, refId: q.refId }, take: 1 })) > 0
+    );
+  }
+
   async addMany(records: readonly NotificationRecord[]): Promise<void> {
     if (records.length === 0) return;
     await this.db().notification.createMany({ data: records.map((r) => ({ ...r })) });

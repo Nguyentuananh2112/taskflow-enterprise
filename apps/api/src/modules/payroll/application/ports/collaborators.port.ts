@@ -54,13 +54,18 @@ export interface IPayrollAudit {
 }
 
 /** Thông báo bền (ADR-123) — ghi TRONG transaction; `payroll` ⇒ mọi người có payroll:manage hiện tại. */
+export interface PayrollNotifyInput {
+  type: 'PAYSLIP_PUBLISHED' | 'PAYSLIP_REVISED' | 'PAYROLL_REMINDER';
+  refId: string;
+  /** `null` = hệ thống (job nhắc). */
+  actorId: string | null;
+  recipient: { kind: 'user'; userId: string } | { kind: 'payroll' };
+}
+
 export interface IPayrollNotifier {
-  notify(input: {
-    type: 'PAYSLIP_PUBLISHED' | 'PAYSLIP_REVISED' | 'PAYROLL_REMINDER';
-    refId: string;
-    actorId: string;
-    recipient: { kind: 'user'; userId: string } | { kind: 'payroll' };
-  }): Promise<void>;
+  notify(input: PayrollNotifyInput): Promise<void>;
+  /** Một lần cho mỗi `(type, refId)` — bên gọi giữ khóa advisory. */
+  notifyOnce(input: PayrollNotifyInput): Promise<boolean>;
 }
 
 /** Tên công ty hiện hành (chụp lên bảng lúc phát hành). */

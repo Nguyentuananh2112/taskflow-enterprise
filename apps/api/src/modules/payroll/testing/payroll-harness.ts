@@ -87,6 +87,12 @@ export function createPayrollHarness(now = NOW) {
         sent.push(n);
         return Promise.resolve();
       },
+      notifyOnce: (n) => {
+        if (sent.some((s) => s.type === n.type && s.refId === n.refId))
+          return Promise.resolve(false);
+        sent.push(n);
+        return Promise.resolve(true);
+      },
     },
     company: { companyName: () => Promise.resolve(company.name) },
     timeZoneNow: () => Promise.resolve('Asia/Ho_Chi_Minh'),

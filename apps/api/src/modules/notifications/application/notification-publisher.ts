@@ -12,8 +12,8 @@ export type NotificationRecipient =
 export interface NotifyInput {
   type: NotificationType;
   refId: string;
-  /** Người gây ra — không bao giờ tự nhận thông báo của chính mình. */
-  actorId: string;
+  /** Người gây ra — không bao giờ tự nhận thông báo của chính mình. `null` = hệ thống (job nhắc làm lương — T-049). */
+  actorId: string | null;
   /** `hr` ⇒ mọi người HIỆN có `hr:manage` (Admin + HR, còn quyền; đọc trong cùng transaction). */
   recipient: NotificationRecipient;
 }
@@ -42,6 +42,17 @@ export interface NotificationPublisherDeps {
 export class NotificationPublisher {
   constructor(private readonly d: NotificationPublisherDeps) {}
 
+  /**
+   * Gửi MỘT lần cho mỗi `(type, refId)` (job nhắc làm lương — chống lặp theo (period, ngày), T-049): đã có dòng nào
+   * ⇒ bỏ qua, trả false. Bên gọi giữ khóa advisory để kiểm-rồi-ghi không đua.
+   */
+  async notifyOnce(input: NotifyInput): Promise<boolean> {
+    if (!this.d.uow.inTransaction) throw new NotifyOutsideTransactionError();
+    if (await this.d.store.exists({ type: input.type, refId: input.refId })) return false;
+    await this.notify(input);
+    return true;
+  }
+
   async notify(input: NotifyInput): Promise<void> {
     if (!this.d.uow.inTransaction) throw new NotifyOutsideTransactionError();
     const recipients = (await this.#recipientsOf(input)).filter((id) => id !== input.actorId);
@@ -59,7 +70,8 @@ export class NotificationPublisher {
     }));
     await this.d.store.addMany(records);
 
-    const meta = { actorId: input.actorId, originClientId: null };
+    // Event realtime cần actorId chuỗi: hệ thống (job) ⇒ 'system' (dòng thông báo vẫn lưu actor NULL).
+    const meta = { actorId: input.actorId ?? 'system', originClientId: null };
     // Mỗi người nhận một hook: UoW cô lập lỗi theo hook ⇒ một lần phát lỗi không làm mất event của
     // người nhận sau (review B — L1).
     for (const r of records) {

@@ -5,6 +5,7 @@ import type { RateLimitRule } from '../../core/http/rate-limit/rules';
 import type { PayrollDeps } from './application/payroll-kit';
 import type { IPayrollStore } from './application/ports/payroll-store.port';
 import { PayrollQueries } from './application/use-cases/payroll.queries';
+import { PayrollReminderUseCase } from './application/use-cases/payroll-reminder.use-case';
 import { PayrollRunsUseCases } from './application/use-cases/payroll-runs.use-cases';
 import { PayslipEditsUseCases } from './application/use-cases/payslip-edits.use-cases';
 import { PublishPayrollUseCase } from './application/use-cases/publish-payroll.use-case';
@@ -41,6 +42,8 @@ export interface PayrollModuleDeps extends Omit<PayrollDeps, 'store'> {
 
 export interface PayrollModule {
   routers(authenticate: RequestHandler): { path: string; router: Router }[];
+  /** Job nhắc làm lương (maintenance) — true nếu đã gửi nhắc hôm nay. */
+  remindIfDue(): Promise<boolean>;
 }
 
 /** Composition của module lương (Mốc 4, payroll.md v4 — T-049). */
@@ -55,7 +58,9 @@ export function createPayrollModule(m: PayrollModuleDeps): PayrollModule {
     store: d.store,
     responder: m.responder,
   });
+  const reminder = new PayrollReminderUseCase(d);
   return {
+    remindIfDue: () => reminder.run(),
     routers: (authenticate) => {
       const routeDeps = {
         controller,
