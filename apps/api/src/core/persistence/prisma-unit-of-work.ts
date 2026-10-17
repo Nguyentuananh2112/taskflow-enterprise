@@ -35,7 +35,7 @@ interface TxStore<TTx> {
   readonly readOnly?: true;
 }
 
-/** Client transaction chạy được SQL thô (để `SET TRANSACTION READ ONLY`). */
+/** Client transaction chạy được SQL thô (để `SET TRANSACTION READ ONLY` + ghim snapshot). */
 interface RawCapable {
   $executeRawUnsafe(sql: string): Promise<number>;
 }
@@ -95,7 +95,11 @@ export class PrismaUnitOfWork<TDb> implements IUnitOfWork {
     assertSnapshotTimeout(opts.timeoutMs);
     return this.client.$transaction(
       async (tx) => {
-        await (tx as unknown as RawCapable).$executeRawUnsafe('SET TRANSACTION READ ONLY');
+        const raw = tx as unknown as RawCapable;
+        await raw.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+        // Postgres chỉ chụp snapshot REPEATABLE READ ở câu truy vấn ĐẦU TIÊN (SET TRANSACTION không tính) ⇒ ghim ngay
+        // tại đây; nếu không, một `outside(uow.run ghi)` trước lần đọc đầu sẽ lọt vào snapshot (tầng I B (4)).
+        await raw.$executeRawUnsafe('SELECT 1');
         return this.#storage.run({ tx, hooks: [], readOnly: true }, work);
       },
       {
