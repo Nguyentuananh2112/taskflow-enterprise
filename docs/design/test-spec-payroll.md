@@ -64,7 +64,7 @@ Mỗi ca ghi tiền dùng một **số đánh dấu** duy nhất (vd `7 031 117`
 
 | Env | Ai | Vì sao |
 |---|---|---|
-| `PAYROLL_REMINDER_ON_START=1` (một lượt khi khởi động), `PAYROLL_REMINDER_INTERVAL_MS` (mặc định 1 giờ) — **A nhận 18/10**; job maintenance interval, theo `businessClock`, chống lặp `(period, ngày VN)` | A (T-049) | CLK-PAY-02…04 |
+| `PAYROLL_REMINDER_ON_START=true` (lượt đầu ngay lúc khởi động; mặc định sau 60 s), `PAYROLL_REMINDER_INTERVAL_MS` (1 000…86 400 000, đặt ⇒ không jitter; mặc định 1 giờ + jitter 60 s) — **có ở A 68d32c39** (`feat/T-049-payroll-domain`), chỉ `APP_ENV=test` | A (T-049) | CLK-PAY-02…04 |
 | Hạ mốc retention chấm công (vd `RETENTION_ATTENDANCE_DAYS` nhỏ) — hoặc xác nhận chỉ kiểm ở tầng I | A / B | RD-06: kỳ quá retention ⇒ cấm Tính lại công; điều chỉnh copy `paidHalfDays` |
 
 ## 2. PD — `payrollDaysOf` (tầng U, Stryker `attendance-domain` ≥ 90 %; vế S ở PD-20)
@@ -175,12 +175,12 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | SEC-PAY-06 | Quinn sau `access_until` ⇒ 401 `SESSION_REVOKED` cả route self | đúng |
 | SEC-PAY-07 | mass assignment: body phiếu có `netPay`, `incomeTotal`, `seniorityAllowance`, `salaryByDays`, `userId`, `revision`, `status` ⇒ 400 strict (tổng chỉ do server tính) | đúng |
 | SEC-PAY-08 | tiền: `-1`, `1e12 + 1`, `1.5`, `"7000000"`, `1e21`, `NaN` ⇒ 400; 51 dòng ⇒ 400; nhãn rỗng / 121 ký tự / ký tự điều khiển ⇒ 400 | đúng |
-| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số; **lý do sửa công / lý do điều chỉnh** (chuỗi đánh dấu) chỉ có ở phiếu (kế toán + chính nhân viên), không có trong thông báo, log, audit đọc bởi người khác Admin | đúng |
+| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số; **lý do sửa công / lý do điều chỉnh** (chuỗi đánh dấu) chỉ có ở phiếu (kế toán + chính nhân viên), không có trong thông báo `PAYSLIP_*`, log, body Sentry; trong audit lý do nằm ở `after.note` (bước D7' của retention xóa được), **không** dùng khóa `reason` (B 18/10) | đúng |
 | SEC-PAY-10 | audit `PAYROLL_*` có before/after số tiền; `GET hr/audit-logs` chỉ Admin (Kay, Hana ⇒ 403) | đúng |
 | SEC-PAY-11 | header: mọi route lương `Cache-Control: no-store`; export có header tải file + `nosniff` | đúng |
 | SEC-PAY-12 | `payroll_settings`: chỉ `payroll:manage`; `seniorityPerYear` âm / > 1e12 ⇒ 400; luôn một dòng (CHECK `id = 1` — I) | đúng |
 | SEC-PAY-13 | parity (bổ sung SEC-HR-34): `PAYROLL_MANAGE` ∌ `hr:*`, `company:*`; ADMIN ∌ `payslip:self`; Kay gọi `hr/…` ⇒ 403 | đúng |
-| SEC-PAY-14 | redact Sentry / log body các route `/payroll`, `/payslips`, `/salary-profiles`, `/payroll-settings` (tầng H — B) | đúng |
+| SEC-PAY-14 | redact Sentry / log body các route `/payroll`, `/payslips`, `/salary-profiles`, `/payroll-settings` (tầng H — B) — **đã có** (B, `test/T-048-sec-pay-14` 735cbd97: `test/http/payroll-redact.http.test.ts`, 5 ca, message lỗi Postgres thật có số tiền; B vá error-serializer: `Key (…)=(…)`, `value "…" is out of range`, `invalid input syntax for type …` không còn lọt giá trị vào log / Sentry — áp cho mọi module) | đúng |
 
 ## 9. CC — đua (tầng C, ×20, gom vòng đỏ, `SEC_HR_RACE_RUNS`)
 
@@ -199,9 +199,9 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Mốc | Ca | Mong đợi |
 |---|---|---|---|
 | CLK-PAY-01 | `'*-L'` 23:59:30 | tạo nháp kỳ tháng hiện tại ⇒ 422; sau 00:00 cùng lệnh ⇒ 201 | đúng |
-| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | bảng kỳ trước còn NHÁP ⇒ nhắc `PAYROLL_REMINDER` tới Kay, Kim, Ada (không Hana, không Mia); chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
+| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | kỳ tháng trước **chưa có bảng** hoặc còn NHÁP ⇒ (A 18/10: chỉ dừng khi PUBLISHED; chỉ nhắc kỳ tháng trước của hôm nay, không quét kỳ cũ hơn; "ngày" theo lịch công ty +07; người nhận = có `payroll:manage` lúc job chạy — người được cấp sau đó không nhận nhắc của ngày đó) nhắc `PAYROLL_REMINDER` (actor null, `refId` = UUID cố định theo ngày `0000YYYY-MMDD-7000-8000-000000000001`) tới Kay, Kim, Ada (mọi người đang có `payroll:manage`; không Hana, không Mia); thu `PAYROLL_MANAGE` của Kim ⇒ hôm sau Kim không nhận; chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
 | CLK-PAY-03 | `'*-04'` 23:59:30 | trước 00:00 không nhắc; sau ⇒ nhắc | đúng |
-| CLK-PAY-04 | restart mốc `'*-11'` 10:00 | quá ngày 10 vẫn nhắc mỗi ngày; phát hành ⇒ hết nhắc | đúng |
+| CLK-PAY-04 | restart mốc `'*-11'` 10:00 | quá ngày 10 vẫn nhắc mỗi ngày, đúng 1 thông báo / người / ngày (delta `refId` theo ngày — `notifyOnce` + khóa `taskflow:payroll:reminder:<kỳ>`); kỳ cũ hơn chưa phát hành không có nhắc riêng; phát hành ⇒ hết nhắc | đúng |
 
 | Mã | Ca (tầng E, `workers: 1`, `@main` cho 02) |
 |---|---|
