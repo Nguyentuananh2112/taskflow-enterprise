@@ -26,6 +26,15 @@ export interface AuthAccounts {
     createdById: string | null;
     ttlMs: number;
   }): Promise<{ token: string; link: string; expiresAt: Date }>;
+  /**
+   * Hồ sơ tài khoản cho danh sách quản trị / nhân viên — MỘT truy vấn. Email là PII: chỉ trả ở route
+   * `company:admin` / `hr:manage`, không log. `[]` ⇒ Map rỗng. User đã xóa vẫn có (`deleted: true`).
+   */
+  profiles(
+    userIds: readonly string[],
+  ): Promise<
+    ReadonlyMap<string, { fullName: string; email: string; hasPassword: boolean; deleted: boolean }>
+  >;
   /** ADR-105: tv + 1, thu hồi refresh token, Valkey TRƯỚC commit (lỗi ⇒ 503 rollback), ngắt socket SAU commit. */
   revokeSessions(userId: string, reason: 'OFFBOARDED' | 'LOGOUT_ALL'): Promise<void>;
 }
@@ -63,6 +72,21 @@ export function createAuthAccounts(d: {
       return accountOf(await users.findByEmail(email));
     },
     findById: async (userId) => accountOf(await users.findById(userId)),
+    async profiles(userIds) {
+      if (userIds.length === 0) return new Map();
+      const rows = await users.findManyByIds(userIds);
+      return new Map(
+        rows.map((u) => [
+          u.id,
+          {
+            fullName: u.fullName,
+            email: u.email.value,
+            hasPassword: u.passwordHash !== null,
+            deleted: u.isDeleted,
+          },
+        ]),
+      );
+    },
     async createPending(input) {
       const user = User.register({
         id: ids.next(),

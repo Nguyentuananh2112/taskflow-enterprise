@@ -99,6 +99,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
   const accounts: ICompanyAccounts = {
     findByEmail: (email) => accountsOf().findByEmail(email),
     findById: (userId) => accountsOf().findById(userId),
+    profiles: (userIds) => accountsOf().profiles(userIds),
     revokeSessions: (userId, reason) => accountsOf().revokeSessions(userId, reason),
     createPending: (input) => accountsOf().createPending(input),
     issueActivation: (input) => accountsOf().issueActivation(input),

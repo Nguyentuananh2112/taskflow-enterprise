@@ -15,6 +15,21 @@ export function describeUserRepositoryContract(
       p = await setup();
     });
 
+    it('findManyByIds: đúng các id có thật (kể cả đã xóa), bỏ id lạ; [] ⇒ []', async () => {
+      const a = newUser('many-a@example.com');
+      const b = newUser('many-b@example.com');
+      await p.users.add(a);
+      await p.users.add(b);
+      await p.users.add(newUser('many-c@example.com'));
+      const found = await p.users.findManyByIds([
+        b.id,
+        a.id,
+        '0199e5a2-0000-7000-8000-00000000dead',
+      ]);
+      expect(found.map((u) => u.id).sort()).toEqual([a.id, b.id].sort());
+      expect(await p.users.findManyByIds([])).toEqual([]);
+    });
+
     it('add ⇒ tìm được theo id và email; email trùng ⇒ EmailAlreadyExistsError', async () => {
       const u = newUser('alice@example.com');
       await p.users.add(u);
