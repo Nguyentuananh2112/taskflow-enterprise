@@ -7,6 +7,13 @@
 
 {$API_DOMAIN} {
 	encode zstd gzip
+	# Mốc 6 (ADR-141): tệp chat ≤ 20 MB (+ biên) — body lớn hơn bị chặn ở proxy trước khi tới API.
+	request_body {
+		max_size 21MB
+	}
+	# Không bật access log ở đây. Nếu bật: URL /api/v1/media/* mang `sig` (bearer — R43) ⇒ PHẢI bỏ query, vd
+	#   log { format filter { request>uri query { delete sig } } }
+	# (devops.md §4.6; SEC-CH-25 grep log proxy không có `sig=`).
 	# WebSocket (Socket.IO websocket-only — ADR-074) được reverse_proxy hỗ trợ sẵn.
 	reverse_proxy api:4000 {
 		health_uri /readyz

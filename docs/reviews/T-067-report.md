@@ -41,7 +41,8 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | — | 265d08c4, 8d310b3e | contract chat sớm (phần contract của T-069) + parity realtime `PENDING_SERVER_EMIT` (T-070) |
 | 5 | f0a8cea3, 03ce1754 | `/media` (`mediaRouter`) + `MediaUrlSigner` + port `IMediaResolver` + luật hạn mức `media-ip` (+ soát B L1) |
 | 6 | 9584f6a9, 74afd33a, 70e994f5 | env + `.env.example`; `StorageQuota` (507) + `MediaResolverRegistry`; `createFiles` (composition); gắn `/media` trong `app.ts`; `start-server` |
-| 7 | (commit này) | `files-sweep` (bước tmp) + `FileSweepRegistry` + bật theo cờ / env test-only + lượt ON_START trước `listen` |
+| 7 | ed3343ac | `files-sweep` (bước tmp) + `FileSweepRegistry` + bật theo cờ / env test-only + lượt ON_START trước `listen` |
+| 8 | (commit này) | volume `filestore` + `mem_limit` (compose), Dockerfile thư mục kho, `backup-files.sh`, Caddy body 21 MB, runbook §7 |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -183,8 +184,24 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
   `FILES_SWEEP_INTERVAL_MS` (không jitter, lượt đầu sau đúng chu kỳ) / `FILES_SWEEP_ON_START` (một lượt TRƯỚC
   `listen`, log `maintenance.run_done {job: 'files-sweep'}` — CLK-CH của F).
 
+## Bước 8 — volume compose + backup tệp (khớp `devops.md` §4.3 / §4.4 / §4.6 của B @a4b0c06c)
+
+- `deploy/vps/compose.prod.yml`: volume tên `filestore:/var/lib/taskflow/files` cho `api` (+ `FILE_STORE_DIR` đặt cứng,
+  `mem_limit: 1536m` theo §4.6 — bộ nhớ native libvips); `backup` mount kho **chỉ đọc**, lệnh
+  `backup.sh && backup-files.sh`, heartbeat chỉ khi cả hai xong. `docker compose config` hợp lệ (biến giả).
+- `apps/api/Dockerfile`: tạo `/var/lib/taskflow/files` chủ `node` trước `USER node` (volume tên mới lấy quyền này).
+- `docker/backup/backup-files.sh` (+ Dockerfile COPY): `tar | age | aws s3 cp -` cùng thiết kế `backup.sh` — public
+  key only, tầng chọn lúc tải lên, `.ok` khi mọi bước xong, loại `tmp/`, tar exit 1 (tệp biến mất) chấp nhận, ≥ 2 lỗi;
+  `BACKUP_FILES_EXPECTED_SIZE`. Thử với `age` / `aws` giả: archive có blob + avatar, không có `tmp/`, tầng
+  weekly / monthly / daily đúng, `.ok` có, recipient không phải `age1…` ⇒ exit 2.
+- `deploy/vps/Caddyfile`: `request_body max_size 21MB` cho API; chú thích bắt buộc lọc query nếu bật access log
+  (không bật hiện tại ⇒ không có `sig` trong log Caddy).
+- Runbook `backup-restore.md` §7: sao lưu, khôi phục (DB trước, tệp sau, không giải nén chồng, chown 1000), diễn tập
+  hằng tháng (khóa từ két, ≥ 20 khóa qua `/media`, tệp thừa do sweep dọn), những gì không làm.
+- Chưa build image Docker (job nặng; image backup / api thuộc cổng CI). B / D soát phần deploy.
+
 ## Còn lại
-8 compose volume + runbook backup tệp · 9 ca SEC-CH của G · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+9 ca SEC-CH của G · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý
