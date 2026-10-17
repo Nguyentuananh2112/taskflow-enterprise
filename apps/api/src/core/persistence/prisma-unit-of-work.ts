@@ -107,7 +107,14 @@ export class PrismaUnitOfWork<TDb> implements IUnitOfWork {
   }
 
   /** Dạng port `IReadSnapshot` — truyền `uow.snapshot` cho use case báo cáo. */
-  readonly snapshot: IReadSnapshot = { run: (work, opts) => this.readSnapshot(work, opts) };
+  readonly snapshot: IReadSnapshot = {
+    run: (work, opts) => this.readSnapshot(work, opts),
+    outside: async (fn) => {
+      if (!this.#storage.getStore()?.readOnly)
+        throw new ReadSnapshotNestingError('outside-without-snapshot');
+      return this.#storage.exit(fn);
+    },
+  };
 
   afterCommit(hook: AfterCommitHook): void {
     const store = this.#storage.getStore();

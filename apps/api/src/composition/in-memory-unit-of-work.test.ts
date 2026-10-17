@@ -121,3 +121,23 @@ describe('InMemoryUnitOfWork.snapshot (IReadSnapshot — luật cấm lồng nh�
     }
   });
 });
+
+describe('InMemoryUnitOfWork.snapshot.outside (B review T-057: thoát snapshot có tên để ghi audit)', () => {
+  it('ngoài snapshot ⇒ lỗi; trong snapshot ⇒ fn chạy ngoài ALS nên uow.run được (transaction riêng)', async () => {
+    const uow = new InMemoryUnitOfWork([], new SpyLogger());
+    await expect(uow.snapshot.outside(() => Promise.resolve(1))).rejects.toBeInstanceOf(
+      ReadSnapshotNestingError,
+    );
+    const seen = await uow.snapshot.run(
+      async () => {
+        const inner = await uow.snapshot.outside(() =>
+          uow.run(() => Promise.resolve(uow.inTransaction)),
+        );
+        return { inner, back: uow.inTransaction };
+      },
+      { timeoutMs: 1_000 },
+    );
+    // Trong outside: uow.run mở transaction RIÊNG (inTransaction true bên trong nó); quay lại vẫn trong snapshot.
+    expect(seen).toEqual({ inner: true, back: true });
+  });
+});
