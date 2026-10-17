@@ -68,7 +68,7 @@ describe('payrollDaysOf — PD', () => {
       tenures: always,
       retentionCutoff: null,
     });
-    expect(r).toEqual({ ok: true, halfDays: 2, missingOutDates: [MON] });
+    expect(r).toEqual({ ok: true, halfDays: 2, missingOutDates: [MON], sickDays: 0 });
   });
 
   it('2 dòng/ngày khác loại: AM ANNUAL + PM UNPAID = 1; PERSONAL_PAID có lương', () => {
@@ -121,8 +121,13 @@ describe('payrollDaysOf — PD', () => {
         tenures: always,
         retentionCutoff: null,
       });
-    expect(r([])).toEqual({ ok: true, halfDays: 0, missingOutDates: [] });
-    expect(r(full(MON, 'ANNUAL'))).toEqual({ ok: true, halfDays: 2, missingOutDates: [] });
+    expect(r([])).toEqual({ ok: true, halfDays: 0, missingOutDates: [], sickDays: 0 });
+    expect(r(full(MON, 'ANNUAL'))).toEqual({
+      ok: true,
+      halfDays: 2,
+      missingOutDates: [],
+      sickDays: 0,
+    });
   });
 
   it('kỳ có ngày trước mốc retention ⇒ ATTENDANCE_RETENTION_EXPIRED; đúng mốc ⇒ tính', () => {
@@ -152,7 +157,7 @@ describe('payrollDaysOf — PD', () => {
       tenures: always,
       retentionCutoff: null,
     });
-    expect(r).toEqual({ ok: true, halfDays: 2 * 25, missingOutDates: [] });
+    expect(r).toEqual({ ok: true, halfDays: 2 * 25, missingOutDates: [], sickDays: 0 });
   });
 });
 
@@ -180,7 +185,12 @@ describe('payrollDaysOf — PD-13 / PD-17 / PD-19 (F, test-spec-payroll)', () =>
       { from: '2020-01-01', until: '2026-11-10' },
       { from: '2026-11-20', until: null },
     ];
-    expect(run({ tenures })).toEqual({ ok: true, halfDays: 2 * (8 + 9), missingOutDates: [] });
+    expect(run({ tenures })).toEqual({
+      ok: true,
+      halfDays: 2 * (8 + 9),
+      missingOutDates: [],
+      sickDays: 0,
+    });
   });
 
   it('PD-17 đổi lịch giữa tháng (T2–T6 từ 16/11): thứ Bảy sau 16/11 không còn là ngày làm ⇒ 0 dù PRESENT', () => {
@@ -198,6 +208,7 @@ describe('payrollDaysOf — PD-13 / PD-17 / PD-19 (F, test-spec-payroll)', () =>
       ok: true,
       halfDays: 2 * (12 + 11),
       missingOutDates: [],
+      sickDays: 0,
     });
   });
 
@@ -238,7 +249,7 @@ describe('payrollDaysOf — PD-13 / PD-17 / PD-19 (F, test-spec-payroll)', () =>
       expect(whole.halfDays).toBe(a.halfDays + b.halfDays);
       // (2) Bỏ hết nhiệm kỳ ⇒ 0.
       const none = run({ statusOf, leaves, tenures: [] });
-      expect(none).toEqual({ ok: true, halfDays: 0, missingOutDates: [] });
+      expect(none).toEqual({ ok: true, halfDays: 0, missingOutDates: [], sickDays: 0 });
       // (1) Thêm một nửa ANNUAL vào một nửa trong nhiệm kỳ, ngày làm việc ⇒ h không giảm; tăng đúng 1 khi nửa đó đang 0
       // (không có phép nào ở nửa đó và ngày không PRESENT / HOLIDAY) hoặc chỉ có phép không lương.
       const day = Math.max(startDay, 1 + rnd(30));

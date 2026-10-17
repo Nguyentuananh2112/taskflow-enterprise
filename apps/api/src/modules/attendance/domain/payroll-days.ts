@@ -16,7 +16,7 @@ export interface PayrollLeaveHalf {
 export const PAID_LEAVE_TYPES: ReadonlySet<PayrollLeaveType> = new Set(['ANNUAL', 'PERSONAL_PAID']);
 
 export type PayrollDaysResult =
-  | { ok: true; halfDays: number; missingOutDates: LocalDate[] }
+  | { ok: true; halfDays: number; missingOutDates: LocalDate[]; sickDays: number }
   | { ok: false; reason: 'ATTENDANCE_RETENTION_EXPIRED' };
 
 /**
@@ -51,10 +51,14 @@ export function payrollDaysOf(q: {
   }
   let halfDays = 0;
   const missingOutDates: LocalDate[] = [];
+  // Ngày làm việc trong nhiệm kỳ có phép SICK (nửa hay cả ngày) — phiếu ghi chú "do BHXH chi trả".
+  const sick = new Set(q.leaves.filter((l) => l.type === 'SICK').map((l) => l.date));
+  let sickDays = 0;
   for (let i = 0; i <= daysBetween(q.from, q.to); i++) {
     const date = addDays(q.from, i);
     if (!employedOn(q.tenures, date)) continue;
     if (!isWorkday(effectiveSchedule(q.schedules, date), date)) continue;
+    if (sick.has(date)) sickDays++;
     const status = q.statusOf.get(date);
     if (status === 'HOLIDAY') {
       halfDays += 2;
@@ -67,7 +71,7 @@ export function payrollDaysOf(q: {
       else if (status === 'PRESENT') halfDays += 1;
     }
   }
-  return { ok: true, halfDays, missingOutDates };
+  return { ok: true, halfDays, missingOutDates, sickDays };
 }
 
 /**

@@ -36,8 +36,13 @@ describe('payrollDaysFor', () => {
     const t = await november();
     const r = await payrollDaysFor(t.deps, { userIds: [MIA, MAX], period: '2026-11' });
     expect(r.standardDays).toBe(25);
-    expect(r.byUser.get(MIA)).toEqual({ ok: true, halfDays: 3, missingOutDates: ['2026-11-19'] });
-    expect(r.byUser.get(MAX)).toEqual({ ok: true, halfDays: 0, missingOutDates: [] });
+    expect(r.byUser.get(MIA)).toEqual({
+      ok: true,
+      halfDays: 3,
+      missingOutDates: ['2026-11-19'],
+      sickDays: 1,
+    });
+    expect(r.byUser.get(MAX)).toEqual({ ok: true, halfDays: 0, missingOutDates: [], sickDays: 0 });
   });
 
   it('đọc phép ĐÚNG một lần cho cả ô ngày lẫn các nửa (ADR-126 — một nguồn phép)', async () => {
@@ -69,6 +74,7 @@ describe('payrollDaysFor', () => {
       ok: true,
       halfDays: 2,
       missingOutDates: [],
+      sickDays: 0,
     });
     t.tenures.rows.splice(
       t.tenures.rows.findIndex((r) => r.userId === MIA),
@@ -85,6 +91,7 @@ describe('payrollDaysFor', () => {
       ok: true,
       halfDays: 1,
       missingOutDates: ['2026-11-19'],
+      sickDays: 1,
     });
   });
 
