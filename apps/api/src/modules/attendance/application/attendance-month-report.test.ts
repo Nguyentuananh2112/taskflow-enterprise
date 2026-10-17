@@ -82,10 +82,14 @@ describe('attendanceMonthSheets', () => {
 
     const detail = await collect(sheets[2]!);
     expect(detail.filter((r) => r[0] === 'Mia')).toHaveLength(30);
-    expect(detail.find((r) => r[0] === 'Mia' && r[2] === '2026-11-16')).toEqual([
+    expect(
+      detail.find(
+        (r) => r[0] === 'Mia' && (r[2] as { date?: string } | null)?.date === '2026-11-16',
+      ),
+    ).toEqual([
       'Mia',
       null,
-      '2026-11-16',
+      { date: '2026-11-16' },
       'T2',
       'Có mặt',
       '08:00',
