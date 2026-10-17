@@ -180,7 +180,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | SEC-PAY-11 | header: mọi route lương `Cache-Control: no-store`; export có header tải file + `nosniff` | đúng |
 | SEC-PAY-12 | `payroll_settings`: chỉ `payroll:manage`; `seniorityPerYear` âm / > 1e12 ⇒ 400; luôn một dòng (CHECK `id = 1` — I) | đúng |
 | SEC-PAY-13 | parity (bổ sung SEC-HR-34): `PAYROLL_MANAGE` ∌ `hr:*`, `company:*`; ADMIN ∌ `payslip:self`; Kay gọi `hr/…` ⇒ 403 | đúng |
-| SEC-PAY-14 | redact Sentry / log body các route `/payroll`, `/payslips`, `/salary-profiles`, `/payroll-settings` (tầng H — B) | đúng |
+| SEC-PAY-14 | redact Sentry / log body các route `/payroll`, `/payslips`, `/salary-profiles`, `/payroll-settings` (tầng H — B) — **đã có** (B, `test/T-048-sec-pay-14` 735cbd97: `test/http/payroll-redact.http.test.ts`, 5 ca, message lỗi Postgres thật có số tiền; B vá error-serializer: `Key (…)=(…)`, `value "…" is out of range`, `invalid input syntax for type …` không còn lọt giá trị vào log / Sentry — áp cho mọi module) | đúng |
 
 ## 9. CC — đua (tầng C, ×20, gom vòng đỏ, `SEC_HR_RACE_RUNS`)
 
