@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openApp } from '@test/app-harness';
@@ -47,16 +47,23 @@ function seed(n: number) {
 describe('header — Trò chuyện', () => {
   it('12 tin chưa đọc ⇒ nhãn có số thật, badge "9+", chấm trên ☰', async () => {
     seed(12);
-    const link = await screen.findByRole('link', { name: 'Trò chuyện, 12 tin chưa đọc' });
+    const header = await screen.findByRole('navigation', { name: 'Tài khoản' });
+    const link = await within(header).findByRole('link', { name: 'Trò chuyện, 12 tin chưa đọc' });
     expect(link.getAttribute('href')).toBe('/chat');
     expect(link.textContent).toContain('9+');
     const menu = screen.getByRole('button', { name: 'Menu' });
     await waitFor(() => expect(menu.querySelector('.bg-danger')).not.toBeNull());
+    // < md: ô ở trang chính, cùng nhãn (mỗi bề rộng màn chỉ một cái hiện).
+    const tile = screen
+      .getAllByRole('link', { name: 'Trò chuyện, 12 tin chưa đọc' })
+      .find((l) => l !== link);
+    expect(tile?.textContent).toContain('9+');
   });
 
   it('không có tin ⇒ nhãn "Trò chuyện", không badge, không chấm', async () => {
     seed(0);
-    const link = await screen.findByRole('link', { name: 'Trò chuyện' });
+    const header = await screen.findByRole('navigation', { name: 'Tài khoản' });
+    const link = await within(header).findByRole('link', { name: 'Trò chuyện' });
     expect(link.textContent).not.toMatch(/\d/);
     expect(screen.getByRole('button', { name: 'Menu' }).querySelector('.bg-danger')).toBeNull();
   });
