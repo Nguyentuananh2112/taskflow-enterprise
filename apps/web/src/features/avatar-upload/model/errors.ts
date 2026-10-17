@@ -19,11 +19,24 @@ const BY_CODE: Readonly<Record<string, string>> = {
   [CLIENT_ERROR_CODES.network]: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.',
 };
 
+/** 422 BUSINESS_RULE_VIOLATION của xử lý ảnh (G/TL chốt) — phân biệt bằng `details.rule`. */
+const BY_RULE: Readonly<Record<string, string>> = {
+  IMAGE_UNREADABLE: 'Ảnh này chưa đọc được, hãy chọn ảnh JPG hoặc PNG khác.',
+  IMAGE_TOO_COMPLEX: 'Ảnh quá lớn hoặc phức tạp, hãy chọn ảnh nhỏ hơn.',
+};
+
+const ruleOf = (details: unknown): string | undefined =>
+  typeof details === 'object' && details !== null && 'rule' in details
+    ? String(details.rule)
+    : undefined;
+
 export function avatarErrorMessage(error: unknown): string {
   if (error instanceof AvatarImageError) {
     return error.reason === 'size' ? 'Ảnh lớn quá (tối đa 20 MB), hãy chọn ảnh khác.' : UNREADABLE;
   }
   if (isApiError(error)) {
+    const rule = ruleOf(error.details);
+    if (error.code === 'BUSINESS_RULE_VIOLATION' && rule && BY_RULE[rule]) return BY_RULE[rule];
     return BY_CODE[error.serverCode ?? error.code] ?? 'Chưa lưu được ảnh, hãy thử lại.';
   }
   return 'Chưa lưu được ảnh, hãy thử lại.';
