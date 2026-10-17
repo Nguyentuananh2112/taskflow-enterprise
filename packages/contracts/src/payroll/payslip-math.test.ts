@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  MAX_MONEY_VND,
-  MAX_PAYSLIP_LINES,
   completedYears,
   computePayslip,
   daysInMonth,
@@ -11,6 +9,7 @@ import {
   seniorityAllowanceOf,
   type PayslipMathLine,
 } from './payslip-math';
+import { MAX_MONEY_VND, MAX_PAYSLIP_LINES } from './limits';
 
 // payroll.md §7 — PR (computePayslip) + SN (thâm niên) phần hàm thuần (T-049).
 

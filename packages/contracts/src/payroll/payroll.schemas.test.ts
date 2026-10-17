@@ -12,7 +12,7 @@ import {
   PutPayrollSettingsBody,
   PutPayslipBody,
 } from './payroll.schemas';
-import { MAX_PAYSLIP_LINES } from './payslip-math';
+import { MAX_PAYSLIP_LINES } from './limits';
 
 const line = { section: 'BONUS', label: 'Thưởng kênh online', amount: 1_500_000 } as const;
 const edit = { lines: [line], note: null, overrideHalfDays: null, overrideReason: null };
