@@ -12,6 +12,11 @@ import { PrismaActivationTokenRepository } from '../modules/auth/infrastructure/
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
 import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
+import {
+  createInMemoryAttendanceRepositories,
+  createPrismaAttendanceRepositories,
+  type AttendanceRepositories,
+} from '../modules/attendance/attendance.module';
 import type { CompanyRepositories } from '../modules/company/company.module';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
@@ -66,6 +71,7 @@ const allModules = (kind: StorageKind) =>
     task: kind,
     notifications: kind,
     company: kind,
+    attendance: kind,
   }) as const;
 
 export interface Persistence {
@@ -81,8 +87,10 @@ export interface Persistence {
    * lấy từ module company (Mốc 3.5).
    */
   notifications: Omit<NotificationRepositories, 'audience'>;
-  /** Mốc 3.5: công ty (thành viên, nhiệm kỳ, HrAuditLog). Attendance / leave: `tsconfig.exclusions.json`. */
+  /** Mốc 3.5: công ty (thành viên, nhiệm kỳ, HrAuditLog). Leave: `tsconfig.exclusions.json` (D gỡ ở T-064). */
   company: CompanyRepositories;
+  /** Chấm công cấp công ty (T-063): lượt chấm + lịch / ngày lễ. */
+  attendance: AttendanceRepositories;
   /** Chỉ bộ nhớ: bảng công ty để seed / harness (Prisma: dữ liệu ở DB). */
   companyStore?: InMemoryCompanyStore;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
@@ -118,6 +126,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   };
 
   const notificationStore = createInMemoryNotificationStore();
+  const attendance = createInMemoryAttendanceRepositories();
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -130,6 +139,8 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       notificationStore,
       companyStore,
       hrAudit,
+      attendance.events,
+      attendance.calendar,
     ],
     logger,
   );
@@ -150,6 +161,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     },
     company: { company: companyStore, members: companyStore, tenures: companyStore, hrAudit },
     companyStore,
+    attendance,
     uow,
   };
 }
@@ -212,6 +224,7 @@ export function createPrismaPersistence(d: {
       tenures: new PrismaCompanyTenureReader(db),
       hrAudit: new PrismaHrAuditLog(db),
     },
+    attendance: createPrismaAttendanceRepositories(db),
     ...prismaMaintenance(db),
     uow,
   };
