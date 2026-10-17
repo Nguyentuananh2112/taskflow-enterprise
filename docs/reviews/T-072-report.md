@@ -36,7 +36,7 @@
 ## Còn lại
 
 - **Checklist máy thật** trước deploy: bàn phím Telex / VNI trên Android + iOS (Enter khi đang gõ dấu), dán ảnh từ clipboard trên Safari.
-- Rời / xóa mềm workspace server CHƯA phát `chat:conversation:removed` (G) ⇒ web dựa vào 404 REST.
+- Server phát `chat:conversation:removed` khi bị bớt, tự rời, nghỉ việc và khi rời / xóa mềm workspace (T-070b của G, `LateBoundRealtime.onWorkspaceAccessLost`; F SEC-CH-04s xanh). Web vẫn giữ 404 khi bù sau nối lại làm lưới an toàn cho lúc offline lỡ event (c04df88c).
 
 ## Kết quả kiểm
 
