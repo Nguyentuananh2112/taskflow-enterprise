@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  createAttendanceHarness,
-  HANA,
-  key,
-  MAX,
-  MIA,
-  vnTime,
-  W1,
-} from '../../testing/attendance-harness';
+import { createAttendanceHarness, HANA, key, MAX, MIA } from '../../testing/attendance-harness';
 import { csvCell, csvRow } from '../csv';
 import { AttendanceExportUseCase } from './attendance-export.use-case';
 
@@ -61,7 +53,7 @@ describe('AttendanceExportUseCase', () => {
   it('BOM + tiêu đề, mỗi người × mỗi ngày một dòng, KHÔNG có IP/UA; audit EXPORT (tháng + số dòng) trước khi stream', async () => {
     const t = await setup('2026-11-17 18:00');
     await t.punch('IN', key(1));
-    const { rows, lines } = await t.exportUseCase.start(W1, HANA, '2026-11');
+    const { rows, lines } = await t.exportUseCase.start(HANA, '2026-11');
     expect(rows).toBe(4 * 30);
     expect(t.audit).toEqual([
       expect.objectContaining({
@@ -112,13 +104,12 @@ describe('AttendanceExportUseCase', () => {
       t.tenures.rows.findIndex((r) => r.userId === MAX),
       1,
       {
-        workspaceId: W1,
         userId: MAX,
-        from: vnTime('2020-01-01 09:00'),
-        until: vnTime('2026-11-20 17:00'),
+        from: '2020-01-01',
+        until: '2026-11-20',
       },
     );
-    await t.eventUseCases.adjust(W1, HANA, {
+    await t.eventUseCases.adjust(HANA, {
       userId: MIA,
       kind: 'IN',
       date: '2026-11-16',
@@ -126,7 +117,7 @@ describe('AttendanceExportUseCase', () => {
       nextDay: false,
       reason: 'x',
     });
-    await t.eventUseCases.adjust(W1, HANA, {
+    await t.eventUseCases.adjust(HANA, {
       userId: MIA,
       kind: 'OUT',
       date: '2026-11-16',
@@ -134,7 +125,7 @@ describe('AttendanceExportUseCase', () => {
       nextDay: true,
       reason: 'x',
     });
-    const table = parse(await read((await t.exportUseCase.start(W1, HANA, '2026-11')).lines));
+    const table = parse(await read((await t.exportUseCase.start(HANA, '2026-11')).lines));
     expect(table.find((r) => r[0] === 'Max' && r[2] === '2026-11-21')).toEqual([
       'Max',
       'Có',
@@ -159,7 +150,7 @@ describe('AttendanceExportUseCase', () => {
 
   it('SEC-HR-11 họ tên / tên ngày lễ bắt đầu bằng "=" ⇒ ô có tiền tố \'; ngày / số giữ nguyên', async () => {
     const t = await setup('2026-11-17 10:00');
-    await t.backend.addHoliday(W1, '2026-11-02', '=HYPERLINK("http://x")');
+    await t.backend.addHoliday('2026-11-02', '=HYPERLINK("http://x")');
     const exporter = new AttendanceExportUseCase({
       ...t.deps,
       ...t.collaborators,
@@ -170,18 +161,19 @@ describe('AttendanceExportUseCase', () => {
           ),
       },
     });
-    const csv = await read((await exporter.start(W1, HANA, '2026-11')).lines);
+    const csv = await read((await exporter.start(HANA, '2026-11')).lines);
     const table = parse(csv);
     expect(table.slice(1).every((r) => r[0]!.startsWith("'=cmd|"))).toBe(true);
     expect(table.find((r) => r[2] === '2026-11-02')![11]).toBe('\'=HYPERLINK("http://x")');
     expect(table[1]![2]).toMatch(/^2026-11-\d\d$/);
   });
 
-  it('không phải thành viên / mất quyền ⇒ lỗi TRƯỚC khi có byte nào, không audit', async () => {
+  it('không thuộc công ty / mất quyền ⇒ 401 TRƯỚC khi có byte nào, không audit', async () => {
     const t = await setup();
     t.members.delete(HANA);
-    await expect(t.exportUseCase.start(W1, HANA, '2026-11')).rejects.toMatchObject({
-      statusCode: 404,
+    await expect(t.exportUseCase.start(HANA, '2026-11')).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'SESSION_REVOKED',
     });
     expect(t.audit).toEqual([]);
   });

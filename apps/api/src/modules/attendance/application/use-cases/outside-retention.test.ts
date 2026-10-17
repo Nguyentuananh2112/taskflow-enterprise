@@ -1,14 +1,7 @@
 import { AttendanceMonthDto } from '@taskflow/contracts';
 import { describe, expect, it } from 'vitest';
 
-import {
-  createAttendanceHarness,
-  HANA,
-  key,
-  MIA,
-  OLIVIA,
-  W1,
-} from '../../testing/attendance-harness';
+import { createAttendanceHarness, HANA, key, MIA, OLIVIA } from '../../testing/attendance-harness';
 
 // T-047 (TL d9, R27): ngày công `< mốc lưu` của job retention ĐANG BẬT đã / sẽ bị xóa ⇒ bảng công hiện
 // RETENTION_EXPIRED (không giả "Vắng"), lệnh ghi ⇒ 422 OUTSIDE_RETENTION. Job TẮT (mốc null — local/test mặc định)
@@ -29,10 +22,10 @@ const outside = { statusCode: 422, details: { rule: 'OUTSIDE_RETENTION' } };
 describe('bảng công khi job retention BẬT (mốc 10/11)', () => {
   it('ngày < mốc ⇒ RETENTION_EXPIRED, không giờ / phép / phút; tổng tháng tính 0 cho ngày đó; ngày ≥ mốc như thường', async () => {
     const t = await setup('2026-11-17 20:00');
-    await t.eventUseCases.adjust(W1, HANA, adjustBody('2026-11-09')); // lượt cũ còn trong DB (job chưa chạy tới)
-    t.leaves.rows.push({ workspaceId: W1, userId: MIA, date: '2026-11-05', part: 'FULL' });
+    await t.eventUseCases.adjust(HANA, adjustBody('2026-11-09')); // lượt cũ còn trong DB (job chưa chạy tới)
+    t.leaves.rows.push({ userId: MIA, date: '2026-11-05', part: 'FULL' });
     t.retention.cutoff = CUTOFF;
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(AttendanceMonthDto.parse(month)).toEqual(month);
     const of = (date: string) => month.days.find((d) => d.date === date)!;
     for (const date of ['2026-11-01', '2026-11-05', '2026-11-09']) {
@@ -58,7 +51,7 @@ describe('bảng công khi job retention BẬT (mốc 10/11)', () => {
   it('bảng HR cùng quy tắc (cùng summarize + totals)', async () => {
     const t = await setup('2026-11-17 20:00');
     t.retention.cutoff = CUTOFF;
-    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    const r = await t.hrQueries.month({ month: '2026-11', limit: 50 });
     const mia = r.data.find((x) => x.user.id === MIA)!;
     expect(mia.days.filter((d) => d.status === 'RETENTION_EXPIRED')).toHaveLength(9);
     expect(mia.totals.absentDays).toBe(7);
@@ -69,18 +62,21 @@ describe('lệnh ghi ngoài thời hạn lưu (job BẬT) ⇒ 422 OUTSIDE_RETENT
   it('ADJUSTMENT cho ngày < mốc ⇒ 422, không ghi; đúng ngày mốc ⇒ được', async () => {
     const t = await setup('2026-11-17 10:00');
     t.retention.cutoff = CUTOFF;
-    await expect(t.eventUseCases.adjust(W1, HANA, adjustBody('2026-11-09'))).rejects.toMatchObject(
+    await expect(t.eventUseCases.adjust(HANA, adjustBody('2026-11-09'))).rejects.toMatchObject(
       outside,
     );
     expect(await t.backend.eventRows()).toHaveLength(0);
-    await expect(t.eventUseCases.adjust(W1, HANA, adjustBody(CUTOFF))).resolves.toBeDefined();
+    await expect(t.eventUseCases.adjust(HANA, adjustBody(CUTOFF))).resolves.toBeDefined();
   });
 
-  it('thứ tự lỗi: người không phải nhân viên + ngày < mốc ⇒ 404 user (TRƯỚC 422 OUTSIDE_RETENTION)', async () => {
+  it('thứ tự lỗi: người chưa từng là nhân viên + ngày < mốc ⇒ 404 user (TRƯỚC 422 OUTSIDE_RETENTION)', async () => {
     const t = await setup('2026-11-17 10:00');
     t.retention.cutoff = CUTOFF;
-    t.members.delete(MIA);
-    await expect(t.eventUseCases.adjust(W1, HANA, adjustBody('2026-11-09'))).rejects.toMatchObject({
+    t.tenures.rows.splice(
+      t.tenures.rows.findIndex((r) => r.userId === MIA),
+      1,
+    );
+    await expect(t.eventUseCases.adjust(HANA, adjustBody('2026-11-09'))).rejects.toMatchObject({
       statusCode: 404,
       details: { resource: 'user' },
     });
@@ -88,32 +84,32 @@ describe('lệnh ghi ngoài thời hạn lưu (job BẬT) ⇒ 422 OUTSIDE_RETENT
 
   it('void lượt có workDate < mốc ⇒ 422, lượt không bị hủy', async () => {
     const t = await setup('2026-11-17 10:00');
-    const r = await t.eventUseCases.adjust(W1, HANA, adjustBody('2026-11-09'));
+    const r = await t.eventUseCases.adjust(HANA, adjustBody('2026-11-09'));
     t.retention.cutoff = CUTOFF;
-    await expect(
-      t.eventUseCases.void(W1, HANA, { id: r.event.id, reason: 'x' }),
-    ).rejects.toMatchObject(outside);
+    await expect(t.eventUseCases.void(HANA, { id: r.event.id, reason: 'x' })).rejects.toMatchObject(
+      outside,
+    );
     expect((await t.backend.eventRows())[0]!.voidedAt).toBeNull();
   });
 
-  it('ngày lễ < mốc: PUT / DELETE ⇒ 422 kể cả OWNER có lý do; quyền vẫn kiểm TRƯỚC (người không thuộc ws ⇒ 404)', async () => {
+  it('ngày lễ < mốc: PUT / DELETE ⇒ 422 kể cả Admin có lý do; quyền vẫn kiểm TRƯỚC (không thuộc công ty ⇒ 401)', async () => {
     const t = await setup('2026-11-17 10:00');
-    await t.backend.addHoliday(W1, '2026-11-02', 'Lễ cũ');
+    await t.backend.addHoliday('2026-11-02', 'Lễ cũ');
     t.retention.cutoff = CUTOFF;
     await expect(
-      t.calendarUseCases.putHoliday(W1, OLIVIA, '2026-11-02', { name: 'Đổi', reason: 'Sửa' }),
+      t.calendarUseCases.putHoliday(OLIVIA, '2026-11-02', { name: 'Đổi', reason: 'Sửa' }),
     ).rejects.toMatchObject(outside);
     await expect(
-      t.calendarUseCases.deleteHoliday(W1, OLIVIA, '2026-11-02', 'Sửa'),
+      t.calendarUseCases.deleteHoliday(OLIVIA, '2026-11-02', 'Sửa'),
     ).rejects.toMatchObject(outside);
-    expect(await t.calendarUseCases.listHolidays(W1, 2026)).toEqual([
+    expect(await t.calendarUseCases.listHolidays(2026)).toEqual([
       { date: '2026-11-02', name: 'Lễ cũ' },
     ]);
     t.members.delete(HANA);
     await expect(
-      t.calendarUseCases.putHoliday(W1, HANA, '2026-11-02', { name: 'x' }),
+      t.calendarUseCases.putHoliday(HANA, '2026-11-02', { name: 'x' }),
     ).rejects.toMatchObject({
-      statusCode: 404,
+      statusCode: 401,
     });
   });
 
@@ -128,14 +124,14 @@ describe('job retention TẮT (mốc null — local/test mặc định) ⇒ khô
   it('ngày cũ vẫn hiện như thường; ADJUSTMENT / void / ngày lễ cho ngày cũ đều được', async () => {
     const t = await setup('2026-11-17 20:00');
     expect(t.retention.cutoff).toBeNull();
-    const r = await t.eventUseCases.adjust(W1, HANA, adjustBody('2024-01-02'));
+    const r = await t.eventUseCases.adjust(HANA, adjustBody('2024-01-02'));
     await expect(
-      t.eventUseCases.void(W1, HANA, { id: r.event.id, reason: 'x' }),
+      t.eventUseCases.void(HANA, { id: r.event.id, reason: 'x' }),
     ).resolves.toBeDefined();
     await expect(
-      t.calendarUseCases.putHoliday(W1, OLIVIA, '2024-01-01', { name: 'Tết', reason: 'Nhập bù' }),
+      t.calendarUseCases.putHoliday(OLIVIA, '2024-01-01', { name: 'Tết', reason: 'Nhập bù' }),
     ).resolves.toBeDefined();
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(month.days.some((d) => d.status === 'RETENTION_EXPIRED')).toBe(false);
     expect(month.days.find((d) => d.date === '2026-11-02')!.status).toBe('ABSENT');
   });

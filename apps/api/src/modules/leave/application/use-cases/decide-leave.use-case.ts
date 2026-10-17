@@ -2,10 +2,12 @@ import { ResourceNotFoundError } from '../../../../core/errors';
 import { countLeaveHalfDays } from '../../domain/leave-days';
 import { LeaveConflictError } from '../../domain/leave-errors';
 import { nextLeaveStatus, type LeaveAction } from '../../domain/leave-status';
+import { assertNotAfterLastDay } from '../../domain/leave-tenure';
 import type { LeaveRequestDto } from '../leave-dto';
 import {
   PERMISSION_HR_MANAGE,
   auditView,
+  countingTenure,
   yearOf,
   type LeaveKit,
   type LeaveScope,
@@ -21,9 +23,10 @@ const NOTIFICATION: Record<HrLeaveAction, LeaveNotificationType> = {
 };
 
 /**
- * HR duyệt / từ chối / thu hồi (thiết kế §9, test-spec LV-08..14, 19..25). Thứ tự: thiếu quyền 403 TRƯỚC id đơn
- * 404 (§0.3) → khóa (ws, người gửi) → đọc lại quyền (B-H3) → không tự xử lý (B-H1) → version → chuyển trạng thái
- * → (approve) người gửi còn là thành viên + số dư trong khóa (D-H2, D-M4).
+ * HR duyệt / từ chối / thu hồi (attendance-leave §9, LV-08..14, 19..25; company-level ADR-136). Thứ tự: thiếu quyền
+ * 403 TRƯỚC id đơn 404 → khóa `taskflow:leave:<người gửi>` → đọc lại quyền FOR SHARE (B-H3) + không tự xử lý
+ * (tuyệt đối) → version → chuyển trạng thái → (approve) người gửi còn là nhân viên, `AFTER_LAST_DAY`, số dư theo
+ * nhiệm kỳ trong khóa (D-H2, D-M4, D H1/H2).
  */
 export class DecideLeaveUseCase {
   constructor(private readonly kit: LeaveKit) {}
@@ -37,49 +40,50 @@ export class DecideLeaveUseCase {
       note: string | null;
     },
   ): Promise<LeaveRequestDto> {
-    const { workspaceId, actorId } = scope;
+    const { actorId } = scope;
     const { requestId, expectedVersion, action, note } = input;
     const d = this.kit.d;
     if (action === 'revoke') this.kit.requireNote(note, 'Thu hồi đơn đã duyệt phải có lý do.');
-    await this.kit.requireActor(workspaceId, actorId, PERMISSION_HR_MANAGE);
+    await this.kit.requireActor(actorId, PERMISSION_HR_MANAGE);
     // Đọc NGOÀI transaction chỉ để biết khóa của AI: giả định `userId` của đơn BẤT BIẾN (không lệnh nào đổi chủ đơn) —
     // trạng thái / version đọc lại trong khóa (`reload`). Nếu sau này cho đổi chủ đơn thì phải khóa lại (B review LOW-2).
-    const found = await d.requests.find(workspaceId, requestId);
+    const found = await d.requests.find(requestId);
     if (!found) throw new ResourceNotFoundError('leave_request');
 
     return d.uow.run(async () => {
-      await d.requests.lockUser(workspaceId, found.userId);
-      // B-H3 + B-H1 sau khóa: đọc lại quyền (FOR SHARE) + luật tự xử lý — chốt chung T-037.
-      await d.membership.authorizeHrWrite({
-        workspaceId,
+      await d.requests.lockUser(found.userId);
+      // B-H3 + B-H1 sau khóa: đọc lại quyền (FOR SHARE, bậc 5) + luật tự xử lý — `ICompanyAccess.authorizeWrite`.
+      await d.company.authorizeHrWrite({
         actorId,
         targetUserId: found.userId,
         reason: note,
       });
-      const record = await this.kit.reload(workspaceId, requestId, expectedVersion);
+      const record = await this.kit.reload(requestId, expectedVersion);
 
-      const today = await this.kit.today(workspaceId);
+      const today = await this.kit.today();
       const to = nextLeaveStatus(record.status, action, { startDate: record.startDate, today });
       const year = yearOf(record.startDate);
-      const calendar = await this.kit.yearCalendar(workspaceId, year);
+      const calendar = await this.kit.yearCalendar(year);
       const halfDays = countLeaveHalfDays(record, calendar);
 
       if (action === 'approve') {
-        if (!(await d.membership.isEligibleRequester(workspaceId, record.userId))) {
+        if (!(await d.company.isEmployee(record.userId))) {
           throw new LeaveConflictError(
             'requester_not_member',
             {},
-            'Người gửi không còn là thành viên — chỉ có thể từ chối đơn.',
+            'Người gửi không còn là nhân viên — chỉ có thể từ chối đơn.',
           );
         }
+        const employment = await d.company.employmentOf(record.userId);
+        assertNotAfterLastDay(record, employment.lastDay);
         await this.kit.assertBalance({
-          workspaceId,
           userId: record.userId,
           year,
           type: record.type,
           requested: halfDays,
-          holding: await d.requests.listHolding(workspaceId, record.userId, year),
+          holding: await d.requests.listHolding(record.userId, year),
           calendar,
+          tenure: countingTenure(employment),
           excludeId: record.id,
         });
       }
@@ -96,7 +100,6 @@ export class DecideLeaveUseCase {
       };
       await this.kit.save(next, record, halfDays);
       await d.audit.record({
-        workspaceId,
         actorId,
         action: action === 'revoke' ? 'LEAVE_REVOKE' : 'LEAVE_DECIDE',
         targetUserId: record.userId,
@@ -106,7 +109,6 @@ export class DecideLeaveUseCase {
         note,
       });
       await d.notifier.notify({
-        workspaceId,
         type: NOTIFICATION[action],
         requestId: record.id,
         actorId,

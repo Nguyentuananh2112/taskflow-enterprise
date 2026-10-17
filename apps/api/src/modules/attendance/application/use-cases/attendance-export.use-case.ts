@@ -3,13 +3,13 @@ import type { AttendanceDayDto, DayStatus, YearMonth } from '@taskflow/contracts
 import { daysBetween, toLocal, weekdayOf } from '../../domain/local-time';
 import { summarizeUsers, type AttendanceDeps } from '../attendance-days';
 import { CSV_BOM, csvCell, csvRow } from '../csv';
-import type { IHrAccess, IHrAuditRecorder, IUserRefReader } from '../ports/collaborators.port';
+import type { ICompanyAccess, IHrAuditRecorder, IUserRefReader } from '../ports/collaborators.port';
 import { HrAttendanceQueries, type RosterEntry } from './hr-attendance.queries';
 import { lastDayOf } from './my-attendance.queries';
 
 export interface AttendanceExportDeps extends AttendanceDeps {
   users: IUserRefReader;
-  hrAccess: IHrAccess;
+  company: ICompanyAccess;
   audit: IHrAuditRecorder;
 }
 
@@ -66,7 +66,6 @@ export class AttendanceExportUseCase {
   }
 
   async start(
-    workspaceId: string,
     actorId: string,
     month: YearMonth,
   ): Promise<{ rows: number; lines: AsyncGenerator<string> }> {
@@ -76,30 +75,23 @@ export class AttendanceExportUseCase {
     let roster: RosterEntry[] = [];
     let rows = 0;
     await d.uow.run(async () => {
-      await d.hrAccess.authorizeWrite({ workspaceId, actorId });
-      roster = await this.#hr.roster(workspaceId, from, to);
+      await d.company.authorizeWrite({ actorId });
+      roster = await this.#hr.roster(from, to);
       rows = roster.length * (daysBetween(from, to) + 1);
       await d.audit.record({
-        workspaceId,
         actorId,
         action: 'EXPORT',
         after: { kind: 'attendance_month', month, rows },
       });
     });
-    return { rows, lines: this.#lines(workspaceId, roster, from, to) };
+    return { rows, lines: this.#lines(roster, from, to) };
   }
 
-  async *#lines(
-    workspaceId: string,
-    roster: RosterEntry[],
-    from: string,
-    to: string,
-  ): AsyncGenerator<string> {
+  async *#lines(roster: RosterEntry[], from: string, to: string): AsyncGenerator<string> {
     yield CSV_BOM + csvRow(HEADER.map((h) => csvCell(h)));
     for (let i = 0; i < roster.length; i += BATCH) {
       const batch = roster.slice(i, i + BATCH);
       const days = await summarizeUsers(this.d, {
-        workspaceId,
         userIds: batch.map((r) => r.user.id),
         from,
         to,

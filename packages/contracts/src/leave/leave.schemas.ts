@@ -45,7 +45,7 @@ const spanFields = {
   dayPart: LeaveDayPart.default('FULL'),
 };
 
-export const LeaveRequestParams = z.object({ wsId: Uuid, requestId: Uuid });
+export const LeaveRequestParams = z.object({ requestId: Uuid });
 export type LeaveRequestParams = z.infer<typeof LeaveRequestParams>;
 
 /** `POST leave-requests`. `reason` TÙY CHỌN (TL — tối thiểu hóa dữ liệu sức khỏe): trim, ≤ 1000, rỗng ⇒ `null`. */
@@ -66,7 +66,7 @@ export const LeavePreviewDto = z.object({
 export type LeavePreviewDto = z.infer<typeof LeavePreviewDto>;
 
 /**
- * `GET leave-requests`: `mine=1` ⇒ đơn của tôi (`leave:self`); không có ⇒ cả workspace (`hr:manage`). Strict ⇒
+ * `GET leave-requests`: `mine=1` ⇒ đơn của tôi (`leave:self`); không có ⇒ cả công ty (`hr:manage`). Strict ⇒
  * `userId` lạ ⇒ 400 (SEC-HR-03). `status` bỏ trống = mọi trạng thái. Mới nhất trước.
  */
 export const ListLeaveRequestsQuery = z.strictObject({
@@ -139,7 +139,7 @@ export const ListLeaveBalancesQuery = z.strictObject({
 });
 export type ListLeaveBalancesQuery = z.infer<typeof ListLeaveBalancesQuery>;
 
-export const LeaveBalanceParams = z.object({ wsId: Uuid, userId: Uuid, year: Year });
+export const LeaveBalanceParams = z.object({ userId: Uuid, year: Year });
 export type LeaveBalanceParams = z.infer<typeof LeaveBalanceParams>;
 
 /**

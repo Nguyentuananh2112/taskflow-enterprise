@@ -67,7 +67,7 @@ describe('leave — body/query (T-039)', () => {
     expect(LeaveBalanceQuery.parse({ year: '2026' })).toEqual({ year: 2026 });
     expect(LeaveBalanceQuery.safeParse({ year: '1999' }).success).toBe(false);
     expect(ListLeaveBalancesQuery.parse({ year: '2026' })).toEqual({ year: 2026, limit: 50 });
-    expect(LeaveBalanceParams.parse({ wsId: U1, userId: U1, year: '2027' }).year).toBe(2027);
+    expect(LeaveBalanceParams.parse({ userId: U1, year: '2027' }).year).toBe(2027);
     expect(AdjustLeaveBalanceBody.parse({ adjustmentDays: -3.5 })).toEqual({
       adjustmentDays: -3.5,
     });

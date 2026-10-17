@@ -35,7 +35,6 @@ export interface AttendanceControllerDeps {
   responder: HttpResponder;
 }
 
-const wsOf = (req: Request) => (req.params as { wsId: string }).wsId;
 const meOf = (req: Request) => requireUser(req).id;
 
 /** Route chấm công (thiết kế §5). Kiểm quyền / validate ở router; controller chỉ gọi use case. */
@@ -45,26 +44,17 @@ export class AttendanceController {
   // ---------- của chính nhân viên (`attendance:self`) ----------
 
   meToday = async (req: Request, res: Response) => {
-    this.d.responder.ok(
-      res,
-      await this.d.mine.today({ workspaceId: wsOf(req), userId: meOf(req) }),
-    );
+    this.d.responder.ok(res, await this.d.mine.today({ userId: meOf(req) }));
   };
 
   meMonth = async (req: Request, res: Response) => {
     const { month } = req.query as unknown as AttendanceMonthQuery;
-    this.d.responder.ok(
-      res,
-      await this.d.mine.month({ workspaceId: wsOf(req), userId: meOf(req), month }),
-    );
+    this.d.responder.ok(res, await this.d.mine.month({ userId: meOf(req), month }));
   };
 
   meEvents = async (req: Request, res: Response) => {
     const { date } = req.query as unknown as MyAttendanceEventsQuery;
-    this.d.responder.ok(
-      res,
-      await this.d.events.listMine({ workspaceId: wsOf(req), userId: meOf(req), date }),
-    );
+    this.d.responder.ok(res, await this.d.events.listMine({ userId: meOf(req), date }));
   };
 
   checkIn = (req: Request, res: Response) => this.#punch(req, res, 'IN');
@@ -73,7 +63,6 @@ export class AttendanceController {
   /** 201 khi ghi lượt mới; lặp lại cùng Idempotency-Key ⇒ 200 + thẻ hiện tại (AT-03). */
   async #punch(req: Request, res: Response, kind: 'IN' | 'OUT') {
     const { card, replayed } = await this.d.checkInOut.execute({
-      workspaceId: wsOf(req),
       userId: meOf(req),
       kind,
       idempotencyKey: String(req.headers[IDEMPOTENCY_KEY_HEADER]).toLowerCase(),
@@ -87,19 +76,19 @@ export class AttendanceController {
   // ---------- HR (`hr:manage`) ----------
 
   companyToday = async (req: Request, res: Response) => {
-    this.d.responder.ok(res, await this.d.hr.today(wsOf(req)));
+    this.d.responder.ok(res, await this.d.hr.today());
   };
 
   companyMonth = async (req: Request, res: Response) => {
     const query = req.query as unknown as AttendanceCompanyMonthQuery;
-    const { data, page } = await this.d.hr.month(wsOf(req), query);
+    const { data, page } = await this.d.hr.month(query);
     this.d.responder.ok(res, data, page);
   };
 
   /** CSV stream: quyền + audit EXPORT xong TRƯỚC khi gửi header (lỗi lúc đó vẫn trả envelope JSON). */
   exportCsv = async (req: Request, res: Response) => {
     const { month } = req.query as unknown as AttendanceMonthQuery;
-    const { lines } = await this.d.exporter.start(wsOf(req), meOf(req), month);
+    const { lines } = await this.d.exporter.start(meOf(req), month);
     res.status(200).set({
       'Content-Type': 'text/csv; charset=utf-8',
       // `month` đã qua YearMonth (YYYY-MM) ⇒ tên file không chèn được gì (SEC-HR-12).
@@ -110,52 +99,46 @@ export class AttendanceController {
 
   listEvents = async (req: Request, res: Response) => {
     const { userId, date } = req.query as unknown as AttendanceEventsQuery;
-    this.d.responder.ok(
-      res,
-      await this.d.events.listForHr({ workspaceId: wsOf(req), userId, date }),
-    );
+    this.d.responder.ok(res, await this.d.events.listForHr({ userId, date }));
   };
 
   adjust = async (req: Request, res: Response) => {
     const body = req.body as AdjustAttendanceBody;
-    this.d.responder.created(res, await this.d.events.adjust(wsOf(req), meOf(req), body));
+    this.d.responder.created(res, await this.d.events.adjust(meOf(req), body));
   };
 
   voidEvent = async (req: Request, res: Response) => {
     const { eventId } = req.params as { eventId: string };
     const { reason } = req.body as VoidAttendanceBody;
-    this.d.responder.ok(
-      res,
-      await this.d.events.void(wsOf(req), meOf(req), { id: eventId, reason }),
-    );
+    this.d.responder.ok(res, await this.d.events.void(meOf(req), { id: eventId, reason }));
   };
 
   // ---------- lịch + ngày lễ (đọc: mọi thành viên; ghi: `hr:manage`) ----------
 
   listSchedules = async (req: Request, res: Response) => {
-    this.d.responder.ok(res, await this.d.calendar.listSchedules(wsOf(req)));
+    this.d.responder.ok(res, await this.d.calendar.listSchedules());
   };
 
   createSchedule = async (req: Request, res: Response) => {
     const body = req.body as CreateWorkScheduleBody;
-    this.d.responder.created(res, await this.d.calendar.createSchedule(wsOf(req), meOf(req), body));
+    this.d.responder.created(res, await this.d.calendar.createSchedule(meOf(req), body));
   };
 
   listHolidays = async (req: Request, res: Response) => {
     const { year } = req.query as unknown as HolidayListQuery;
-    this.d.responder.ok(res, await this.d.calendar.listHolidays(wsOf(req), year));
+    this.d.responder.ok(res, await this.d.calendar.listHolidays(year));
   };
 
   putHoliday = async (req: Request, res: Response) => {
     const { date } = req.params as { date: string };
     const body = req.body as PutHolidayBody;
-    this.d.responder.ok(res, await this.d.calendar.putHoliday(wsOf(req), meOf(req), date, body));
+    this.d.responder.ok(res, await this.d.calendar.putHoliday(meOf(req), date, body));
   };
 
   deleteHoliday = async (req: Request, res: Response) => {
     const { date } = req.params as { date: string };
     const { reason } = req.body as DeleteHolidayBody;
-    await this.d.calendar.deleteHoliday(wsOf(req), meOf(req), date, reason);
+    await this.d.calendar.deleteHoliday(meOf(req), date, reason);
     res.status(204).end();
   };
 }

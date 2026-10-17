@@ -1,29 +1,32 @@
 import { IdempotencyKeyHeaders } from '@taskflow/contracts';
 import type { RequestHandler } from 'express';
 
-import { ForbiddenError, ResourceNotFoundError } from '../../../core/errors';
+import { ForbiddenError, SessionRevokedError } from '../../../core/errors';
 import { requireUser } from '../../../core/http/request-user';
 import { validationErrorFromZod } from '../../../core/http/zod';
 
-/** Quyền HIỆN TẠI (role ∪ grants, ADR-119) của người gọi; không còn là thành viên ⇒ `null`. */
-export interface AttendanceMembership {
-  permissionsOf(workspaceId: string, userId: string): Promise<ReadonlySet<string> | null>;
+/**
+ * Quyền công ty HIỆN TẠI của người gọi (role ∪ grants — company-level ADR-135); không còn thuộc công ty hoặc đã
+ * quá `access_until` ⇒ `null`. Adapter ở composition root (module company — một truy vấn, không cache).
+ */
+export interface AttendanceCompanyMembership {
+  permissionsOf(userId: string): Promise<ReadonlySet<string> | null>;
 }
 
 /**
- * Thứ tự lỗi (thiết kế §5, B-M4): 401 → 400 params → 404 không phải thành viên (ADR-020) → 403 thiếu quyền →
- * 400 body / query / header. Chạy TRƯỚC validate body ⇒ thành viên thường gửi body sai tới route `hr:manage`
- * nhận 403, không 400 (SEC-HR-02). Lệnh ghi HR còn chốt lại trong transaction (`authorizeWrite`).
+ * Thứ tự lỗi (company-level ADR-135): 401 → không thuộc công ty / hết `access_until` ⇒ 401 `SESSION_REVOKED` →
+ * thiếu MỌI quyền trong `anyOf` ⇒ 403 → 400 params / body / query / header. Chạy TRƯỚC validate ⇒ nhân viên gửi body
+ * sai tới route `hr:manage` nhận 403, không 400 (SEC-HR-02). Lệnh ghi HR còn chốt lại trong transaction
+ * (`authorizeWrite`); lệnh chấm của nhân viên chốt lại sau khóa (`assertActiveEmployee`).
  */
-export function permitAttendance(
-  membership: AttendanceMembership,
-  permission: string,
+export function permitCompany(
+  membership: AttendanceCompanyMembership,
+  anyOf: readonly string[],
 ): RequestHandler {
   return async (req, _res, next) => {
-    const { wsId } = req.params as { wsId: string };
-    const permissions = await membership.permissionsOf(wsId, requireUser(req).id);
-    if (!permissions) throw new ResourceNotFoundError('workspace');
-    if (!permissions.has(permission)) throw new ForbiddenError(permission);
+    const permissions = await membership.permissionsOf(requireUser(req).id);
+    if (!permissions) throw new SessionRevokedError();
+    if (!anyOf.some((p) => permissions.has(p))) throw new ForbiddenError(anyOf.join(' | '));
     next();
   };
 }

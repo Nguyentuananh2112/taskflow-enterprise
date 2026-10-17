@@ -1,72 +1,39 @@
 import type { ILogger } from '../core/logging/logger';
-import { PrismaUnitOfWork, type TransactionCapable } from '../core/persistence/prisma-unit-of-work';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
-import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
-import {
-  ValkeySessionRevocationStore,
-  type ValkeyCommands,
-} from '../modules/auth/infrastructure/cache/valkey-session-revocation.store';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
-import { PrismaActivationTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-activation-token.repository';
-import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
-import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
-import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
+import {
+  createInMemoryAttendanceRepositories,
+  type AttendanceRepositories,
+} from '../modules/attendance/attendance.module';
 import type { CompanyRepositories } from '../modules/company/company.module';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
-import { PrismaHrAuditLog } from '../modules/company/infrastructure/prisma/prisma-hr-audit-log';
-import {
-  PrismaCompany,
-  PrismaCompanyMembers,
-  PrismaCompanyTenureReader,
-} from '../modules/company/infrastructure/prisma/prisma-company';
-import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task-audit-log.repository';
-import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
-import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
+import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import {
   createInMemoryNotificationStore,
   type NotificationRepositories,
 } from '../modules/notifications/notifications.module';
-import { PrismaNotificationStore } from '../modules/notifications/infrastructure/prisma/prisma-notification.store';
 import { createInMemoryTaskRepositories, type TaskRepositories } from '../modules/task/task.module';
 import {
   createInMemoryWorkspaceRepositories,
   type WorkspaceRepositories,
 } from '../modules/workspace/workspace.module';
-import { PrismaWorkspaceQueries } from '../modules/workspace/infrastructure/persistence/prisma/prisma-queries';
-import {
-  PrismaMembershipRepository,
-  PrismaProjectRepository,
-  PrismaWorkspaceRepository,
-} from '../modules/workspace/infrastructure/persistence/prisma/prisma-repositories';
-import {
-  PrismaAssigneeDirectory,
-  PrismaTaskProjectStore,
-} from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
-import { noLeaveSummaries, notificationContextFrom } from './notification-adapters';
+import { memoryLeaveRepositories } from './leave-adapters';
+import { notificationContextFrom } from './notification-adapters';
 import {
   TaskMirroredMemberships,
   TaskMirroredProjects,
   TaskMirroredWorkspaces,
 } from './task-mirrors';
 import { MirroringUserRepository } from './users';
-import { prismaMaintenance, type RetentionStores } from './retention-stores';
-import type { StorageKind } from './persistence-guard';
+import { type RetentionStores } from './retention-stores';
+import { allModules, type StorageKind } from './persistence-guard';
 
 export { assertPersistenceAllowed, type StorageKind } from './persistence-guard';
-
-/** Mọi module cùng một loại lưu trữ (T-020: không chạy lai). */
-const allModules = (kind: StorageKind) =>
-  ({
-    auth: kind,
-    workspace: kind,
-    task: kind,
-    notifications: kind,
-    company: kind,
-  }) as const;
 
 export interface Persistence {
   kind: StorageKind;
@@ -81,8 +48,12 @@ export interface Persistence {
    * lấy từ module company (Mốc 3.5).
    */
   notifications: Omit<NotificationRepositories, 'audience'>;
-  /** Mốc 3.5: công ty (thành viên, nhiệm kỳ, HrAuditLog). Attendance / leave: `tsconfig.exclusions.json`. */
+  /** Mốc 3.5: công ty (thành viên, nhiệm kỳ, HrAuditLog). */
   company: CompanyRepositories;
+  /** Chấm công cấp công ty (T-063): lượt chấm + lịch / ngày lễ. */
+  attendance: AttendanceRepositories;
+  /** Module leave (T-039/T-064): đơn nghỉ + số dư + phía đọc + danh bạ nhân viên. */
+  leave: LeaveRepositories;
   /** Chỉ bộ nhớ: bảng công ty để seed / harness (Prisma: dữ liệu ở DB). */
   companyStore?: InMemoryCompanyStore;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
@@ -118,6 +89,9 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   };
 
   const notificationStore = createInMemoryNotificationStore();
+  const attendance = createInMemoryAttendanceRepositories();
+  const leaveStore = new InMemoryLeaveRepository();
+  const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -130,6 +104,9 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       notificationStore,
       companyStore,
       hrAudit,
+      attendance.events,
+      attendance.calendar,
+      leaveStore,
     ],
     logger,
   );
@@ -146,73 +123,12 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     task,
     notifications: {
       store: notificationStore,
-      context: notificationContextFrom({ users: task.users, leaves: noLeaveSummaries }),
+      context: notificationContextFrom({ users: task.users, leaves: leave.readModel }),
     },
     company: { company: companyStore, members: companyStore, tenures: companyStore, hrAudit },
     companyStore,
-    uow,
-  };
-}
-
-/** Thời gian tối đa của một transaction (ms) — giữ ngắn, không gọi mạng ngoài trong transaction. */
-const TRANSACTION_TIMEOUT_MS = 10_000;
-
-/**
- * Lưu trữ thật (T-020): repository Prisma của auth + workspace dùng chung `PrismaUnitOfWork`
- * (`uow.db()`), session store trên Valkey. Repository Prisma JOIN bảng users ⇒ không cần
- * `MirroringUserRepository`.
- */
-export function createPrismaPersistence(d: {
-  prisma: PrismaClient;
-  valkey: ValkeyCommands;
-  logger: ILogger;
-}): Persistence {
-  // `PrismaClient.$transaction` là hàm overload (mảng | callback) nên không gán thẳng được vào
-  // `TransactionCapable` (chỉ khai overload callback) — runtime đúng. Đã báo A chỉnh type ở core.
-  const client = d.prisma as unknown as TransactionCapable<Prisma.TransactionClient> &
-    Prisma.TransactionClient;
-  const uow = new PrismaUnitOfWork<Prisma.TransactionClient>(client, d.logger, {
-    timeout: TRANSACTION_TIMEOUT_MS,
-  });
-  const db = () => uow.db();
-  const workspaceQueries = new PrismaWorkspaceQueries(db);
-  const userRefs = new PrismaUserRefReader(db);
-  return {
-    kind: 'prisma',
-    modules: allModules('prisma'),
-    auth: {
-      users: new PrismaUserRepository(db),
-      refreshTokens: new PrismaRefreshTokenRepository(db),
-      sessions: new ValkeySessionRevocationStore(d.valkey),
-      activationTokens: new PrismaActivationTokenRepository(db),
-    },
-    workspace: {
-      workspaces: new PrismaWorkspaceRepository(db),
-      memberships: new PrismaMembershipRepository(db),
-      projects: new PrismaProjectRepository(db),
-      queries: workspaceQueries,
-    },
-    // Cùng `db` (một transaction) với Workspace/Auth: cấp số, khóa membership FOR SHARE, audit.
-    task: {
-      tasks: new PrismaTaskRepository(db),
-      readModel: new PrismaTaskReadModel(db),
-      projects: new PrismaTaskProjectStore(db),
-      assignees: new PrismaAssigneeDirectory(db),
-      users: userRefs,
-      audit: new PrismaTaskAuditLogRepository(db),
-    },
-    // Cùng `db` ⇒ thông báo ghi trong transaction của leave / attendance / workspace (ADR-123).
-    notifications: {
-      store: new PrismaNotificationStore(db),
-      context: notificationContextFrom({ users: userRefs, leaves: noLeaveSummaries }),
-    },
-    company: {
-      company: new PrismaCompany(db),
-      members: new PrismaCompanyMembers(db),
-      tenures: new PrismaCompanyTenureReader(db),
-      hrAudit: new PrismaHrAuditLog(db),
-    },
-    ...prismaMaintenance(db),
+    attendance,
+    leave,
     uow,
   };
 }

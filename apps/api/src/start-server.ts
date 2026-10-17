@@ -5,11 +5,8 @@ import type { Logger } from 'pino';
 
 import { appConfigFromEnv } from './app';
 import { createContainer } from './composition/container';
-import {
-  assertPersistenceAllowed,
-  createMemoryPersistence,
-  createPrismaPersistence,
-} from './composition/persistence';
+import { assertPersistenceAllowed, createMemoryPersistence } from './composition/persistence';
+import { createPrismaPersistence } from './composition/prisma-persistence';
 import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
 import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
 import type { Env } from './config/env';
