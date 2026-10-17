@@ -32,6 +32,7 @@ import {
   PrismaAssigneeDirectory,
   PrismaTaskProjectStore,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
+import { PrismaEmployeeProfiles } from '../modules/hr-profile/infrastructure/prisma/prisma-employee-profiles';
 import { prismaLeaveRepositories } from './leave-adapters';
 import { notificationContextFrom } from './notification-adapters';
 import { prismaMaintenance } from './retention-stores';
@@ -62,6 +63,7 @@ export function createPrismaPersistence(d: {
   const workspaceQueries = new PrismaWorkspaceQueries(db);
   const userRefs = new PrismaUserRefReader(db);
   const leave = prismaLeaveRepositories(db);
+  const profiles = new PrismaEmployeeProfiles(db);
   return {
     kind: 'prisma',
     modules: allModules('prisma'),
@@ -101,6 +103,7 @@ export function createPrismaPersistence(d: {
     },
     attendance: createPrismaAttendanceRepositories(db),
     leave,
+    hrProfile: { profiles, locks: profiles },
     ...prismaMaintenance(db),
     uow,
   };

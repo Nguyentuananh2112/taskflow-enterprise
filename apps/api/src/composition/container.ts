@@ -18,11 +18,12 @@ import {
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
-import { companyAdminDeps, employmentCollaborators } from './company-adapters';
+import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { wireLeave } from './leave-wiring';
+import { wireHrProfile } from './hr-profile-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
@@ -89,7 +90,8 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
-    collaborators: () => employmentCollaborators({ workspace, leave, notifications, realtime }),
+    collaborators: () =>
+      employmentCollaborators({ workspace, leave, notifications, realtime, hrProfile }),
     ...companyAdminDeps(
       () => notifications,
       realtime,
@@ -114,11 +116,7 @@ export function createContainer(d: ContainerDeps): Container {
     notifier: realtime,
     // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
     // người chưa có lịch nghỉ (ADR-134).
-    company: {
-      isActive: (userId) => company.sessionGate.isActive(userId),
-      canJoinWorkspace: async (userId) =>
-        (await company.members.find(userId))?.offboardLastDay === null,
-    },
+    company: workspaceGate(company),
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
@@ -176,11 +174,18 @@ export function createContainer(d: ContainerDeps): Container {
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
+  // Hồ sơ nhân viên (Mốc 5, T-054): quyền / người / audit ← company; phép âm ← leave (T-057).
+  const hrProfile = wireHrProfile(
+    { persistence, clock: business, logger },
+    { company, notifications, timeZone: () => attendance.timeZoneNow() },
+    { responder, limit },
+  );
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
     ...company.routers(auth.authenticate),
+    ...hrProfile.routers(auth.authenticate),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
