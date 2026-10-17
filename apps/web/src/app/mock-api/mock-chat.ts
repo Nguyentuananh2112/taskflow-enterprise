@@ -202,6 +202,9 @@ export class MockChat {
       lastMessage: this.preview(last),
       lastMessageAt: last?.createdAt ?? null,
       unread: this.unread(conv.id, viewerId),
+      lastReadMessageId: this.read(conv.id, viewerId).lastReadId,
+      // DIRECT: con trỏ của người kia ("Đã xem"); nhóm / phòng ws: null (v1).
+      peerLastReadMessageId: peerId ? this.read(conv.id, peerId).lastReadId : null,
       muted: this.read(conv.id, viewerId).muted,
       // DIRECT: người kia đã nghỉ / chờ kích hoạt ⇒ chỉ đọc (ADR-143).
       canSend: conv.kind === 'DIRECT' ? Boolean(peerId && this.activeInCompany(peerId)) : true,

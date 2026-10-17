@@ -6,6 +6,7 @@ import {
   ChatReadEvent,
   ChatTypingEvent,
 } from '@taskflow/contracts/realtime';
+import type { ConversationDetailDto } from '@taskflow/contracts/chat';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
@@ -18,10 +19,10 @@ import {
   upsertMessage,
   type MessagesData,
 } from '@/entities/chat';
+import { useSession } from '@/entities/session';
 import { useRealtimeClient } from '@/shared/socket';
 import { toast } from '@/shared/ui/toast';
 
-import { seenStore } from './seen-store';
 import { typingStore } from './typing-store';
 
 // Realtime trò chuyện (avatar-chat.md ADR-145, §7): event tới `user:{id}` ⇒ vá cache `['chat', …]`. Nối lại ⇒ bù bằng
@@ -53,8 +54,11 @@ export function useChatRealtime(): void {
   const router = useRouter();
   const pathname = usePathname();
   const path = useRef(pathname);
+  const myId = useSession().user?.id;
+  const me = useRef(myId);
   useEffect(() => {
     path.current = pathname;
+    me.current = myId;
   });
 
   useEffect(() => {
@@ -78,7 +82,16 @@ export function useChatRealtime(): void {
         const event = ChatReadEvent.safeParse(raw);
         if (!event.success) return;
         const { conversationId, userId, messageId } = event.data.data;
-        seenStore.set(conversationId, userId, messageId); // DIRECT: "Đã xem" của người kia
+        // Của mình (thiết bị khác) ⇒ vạch "Tin chưa đọc"; của người kia (DIRECT) ⇒ "Đã xem".
+        const mine = me.current === userId;
+        queryClient.setQueryData<ConversationDetailDto>(
+          chatKeys.detail(conversationId),
+          (old) =>
+            old &&
+            (mine
+              ? { ...old, lastReadMessageId: messageId }
+              : { ...old, peerLastReadMessageId: messageId }),
+        );
         refreshLists(queryClient); // thiết bị khác của mình đã đọc
       }),
       client.on('chat:conversation:updated', (raw) => {
