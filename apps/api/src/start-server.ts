@@ -134,7 +134,7 @@ export async function startServer(
         },
       ),
   });
-  const jobs = maintenanceJobs({ persistence, env, clock, logger });
+  const jobs = maintenanceJobs({ persistence, env, clock, businessClock, logger });
   // Tắt ở local/test (mặc định) ⇒ `jobs` rỗng ⇒ không có scheduler — xem `maintenanceJobs`.
   const maintenance =
     jobs.length > 0 ? new MaintenanceScheduler(jobs.map(measured), { logger }) : undefined;

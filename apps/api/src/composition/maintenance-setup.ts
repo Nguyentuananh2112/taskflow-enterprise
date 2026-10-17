@@ -18,10 +18,16 @@ import { retentionJob, retentionPolicyFrom } from './retention-job';
 export function maintenanceJobs(d: {
   persistence: Persistence;
   env: Env;
+  /** Giờ thật — dọn refresh token (hạn token do auth ghi theo giờ thật). */
   clock: IClock;
+  /**
+   * Giờ NGHIỆP VỤ (= `clock` ngoài E2E; `TEST_CLOCK_ANCHOR` chỉ APP_ENV=test) — purge workspace + retention:
+   * so mốc với `purgeAt` / `work_date` / `created_at`… mà các module nghiệp vụ ghi theo đồng hồ này (review B, T-038).
+   */
+  businessClock: IClock;
   logger: ILogger;
 }): ScheduledJob[] {
-  const { persistence: p, env, clock, logger } = d;
+  const { persistence: p, env, clock, businessClock, logger } = d;
   const groupOn = maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED);
   const jobs: ScheduledJob[] = [];
   // T-033: purge workspace hết ân hạn mỗi giờ, khóa advisory theo lô.
@@ -31,7 +37,7 @@ export function maintenanceJobs(d: {
         workspaces: p.workspace.workspaces,
         purger: p.workspacePurger,
         uow: p.uow,
-        clock,
+        clock: businessClock,
         logger,
         intervalMs: env.PURGE_INTERVAL_MS,
         jitterMs: env.PURGE_JITTER_MS,
@@ -49,7 +55,7 @@ export function maintenanceJobs(d: {
         stores: p.retention,
         policy: retentionPolicyFrom(env),
         uow: p.uow,
-        clock,
+        clock: businessClock,
         logger,
       }),
     );
