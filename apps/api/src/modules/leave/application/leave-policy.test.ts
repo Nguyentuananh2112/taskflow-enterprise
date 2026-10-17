@@ -11,14 +11,16 @@ import { GetLeavePolicyQuery, PutLeavePolicyUseCase } from './use-cases/leave-po
 // lịch giả T2–T7 làm. Hana = HR, Mia = nhân viên (nhiệm kỳ từ 2020-01-06, liên tục).
 
 type H = Awaited<ReturnType<typeof createLeaveHarness>>;
-const body = (over: Partial<typeof LEAVE_POLICY_DEFAULTS> & { expectedVersion?: number } = {}) => ({
+const body = (
+  over: Partial<typeof LEAVE_POLICY_DEFAULTS> & { expectedVersion?: number; reason?: string } = {},
+) => ({
   ...LEAVE_POLICY_DEFAULTS,
   expectedVersion: 0,
   ...over,
 });
-const put = (h: H, year: number, b: ReturnType<typeof body>, actor = U.Hana) =>
+const put = (h: H, year: number, b: ReturnType<typeof body>, actor: string = U.Hana) =>
   new PutLeavePolicyUseCase(h.kit, h.readModel, h.employees).execute(h.as(actor), year, b);
-const get = (h: H, year: number, actor = U.Hana) =>
+const get = (h: H, year: number, actor: string = U.Hana) =>
   new GetLeavePolicyQuery(h.kit).execute(h.as(actor), year);
 const id = (n: number) => `00000000-0000-7000-8000-0000000e${n.toString().padStart(4, '0')}`;
 
