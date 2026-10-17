@@ -11,6 +11,8 @@ export const REHIRE_NOTE = 'Nhận lại — đặt lại điều chỉnh';
  * Port leave cho vòng đời nhân viên của company (T-062 — `IOffboardLeavePort` do company sở hữu, adapter ở đây). Cả
  * hai lệnh chạy TRONG transaction của bên gọi (`uow.run` lồng nhau dùng chung transaction) và lấy
  * `taskflow:leave:<user>` (bậc 3 bảng khóa ADR-136 — bên gọi đã giữ `taskflow:company:admins` bậc 2 nếu cần).
+ * Bên gọi PHẢI lấy `taskflow:leave:<user>` TRƯỚC khi DELETE/UPDATE dòng `company_members` (bậc 5) — nếu không sẽ
+ * deadlock với submit đang giữ khóa này và chờ FOR SHARE dòng đó; khóa advisory xact tái nhập nên gọi lại vô hại.
  */
 export class EmploymentLeaveHooks {
   constructor(private readonly kit: LeaveKit) {}
