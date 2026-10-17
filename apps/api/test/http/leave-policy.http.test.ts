@@ -155,6 +155,9 @@ describe('/leave/export.xlsx', () => {
     expect(files['xl/workbook.xml']).toContain('name="Đơn đã duyệt"');
     expect(files['xl/worksheets/sheet1.xml']).toContain('Mia');
     expect(files['xl/worksheets/sheet2.xml']).toContain('Nghỉ ốm');
+    // Cột ngày = serial Excel + style ngày (03/11/2026 = 46329), không phải chuỗi.
+    expect(files['xl/worksheets/sheet2.xml']).toContain('<c r="C2" s="4"><v>46329</v></c>');
+    expect(files['xl/worksheets/sheet2.xml']).not.toContain('2026-11-03');
     expect(files['docProps/core.xml']).toContain('<dc:creator>TaskFlow</dc:creator>');
     expect(JSON.stringify(files)).not.toContain('BÍ-MẬT-123');
     expect((await api(hana, 'get', '/leave/export.xlsx?year=2026&from=2025-12-01')).status).toBe(

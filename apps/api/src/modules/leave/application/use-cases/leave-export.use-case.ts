@@ -1,6 +1,10 @@
 import type { ExportLimits } from '../../../../core/export/export-limits';
 import type { ExportSlots } from '../../../../core/export/export-slots';
-import type { CellValue, SpreadsheetSheet } from '../../../../core/export/xlsx/xlsx-writer';
+import {
+  xlsxDate,
+  type CellValue,
+  type SpreadsheetSheet,
+} from '../../../../core/export/xlsx/xlsx-writer';
 import { BusinessRuleViolationError } from '../../../../core/errors';
 import type { IReadSnapshot } from '../../../../core/persistence/read-snapshot';
 import { halfDaysToDecimal } from '../../domain/leave-balance';
@@ -76,13 +80,14 @@ export class LeaveExportUseCase {
                 targetUserId: null,
                 refId: null,
                 before: null,
+                // ADR-130 (hr-extended §4, XL-10): cùng dạng với ATTENDANCE_MONTH; `rows` = số dòng dữ liệu của cả hai sheet.
                 after: {
-                  kind: 'leave_year',
-                  year: q.year,
+                  report: 'LEAVE_YEAR',
+                  period: String(q.year),
                   from,
                   to,
-                  employees: people.length,
-                  approved: approved.length,
+                  rows: people.length + approved.length,
+                  format: 'xlsx',
                 },
               }),
             ),
@@ -165,7 +170,7 @@ export class LeaveExportUseCase {
         n(v.entitlement.bonus),
         n(v.adjustment),
         n(v.carried),
-        v.expiresOn,
+        v.expiresOn === null ? null : xlsxDate(v.expiresOn),
         n(v.used),
         n(v.pending),
         n(v.balance.remaining),
@@ -188,8 +193,8 @@ export class LeaveExportUseCase {
         yield [
           refs.get(r.userId)?.fullName ?? r.userId,
           TYPE_LABEL[r.type] ?? r.type,
-          r.startDate,
-          r.endDate,
+          xlsxDate(r.startDate),
+          xlsxDate(r.endDate),
           PART_LABEL[r.dayPart] ?? r.dayPart,
           halfDaysToDecimal(countLeaveHalfDays(r, calendar)),
         ];

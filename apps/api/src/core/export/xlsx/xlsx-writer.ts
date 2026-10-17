@@ -16,7 +16,8 @@ import {
 // strToU8) — không bao giờ giải nén dữ liệu người dùng (giới hạn bề mặt zip-bomb). File DUY NHẤT được import fflate
 // (luật depcruise `xlsx-only-fflate`). Ghi theo lô ra `sink` ⇒ không giữ cả bảng trong bộ nhớ.
 
-export type { CellValue } from './xlsx-cells';
+export type { CellValue, XlsxDate } from './xlsx-cells';
+export { xlsxDate } from './xlsx-cells';
 
 export interface SpreadsheetColumn {
   header: string;

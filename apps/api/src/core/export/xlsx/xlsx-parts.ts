@@ -2,7 +2,7 @@ import { escapeXml } from './xlsx-cells';
 
 // Các phần XML cố định của một gói .xlsx tối thiểu (SpreadsheetML, ECMA-376) — ADR-130. Không sharedStrings, không
 // theme, không công thức, không macro. Style: 0 thường · 1 quotePrefix · 2 tiêu đề đậm · 3 tiêu đề đậm + quotePrefix
-// (khớp `STYLE` của xlsx-cells).
+// · 4 ngày `dd/mm/yyyy` (numFmt tự định nghĩa 164) — khớp `STYLE` của xlsx-cells.
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 const NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
@@ -63,15 +63,17 @@ export function workbookRelsXml(sheetCount: number): string {
 
 export const STYLES_XML =
   `${XML_HEAD}<styleSheet xmlns="${NS_MAIN}">` +
+  '<numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></numFmts>' +
   '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
   '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
   '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-  '<cellXfs count="4">' +
+  '<cellXfs count="5">' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" quotePrefix="1"/>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" quotePrefix="1"/>' +
+  '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
   '</cellXfs></styleSheet>';
 
 /** Phần đầu worksheet: cố định hàng tiêu đề + độ rộng cột (ký tự). */

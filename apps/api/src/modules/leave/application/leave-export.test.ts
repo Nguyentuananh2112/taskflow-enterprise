@@ -64,9 +64,21 @@ describe('LeaveExportUseCase', () => {
     expect(order).toEqual(['snapshot:open', 'outside', 'deliver', 'snapshot:close']);
     expect(h.audit.entries.at(-1)).toMatchObject({
       action: 'EXPORT',
-      after: { kind: 'leave_year', year: 2026, approved: 1 },
+      after: {
+        report: 'LEAVE_YEAR',
+        period: '2026',
+        from: '2026-01-01',
+        to: '2026-12-31',
+        format: 'xlsx',
+      },
     });
     expect(rows[1]).toHaveLength(1); // sheet 2: 1 đơn đã duyệt
+    expect(h.audit.entries.at(-1)?.after).toMatchObject({ rows: rows[0]!.length + 1 });
+    // Cột ngày (Từ / Đến) là ô ngày, không phải chuỗi.
+    expect((rows[1]![0] as unknown[]).slice(2, 4)).toEqual([
+      { date: expect.any(String) as unknown },
+      { date: expect.any(String) as unknown },
+    ]);
     expect(JSON.stringify(rows)).not.toContain('việc riêng'); // không lý do nghỉ
     expect(slots.running).toBe(0);
   });
