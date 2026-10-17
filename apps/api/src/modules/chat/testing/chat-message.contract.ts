@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { requestHash } from '../domain/chat-message';
 import type { ChatBackend } from './chat-backend';
-import { G, U, aid, at, cid, group, mid, send, staff, upload } from './chat-fixtures';
+import { G, U, aid, at, cid, cmid, group, mid, send, staff, upload } from './chat-fixtures';
 
 // Bộ ca HỢP ĐỒNG IChatMessageStore / IChatReadStateStore / IChatAttachmentStore (T-069a; ADR-144/145/147).
 
@@ -28,6 +28,14 @@ export function describeChatMessageContract(name: string, make: () => Promise<Ch
       });
       // Cùng clientMsgId, người gửi KHÁC ⇒ tin mới.
       expect((await send(b, 3, U.Vic, 'x', { clientN: 1 })).created).toBe(true);
+      // findByClientMsgId (G, CC-CH-01): có ⇒ tin cũ kèm đính kèm; người gửi khác / mã lạ ⇒ null.
+      expect(await b.run(() => b.messages.findByClientMsgId(U.Mia, cmid(1)))).toMatchObject({
+        id: mid(1),
+        attachments: [{ id: aid(1) }],
+      });
+      expect((await b.run(() => b.messages.findByClientMsgId(U.Vic, cmid(1))))?.id).toBe(mid(3));
+      expect(await b.run(() => b.messages.findByClientMsgId(U.Lan, cmid(1)))).toBeNull();
+      expect(await b.run(() => b.messages.findByClientMsgId(U.Mia, cmid(9)))).toBeNull();
     });
 
     it('page keyset: mới nhất / before / after, tăng dần, hasMore; id lạ ⇒ rỗng', async () => {

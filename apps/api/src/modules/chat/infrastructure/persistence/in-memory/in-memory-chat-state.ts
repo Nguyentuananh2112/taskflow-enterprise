@@ -5,19 +5,20 @@ import type { AttachmentRecord } from '../../../application/ports/chat-message.p
 // ⇒ `lock` là no-op; rollback bằng `snapshot/restore` (structuredClone giữ Date).
 
 /**
- * Dữ liệu ngoài module chat mà luật "thuộc công ty hoạt động" / WORKSPACE cần — composition nối từ store company /
- * auth / workspace InMemory; test dùng `FakeChatDirectory`.
+ * Dữ liệu ngoài module chat mà luật "thuộc công ty hoạt động" / WORKSPACE cần — ASYNC (TL 18/10): composition nối
+ * qua API async sẵn có của store company / auth / workspace InMemory, không đọc Map nội bộ; test dùng
+ * `FakeChatDirectory`. Chỉ bản InMemory dùng — bản Prisma JOIN bảng thật.
  */
 export interface ChatDirectory {
   /** Dòng `company_members` (null ⇒ không thuộc công ty). */
-  member(userId: string): { createdAt: Date; offboardAccessUntil: Date | null } | null;
+  member(userId: string): Promise<{ createdAt: Date; offboardAccessUntil: Date | null } | null>;
   /** `activated` = có password_hash; `deleted` = users.deleted_at. */
-  user(userId: string): { fullName: string; activated: boolean; deleted: boolean } | null;
+  user(userId: string): Promise<{ fullName: string; activated: boolean; deleted: boolean } | null>;
   /** `active` = chưa xóa mềm, chưa lưu trữ. */
-  workspace(workspaceId: string): { name: string; active: boolean } | null;
-  workspaceMemberIds(workspaceId: string): readonly string[];
-  /** Mọi user (danh bạ `searchPeople`). */
-  userIds(): Iterable<string>;
+  workspace(workspaceId: string): Promise<{ name: string; active: boolean } | null>;
+  workspaceMemberIds(workspaceId: string): Promise<readonly string[]>;
+  /** Mọi id có dòng `company_members` (danh bạ `searchPeople`). */
+  userIds(): Promise<readonly string[]>;
 }
 
 export interface ConversationRow {
@@ -89,19 +90,24 @@ export class InMemoryChatState {
   }
 
   /** Định nghĩa chung (G 18/10): có dòng company_members, còn hạn truy cập, đã kích hoạt, chưa xóa. */
-  isActive(userId: string, now: Date): boolean {
-    const m = this.dir.member(userId);
-    const u = this.dir.user(userId);
+  async isActive(userId: string, now: Date): Promise<boolean> {
+    const [m, u] = await Promise.all([this.dir.member(userId), this.dir.user(userId)]);
     if (!m || !u || !u.activated || u.deleted) return false;
     return m.offboardAccessUntil === null || m.offboardAccessUntil > now;
   }
 
   /** Participant hiệu lực (ADR-143): GROUP theo left_at + joined_at ≥ company_members.created_at; DIRECT chỉ cần thuộc công ty. */
-  isEffective(kind: ConversationKind, p: ParticipantRow, now: Date): boolean {
-    if (!this.isActive(p.userId, now)) return false;
+  async isEffective(kind: ConversationKind, p: ParticipantRow, now: Date): Promise<boolean> {
+    if (!(await this.isActive(p.userId, now))) return false;
     if (kind === 'DIRECT') return true;
-    const m = this.dir.member(p.userId)!;
-    return p.leftAt === null && p.joinedAt >= m.createdAt;
+    const m = await this.dir.member(p.userId);
+    return m !== null && p.leftAt === null && p.joinedAt >= m.createdAt;
+  }
+
+  /** `ids` lọc theo `isActive` (giữ thứ tự). */
+  async activeOf(ids: readonly string[], now: Date): Promise<string[]> {
+    const ok = await Promise.all(ids.map((id) => this.isActive(id, now)));
+    return ids.filter((_, i) => ok[i]);
   }
 
   participantsOf(conversationId: string): Map<string, ParticipantRow> {
@@ -114,17 +120,17 @@ export class InMemoryChatState {
   }
 
   /** Người có quyền tại `now`: participant hiệu lực hoặc thành viên ws hoạt động của ws còn hoạt động. */
-  accessIds(conversationId: string, now: Date): string[] {
+  async accessIds(conversationId: string, now: Date): Promise<string[]> {
     const c = this.data.conversations.get(conversationId);
     if (!c) return [];
     if (c.kind === 'WORKSPACE') {
-      const ws = this.dir.workspace(c.workspaceId!);
+      const ws = await this.dir.workspace(c.workspaceId!);
       if (!ws?.active) return [];
-      return this.dir.workspaceMemberIds(c.workspaceId!).filter((id) => this.isActive(id, now));
+      return this.activeOf(await this.dir.workspaceMemberIds(c.workspaceId!), now);
     }
-    return [...this.participantsOf(conversationId).values()]
-      .filter((p) => this.isEffective(c.kind, p, now))
-      .map((p) => p.userId);
+    const parts = [...this.participantsOf(conversationId).values()];
+    const ok = await Promise.all(parts.map((p) => this.isEffective(c.kind, p, now)));
+    return parts.filter((_, i) => ok[i]).map((p) => p.userId);
   }
 
   readKey = (conversationId: string, userId: string) => `${conversationId}|${userId}`;
@@ -156,19 +162,20 @@ export class FakeChatDirectory implements ChatDirectory {
   readonly workspaces = new Map<string, { name: string; active: boolean; memberIds: string[] }>();
 
   member(userId: string) {
-    return this.members.get(userId) ?? null;
+    return Promise.resolve(this.members.get(userId) ?? null);
   }
   user(userId: string) {
-    return this.users.get(userId) ?? null;
+    return Promise.resolve(this.users.get(userId) ?? null);
   }
   workspace(workspaceId: string) {
-    return this.workspaces.get(workspaceId) ?? null;
+    const ws = this.workspaces.get(workspaceId);
+    return Promise.resolve(ws ? { name: ws.name, active: ws.active } : null);
   }
-  workspaceMemberIds(workspaceId: string): readonly string[] {
-    return this.workspaces.get(workspaceId)?.memberIds ?? [];
+  workspaceMemberIds(workspaceId: string): Promise<readonly string[]> {
+    return Promise.resolve(this.workspaces.get(workspaceId)?.memberIds ?? []);
   }
-  userIds(): Iterable<string> {
-    return this.users.keys();
+  userIds(): Promise<readonly string[]> {
+    return Promise.resolve([...this.members.keys()]);
   }
 
   /** Người thuộc công ty hoạt động, vào làm `since`. */

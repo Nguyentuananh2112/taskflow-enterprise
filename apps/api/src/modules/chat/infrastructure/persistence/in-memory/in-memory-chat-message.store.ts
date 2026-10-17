@@ -50,6 +50,13 @@ export class InMemoryChatMessageStore implements IChatMessageStore, IChatReadSta
     return Promise.resolve(m ? this.#record(m) : null);
   }
 
+  findByClientMsgId(senderId: string, clientMsgId: string): Promise<MessageRecord | null> {
+    const m = [...this.s.data.messages.values()].find(
+      (x) => x.senderId === senderId && x.clientMsgId === clientMsgId,
+    );
+    return Promise.resolve(m ? this.#record(m) : null);
+  }
+
   lock(): Promise<void> {
     return Promise.resolve();
   }
