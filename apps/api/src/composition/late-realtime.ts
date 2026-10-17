@@ -71,8 +71,11 @@ export class LateBoundRealtime implements Notifications {
     input: { userId: string; workspaceId: string; projectIds: string[] },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    await this.#target?.revokeWorkspaceAccess(input, meta);
-    await this.#workspaceLost(input.workspaceId, [input.userId], meta);
+    try {
+      await this.#target?.revokeWorkspaceAccess(input, meta);
+    } finally {
+      await this.#workspaceLost(input.workspaceId, [input.userId], meta);
+    }
   }
 
   notifyRoleChanged(
@@ -108,8 +111,11 @@ export class LateBoundRealtime implements Notifications {
     input: { workspaceId: string; projectIds: string[]; memberUserIds: string[] },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    await this.#target?.closeWorkspace(input, meta);
-    await this.#workspaceLost(input.workspaceId, input.memberUserIds, meta);
+    try {
+      await this.#target?.closeWorkspace(input, meta);
+    } finally {
+      await this.#workspaceLost(input.workspaceId, input.memberUserIds, meta);
+    }
   }
 
   broadcastAvatarChanged(
