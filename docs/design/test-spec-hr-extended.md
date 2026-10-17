@@ -117,7 +117,7 @@ Luật gửi là hàm thuần ở `attendance/domain` ⇒ U (Stryker `attendance
 | CR-01 | U + S | luật 1: hôm nay / ngày 1 tháng trước được; ngày cuối tháng **trước nữa** 422; trước `start_date` của nhiệm kỳ hiện tại (biên `start_date` / `start_date − 1`); ngoài retention | 201 / 422 `CORRECTION_DATE_OUT_OF_RANGE` / `OUTSIDE_RETENTION` |
 | CR-02 | U + S | luật 2: giờ xin > bây giờ (cả `nextDay`) | 422 `CORRECTION_IN_FUTURE` |
 | CR-03 | U + S | luật 3: đã có IN hợp lệ ⇒ xin IN; đã có OUT sau `firstIn` ⇒ xin OUT; IN đã **hủy** (void) ⇒ xin IN được | 422 `CORRECTION_EVENT_EXISTS` ×2; 201 |
-| CR-04 | U + S | luật 4: OUT ≤ `firstIn`; IN ≥ `lastOut`; `nextDay` với giờ ≥ 06:00 (400 Zod hoặc 422 — chốt theo contract) | 422 `CORRECTION_TIME_ORDER` |
+| CR-04 | U + S | luật 4: OUT ≤ `firstIn`; IN ≥ `lastOut`; xin OUT khi chưa có IN ⇒ 422 `CORRECTION_TIME_ORDER`. Contract (A 18/10): `nextDay` chỉ hợp lệ khi `kind = OUT` và `time < "06:00"` ⇒ OUT 06:00 / 07:00 `nextDay` và IN `nextDay` ⇒ **400** `VALIDATION_ERROR` path `['nextDay']`; OUT 05:59 `nextDay` ⇒ 201 (gửi sau 05:59 hôm sau) | 422 / 400 / 201 |
 | CR-05 | U + S | luật 5: phép cả ngày đã duyệt ⇒ 422 `CORRECTION_DAY_ON_LEAVE`; nửa ngày, ngày lễ, Chủ nhật ⇒ 201 | đúng |
 | CR-06 | I + S | luật 6: PENDING cùng (user, ngày, loại) ⇒ 409 `correction_pending_exists`; khác loại cùng ngày ⇒ 201; sau CANCELLED/REJECTED gửi lại ⇒ 201 | đúng |
 | CR-07 | A | bảng chuyển trạng thái đủ ô 4×4 × (người gửi / HR khác / HR = người gửi) — ô không có trong ADR-129 ⇒ 409 `invalid_transition` (hoặc 403 cho self) | đúng |
@@ -197,7 +197,7 @@ U: `entitlementOf`, `carried`, kiểm số dư, hạn E — Stryker `leave-domai
 | Mã | Ca | Mong đợi |
 |---|---|---|
 | CC-HR-20 | approve (Hugo) ‖ cancel (người gửi) ‖ reject (Ada) cùng đơn | đúng 1 thắng (200), còn lại 409; reject/cancel thắng ⇒ không lượt ADJUSTMENT; approve thắng ⇒ đúng 1 lượt |
-| CC-HR-21 | (a) Hugo approve ‖ Ada approve; (b) approve đơn IN ‖ HR `adjust` IN tay; (c) approve đơn OUT ‖ nhân viên bấm Ra | không bao giờ 2 IN / 2 OUT hợp lệ, không 500; bên thua 409 / 422 `CORRECTION_EVENT_EXISTS` / 422 `NOT_CHECKED_IN` (dự kiến — câu hỏi §12.4) |
+| CC-HR-21 | (a) Hugo approve ‖ Ada approve; (b) approve đơn IN ‖ HR `adjust` IN tay; (c) approve đơn OUT ‖ nhân viên bấm Ra | không bao giờ 2 IN / 2 OUT hợp lệ, không 500; (a) bên thua 409; (b) bên thua 422 `CORRECTION_EVENT_EXISTS` (approve) hoặc lỗi trùng IN của `adjust`; (c) — A 18/10 — approve thắng ⇒ bấm Ra **vẫn 201** (OUT lặp hợp lệ, `lastOut` = OUT muộn nhất); bấm Ra thắng ⇒ approve 422 `CORRECTION_EVENT_EXISTS`, đơn còn PENDING, reject được. Bất biến mọi vòng: ADJUSTMENT ≤ 1, không 2 IN hợp lệ, không 500 |
 | CC-HR-22 | 2 submit cùng (user, ngày, loại), **khác** `Idempotency-Key` | đúng 1 PENDING (201), bên kia 409 `correction_pending_exists` |
 | CC-HR-22b | 2 submit cùng `Idempotency-Key` cùng body | cùng 1 đơn, 1 dòng DB (kiểm qua `?mine=1`) |
 | CC-HR-23 | Hugo `PUT` hồ sơ ‖ Ada `PUT` hồ sơ, cùng `expectedVersion` | đúng 1 × 200, 1 × 409 `VERSION_CONFLICT`; audit 1 dòng |
@@ -268,5 +268,5 @@ Kiểm kê tự động khi ca có code: `grep -o "SEC-HR-[0-9]*\|CC-HR-[0-9]*b\
 
 1. **B (T-055):** nhận 4 env test-only §1.3 (`EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS`, `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS`), từ chối khởi động khi `APP_ENV ≠ test`?
 2. **D (T-057):** job 01/01 chạy lúc nào (giờ lịch công ty) và có cách kích hoạt test-only (`LEAVE_CARRYOVER_ON_START` + log `maintenance.run_done` như Mốc 6) cho CLK-HR-13 / CC-HR-24?
-3. **A (T-056):** `nextDay` với giờ ≥ 06:00 bị chặn ở Zod (400) hay luật 4 (422 `CORRECTION_TIME_ORDER`)? CR-04 theo câu trả lời.
-4. **A (T-056):** CC-HR-21 (c) bên thua "bấm Ra" khi OUT đã được duyệt trả mã gì (luật check-out Mốc 3)?
+3. ~~A (T-056): `nextDay` ≥ 06:00~~ — **chốt (A 18/10):** 400 Zod (`refine`, path `nextDay`), IN `nextDay` cũng 400; CHECK DB là chốt cuối. Đã sửa CR-04.
+4. ~~A (T-056): bấm Ra sau OUT đã duyệt~~ — **chốt (A 18/10):** 201 (luật `decidePunch` Mốc 3 chỉ cần IN còn hiệu lực). Đã sửa CC-HR-21.
