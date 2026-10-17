@@ -216,6 +216,18 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 
 Selector chat: chờ H gửi (T-072). Thiết kế §7 E13: `link "Trò chuyện"`, `log "Tin nhắn"`, `textbox "Soạn tin"`, `button "Gửi"`, `button "Đính kèm"`, `dialog "Xem ảnh"`, `button "Tải xuống <tên>"`; `data-testid` chỉ `chat-message-<id>`, `upload-chip-<n>`.
 
+### 6.1 Selector chat (H, T-072 — `feat/T-072` @bf48bef8, 18/10) cho E2E-CH-02…07
+
+Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E thật chạy với server T-070.
+
+- **Lối vào:** ≥ md `link` "Trò chuyện" hoặc "Trò chuyện, N tin chưa đọc" (badge "9+", nhãn có số thật) trong `navigation "Tài khoản"`; < md `link "Trò chuyện"` trong ☰ (`button "Menu"` có chấm khi có tin) + ô ở `/w` cùng nhãn. Trang ws: `link "Trò chuyện"` trong `navigation "Workspace"` ⇒ `/chat/ws/[wsId]` ⇒ tự chuyển `/chat/[id]`.
+- **`/chat`:** `navigation "Danh sách trò chuyện"`, heading "Trò chuyện"; mỗi hội thoại `link` "<tên>[, N tin chưa đọc][, đã tắt tiếng]" (DIRECT = tên người kia, nhóm = tên nhóm, phòng ws = "# <tên ws>"). `button "Tin nhắn mới"` ⇒ `dialog "Tin nhắn mới"` + `combobox "Tìm người"` + `option "<tên>"`. `button "Tạo nhóm"` ⇒ `dialog "Tạo nhóm"`, `textbox "Tên nhóm"`, `combobox "Thêm người"`, `button "Tạo nhóm"`.
+- **`/chat/[id]`:** `region "<tên hội thoại>"`, heading = tên; `log "Tin nhắn"`; mỗi tin `data-testid="chat-message-<id>"` (article, nhãn "<người gửi>, HH:mm"); `textbox "Soạn tin"`, `button "Gửi"`.
+- **Đính kèm:** `button "Đính kèm"` (input file ẩn nhãn "Chọn tệp đính kèm" ⇒ `setInputFiles`); chip `data-testid="upload-chip-<n>"` (đang tải: `progressbar "Đang tải <tên>"`; gỡ: `button "Bỏ tệp <tên>"`); ảnh: `button "Xem ảnh <tên>"` ⇒ `dialog "Xem ảnh"`; tệp: `button "Tải xuống <tên>"` (POST download-url ⇒ `location.assign` ⇒ `waitForEvent('download')`).
+- **Hành động trên tin:** `button "Trả lời tin của <người>"`, "Sửa", "Xóa" ⇒ `dialog "Xóa tin nhắn"`; tin đã xóa: text "Tin nhắn đã bị xóa"; "(đã sửa)"; "Đã xem" (DIRECT); `separator "Tin chưa đọc"`; "Tải tin cũ hơn"; gửi lỗi: `alert` "Chưa gửi được" + `button "Thử lại"` / "Bỏ".
+- **Nhóm:** `button "Thành viên"` ⇒ `dialog "Thành viên nhóm"` ("Bớt <tên>", "Giao trưởng nhóm cho <tên>", "Rời nhóm"); `button "Tắt tiếng"` / "Bỏ tắt tiếng" (`aria-pressed`).
+- **a11y (E2E-CH-07):** vùng `[aria-live="polite"].sr-only` riêng chỉ đọc tin ĐẾN sau lúc mở ("Vic Phạm: …"); `log` có `aria-live="off"`.
+
 ## 7. Hiệu năng (tầng P — F; máy rảnh, ADR-107)
 
 - `apps/api/test/perf/chat-seed.ts`: script DB seed 100 000 tin / 1 hội thoại, phòng ws 300 người, 50 hội thoại / người. **Chỉ tầng P**; DB riêng.
