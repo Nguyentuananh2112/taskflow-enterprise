@@ -40,7 +40,9 @@ async function loginLooksUnknown(who: Pick<CompanyActor, 'email' | 'password'>) 
     password: who.password,
   });
   expect(known.status).toBe(401);
-  expect(errorEnvelope(known).error.code).toBe(errorEnvelope(ghost).error.code);
+  expect(ghost.status).toBe(401);
+  // Cùng mã VÀ cùng body lỗi (như SEC-HR-58) — không lộ "tài khoản có nhưng đã nghỉ".
+  expect(errorEnvelope(known).error).toEqual(errorEnvelope(ghost).error);
 }
 
 describe('Hoàn tất nghỉ việc trong request ⇒ thu hồi mọi cửa', () => {

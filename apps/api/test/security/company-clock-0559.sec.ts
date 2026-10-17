@@ -7,15 +7,7 @@ import { useCompanyApi, type CompanyActor } from './harness/company';
 import { HR, hrClockEnv } from './harness/hr';
 import { expectBefore, today, vnClock } from './harness/hr-clock';
 import { errorEnvelope } from './harness/http-client';
-import {
-  collect,
-  connectError,
-  connected,
-  disconnected,
-  emitAck,
-  nextEvent,
-  openSocket,
-} from './harness/socket';
+import { collect, connectError, connected, emitAck, nextEvent, openSocket } from './harness/socket';
 import { secCase } from './harness/suite';
 
 // CLK-HR-05 + SEC-HR-69 + SEC-HR-62 (vế sau 06:00) + SEC-HR-70 (test-spec-company §3, §5; B HIGH-2a/2b): biên `access_until` = 06:00 ngày sau `lastDay`, áp
@@ -40,6 +32,7 @@ let w1: string;
 let projectId: string;
 let task: { id: string; version: number };
 let miaSocket: Socket; // đã join phòng project W1
+let miaDropped: Promise<number>; // giờ THẬT (ms) lúc miaSocket bị ngắt
 let miaSpare: Socket; // nối trước biên, chưa join
 let owenSocket: Socket; // đối chứng
 
@@ -110,6 +103,7 @@ beforeAll(async () => {
   for (const s of [miaSocket, owenSocket]) {
     expect(await emitAck(s, 'project:join', { workspaceId: w1, projectId })).toEqual({ ok: true });
   }
+  miaDropped = new Promise((resolve) => miaSocket.once('disconnect', () => resolve(Date.now())));
   // Đối chứng SEC-HR-69: trước biên refresh của Max còn chạy (token còn hạn thật) ⇒ giữ cookie mới.
   const ok = await actors.refresh(max.refreshCookie);
   expect(ok.status, ok.text.slice(0, 200)).toBe(200);
@@ -182,11 +176,19 @@ describe('access_until 06:00 áp ngay, không chờ job', () => {
     'socket đã join W1 + user:{id} trước access_until ⇒ bị ngắt ≤ ~70 s sau 06:00 (job); event sau đó không tới; nối lại bị từ chối',
     AREA,
     async () => {
-      const crossed = Date.now();
       await waitServer('06:00:00');
       const miaSaw = collect(miaSocket, 'task:updated');
-      await disconnected(miaSocket, 75_000);
-      expect(Date.now() - crossed, 'ngắt trễ hơn ~70 s sau 06:00').toBeLessThanOrEqual(72_000);
+      // Độ trễ đo theo GIỜ SERVER từ biên 06:00 (F): giờ server lúc ngắt = serverNow hiện tại − thời gian thật đã trôi
+      // kể từ sự kiện `disconnect` (nghe từ beforeAll — không lỡ nếu job ngắt trước khi ca này bắt đầu).
+      const droppedAt = await Promise.race([
+        miaDropped,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('socket không bị ngắt trong 75 s')), 75_000),
+        ),
+      ]);
+      const now = Date.parse((await today(actors, hana)).serverNow);
+      const lagMs = now - (Date.now() - droppedAt) - Date.parse(`${TUE}T06:00:00+07:00`);
+      expect(lagMs, 'ngắt trễ hơn ~70 s sau 06:00 (giờ server)').toBeLessThanOrEqual(72_000);
       expect(await statusOf(mia, 'left')).toBe('LEFT');
 
       const owenGot = nextEvent(owenSocket, 'task:updated');
