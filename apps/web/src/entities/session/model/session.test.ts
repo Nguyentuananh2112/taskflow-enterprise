@@ -91,6 +91,82 @@ describe('bootstrap (tải trang)', () => {
   });
 });
 
+describe('prestart (T-044 S2a: mở khôi phục phiên trước khi cây hydrate xong)', () => {
+  it('prestart ⇒ gửi refresh → me NGAY nhưng store vẫn idle; bootstrap dùng lại, không gửi lại', async () => {
+    const { controller, api } = setup();
+    controller.prestart();
+    expect(api.refresh).toHaveBeenCalledOnce();
+    expect(sessionStore.get().status).toBe('idle');
+    await Promise.resolve();
+    await controller.bootstrap();
+    expect(sessionStore.get()).toEqual({ status: 'authenticated', user: USER });
+    expect(api.refresh).toHaveBeenCalledOnce();
+    expect(api.me).toHaveBeenCalledOnce();
+  });
+
+  it('prestart lặp lại (StrictMode render 2 lần) ⇒ một request', () => {
+    const { controller, api } = setup();
+    controller.prestart();
+    controller.prestart();
+    expect(api.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('đang chờ xác nhận đăng xuất ⇒ prestart KHÔNG gửi refresh', async () => {
+    const refresh = vi.fn(() => Promise.resolve(TOKEN));
+    const { controller } = setup({ refresh, logout: () => Promise.reject(offline()) });
+    controller.signIn(TOKEN, USER);
+    await controller.logout();
+    refresh.mockClear();
+    sessionStore.set({ status: 'idle', user: null });
+    controller.prestart();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('kết quả prestart dùng MỘT lần: unreachable ⇒ "Thử lại" gửi request mới', async () => {
+    const refresh = vi
+      .fn<() => Promise<typeof TOKEN>>()
+      .mockRejectedValueOnce(offline())
+      .mockResolvedValueOnce(TOKEN);
+    const { controller } = setup({ refresh });
+    controller.prestart();
+    await controller.bootstrap();
+    expect(sessionStore.get().status).toBe('unreachable');
+    await controller.bootstrap();
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(sessionStore.get().status).toBe('authenticated');
+  });
+
+  it('kết quả cũ không bị áp lại: prestart ⇒ anonymous, tab khác đăng nhập ⇒ khôi phục bằng request MỚI', async () => {
+    const refresh = vi
+      .fn<() => Promise<typeof TOKEN>>()
+      .mockRejectedValueOnce(invalid())
+      .mockResolvedValueOnce(TOKEN);
+    const { controller, fromOtherTab } = setup({ refresh });
+    controller.prestart();
+    await controller.bootstrap();
+    expect(sessionStore.get().status).toBe('anonymous');
+    fromOtherTab({ type: 'login' });
+    await vi.waitFor(() => expect(sessionStore.get().status).toBe('authenticated'));
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('đăng nhập trong lúc bootstrap còn chờ ⇒ kết quả khôi phục không ghi đè phiên mới', async () => {
+    let finish!: (t: typeof TOKEN | null) => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<typeof TOKEN>((resolve, reject) => {
+          finish = (t) => (t ? resolve(t) : reject(invalid()));
+        }),
+    );
+    const { controller } = setup({ refresh });
+    const pending = controller.bootstrap();
+    controller.signIn(TOKEN, USER);
+    finish(null);
+    await pending;
+    expect(sessionStore.get()).toEqual({ status: 'authenticated', user: USER });
+  });
+});
+
 describe('đăng nhập / kết thúc phiên', () => {
   it('signIn ⇒ authenticated + báo tab khác "login"', () => {
     const { controller, posted } = setup();

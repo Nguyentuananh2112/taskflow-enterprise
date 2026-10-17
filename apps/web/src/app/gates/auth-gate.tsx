@@ -14,6 +14,9 @@ import { Spinner } from '@/shared/ui/spinner';
  * /login).
  */
 export function AuthGate({ children }: Readonly<{ children: ReactNode }>) {
+  // T-044 S2a: mở khôi phục phiên NGAY ở lượt render đầu (trước effect bên dưới); chỉ route có gate — landing / 404
+  // không gửi refresh (review E). Tác dụng phụ có chủ ý trong render: idempotent, không đổi store (session.prestart).
+  if (typeof window !== 'undefined') session.prestart();
   const { status } = useSession();
   const router = useRouter();
   const pathname = usePathname();

@@ -74,7 +74,27 @@ export function createSessionController(deps: SessionDeps) {
     return token !== null;
   }
 
+  /**
+   * Khôi phục phiên (refresh cookie → /auth/me) đang chạy / vừa xong mà `bootstrap` CHƯA dùng — T-044 S2a: `prestart`
+   * mở request ngay trong lượt render đầu (không chờ effect sau khi cả cây hydrate), `bootstrap` dùng lại đúng promise
+   * đó. Dùng MỘT lần; bỏ khi phiên kết thúc / tab khác đăng nhập để không áp kết quả cũ.
+   */
+  type Restored = { kind: 'authenticated'; user: UserDto } | { kind: 'anonymous' | 'unreachable' };
+  let restoring: Promise<Restored> | null = null;
+  function restore(): Promise<Restored> {
+    restoring ??= (async (): Promise<Restored> => {
+      try {
+        if (!(await renew())) return { kind: 'anonymous' };
+        return { kind: 'authenticated', user: (await deps.api.me()).user };
+      } catch {
+        return { kind: 'unreachable' }; // mạng/5xx: màn "Không kết nối được" + Thử lại
+      }
+    })();
+    return restoring;
+  }
+
   function end(reason: EndReason, broadcast = true): void {
+    restoring = null;
     generation += 1;
     const wasActive = sessionStore.get().status === 'authenticated' || tokenStore.get() !== null;
     tokenStore.clear();
@@ -104,6 +124,18 @@ export function createSessionController(deps: SessionDeps) {
       channel = (deps.openChannel ?? openAuthChannel)(onChannel);
     },
 
+    /**
+     * T-044 S2a: bắt đầu khôi phục phiên SỚM — AuthGate / GuestGate gọi ở đầu render, KHÔNG đổi `sessionStore`
+     * (đổi store lúc render ⇒ cảnh báo React / lệch hydrate). Chỉ mở request; trạng thái vẫn do `bootstrap` đặt.
+     * Tác dụng phụ có chủ ý trong render: `start()` gắn hook http + mở kênh đa tab (idempotent). Không làm gì khi
+     * không còn `idle` hoặc đang chờ xác nhận đăng xuất.
+     */
+    prestart(): void {
+      controller.start();
+      if (sessionStore.get().status !== 'idle' || logoutPending) return;
+      void restore();
+    },
+
     /** Khôi phục phiên khi tải trang: refresh (cookie) → /auth/me. Chạy 1 lần (idle/unreachable). */
     async bootstrap(): Promise<void> {
       controller.start();
@@ -114,20 +146,19 @@ export function createSessionController(deps: SessionDeps) {
         return;
       }
       sessionStore.set({ status: 'bootstrapping', user: null });
-      try {
-        if (!(await renew())) {
-          set('anonymous', null);
-          return;
-        }
-        set('authenticated', (await deps.api.me()).user);
-      } catch {
-        set('unreachable', null); // mạng/5xx: màn "Không kết nối được" + Thử lại
-      }
+      const pending = restore();
+      const result = await pending;
+      if (restoring === pending) restoring = null; // dùng một lần — "Thử lại" sau unreachable chạy request mới
+      // Phiên đã đổi trong lúc chờ (đăng nhập / đăng xuất ở tab này) ⇒ không ghi đè.
+      if (sessionStore.get().status !== 'bootstrapping') return;
+      if (result.kind === 'authenticated') set('authenticated', result.user);
+      else set(result.kind, null);
     },
 
     /** Sau login/register thành công. */
     signIn(token: AuthTokenDto, user: UserDto): void {
       controller.start();
+      restoring = null; // kết quả khôi phục (nếu còn) thuộc trạng thái trước đăng nhập
       tokenStore.set(token);
       set('authenticated', user);
       channel?.post({ type: 'login' });
@@ -206,6 +237,7 @@ export function createSessionController(deps: SessionDeps) {
 
     /** Chỉ dùng trong test: mô phỏng tải lại trang (mất token trong bộ nhớ, đóng kênh). */
     resetForTest(): void {
+      restoring = null;
       channel?.close();
       channel = null;
       endedListeners.clear();

@@ -12,7 +12,7 @@ import { AppShell } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import { session } from '@/entities/session';
 import { getClientId } from '@/shared/lib/client-id';
-import { createSocketIoClient, type RealtimeClient } from '@/shared/socket';
+import { loadSocketIoClient, type RealtimeClient } from '@/shared/socket';
 import { BoardPage } from '@/views/board';
 
 import { API, ORIGIN, PASSWORD, api } from './real-api-client';
@@ -78,6 +78,7 @@ it.skipIf(!PASSWORD)(
     const realtimeAuth = session.realtimeAuth;
     // Node (`ws`) không tự gửi Origin như trình duyệt ⇒ đặt tay; server vẫn kiểm whitelist như thật.
     const extraHeaders = { origin: ORIGIN };
+    const createSocketIoClient = await loadSocketIoClient();
     const clientA = createSocketIoClient({
       url: WS,
       clientId: getClientId(),
