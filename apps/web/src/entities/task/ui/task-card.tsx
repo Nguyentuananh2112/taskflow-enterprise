@@ -67,7 +67,13 @@ export const TaskCard = memo(function TaskCard({
         <DueDate dueDate={task.dueDate} done={task.status === 'DONE'} />
         <span className="ml-auto">
           {task.assignee ? (
-            <Avatar name={task.assignee.fullName} colorKey={task.assignee.id} size="sm" />
+            <Avatar
+              name={task.assignee.fullName}
+              colorKey={task.assignee.id}
+              src={task.assignee.avatarUrl}
+              size="sm"
+              loading="lazy"
+            />
           ) : (
             <span className="text-xs text-text-muted">Chưa giao</span>
           )}

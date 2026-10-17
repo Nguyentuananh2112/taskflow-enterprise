@@ -110,4 +110,8 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   INVALID_STATUS_TRANSITION: 'Không thể chuyển sang trạng thái này.',
   PROJECT_ARCHIVED: 'Dự án đã được lưu trữ.',
   BUSINESS_RULE_VIOLATION: 'Vi phạm luật nghiệp vụ.',
+  PAYLOAD_TOO_LARGE: 'Tệp quá lớn.',
+  INVALID_UPLOAD_NAME: 'Tên tệp không hợp lệ.',
+  UNSUPPORTED_FILE_TYPE: 'Loại tệp không được nhận.',
+  MACRO_OR_ACTIVE_CONTENT: 'Tệp có macro hoặc nội dung chủ động.',
 };

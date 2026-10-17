@@ -5,7 +5,12 @@ import type { IClock, IIdGenerator } from '../domain';
 import type { RealtimeEventMeta } from './ports';
 
 // Hợp đồng WebSocket (data-and-api §4) — schema payload & ack lấy từ contracts (T-010).
-export { AuthRenewPayload, ProjectJoinPayload, ProjectLeavePayload } from '@taskflow/contracts';
+export {
+  AuthRenewPayload,
+  ChatTypingPayload,
+  ProjectJoinPayload,
+  ProjectLeavePayload,
+} from '@taskflow/contracts';
 
 /** `clientId` theo tab — không hợp lệ ⇒ coi như null (security §5.2). */
 export const ClientId = z.uuid().nullable().catch(null);
@@ -27,6 +32,8 @@ export interface ClientToServerEvents {
   'project:join': (payload: unknown, ack: AckFn) => void;
   'project:leave': (payload: unknown, ack: AckFn) => void;
   'auth:renew': (payload: unknown, ack: AckFn) => void;
+  /** Mốc 6 (T-070): không ack (SEC-CH-19). */
+  'chat:typing': (payload: unknown) => void;
 }
 
 export type ServerToClientEvents = Record<string, (event: RealtimeEnvelope) => void>;
@@ -53,6 +60,11 @@ export const rooms = {
   user: (userId: string) => `user:${userId}`,
   session: (sid: string) => `session:${sid}`,
   project: (projectId: string) => `project:${projectId}`,
+  /**
+   * Mốc 6 (ADR-142): MỌI socket đã xác thực LẠI thành công (`joinPersonalRooms`) — một công ty ⇒ = mọi nhân viên đang
+   * hoạt động. Chỉ cho dữ liệu danh bạ (`user:avatar-changed` — R49).
+   */
+  company: () => 'company',
 };
 
 /** Tạo vỏ event: `eventId` uuid v7, `occurredAt` = thời điểm phát (sau commit). */

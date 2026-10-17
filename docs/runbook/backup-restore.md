@@ -113,3 +113,57 @@ docker compose -f docker/backup/drill.compose.yml down -v
 - Không cho job backup quyền xóa hay đọc bucket.
 - Không giải mã trên server production; không ghi file dump bản rõ ra đĩa.
 - Không backup Valkey (dữ liệu dựng lại được).
+
+---
+
+## 7. Kho tệp (Mốc 6 — ADR-141, `devops.md` §4.3–4.4 / §4.6) — G, T-067
+
+Chỉ áp dụng khi hosting **có ổ lâu dài** (phương án A — VPS / máy văn phòng, `devops.md` §1.3). Ảnh đại diện, ảnh và
+tệp trò chuyện nằm trên volume `filestore` (`/var/lib/taskflow/files`), **không** nằm trong Postgres ⇒ backup DB
+một mình KHÔNG đủ.
+
+### 7.1 Sao lưu
+
+- Script `docker/backup/backup-files.sh` (cùng image `docker/backup`): luồng `tar | age | aws s3 cp -` — bản rõ không
+  chạm đĩa, máy chỉ có **public key**, dùng chung `BACKUP_AGE_RECIPIENTS` / `BACKUP_S3_*` / credential PutObject-only
+  với `backup.sh`; tầng giữ chọn lúc tải lên (`daily/` `weekly/` `monthly/` — lifecycle rule mục 3 áp luôn); khóa
+  `taskflow/<tầng>/taskflow-files-<stamp>.tar.age` + dấu hoàn tất `….ok` chỉ khi mọi bước xong.
+- Lịch: cùng `taskflow-backup.timer` — `taskflow-backup.service` chạy service `backup` (DB, uid postgres) RỒI service
+  `backup-files` (cùng image, **uid 1000** = user `node` sở hữu blob `0600`), heartbeat ở bước sau ⇒ chỉ ping khi
+  **cả hai** xong (thiếu một ⇒ email sau 26 giờ). Kho mount **chỉ đọc**.
+- **Không bao giờ ra backup rỗng mà "thành công"** (B HIGH-1): tệp không đọc được ⇒ FAIL trước khi tar (exit 4); tar
+  không bỏ qua lỗi đọc (exit ≥ 2 ⇒ FAIL); kho có tệp mà archive không có tệp nào ⇒ FAIL (exit 5) — đều KHÔNG `.ok`,
+  KHÔNG heartbeat. Đã thử trong container: uid 999 ⇒ exit 4; uid 1000 ⇒ đủ blob + `.ok`; archive rỗng ⇒ exit 5.
+- Loại `tmp/` (upload đang dở). Blob không bao giờ bị ghi đè (commit = hard link, khóa mới) ⇒ tar đọc tệp nào là bản
+  hoàn chỉnh; tệp bị xóa giữa chừng (sweep / xóa tin) bỏ qua. Kho > ~40 GiB ⇒ đặt `BACKUP_FILES_EXPECTED_SIZE`.
+- RPO kho tệp ≤ 24 giờ (R47: hỏng ổ ⇒ mất tệp từ lần backup cuối). R48: dữ liệu đã xóa còn trong backup tới hết tầng.
+
+### 7.2 Khôi phục (sự cố) — **DB trước, tệp sau**
+
+1. Khôi phục Postgres theo §5.1 (chọn bản DB có `.ok`).
+2. Chọn bản `taskflow-files-*.tar.age` có `.ok` **cùng ngày hoặc ngay sau** bản DB (backup chạy DB trước rồi tệp ⇒ tệp
+   **chủ yếu thừa** so với DB; có thể **thiếu vài tệp** vừa bị xóa trong khoảng giữa dump DB và tar — blob của tin
+   xóa đi trong ≤ 1 giờ — ⇒ các tệp đó 404 ở bước 6, chấp nhận được).
+3. Dừng `api` (`docker compose -f compose.prod.yml stop api`). Tạo volume mới / làm rỗng volume cũ — KHÔNG giải nén
+   chồng lên kho đang có.
+4. Trên máy có khóa giải mã (khóa KHÔNG nằm trên máy chủ — mục 2): tải bản mã bằng credential đọc,
+   `age -d -i taskflow-backup.key taskflow-files-<stamp>.tar.age | tar -x --same-permissions -C <thư mục kho mới>`
+   (giữ blob `0600`), rồi chép vào volume giữ quyền (`docker run --rm -v taskflow-prod_filestore:/dst
+   -v <thư mục>:/src:ro debian cp -a /src/. /dst/`), `chown -R 1000:1000` (user `node`).
+5. Khởi động `api`. API kiểm thư mục + hard link lúc khởi động (sai ⇒ từ chối khởi động, log tên lỗi).
+6. Kiểm: ≥ 20 khóa ngẫu nhiên trong DB mở được qua `/media`; tệp thiếu ⇒ 404 + log `media.blob_missing` (không 500 —
+   F-09); tệp thừa (không còn dòng DB) do `files-sweep` dọn ở lượt kế.
+
+### 7.3 Diễn tập (hằng tháng, cùng buổi §5.2)
+
+- Khôi phục vào thư mục / volume **tạm**, theo 7.2 bước 2–6 với DB tạm của §5.2; giải mã bằng khóa lấy từ **két**
+  (chứng minh khóa không chỉ nằm trên máy chủ). Ghi kết quả vào `docs/ops/restore-drills.md` (thời gian giải mã + chép,
+  số khóa kiểm, số 404). Xóa thư mục tạm sau buổi diễn tập.
+- Local (trước go-live): `FILE_STORE_DIR` tạm + vài upload → chạy `backup-files.sh` với S3 MinIO tạm → khôi phục vào
+  thư mục khác → so cây thư mục (`find -type f | sort | xargs sha256sum`).
+
+### 7.4 Không làm
+
+- Không chép kho tệp bản rõ ra máy khác / ổ USB không mã hóa. Không để khóa giải mã trên máy chủ.
+- Không bind mount kho từ ổ mạng (SMB/NFS) hay Docker Desktop cho production (không có hard link — `devops.md` §4.6).
+- Không giải nén bản backup chồng lên kho đang chạy.

@@ -19,7 +19,7 @@ export interface NotificationView {
   id: string;
   type: NotificationType;
   refId: string;
-  actor: { id: string; fullName: string } | null;
+  actor: { id: string; fullName: string; avatarUrl?: string | null } | null;
   leave: LeaveSummary | null;
   readAt: string | null;
   createdAt: string;
@@ -82,9 +82,10 @@ export class NotificationQueries {
   async #views(rows: readonly NotificationRecord[]): Promise<NotificationView[]> {
     const actorIds = rows.flatMap((r) => (r.actorId ? [r.actorId] : []));
     const leaveRefs = rows.filter((r) => LEAVE_TYPES.includes(r.type)).map((r) => r.refId);
-    const [actors, leaves] = await Promise.all([
+    const [actors, leaves, avatars] = await Promise.all([
       this.d.context.actorNames(actorIds),
       this.d.context.leaveSummaries(leaveRefs),
+      this.d.context.actorAvatars?.(actorIds),
     ]);
     return rows.map((r) => {
       const actorName = r.actorId ? actors.get(r.actorId) : undefined;
@@ -93,7 +94,14 @@ export class NotificationQueries {
         id: r.id,
         type: r.type,
         refId: r.refId,
-        actor: r.actorId && actorName !== undefined ? { id: r.actorId, fullName: actorName } : null,
+        actor:
+          r.actorId && actorName !== undefined
+            ? {
+                id: r.actorId,
+                fullName: actorName,
+                ...(avatars ? { avatarUrl: avatars.get(r.actorId) ?? null } : {}),
+              }
+            : null,
         leave: leave
           ? { type: leave.type, startDate: leave.startDate, endDate: leave.endDate }
           : null,

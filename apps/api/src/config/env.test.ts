@@ -143,7 +143,10 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
       expect(variablesOf(testEnvVars({ APP_ENV: appEnv, NODE_ENV: 'development' }))).toEqual([
         'COOKIE_SECURE',
         'CORS_ORIGINS',
+        'FILE_STORE_DIR', // Mốc 6 (ADR-141)
+        'FILE_URL_SECRET',
         'JWT_ACCESS_SECRET',
+        'MEDIA_BASE_URL',
         'METRICS_TOKEN',
         'NODE_ENV',
         'REDIS_URL',
@@ -385,6 +388,95 @@ describe('thời hạn lưu dữ liệu cá nhân (T-043, R27)', () => {
       'RETENTION_LEAVE_REASON_DAYS',
       'RETENTION_NOTIFICATIONS_DAYS',
       'RETENTION_RECORDS_DAYS',
+    ]);
+  });
+});
+
+describe('Mốc 6 — kho tệp (ADR-141)', () => {
+  const JWT = 'test-only-jwt-secret-0123456789abcdef';
+
+  it('local/test: không đặt gì vẫn khởi động; mặc định 50 GiB, same-site, localhost:4000', () => {
+    expect(loadEnv(testEnvVars())).toMatchObject({
+      FILE_STORE_MAX_BYTES: 50 * 1024 ** 3,
+      MEDIA_CORP: 'same-site',
+      MEDIA_BASE_URL: 'http://localhost:4000',
+    });
+    expect(loadEnv(testEnvVars()).FILE_URL_SECRET).toBeUndefined();
+  });
+
+  it.each([
+    ['thiếu FILE_STORE_DIR', { FILE_STORE_DIR: undefined }, 'FILE_STORE_DIR'],
+    ['thiếu FILE_URL_SECRET', { FILE_URL_SECRET: undefined }, 'FILE_URL_SECRET'],
+    [
+      'FILE_URL_SECRET test-only',
+      { FILE_URL_SECRET: 'test-only-file-secret-0123456789abcdef' },
+      'FILE_URL_SECRET',
+    ],
+    [
+      'FILE_URL_SECRET mẫu',
+      { FILE_URL_SECRET: 'change-me-file-secret-0123456789abcdef' },
+      'FILE_URL_SECRET',
+    ],
+    ['MEDIA_BASE_URL http', { MEDIA_BASE_URL: 'http://api.example.com' }, 'MEDIA_BASE_URL'],
+    [
+      'MEDIA_BASE_URL thiếu (mặc định localhost http)',
+      { MEDIA_BASE_URL: undefined },
+      'MEDIA_BASE_URL',
+    ],
+  ])('staging/production: %s ⇒ từ chối khởi động (SEC-CH-35)', (_l, overrides, variable) => {
+    expect(variablesOf(productionEnvVars(overrides))).toEqual([variable]);
+  });
+
+  it.each([
+    ['< 32 byte', { FILE_URL_SECRET: 'short' }, 'FILE_URL_SECRET'],
+    ['= JWT_ACCESS_SECRET', { FILE_URL_SECRET: JWT }, 'FILE_URL_SECRET'],
+    [
+      '_PREVIOUS = khóa hiện tại',
+      { FILE_URL_SECRET: 'f'.repeat(32), FILE_URL_SECRET_PREVIOUS: 'f'.repeat(32) },
+      'FILE_URL_SECRET_PREVIOUS',
+    ],
+    [
+      '_PREVIOUS không có khóa hiện tại',
+      { FILE_URL_SECRET_PREVIOUS: 'p'.repeat(32) },
+      'FILE_URL_SECRET_PREVIOUS',
+    ],
+    ['FILE_STORE_DIR tương đối', { FILE_STORE_DIR: 'data/files' }, 'FILE_STORE_DIR'],
+    ['MEDIA_BASE_URL có path', { MEDIA_BASE_URL: 'http://localhost:4000/api' }, 'MEDIA_BASE_URL'],
+    ['MEDIA_CORP lạ', { MEDIA_CORP: 'same-origin' }, 'MEDIA_CORP'],
+  ])('mọi môi trường: %s ⇒ từ chối', (_l, overrides, variable) => {
+    expect(variablesOf(testEnvVars(overrides))).toEqual([variable]);
+  });
+
+  it.each([
+    ['MEDIA_URL_AVATAR_BUCKET_SECONDS', '6'],
+    ['MEDIA_URL_IMAGE_BUCKET_SECONDS', '4'],
+    ['MEDIA_URL_DOWNLOAD_TTL_SECONDS', '3'],
+    ['FILES_ORPHAN_TTL_SECONDS', '5'],
+    ['UPLOAD_IDLE_TIMEOUT_MS', '2000'],
+    ['FILE_STORE_USAGE_CACHE_MS', '0'],
+    ['FILES_SWEEP_ON_START', 'true'],
+    ['FILES_SWEEP_INTERVAL_MS', '1000'],
+    ['FILES_IMAGE_PIPELINE_DISABLED', '1'],
+    ['CHAT_EDIT_WINDOW_SECONDS', '2'],
+    ['CHAT_UPLOAD_DAILY_BYTES', '2097152'],
+    ['CHAT_SEND_HOURLY', '5'],
+  ])('%s: được ở APP_ENV=test, bị từ chối ở local / production', (key, value) => {
+    expect(variablesOf(testEnvVars({ [key]: value }))).toEqual([]);
+    expect(
+      variablesOf(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'development', [key]: value })),
+    ).toEqual([key]);
+    expect(variablesOf(productionEnvVars({ [key]: value }))).toEqual([key]);
+  });
+
+  it('cửa sổ test-only: chuỗi rỗng = không đặt; ngoài khoảng ⇒ từ chối', () => {
+    expect(
+      loadEnv(testEnvVars({ UPLOAD_IDLE_TIMEOUT_MS: '' })).UPLOAD_IDLE_TIMEOUT_MS,
+    ).toBeUndefined();
+    expect(variablesOf(testEnvVars({ MEDIA_URL_DOWNLOAD_TTL_SECONDS: '61' }))).toEqual([
+      'MEDIA_URL_DOWNLOAD_TTL_SECONDS',
+    ]);
+    expect(variablesOf(testEnvVars({ FILES_SWEEP_INTERVAL_MS: '999' }))).toEqual([
+      'FILES_SWEEP_INTERVAL_MS',
     ]);
   });
 });

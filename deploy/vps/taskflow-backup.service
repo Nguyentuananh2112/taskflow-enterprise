@@ -1,12 +1,14 @@
 # /etc/systemd/system/taskflow-backup.service — backup logic hằng ngày (B2). Lỗi ⇒ exit ≠ 0 (journal) +
 # KHÔNG ping heartbeat ⇒ uptime monitor gửi email sau 26 h.
 [Unit]
-Description=TaskFlow — pg_dump mã hóa age đẩy ra S3 ngoài nhà cung cấp
+Description=TaskFlow — pg_dump + kho tệp mã hóa age đẩy ra S3 ngoài nhà cung cấp
 Requires=docker.service
 After=docker.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/taskflow
+# Oneshot: các ExecStart chạy TUẦN TỰ, một lệnh lỗi ⇒ dừng. DB trước, kho tệp sau (heartbeat ở bước sau — Mốc 6).
 ExecStart=/usr/bin/docker compose -f compose.prod.yml --profile backup run --rm backup
+ExecStart=/usr/bin/docker compose -f compose.prod.yml --profile backup run --rm backup-files
 TimeoutStartSec=3600

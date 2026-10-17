@@ -2,6 +2,7 @@ import {
   CompanyAccessChangedEventEnvelope,
   MemberRoleChangedEvent,
   NotificationNewEvent,
+  UserAvatarChangedEventDto,
   WorkspaceAccessRevokedEvent,
 } from '@taskflow/contracts/realtime';
 import type { NotificationType } from '@taskflow/contracts/hr';
@@ -15,7 +16,7 @@ import { hrKeys } from '@/entities/hr';
 import { leaveKeys } from '@/entities/leave';
 import { memberKeys } from '@/entities/member';
 import { notificationKeys } from '@/entities/notification';
-import { sessionKeys } from '@/entities/session';
+import { invalidateAvatarViews, sessionKeys } from '@/entities/session';
 import {
   ROLE_LABEL,
   WORKSPACE_GONE_MESSAGE,
@@ -112,6 +113,13 @@ export function useRealtimeSession(): void {
         void queryClient.invalidateQueries({ queryKey: attendanceKeys.all() });
       }
     });
+    // ADR-142: ai đó (kể cả mình ở tab khác) đổi / gỡ avatar ⇒ làm mới mọi chỗ hiện avatar (URL ký mới, `/auth/me`
+    // có avatarUrlLarge).
+    const offAvatar = client.on('user:avatar-changed', (raw) => {
+      const event = UserAvatarChangedEventDto.safeParse(raw);
+      if (!event.success) return;
+      void invalidateAvatarViews(queryClient, event.data.data.userId).catch(() => undefined);
+    });
     // Rớt socket thì có thể lỡ `notification:new` ⇒ kết nối lại thì tải lại chuông.
     const offReconnect = client.onReconnect(
       () => void queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
@@ -121,6 +129,7 @@ export function useRealtimeSession(): void {
       offRevoked();
       offAccess();
       offNotification();
+      offAvatar();
       offReconnect();
     };
   }, [client, queryClient, router]);

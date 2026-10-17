@@ -9,6 +9,8 @@ import { User, type UserSnapshot } from '../../../domain/user';
  */
 export class InMemoryUserRepository implements IUserRepository {
   #rows = new Map<string, UserSnapshot>();
+  /** Mốc 6: `avatar_version` tách khỏi snapshot domain (cột chỉ repository / avatar dùng). */
+  #avatars = new Map<string, number>();
 
   findById(id: string): Promise<User | null> {
     const row = this.#rows.get(id);
@@ -113,6 +115,30 @@ export class InMemoryUserRepository implements IUserRepository {
     return Promise.resolve(true);
   }
 
+  lockAvatar(userId: string): Promise<{ version: number | null } | null> {
+    return Promise.resolve(
+      this.#live(userId) ? { version: this.#avatars.get(userId) ?? null } : null,
+    );
+  }
+
+  setAvatarVersion(input: { id: string; version: number | null; at: Date }): Promise<boolean> {
+    const row = this.#live(input.id);
+    if (!row) return Promise.resolve(false);
+    if (input.version === null) this.#avatars.delete(input.id);
+    else this.#avatars.set(input.id, input.version);
+    this.#rows.set(input.id, { ...row, updatedAt: input.at });
+    return Promise.resolve(true);
+  }
+
+  avatarVersions(ids: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    const out = new Map<string, number>();
+    for (const id of ids) {
+      const v = this.#avatars.get(id);
+      if (v !== undefined && this.#live(id)) out.set(id, v);
+    }
+    return Promise.resolve(out);
+  }
+
   /** Dòng của user chưa xóa (mọi lệnh intent đều có điều kiện `deleted_at IS NULL`). */
   #live(id: string): UserSnapshot | undefined {
     const row = this.#rows.get(id);
@@ -125,10 +151,20 @@ export class InMemoryUserRepository implements IUserRepository {
   }
 
   snapshot(): unknown {
-    return new Map([...this.#rows].map(([k, v]) => [k, { ...v }]));
+    return {
+      rows: new Map([...this.#rows].map(([k, v]) => [k, { ...v }])),
+      avatars: new Map(this.#avatars),
+    };
   }
 
   restore(snapshot: unknown): void {
-    this.#rows = snapshot as Map<string, UserSnapshot>;
+    // Fixture của test (như `UPDATE users …` ở Prisma) ghi đè bằng Map các dòng — giữ nguyên avatar.
+    if (snapshot instanceof Map) {
+      this.#rows = snapshot as Map<string, UserSnapshot>;
+      return;
+    }
+    const s = snapshot as { rows: Map<string, UserSnapshot>; avatars: Map<string, number> };
+    this.#rows = s.rows;
+    this.#avatars = s.avatars;
   }
 }

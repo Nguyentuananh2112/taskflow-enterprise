@@ -41,7 +41,12 @@ describe('buildCsp — production (W-CSP-2)', () => {
       "'strict-dynamic'",
     ]);
     expect(directive(csp, 'style-src')).toEqual(["'self'", "'nonce-bm9uY2U='"]);
-    expect(directive(csp, 'img-src')).toEqual(["'self'", 'data:', 'blob:']);
+    expect(directive(csp, 'img-src')).toEqual([
+      "'self'",
+      'data:',
+      'blob:',
+      'https://api.example.com',
+    ]);
     expect(directive(csp, 'font-src')).toEqual(["'self'"]);
     expect(directive(csp, 'object-src')).toEqual(["'none'"]);
     expect(directive(csp, 'base-uri')).toEqual(["'none'"]);

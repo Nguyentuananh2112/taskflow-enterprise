@@ -4,7 +4,13 @@ import { describe, expect, it } from 'vitest';
 import {
   ActivationGoneError,
   ActivationInvalidError,
+  ActiveContentError,
+  ImageProcessingBusyError,
+  ImageProcessingUnavailableError,
+  InvalidUploadNameError,
   SessionRevokedError,
+  StorageFullError,
+  UnsupportedFileTypeError,
   AppError,
   BusinessRuleViolationError,
   EmailAlreadyExistsError,
@@ -80,6 +86,13 @@ const CATALOG: [AppError, number, string, unknown][] = [
   [new SessionRevokedError(), 401, 'SESSION_REVOKED', null],
   [new ActivationInvalidError(), 400, 'ACTIVATION_INVALID', null],
   [new ActivationGoneError(), 410, 'ACTIVATION_GONE', null],
+  // Mốc 6 — kho tệp (ADR-141)
+  [new InvalidUploadNameError(), 400, 'INVALID_UPLOAD_NAME', null],
+  [new UnsupportedFileTypeError(), 415, 'UNSUPPORTED_FILE_TYPE', null],
+  [new ActiveContentError(), 415, 'MACRO_OR_ACTIVE_CONTENT', null],
+  [new ImageProcessingBusyError(), 503, 'IMAGE_PROCESSING_BUSY', { retryAfterSec: 5 }],
+  [new ImageProcessingUnavailableError(), 503, 'IMAGE_PROCESSING_UNAVAILABLE', null],
+  [new StorageFullError(), 507, 'STORAGE_FULL', null],
 ];
 
 describe('danh mục lỗi (data-and-api.md §3.2)', () => {
@@ -134,6 +147,12 @@ describe('quan hệ kế thừa và chi tiết', () => {
   it('RateLimitedError mang header Retry-After; lỗi khác không có header', () => {
     expect(new RateLimitedError(12).headers).toEqual({ 'Retry-After': '12' });
     expect(new UnauthorizedError().headers).toEqual({});
+  });
+
+  it('ImageProcessingBusyError mang Retry-After (mặc định 5 s — F-03b)', () => {
+    expect(new ImageProcessingBusyError().headers).toEqual({ 'Retry-After': '5' });
+    expect(new ImageProcessingBusyError(9).headers).toEqual({ 'Retry-After': '9' });
+    expect(new ImageProcessingUnavailableError().headers).toEqual({});
   });
 
   it('InternalError giữ nguyên nhân trong cause nhưng message cố định (không lộ nội bộ)', () => {

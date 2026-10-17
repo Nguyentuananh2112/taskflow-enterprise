@@ -30,6 +30,13 @@ export const ErrorCode = z.enum([
   'SESSION_REVOKED',
   'ACTIVATION_INVALID',
   'ACTIVATION_GONE',
+  // Mốc 6 — kho tệp (ADR-141)
+  'INVALID_UPLOAD_NAME',
+  'UNSUPPORTED_FILE_TYPE',
+  'MACRO_OR_ACTIVE_CONTENT',
+  'IMAGE_PROCESSING_BUSY',
+  'IMAGE_PROCESSING_UNAVAILABLE',
+  'STORAGE_FULL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -75,6 +82,20 @@ export const BusinessRule = z.enum([
   'REQUESTER_NOT_EMPLOYEE',
   'PERIOD_NOT_STARTED',
   'EXPORT_TOO_LARGE',
+  // Mốc 6 (TL 18/10, ADR-141): ảnh hỏng ⇒ IMAGE_UNREADABLE; sharp quá thời gian / vượt trần điểm ảnh ⇒
+  // IMAGE_TOO_COMPLEX (web: "Ảnh quá lớn hoặc phức tạp, hãy chọn ảnh nhỏ hơn").
+  'IMAGE_UNREADABLE',
+  'IMAGE_TOO_COMPLEX',
+  // Mốc 6 — trò chuyện (ADR-143/144, avatar-chat.md §4). NOT_ACTIVE_MEMBER / IDEMPOTENCY_KEY_REUSED dùng lại.
+  'SELF_DIRECT',
+  'RECIPIENT_INACTIVE',
+  'NOT_GROUP',
+  'EDIT_WINDOW_PASSED',
+  'REPLY_OTHER_CONVERSATION',
+  'GROUP_TOO_LARGE',
+  'TOO_MANY_ATTACHMENTS',
+  // Lưới an toàn của store (B soát T-069a M1): đính kèm mất giữa lúc claim và lúc gắn (purge mồ côi) ⇒ rollback tin.
+  'ATTACHMENT_UNAVAILABLE',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
@@ -108,6 +129,10 @@ export const NotFoundDetails = z.object({
     'company',
     // Mốc 5 (T-056)
     'correction_request',
+    // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)
+    'conversation',
+    'message',
+    'attachment',
   ]),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;
