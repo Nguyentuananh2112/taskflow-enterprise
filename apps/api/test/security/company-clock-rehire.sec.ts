@@ -78,7 +78,8 @@ describe('Nhận lại sau một tháng', () => {
         );
         expect(row.totals.absentDays, month).toBe(absent);
       }
-      expect(gapDays).toBe(30);
+      // Từ hôm nay (ngày sau lastDay) tới hôm trước ngày nhận lại (+31 ngày) = 31 ngày.
+      expect(gapDays).toBe(31);
     },
     300_000,
   );
