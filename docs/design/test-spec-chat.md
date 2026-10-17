@@ -256,7 +256,7 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 | `chat-messages.sec.ts` | F | SEC-CH-16 | chưa |
 | `chat-avatar.sec.ts` | F | SEC-CH-17 | chưa |
 | `chat-people.sec.ts` | F | SEC-CH-18 | chưa |
-| `chat-realtime.sec.ts` | F | SEC-CH-04s (vế socket của 04: removed + không còn tin, typing sau 6 s, nghỉ việc ⇒ ngắt), 19, CC-CH-01s (vế socket của CC-CH-01) — **đã viết**, CHƯA chạy | chưa |
+| `chat-realtime.sec.ts` | F | SEC-CH-04s (vế socket của 04: removed + không còn tin, typing sau 6 s, nghỉ việc ⇒ ngắt), 19, CC-CH-01s (vế socket của CC-CH-01) — **3/3 xanh** trên feat/avatar-chat aaf1b932 | xong |
 | `chat-logs.sec.ts` | F | SEC-CH-20 (API) | chưa |
 | `chat-media.sec.ts` | F | SEC-CH-10, 11, 20 (vế /media), 31 (vế IP), 35 (đổi tuple / purpose) — **5/5 xanh** trên `feat/T-067` f8ae89e7; vế cần tệp thật (header ảnh, `deleteBlob`, SEC-CH-22) chờ T-068 / T-069 | một phần |
 | `chat-media-rotate.sec.ts` | F | SEC-CH-35r (xoay khóa `_PREVIOUS`) — **1/1 xanh** | xong |
