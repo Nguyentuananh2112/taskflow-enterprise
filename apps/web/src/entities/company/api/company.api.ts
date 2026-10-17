@@ -2,11 +2,15 @@ import {
   AccessDto,
   CompanyDto,
   EmployeeDto,
+  EmployeeProfileDto,
   HireEmployeeResponse,
   OffboardingResponse,
+  ProfileSuggestionsDto,
+  PutEmployeeProfileResponse,
   ReissueActivationResponse,
   type HireEmployeeBody,
   type ListEmployeesQuery,
+  type PutEmployeeProfileBody,
   type ScheduleOffboardingBody,
   type SetAccessBody,
   type UpdateCompanyBody,
@@ -35,6 +39,17 @@ export const employeesApi = {
     http.put(`/hr/employees/${enc(userId)}/offboarding`, { schema: OffboardingResponse, body }),
   cancelOffboarding: (userId: string) =>
     http.delete(`/hr/employees/${enc(userId)}/offboarding`, { schema: EmployeeDto }),
+};
+
+/** Hồ sơ nhân viên (ADR-128 — `hr:manage`; `/me` = `profile:self`). Danh sách nằm ở `GET hr/employees`. */
+export const profilesApi = {
+  get: (userId: string) =>
+    http.get(`/hr/employee-profiles/${enc(userId)}`, { schema: EmployeeProfileDto }),
+  put: (userId: string, body: PutEmployeeProfileBody) =>
+    http.put(`/hr/employee-profiles/${enc(userId)}`, { schema: PutEmployeeProfileResponse, body }),
+  suggestions: () =>
+    http.get('/hr/employee-profiles/departments', { schema: ProfileSuggestionsDto }),
+  me: () => http.get('/hr/employee-profiles/me', { schema: EmployeeProfileDto }),
 };
 
 /** Quản trị (`company:admin` / `company:grant` — ADR-134). */

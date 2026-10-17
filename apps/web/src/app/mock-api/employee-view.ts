@@ -5,7 +5,12 @@ import type { MockDb } from './mock-db';
 // Dựng EmployeeDto / cảnh báo nghỉ việc từ trạng thái mock (tách khỏi employee-handlers cho gọn).
 
 /** `withAdmin`: chỉ cho lệnh cho nghỉ việc (Admin cũng nghỉ được — B T-062); danh sách KHÔNG có Admin. */
-export function toEmployee(db: MockDb, userId: string, withAdmin = false): EmployeeDto | undefined {
+export function toEmployee(
+  db: MockDb,
+  userId: string,
+  today: string,
+  withAdmin = false,
+): EmployeeDto | undefined {
   const company = db.company;
   const user = db.getUser(userId);
   if (!user) return undefined;
@@ -30,6 +35,7 @@ export function toEmployee(db: MockDb, userId: string, withAdmin = false): Emplo
     offboardLastDay:
       row?.offboardLastDay ?? (left ? (company.departures.get(userId)?.lastDay ?? null) : null),
     version: row?.version ?? null,
+    ...company.profiles.summary(userId, today),
   };
 }
 

@@ -86,6 +86,7 @@ describe('FflateXlsxWriter', () => {
     expect(Object.keys(files).sort()).toEqual([
       '[Content_Types].xml',
       '_rels/.rels',
+      'docProps/core.xml',
       'xl/_rels/workbook.xml.rels',
       'xl/styles.xml',
       'xl/workbook.xml',
@@ -105,6 +106,12 @@ describe('FflateXlsxWriter', () => {
     expect(sheet).toContain('<c r="A1" t="inlineStr" s="2">'); // tiêu đề đậm
     expect(sheet).toContain('<col min="1" max="1" width="30" customWidth="1"/>');
     expect(files['xl/styles.xml']).toContain('quotePrefix="1"');
+    // F SEC-HR-54: creator = TaskFlow, không app.xml / lastModifiedBy / Company / Manager / sheet ẩn / definedNames.
+    expect(files['docProps/core.xml']).toContain('<dc:creator>TaskFlow</dc:creator>');
+    expect(Object.keys(files)).not.toContain('docProps/app.xml');
+    for (const xml of Object.values(files)) {
+      expect(xml).not.toMatch(/lastModifiedBy|<Company|<Manager|state="hidden"|definedNames/);
+    }
     expect(files['xl/workbook.xml']).toContain('<sheet name="Phép" sheetId="1" r:id="rId1"/>');
   });
 

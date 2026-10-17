@@ -1,8 +1,9 @@
 import type { EmployeeDto } from '@taskflow/contracts/company';
 
-import { EMPLOYEE_STATUS_LABEL } from '@/entities/company';
+import { EMPLOYEE_STATUS_LABEL, MISSING_HIRE_DATE, hireDateLine } from '@/entities/company';
 import { EmployeeActions } from '@/features/employee-manage';
 import { Badge } from '@/shared/ui/badge';
+import { Button } from '@/shared/ui/button';
 
 const dmy = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 
@@ -11,11 +12,13 @@ type Props = Readonly<{
   /** Chưa có hôm nay của server ⇒ chưa có nút (hộp cần ngày mặc định / giới hạn). */
   ready: boolean;
   locked: boolean;
-  onOpen: (kind: 'offboard' | 'rehire', employee: EmployeeDto) => void;
+  /** Thẻ của chính người xem: luật self tuyệt đối (ADR-128) — không "Sửa hồ sơ". */
+  self: boolean;
+  onOpen: (kind: 'offboard' | 'rehire' | 'profile', employee: EmployeeDto) => void;
 }>;
 
 /** Một nhân viên: tên + trạng thái (chữ, không chỉ màu), email, ngày vào / ngày làm cuối, MỘT nút theo trạng thái. */
-export function EmployeeRow({ employee: e, ready, locked, onOpen }: Props) {
+export function EmployeeRow({ employee: e, ready, locked, self, onOpen }: Props) {
   const dates =
     e.status === 'LEFT'
       ? e.offboardLastDay && `Làm tới ${dmy(e.offboardLastDay)}`
@@ -25,6 +28,7 @@ export function EmployeeRow({ employee: e, ready, locked, onOpen }: Props) {
         ]
           .filter(Boolean)
           .join(' · ');
+  const work = [e.department, e.jobTitle].filter(Boolean).join(' · ');
   return (
     <li
       aria-label={e.fullName}
@@ -36,9 +40,34 @@ export function EmployeeRow({ employee: e, ready, locked, onOpen }: Props) {
           <Badge>{EMPLOYEE_STATUS_LABEL[e.status]}</Badge>
         </p>
         <p className="truncate text-sm text-text-muted">{e.email}</p>
+        {work && <p className="text-sm">{work}</p>}
+        {e.missingHireDate ? (
+          <p className="text-sm text-warning">
+            <span aria-hidden="true">⚠ </span>
+            {MISSING_HIRE_DATE}
+          </p>
+        ) : (
+          <p className="text-sm text-text-muted">{hireDateLine(e.hireDate, e.seniority)}</p>
+        )}
         {dates && <p className="text-sm text-text-muted">{dates}</p>}
       </div>
-      {ready && <EmployeeActions employee={e} locked={locked} onOpen={onOpen} />}
+      {ready && (
+        <div className="flex flex-wrap items-center gap-2">
+          {self ? (
+            <p className="text-xs text-text-muted">Hồ sơ của bạn do HR khác hoặc Admin sửa</p>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Sửa hồ sơ của ${e.fullName}`}
+              onClick={() => onOpen('profile', e)}
+            >
+              Sửa hồ sơ
+            </Button>
+          )}
+          <EmployeeActions employee={e} locked={locked} onOpen={onOpen} />
+        </div>
+      )}
     </li>
   );
 }

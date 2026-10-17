@@ -22,13 +22,24 @@ export function contentTypesXml(sheetCount: number): string {
     '<Default Extension="xml" ContentType="application/xml"/>' +
     '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
     '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
     `${sheets}</Types>`
   );
 }
 
 export const ROOT_RELS_XML =
   `${XML_HEAD}<Relationships xmlns="${NS_PKG_REL}">` +
-  `<Relationship Id="rId1" Type="${REL_TYPE}/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  `<Relationship Id="rId1" Type="${REL_TYPE}/officeDocument" Target="xl/workbook.xml"/>` +
+  '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+  '</Relationships>';
+
+/**
+ * Thuộc tính tài liệu TỐI THIỂU (F SEC-HR-54): chỉ `creator = TaskFlow`. Không `docProps/app.xml`, không
+ * `lastModifiedBy`, `Company`, `Manager`, ngày tạo — file không mang thông tin người xuất / máy chủ.
+ */
+export const CORE_PROPS_XML =
+  `${XML_HEAD}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
+  'xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator>TaskFlow</dc:creator></cp:coreProperties>';
 
 export function workbookXml(names: readonly string[]): string {
   const sheets = names
