@@ -30,6 +30,16 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000
+# TẠM — ngoại lệ tái lập có chủ đích (devops.md §3): perl-base (gói Essential, không gỡ được) của digest node
+# hiện tại là 5.36.0-7+deb12u3, có CVE CRITICAL/HIGH đã vá ở deb12u4 ⇒ nâng RIÊNG gói này từ kho security.
+# Không ghim phiên bản (Debian chỉ giữ bản vá mới nhất). GỠ khi Dependabot bump digest node mang perl-base ≥ deb12u4.
+RUN apt-get update \
+ && apt-get install -y --only-upgrade --no-install-recommends perl-base \
+ && rm -rf /var/lib/apt/lists/*
+# Gỡ trình quản lý gói đi kèm image node (npm, npx, corepack, yarn 1): runtime chỉ chạy `node` (CMD + healthcheck)
+# ⇒ bớt bề mặt tấn công + bớt gói Trivy báo (tar, cross-spawn… trong npm/yarn). Không đổi tính tái lập (vẫn digest).
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 WORKDIR /app
 # outputFileTracingRoot = gốc monorepo → server.js nằm ở apps/web/ (đã kiểm với Next 16.4.1).
 COPY --from=build /repo/apps/web/.next/standalone ./

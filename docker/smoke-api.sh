@@ -51,6 +51,10 @@ docker run -d --name "$API" --network "$NET" -p "127.0.0.1:${HOST_PORT}:4000" \
   "$IMAGE" >/dev/null
 
 [ "$(docker exec "$API" id -u)" != "0" ] || fail "container chạy bằng root"
+# Runtime không mang trình quản lý gói (Dockerfile gỡ npm/npx/corepack/yarn — bề mặt tấn công + Trivy).
+for tool in npm npx corepack yarn; do
+  ! docker exec "$API" sh -c "command -v $tool" >/dev/null 2>&1 || fail "runtime còn $tool"
+done
 
 for _ in $(seq 1 30); do
   curl -fsS "$BASE/healthz" >/dev/null 2>&1 && break
