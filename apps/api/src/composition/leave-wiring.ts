@@ -19,26 +19,6 @@ import type { Persistence } from './persistence';
 export type LeaveModule = ReturnType<typeof createLeaveModule>;
 
 /**
- * `ApprovedLeavePort` của attendance trỏ TRỄ sang leave: attendance cần ngày nghỉ đã duyệt, leave cần lịch của
- * attendance ⇒ tạo attendance trước với đối tượng này, gắn leave sau (`bind`). Attendance chỉ gọi port khi xử lý
- * request, không gọi lúc khởi tạo (A). Không import attendance (vẫn loại tạm tới T-063): `ApprovedLeavePort` của
- * attendance khớp THEO CẤU TRÚC, tsc kiểm lúc container truyền đối tượng này vào attendance.
- */
-export class LateApprovedLeaves {
-  #leave: LeaveModule | undefined;
-
-  bind(leave: LeaveModule): LeaveModule {
-    this.#leave = leave;
-    return leave;
-  }
-
-  approvedLeaves(q: Parameters<LeaveModule['approvedLeaves']['approvedLeaves']>[0]) {
-    if (!this.#leave) throw new Error('leave module chưa được tạo');
-    return this.#leave.approvedLeaves.approvedLeaves(q);
-  }
-}
-
-/**
  * Module leave (T-039/T-064) với adapter thật: lịch ← attendance, quyền / nhân viên / nhiệm kỳ + audit ← company
  * (T-061), thông báo ← notifications, tên ← reader user của task/auth.
  */
