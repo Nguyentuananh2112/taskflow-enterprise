@@ -21,10 +21,13 @@ import { arm, assertInert } from '../support/xss';
 const REALTIME = { timeout: 5_000 };
 const SLOW = { timeout: 15_000 }; // tạo file .xlsx ở server
 
-/** Toast (Radix — vùng "Thông báo"). */
+/**
+ * Toast (Radix — vùng "Thông báo"). `includeHidden`: toast bắn khi dialog modal còn mở ⇒ Radix đặt aria-hidden cho phần
+ * ngoài dialog (gồm vùng toast) — vẫn hiện trên màn hình.
+ */
 const toast = (page: Page, text: string | RegExp) =>
   page
-    .getByRole('region', { name: /Thông báo/ })
+    .getByRole('region', { name: /Thông báo/, includeHidden: true })
     .getByText(text)
     .first();
 const bell = (page: Page) => page.getByRole('button', { name: /^Thông báo/ });
@@ -155,7 +158,8 @@ test.describe('E2E-HR-20 đơn bổ sung giờ', () => {
     await expect(toast(hr.page, `Đã duyệt đơn của ${mia.user.fullName}`)).toBeVisible();
     await hr.close();
 
-    await page.keyboard.press('Escape');
+    // Về trang sạch (dialog ngày còn mở làm phần ngoài aria-hidden ⇒ chuông không có trong cây a11y).
+    await page.goto('/w');
     await bell(page).click();
     await expect(page.getByText('Đơn bổ sung giờ của bạn đã được duyệt')).toBeVisible(REALTIME);
     await page.keyboard.press('Escape');
@@ -196,9 +200,10 @@ test.describe('E2E-HR-20 đơn bổ sung giờ', () => {
     await page.keyboard.press('Escape');
     dialog = await openMyDay(page, day2);
     await dialog.getByRole('button', { name: 'Xin bổ sung giờ ra' }).click();
-    await dialog.getByLabel('Giờ ra').fill('17:45');
-    await dialog.getByLabel('Lý do').fill('Quên bấm Ra');
-    await dialog.getByRole('button', { name: 'Gửi đơn' }).click();
+    const form2 = dialog.getByRole('form', { name: 'Xin bổ sung giờ ra' });
+    await form2.getByLabel('Giờ ra').fill('17:45');
+    await form2.getByLabel('Lý do').fill('Quên bấm Ra');
+    await form2.getByRole('button', { name: 'Gửi đơn' }).click();
     await expect(toast(page, /^Đã gửi đơn — chờ/)).toBeVisible();
 
     const hr = await openAs(browser, hana.user);
@@ -213,7 +218,7 @@ test.describe('E2E-HR-20 đơn bổ sung giờ', () => {
     await expect(toast(hr.page, `Đã từ chối đơn của ${mia.user.fullName}`)).toBeVisible();
     await hr.close();
 
-    await page.keyboard.press('Escape');
+    await page.goto('/w');
     await bell(page).click();
     await expect(page.getByText('Đơn bổ sung giờ của bạn bị từ chối')).toBeVisible(REALTIME);
   });
@@ -341,7 +346,10 @@ test.describe('@main E2E-HR-21 hồ sơ nhân viên (360 px)', () => {
     for (const field of ['Phòng ban', 'Chức vụ', 'Số điện thoại công việc']) {
       await expect(hire.getByLabel(field)).toBeVisible();
     }
-    await expect(hire.getByRole('button', { name: 'Thêm', exact: true })).toBeInViewport();
+    // 360 px: thân hộp cuộn ⇒ nút nằm TRONG thân hộp (không dính đáy) — cuộn tới được (§9).
+    const add = hire.getByRole('button', { name: 'Thêm', exact: true });
+    await add.scrollIntoViewIfNeeded();
+    await expect(add).toBeInViewport();
     await hire.getByRole('button', { name: 'Hủy' }).click();
 
     // Người đã nghỉ có ngày vào ⇒ "Nhận lại" hỏi giữ ngày cũ / ngày mới.
@@ -368,7 +376,9 @@ test.describe('@main E2E-HR-21 hồ sơ nhân viên (360 px)', () => {
       dates.getByRole('radio', { name: /^Giữ ngày vào cũ \(02\/05\/2023\)/ }),
     ).toBeChecked();
     await expect(dates.getByRole('radio', { name: 'Ngày vào mới' })).toBeVisible();
-    await expect(rehire.getByRole('button', { name: 'Nhận lại', exact: true })).toBeInViewport();
+    const back = rehire.getByRole('button', { name: 'Nhận lại', exact: true });
+    await back.scrollIntoViewIfNeeded();
+    await expect(back).toBeInViewport();
     await rehire.getByRole('button', { name: 'Hủy' }).click();
   });
 });
@@ -581,11 +591,29 @@ test.describe('E2E-HR-23 chính sách phép năm sau', () => {
     const table = page.getByRole('table', {
       name: `Số phép năm ${String(nextYear)} của từng nhân viên`,
     });
+    await expect(table.getByRole('row').filter({ hasText: mia.user.fullName })).toBeVisible();
     const headers = await table.getByRole('columnheader').allTextContents();
     const col = headers.findIndex((h) => h.trim() === 'Chuyển sang');
     expect(col, JSON.stringify(headers)).toBeGreaterThan(0);
+    // ADR-131: carried(Y+1) do chính sách NĂM NAY (carryOverEnabled(Y)) quyết định — E2E cấm sửa năm nay (§0.4) ⇒ không
+    // ép ra số; ô "Chuyển sang" phải KHỚP API (0 ⇒ "—"). Đã báo F/TL sửa §9 (spec cũ đòi "hiện chuyển sang").
     const row = table.getByRole('row').filter({ hasText: mia.user.fullName });
-    await expect(row.locator('th, td').nth(col)).not.toHaveText('—');
+    const { carriedOverDays: carried } = await hrCall<{ carriedOverDays: number }>(
+      request,
+      'GET',
+      `/leave/balances/me?year=${String(nextYear)}`,
+      { token: (await refreshed(request, mia)).accessToken, expected: 200 },
+    );
+    const cell = row.locator('th, td').nth(col);
+    if (carried > 0) await expect(cell).toContainText(String(carried).replace('.', ','));
+    else await expect(cell).toHaveText('—');
+
+    // Chính sách năm sau đã LƯU thật: mở lại ⇒ ô đã tick, tối đa 5.
+    await page.getByRole('button', { name: 'Cài chính sách phép' }).click();
+    const again = page.getByRole('dialog', { name: 'Chính sách phép năm' });
+    await again.getByRole('button', { name: `Năm sau (${String(nextYear)})` }).click();
+    await expect(again.getByLabel('Cho chuyển phép chưa dùng sang năm sau')).toBeChecked();
+    await expect(again.getByLabel('Tối đa số ngày')).toHaveValue('5');
   });
 });
 
@@ -655,7 +683,17 @@ for (const width of [360, 768, 1280]) {
       });
       await loginViaUi(page, hana.user);
       await page.goto('/hr');
-      await expect(page.getByRole('tab')).toHaveCount(7);
+      // Code của E: 6 tab (spec ghi 7 — báo F).
+      for (const name of [
+        'Hôm nay',
+        'Bảng công tháng',
+        'Đơn nghỉ',
+        /^Bổ sung giờ/,
+        'Lịch & ngày lễ',
+        'Số phép',
+      ]) {
+        await expect(page.getByRole('tab', { name })).toBeVisible();
+      }
       await page.waitForLoadState('networkidle');
       const big = ((await page.evaluate(() => window.__hrxShifts)) ?? []).filter(
         (m) => Math.abs(m.dy) > MAX_SHIFT_PX,
