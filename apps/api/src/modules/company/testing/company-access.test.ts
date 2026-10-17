@@ -149,6 +149,22 @@ describe('tenuresOf (theo ngày, bao gồm hai đầu)', () => {
     });
   });
 
+  it('CO-03 vào → nghỉ → nhận lại ⇒ 2 đoạn (đoạn cũ đóng ở last_day, đoạn mới từ start_date mới); truy vấn chỉ trong khoảng giữa ⇒ []', async () => {
+    store.upsertMember(member({ userId: GONE, startDate: '2026-09-01' }));
+    expect(
+      await store.tenuresOf({ userIds: [GONE], from: '2025-01-01', to: '2026-12-31' }),
+    ).toEqual([
+      { userId: GONE, from: '2025-03-01', until: '2026-06-30' },
+      { userId: GONE, from: '2026-09-01', until: null },
+    ]);
+    expect(
+      await store.tenuresOf({ userIds: [GONE], from: '2026-07-01', to: '2026-08-31' }),
+    ).toEqual([]);
+    expect(
+      await store.tenuresOf({ userIds: [GONE], from: '2026-06-30', to: '2026-06-30' }),
+    ).toEqual([{ userId: GONE, from: '2025-03-01', until: '2026-06-30' }]);
+  });
+
   it('biên: until = from vẫn giao; from = to + 1 không giao; userIds [] ⇒ []', async () => {
     expect(
       await store.tenuresOf({ userIds: [GONE], from: '2026-06-30', to: '2026-07-31' }),

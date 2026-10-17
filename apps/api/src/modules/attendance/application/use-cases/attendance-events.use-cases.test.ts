@@ -81,7 +81,7 @@ describe('AttendanceEventsUseCases', () => {
     expect(t.notified.map((n) => n.recipientId)).toEqual([HANA]);
   });
 
-  it('A S2: ADJUSTMENT theo NHIỆM KỲ — chưa từng là nhân viên (Admin) ⇒ 404 user; đã nghỉ, ngày trong nhiệm kỳ cũ ⇒ được; ngày sau ngày cuối ⇒ 422 NOT_EMPLOYED', async () => {
+  it('CO-10 / A S2: ADJUSTMENT theo NHIỆM KỲ — chưa từng là nhân viên (Admin) ⇒ 404 user; đã nghỉ, ngày trong nhiệm kỳ cũ ⇒ được; ngày sau ngày cuối ⇒ 422 NOT_EMPLOYED', async () => {
     const t = await createAttendanceHarness('2026-11-17 10:00');
     await expect(
       t.eventUseCases.adjust(hana, adjustBody({ userId: OLIVIA })),
@@ -106,6 +106,27 @@ describe('AttendanceEventsUseCases', () => {
       t.eventUseCases.adjust(hana, adjustBody({ date: '2026-11-16' })),
     ).rejects.toMatchObject({ statusCode: 422, details: { rule: 'NOT_EMPLOYED' } });
     expect(await t.backend.eventRows()).toHaveLength(1);
+  });
+
+  it('CO-10 (nhận lại, CO-03): hai nhiệm kỳ ⇒ ADJUSTMENT ngày cuối nhiệm kỳ cũ / ngày đầu nhiệm kỳ mới ⇒ được; ngày giữa hai nhiệm kỳ / trước ngày vào đầu tiên ⇒ 422 NOT_EMPLOYED, không ghi', async () => {
+    const t = await createAttendanceHarness('2026-11-17 10:00');
+    // Mia: vào 05/01, nghỉ (ngày cuối 30/09), nhận lại từ 02/11.
+    t.tenures.rows.splice(
+      t.tenures.rows.findIndex((r) => r.userId === MIA),
+      1,
+      { userId: MIA, from: '2026-01-05', until: '2026-09-30' },
+      { userId: MIA, from: '2026-11-02', until: null },
+    );
+    for (const date of ['2026-09-30', '2026-11-02']) {
+      expect((await t.eventUseCases.adjust(hana, adjustBody({ date }))).event.kind).toBe('IN');
+    }
+    for (const date of ['2026-10-01', '2026-10-15', '2026-11-01', '2026-01-04']) {
+      await expect(t.eventUseCases.adjust(hana, adjustBody({ date }))).rejects.toMatchObject({
+        statusCode: 422,
+        details: { rule: 'NOT_EMPLOYED' },
+      });
+    }
+    expect(await t.backend.eventRows()).toHaveLength(2);
   });
 
   it('AT-14 void có lý do ⇒ 200 { event, day }, voidedAt/By/Reason, dòng KHÔNG bị xóa; void lần 2 ⇒ 409 already_voided', async () => {

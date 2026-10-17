@@ -31,7 +31,7 @@ describe('employedOn', () => {
     expect(employedOn(oneDay, '2026-11-16')).toBe(false);
   });
 
-  it('SD-40 nghỉ rồi nhận lại ⇒ khoảng giữa hai nhiệm kỳ ngoài nhiệm kỳ; không có nhiệm kỳ nào ⇒ false', () => {
+  it('SD-40 / CO-03 nghỉ rồi nhận lại ⇒ ngày cuối tính như thường, khoảng giữa hai nhiệm kỳ ngoài nhiệm kỳ (NOT_EMPLOYED); không có nhiệm kỳ nào ⇒ false', () => {
     const twice = [
       { from: '2026-01-05', until: '2026-06-10' },
       { from: '2026-09-01', until: null },
