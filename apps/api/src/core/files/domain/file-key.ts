@@ -15,7 +15,8 @@ export type FileKey = string & { readonly __brand: 'FileKey' };
 export const FILE_NAMESPACES = ['chat'] as const;
 export type FileNamespace = (typeof FILE_NAMESPACES)[number];
 
-const NAMESPACED_KEY = /^(chat)\/([a-z2-7]{26})$/;
+/** Dựng TỪ `FILE_NAMESPACES` (B) — thêm module chỉ sửa một chỗ. Namespace là chữ thường a–z (không ký tự regex). */
+const NAMESPACED_KEY = new RegExp(`^(${FILE_NAMESPACES.join('|')})/([a-z2-7]{26})$`);
 const AVATAR_KEY =
   /^avatars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[1-9][0-9]{0,8}\/(256|64)$/;
 

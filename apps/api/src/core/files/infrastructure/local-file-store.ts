@@ -8,6 +8,7 @@ import { PayloadTooLargeError, StorageFullError } from '../../errors';
 import {
   base32Token,
   isFileKey,
+  isFileNamespace,
   relativePathOf,
   type FileKey,
   type FileNamespace,
@@ -163,7 +164,7 @@ export class LocalFileStore implements IFileStore {
   async *list(
     prefix: `avatars/${string}` | FileNamespace,
   ): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
-    if (prefix === 'chat') {
+    if (isFileNamespace(prefix)) {
       // CHỈ namespace được hỏi: `<ns>/ab/cd/<26>` đúng vị trí của khóa (tệp lạ bị bỏ qua).
       for await (const f of walkFiles(this.#root, prefix)) {
         const token = /^[a-z2-7]{2}\/[a-z2-7]{2}\/([a-z2-7]{26})$/.exec(

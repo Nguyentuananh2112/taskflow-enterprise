@@ -1,8 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import { errorEnvelope } from './harness/http-client';
 import { useApi } from './harness/suite';
@@ -11,6 +11,9 @@ import { useApi } from './harness/suite';
 // cố ý không kết nối được ở local ⇒ chỉ ảnh hưởng readyz (degraded, ADR-074), không chặn khởi động.
 
 const PROD_ORIGIN = 'https://app.sec.example';
+/** Kho tệp bắt buộc ở staging/production (T-067) — thư mục tạm thật, xóa sau suite (F). */
+const FILES_DIR = mkdtempSync(join(tmpdir(), 'tf-sec-prod-files-'));
+afterAll(() => rmSync(FILES_DIR, { recursive: true, force: true }));
 const api = useApi(
   {
     NODE_ENV: 'production',
@@ -23,7 +26,7 @@ const api = useApi(
     SENTRY_DSN: 'https://public@o0.ingest.sentry.io/0',
     METRICS_TOKEN: 'm'.repeat(32),
     // Mốc 6 (T-067): kho tệp bắt buộc ở staging/production — thư mục tạm THẬT (prepareStoreRoot kiểm ghi / hard link).
-    FILE_STORE_DIR: mkdtempSync(join(tmpdir(), 'tf-sec-prod-files-')),
+    FILE_STORE_DIR: FILES_DIR,
     FILE_URL_SECRET: 'file-url-secret-for-security-suite-0123456789',
     MEDIA_BASE_URL: 'https://api.sec.example',
   },
