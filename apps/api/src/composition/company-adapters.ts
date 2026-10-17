@@ -1,4 +1,5 @@
 import type { ICompanyAccessEvents } from '../modules/company/application/ports/access-events.port';
+import type { IAdminWorkspaces } from '../modules/company/application/ports/admin-workspaces.port';
 import type { IOffboardLeavePort } from '../modules/company/application/ports/offboard-leave.port';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
 import type { LateBoundRealtime } from './late-realtime';
@@ -6,12 +7,14 @@ import type { LateBoundRealtime } from './late-realtime';
 // Adapter nối module company (Mốc 3.5) với notifications / realtime / leave qua port do company sở hữu (ADR-093).
 
 /**
- * TẠM (T-061a): leave chưa được nối trên nhánh tích hợp (`tsconfig.exclusions.json`) ⇒ dọn đơn khi đóng nhiệm kỳ không
- * làm gì; D thay bằng `EmploymentLeaveHooks.offboardCleanup` ở T-064 (cổng gộp đòi danh sách loại rỗng).
+ * Dọn đơn khi đóng nhiệm kỳ (nâng Admin — T-061a; nghỉ việc — T-062) ← `EmploymentLeaveHooks.offboardCleanup` của leave
+ * (D, T-064). `employment` đọc trễ: leave dựng SAU company (leave cần lịch của attendance).
  */
-export const noOffboardLeave: IOffboardLeavePort = {
-  offboardCleanup: () => Promise.resolve({ cancelled: 0, revoked: 0 }),
-};
+export function offboardLeaveFrom(
+  employment: () => Pick<IOffboardLeavePort, 'offboardCleanup'>,
+): IOffboardLeavePort {
+  return { offboardCleanup: (q) => employment().offboardCleanup(q) };
+}
 
 /**
  * Đổi role / grant công ty (T-061a): thông báo bền `ACCESS_CHANGED` (cùng transaction, refId = userId) + realtime
@@ -21,9 +24,16 @@ export const noOffboardLeave: IOffboardLeavePort = {
 export function companyAdminDeps(
   notifications: () => Pick<NotificationsModule, 'publisher'>,
   realtime: Pick<LateBoundRealtime, 'notifyCompanyAccessChanged'>,
-): { offboardLeave: IOffboardLeavePort; accessEvents: ICompanyAccessEvents } {
+  employment: () => Pick<IOffboardLeavePort, 'offboardCleanup'>,
+  adminWorkspaces: () => IAdminWorkspaces,
+): {
+  offboardLeave: IOffboardLeavePort;
+  accessEvents: ICompanyAccessEvents;
+  adminWorkspaces: () => IAdminWorkspaces;
+} {
   return {
-    offboardLeave: noOffboardLeave,
+    adminWorkspaces,
+    offboardLeave: offboardLeaveFrom(employment),
     accessEvents: companyAccessEvents(notifications, realtime),
   };
 }

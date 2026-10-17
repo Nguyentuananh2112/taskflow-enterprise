@@ -113,3 +113,157 @@ describe('PUT /admin/access/:userId', () => {
     expect(envelopeOf(demote).data).toMatchObject({ role: 'EMPLOYEE' });
   });
 });
+
+describe('nâng EMPLOYEE→ADMIN dọn đơn nghỉ (offboardCleanup thật của leave — D T-064)', () => {
+  const leave = (path: string) => `/api/v1/leave${path}`;
+  const submit = async (by: TestUser, body: object) => {
+    const res = await request(t.app).post(leave('/requests')).set(by.auth).send(body);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return envelopeOf<{ id: string }>(res).data!.id;
+  };
+  const approve = async (id: string) => {
+    const res = await request(t.app)
+      .post(leave(`/requests/${id}/approve`))
+      .set(hana.auth)
+      .send({ expectedVersion: 1 });
+    expect(res.status).toBe(200);
+  };
+
+  it('PENDING ⇒ CANCELLED, APPROVED bắt đầu sau ngày nâng ⇒ REVOKED, vắt qua ⇒ giữ; decidedBy = Admin, ghi chú hệ thống; HR nhận một OFFBOARD_CLEANUP; Mia (Admin) ⇒ 403 leave:self', async () => {
+    // Giờ nghiệp vụ của harness = 01/11/2026 (Chủ nhật) — ngày nâng, ngày cuối nhiệm kỳ nhân viên của Mia.
+    const pending = await submit(mia, {
+      type: 'ANNUAL',
+      startDate: '2026-11-23',
+      endDate: '2026-11-24',
+    });
+    const after = await submit(mia, {
+      type: 'ANNUAL',
+      startDate: '2026-11-10',
+      endDate: '2026-11-10',
+    });
+    const straddle = await submit(mia, {
+      type: 'ANNUAL',
+      startDate: '2026-11-01',
+      endDate: '2026-11-03',
+    });
+    await approve(after);
+    await approve(straddle);
+
+    expect(
+      (await put(olivia, mia.id, { role: 'ADMIN', grants: [], expectedVersion: 1 })).status,
+    ).toBe(200);
+
+    const list = await request(t.app).get(leave('/requests')).set(hana.auth);
+    const byId = new Map(
+      envelopeOf<
+        {
+          id: string;
+          status: string;
+          decisionNote: string | null;
+          decidedBy: { id: string } | null;
+        }[]
+      >(list).data!.map((r) => [r.id, r]),
+    );
+    expect(byId.get(pending)).toMatchObject({
+      status: 'CANCELLED',
+      decisionNote: 'Nghỉ việc — hệ thống',
+      decidedBy: { id: olivia.id },
+    });
+    expect(byId.get(after)).toMatchObject({ status: 'REVOKED', decidedBy: { id: olivia.id } });
+    expect(byId.get(straddle)).toMatchObject({ status: 'APPROVED', decidedBy: { id: hana.id } });
+
+    const notes = await request(t.app).get('/api/v1/me/notifications').set(hana.auth);
+    expect(
+      envelopeOf<{ type: string; refId: string }[]>(notes)
+        .data!.filter((n) => n.type === 'OFFBOARD_CLEANUP')
+        .map((n) => n.refId),
+    ).toEqual([mia.id]);
+
+    const again = await t.login(mia.email);
+    const self = await request(t.app)
+      .get(leave('/balances/me?year=2026'))
+      .set({ Authorization: `Bearer ${again.token}`, 'X-Forwarded-For': again.ip });
+    expect(self.status).toBe(403);
+    expect(errorOf(self).details).toEqual({ required: 'leave:self' });
+  });
+});
+
+describe('/admin/workspaces', () => {
+  const ws = (path = '') => `/api/v1/admin/workspaces${path}`;
+
+  it('ws mồ côi (OWNER duy nhất rời): Admin thấy cờ + thành viên còn lại, giao OWNER cho thành viên ⇒ 200 + audit; người ngoài ws ⇒ 422; HR ⇒ 403', async () => {
+    const otto = await t.register('Otto');
+    const pam = await t.register('Pam');
+    const add = await request(t.app)
+      .post(`/api/v1/workspaces/${otto.workspaceId}/members`)
+      .set(otto.auth)
+      .send({ userId: pam.id, role: 'PM' });
+    expect(add.status).toBe(201);
+    // OWNER duy nhất rời ws (như hoàn tất nghỉ việc — T-062): gỡ dòng membership.
+    await t.persistence.workspace.memberships.remove(otto.workspaceId, otto.id);
+
+    const list = await request(t.app).get(ws()).set(olivia.auth);
+    expect(list.status).toBe(200);
+    const row = envelopeOf<
+      {
+        id: string;
+        orphan: boolean;
+        owners: unknown[];
+        memberCount: number;
+        members: { userId: string }[];
+      }[]
+    >(list).data!.find((w) => w.id === otto.workspaceId);
+    expect(row).toMatchObject({
+      orphan: true,
+      owners: [],
+      memberCount: 1,
+      members: [{ userId: pam.id }],
+    });
+    expect((await request(t.app).get(ws()).set(hana.auth)).status).toBe(403);
+
+    const outsider = await request(t.app)
+      .post(ws(`/${otto.workspaceId}/owner`))
+      .set(olivia.auth)
+      .send({ userId: mia.id });
+    expect(outsider.status).toBe(422);
+    expect(errorOf(outsider).details).toMatchObject({ rule: 'NOT_WORKSPACE_MEMBER' });
+
+    const ok = await request(t.app)
+      .post(ws(`/${otto.workspaceId}/owner`))
+      .set(olivia.auth)
+      .send({ userId: pam.id });
+    expect(ok.status).toBe(200);
+    expect(envelopeOf(ok).data).toMatchObject({
+      orphan: false,
+      owners: [{ id: pam.id }],
+      members: [],
+    });
+    const audit = (await t.persistence.company.hrAudit.list({ limit: 100 })).items;
+    expect(audit.map((a) => [a.action, a.targetUserId, a.refId])).toContainEqual([
+      'WORKSPACE_OWNER_ASSIGNED',
+      pam.id,
+      otto.workspaceId,
+    ]);
+
+    const again = await request(t.app)
+      .post(ws(`/${otto.workspaceId}/owner`))
+      .set(olivia.auth)
+      .send({ userId: pam.id });
+    expect(again.status).toBe(409);
+    expect(errorOf(again).details).toMatchObject({ reason: 'workspace_has_owner' });
+  });
+
+  it('lưu trữ: còn thành viên ⇒ 409; 0 thành viên ⇒ 200 archivedAt; body lạ ⇒ 400', async () => {
+    const otto = await t.register('Otto');
+    const archive = () =>
+      request(t.app)
+        .post(ws(`/${otto.workspaceId}/archive`))
+        .set(olivia.auth);
+    expect((await archive().send({})).status).toBe(409);
+    await t.persistence.workspace.memberships.remove(otto.workspaceId, otto.id);
+    expect((await archive().send({ force: true })).status).toBe(400);
+    const done = await archive().send({});
+    expect(done.status).toBe(200);
+    expect(envelopeOf<{ archivedAt: string | null }>(done).data?.archivedAt).not.toBeNull();
+  });
+});

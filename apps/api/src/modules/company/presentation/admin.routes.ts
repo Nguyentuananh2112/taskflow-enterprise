@@ -1,13 +1,28 @@
-import { EmployeeParams, SetAccessBody } from '@taskflow/contracts';
+import {
+  AdminWorkspaceParams,
+  AssignWorkspaceOwnerBody,
+  EmployeeParams,
+  SetAccessBody,
+} from '@taskflow/contracts';
 import { Router, type Request, type RequestHandler, type Response } from 'express';
-import type * as z from 'zod';
+import * as z from 'zod';
 
 import { ForbiddenError, SessionRevokedError } from '../../../core/errors';
 import type { HttpResponder } from '../../../core/http/envelope';
 import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
 import { requireUser } from '../../../core/http/request-user';
 import { validate } from '../../../core/http/validate';
-import type { AdminAccessUseCases } from '../application/use-cases/admin-access.use-cases';
+import type { IClock, IIdGenerator } from '../../../core/domain';
+import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
+import type { CompanyAccess } from '../application/company-access';
+import type { HrAuditWriter } from '../application/hr-audit-writer';
+import type { ICompanyAccessEvents } from '../application/ports/access-events.port';
+import type { ICompanyAccounts } from '../application/ports/accounts.port';
+import type { IAdminWorkspaces } from '../application/ports/admin-workspaces.port';
+import type { ICompanyMemberRepository } from '../application/ports/company-member.port';
+import type { IOffboardLeavePort } from '../application/ports/offboard-leave.port';
+import { AdminAccessUseCases } from '../application/use-cases/admin-access.use-cases';
+import { AdminWorkspacesUseCases } from '../application/use-cases/admin-workspaces.use-cases';
 import type { CompanyPermission } from '../domain/roles';
 
 /** Mount dưới `/api/v1` (container). */
@@ -38,6 +53,7 @@ export class AdminController {
   constructor(
     private readonly d: {
       access: Pick<AdminAccessUseCases, 'list' | 'set'>;
+      workspaces: Pick<AdminWorkspacesUseCases, 'list' | 'assignOwner' | 'archive'>;
       responder: HttpResponder;
     },
   ) {}
@@ -52,6 +68,31 @@ export class AdminController {
     this.d.responder.ok(
       res,
       await this.d.access.set({ ...body, userId, actorId: requireUser(req).id }),
+    );
+  };
+
+  listWorkspaces = async (_req: Request, res: Response) => {
+    this.d.responder.ok(res, await this.d.workspaces.list());
+  };
+
+  assignOwner = async (req: Request, res: Response) => {
+    const { id } = req.params as unknown as AdminWorkspaceParams;
+    const { userId } = req.body as AssignWorkspaceOwnerBody;
+    this.d.responder.ok(
+      res,
+      await this.d.workspaces.assignOwner({
+        actorId: requireUser(req).id,
+        workspaceId: id,
+        userId,
+      }),
+    );
+  };
+
+  archiveWorkspace = async (req: Request, res: Response) => {
+    const { id } = req.params as unknown as AdminWorkspaceParams;
+    this.d.responder.ok(
+      res,
+      await this.d.workspaces.archive({ actorId: requireUser(req).id, workspaceId: id }),
     );
   };
 }
@@ -84,5 +125,48 @@ export function adminRoutes(d: {
     ...guard('company:grant', { params: EmployeeParams, body: SetAccessBody }),
     c.setAccess,
   );
+  router.get('/workspaces', ...guard('company:admin'), c.listWorkspaces);
+  router.post(
+    '/workspaces/:id/owner',
+    ...guard('company:admin', { params: AdminWorkspaceParams, body: AssignWorkspaceOwnerBody }),
+    c.assignOwner,
+  );
+  // Không body (POST vẫn gửi JSON — chống CSRF); thiếu body = `{}`, trường lạ ⇒ 400.
+  router.post(
+    '/workspaces/:id/archive',
+    ...guard('company:admin', {
+      params: AdminWorkspaceParams,
+      body: z.strictObject({}).optional().default({}),
+    }),
+    c.archiveWorkspace,
+  );
   return router;
+}
+
+/** Dựng use case + controller + router `/admin` (gọi từ `createCompanyModule`, giữ module dưới giới hạn dòng). */
+export function createAdminRouter(d: {
+  access: CompanyAccess;
+  members: ICompanyMemberRepository;
+  accounts: ICompanyAccounts;
+  audit: HrAuditWriter;
+  offboardLeave: IOffboardLeavePort;
+  accessEvents: ICompanyAccessEvents;
+  adminWorkspaces: () => IAdminWorkspaces;
+  permissionsOf: (userId: string) => Promise<ReadonlySet<CompanyPermission> | null>;
+  uow: IUnitOfWork;
+  ids: IIdGenerator;
+  clock: IClock;
+  timeZone: () => Promise<string>;
+  responder: HttpResponder;
+  authenticate: RequestHandler;
+  limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
+}): Router {
+  const access = new AdminAccessUseCases({ ...d, events: d.accessEvents });
+  const workspaces = new AdminWorkspacesUseCases({ ...d, workspaces: d.adminWorkspaces });
+  return adminRoutes({
+    controller: new AdminController({ access, workspaces, responder: d.responder }),
+    permissionsOf: d.permissionsOf,
+    authenticate: d.authenticate,
+    limit: d.limit,
+  });
 }

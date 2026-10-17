@@ -50,6 +50,9 @@ import {
 import {
   AccessDto,
   ActivateBody,
+  AdminWorkspaceDto,
+  AdminWorkspaceParams,
+  AssignWorkspaceOwnerBody,
   ActivateResponse,
   ActivationInspectBody,
   ActivationInspectResponse,
@@ -228,6 +231,46 @@ export const API_ROUTES: readonly ApiRoute[] = [
       'RESOURCE_CONFLICT',
       'BUSINESS_RULE_VIOLATION',
     ],
+  },
+  {
+    method: 'get',
+    path: '/admin/workspaces',
+    summary:
+      'Mọi workspace cho Admin (company:admin): tên, OWNER, số thành viên, cờ mồ côi (+ thành viên còn lại khi mồ côi), xóa mềm / lưu trữ — KHÔNG dự án / task',
+    tag: 'hr',
+    security: 'bearer',
+    response: { status: 200, data: z.array(AdminWorkspaceDto) },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  {
+    method: 'post',
+    path: '/admin/workspaces/{id}/owner',
+    summary:
+      'Giao OWNER cho thành viên hiện tại của ws mồ côi (người đó còn thuộc công ty, không có lịch nghỉ). Ws còn OWNER / đã xóa ⇒ 409; không là thành viên ⇒ 422 NOT_WORKSPACE_MEMBER',
+    tag: 'hr',
+    security: 'bearer',
+    params: AdminWorkspaceParams,
+    body: AssignWorkspaceOwnerBody,
+    response: { status: 200, data: AdminWorkspaceDto },
+    errors: [
+      'SESSION_REVOKED',
+      'FORBIDDEN_ACCESS',
+      'VALIDATION_ERROR',
+      'RESOURCE_NOT_FOUND',
+      'RESOURCE_CONFLICT',
+      'BUSINESS_RULE_VIOLATION',
+    ],
+  },
+  {
+    method: 'post',
+    path: '/admin/workspaces/{id}/archive',
+    summary:
+      'Lưu trữ ws 0 thành viên (không purge, giữ dữ liệu; đã lưu trữ ⇒ trả như cũ). Còn thành viên ⇒ 409 workspace_has_members',
+    tag: 'hr',
+    security: 'bearer',
+    params: AdminWorkspaceParams,
+    response: { status: 200, data: AdminWorkspaceDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'RESOURCE_NOT_FOUND', 'RESOURCE_CONFLICT'],
   },
   {
     method: 'post',

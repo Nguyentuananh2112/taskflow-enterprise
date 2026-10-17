@@ -87,7 +87,12 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
-    ...companyAdminDeps(() => notifications, realtime),
+    ...companyAdminDeps(
+      () => notifications,
+      realtime,
+      () => leave.employment,
+      () => workspace.adminWorkspaces,
+    ),
   });
   // Trước Workspace: publisher là port ghi thông báo (cùng UoW) cho leave / attendance / company.
   const notifications = createNotificationsModule({

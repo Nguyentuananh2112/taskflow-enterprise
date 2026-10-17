@@ -112,6 +112,9 @@ beforeEach(async () => {
       accessChanged: () => Promise.resolve(),
       pushAccessChanged: () => Promise.resolve(),
     },
+    adminWorkspaces: () => {
+      throw new Error('không dùng ở ca này');
+    },
   });
   const audience = company.notificationAudience;
   publisher = new NotificationPublisher({

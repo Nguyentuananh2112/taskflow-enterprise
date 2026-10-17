@@ -14,8 +14,8 @@ import {
   type BootstrapAdminResult,
 } from './application/use-cases/bootstrap-admin.use-case';
 import type { ICompanyAccessEvents } from './application/ports/access-events.port';
+import type { IAdminWorkspaces } from './application/ports/admin-workspaces.port';
 import type { IOffboardLeavePort } from './application/ports/offboard-leave.port';
-import { AdminAccessUseCases } from './application/use-cases/admin-access.use-cases';
 import { HireEmployeeUseCase } from './application/use-cases/hire-employee.use-case';
 import type {
   ICompanyMemberRepository,
@@ -24,7 +24,7 @@ import type {
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
-import { ADMIN_PATH, AdminController, adminRoutes } from './presentation/admin.routes';
+import { ADMIN_PATH, createAdminRouter } from './presentation/admin.routes';
 import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import {
   effectiveCompanyPermissions,
@@ -70,6 +70,8 @@ export interface CompanyModuleDeps {
   offboardLeave: IOffboardLeavePort;
   /** Thông báo bền + realtime khi Admin đổi role / grant (T-061a). */
   accessEvents: ICompanyAccessEvents;
+  /** Dữ liệu workspace cho Admin (module workspace — dựng SAU company ⇒ đọc trễ). */
+  adminWorkspaces: () => IAdminWorkspaces;
 }
 
 export interface CompanyModule {
@@ -127,18 +129,6 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
     logger: d.logger,
   });
-  const adminAccess = new AdminAccessUseCases({
-    access,
-    members,
-    accounts,
-    audit,
-    offboardLeave: d.offboardLeave,
-    events: d.accessEvents,
-    uow: d.uow,
-    ids,
-    clock,
-    timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
-  });
   const active = async (userId: string) => {
     const m = await members.find(userId);
     return m && isCompanyAccessActive(m, clock.now()) ? m : null;
@@ -187,11 +177,15 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
       },
       {
         path: ADMIN_PATH,
-        router: adminRoutes({
-          controller: new AdminController({ access: adminAccess, responder: d.responder }),
+        router: createAdminRouter({
+          ...d,
+          access,
+          members,
+          accounts,
+          audit,
           permissionsOf,
+          timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
           authenticate,
-          limit: d.limit,
         }),
       },
     ],

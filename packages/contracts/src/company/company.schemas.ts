@@ -151,6 +151,8 @@ export const AdminWorkspaceDto = z.object({
   memberCount: z.int().min(0),
   /** Không còn OWNER (OWNER duy nhất đã nghỉ việc). */
   orphan: z.boolean(),
+  /** Thành viên còn lại để Admin chọn người giao OWNER — CHỈ khi `orphan`; còn lại `[]` (T-061a, TL chốt với B/E). */
+  members: z.array(z.object({ userId: Uuid, fullName: z.string() })),
   deletedAt: IsoDateTime.nullable(),
   archivedAt: IsoDateTime.nullable(),
 });
