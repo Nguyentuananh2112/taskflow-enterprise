@@ -42,7 +42,7 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | 5 | f0a8cea3, 03ce1754 | `/media` (`mediaRouter`) + `MediaUrlSigner` + port `IMediaResolver` + luật hạn mức `media-ip` (+ soát B L1) |
 | 6 | 9584f6a9, 74afd33a, 70e994f5 | env + `.env.example`; `StorageQuota` (507) + `MediaResolverRegistry`; `createFiles` (composition); gắn `/media` trong `app.ts`; `start-server` |
 | 7 | ed3343ac | `files-sweep` (bước tmp) + `FileSweepRegistry` + bật theo cờ / env test-only + lượt ON_START trước `listen` |
-| 8 | (commit này) | volume `filestore` + `mem_limit` (compose), Dockerfile thư mục kho, `backup-files.sh`, Caddy body 21 MB, runbook §7 |
+| 8 | da7177e4, 3dae7904 | volume `filestore` + `mem_limit` (compose), Dockerfile thư mục kho, `backup-files.sh`, Caddy body 21 MB, runbook §7 |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -200,8 +200,27 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
   hằng tháng (khóa từ két, ≥ 20 khóa qua `/media`, tệp thừa do sweep dọn), những gì không làm.
 - Chưa build image Docker (job nặng; image backup / api thuộc cổng CI). B / D soát phần deploy.
 
-## Còn lại
-9 ca SEC-CH của G · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+## Bước 9 — ca U / I của G trong phạm vi T-067 (kiểm kê cho F — test-spec-chat §2 / §9)
+
+| Mã ca | File (apps/api) | Ghi chú |
+|---|---|---|
+| CH-03 | `src/core/files/domain/sniff-type.test.ts`, `test/files/sniff-fixtures.test.ts` | mỗi hàm sinh §1.2 một ca (48) |
+| CH-04 | `src/core/files/domain/file-name.test.ts` | sanitize, NFC, bidi, X-Upload-Name 255/256 byte |
+| CH-09 | `src/core/files/domain/media-signature.test.ts` | tuple, `_PREVIOUS`, biên hết hạn, bảng khóa bị từ chối |
+| CH-12 (vế tmp) | `src/core/files/infrastructure/local-file-store.test.ts`, `src/core/files/files-sweep.test.ts` | tmp < 1 giờ không bị xóa; vế upload mồ côi < TTL ⇒ T-069 |
+| CH-14 | `local-file-store.test.ts` | fs giả EPERM ×4 rồi được; hết lượt; ENOSPC / EXDEV không thử lại |
+| AV-03 | `media-signature.test.ts` (`bucketExpiry`), `media-router.test.ts` (signer) | |
+| AV-06 | `src/composition/files-setup.test.ts`, `image-pipeline.test.ts` | Disabled / không nạp ⇒ 503, gauge 0 (−1 trước lần kiểm đầu) |
+| AV-02 (vế pipeline) | `test/files/image-pipeline.sharp.test.ts` | EXIF / GPS / XMP / ICC bị bỏ, 256 / 64 — vế route ⇒ T-068 |
+| Vế U của SEC-CH-06/07/08/09/10/11/12/21/22/23/24/26/27/31/33/34/35/36/37 | `sniff-type`, `raw-upload`, `media-router`, `image-pipeline(.sharp)`, `env`, `storage-quota`, `upload-client-gone` | hộp đen thật (route) ⇒ T-068 / T-069 (F) |
+| CC-CH-04 (vế kho) | `local-file-store.test.ts` | 2 commit cùng khóa avatar ⇒ đúng một thắng; vế DB ⇒ T-068 |
+| CC-CH-09 | `image-pipeline.test.ts` | pool 2 + chờ 4 ⇒ 503 + Retry-After 5 |
+
+- Coverage `src/core/files/**` (phạm vi `src/core/files` + `test/files` + composition): 95,4 % stmts · 91,5 % branch ·
+  92,3 % funcs · 97,7 % lines — trên ngưỡng core (90 / 85 / 90 / 90). Stryker `core/files/domain` ≥ 90 % ⇒ F (máy rảnh).
+- Sửa ca flaky `upload-client-gone` (dưới coverage `commit` chạy trước khi response đóng): handler chờ ĐÚNG sự kiện
+  `close` của response (trần 5 s) thay vì ngủ 300 ms — 5 / 5 lượt xanh.
+- CH-01/02/05–08/10/11/13/15/16, AV-01/04/05/07, CC-CH-07/08 thuộc T-068 / T-069 (cần bảng / route / realtime). · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý

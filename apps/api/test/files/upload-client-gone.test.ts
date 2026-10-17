@@ -43,7 +43,13 @@ it('client đi khi "worker" còn chạy ⇒ commit 503 ServiceUnavailableError, 
     async (req, res) => {
       const { staged } = requireUpload(req);
       readBytes = (await staged.readAll()).length; // đọc TRƯỚC khi có thể bị discard (B)
-      await new Promise((r) => setTimeout(r, 300)); // worker sharp đang chạy
+      // "Worker sharp đang chạy" cho tới khi client đi: chờ ĐÚNG sự kiện response đóng (không đoán bằng thời gian —
+      // dưới tải / coverage thứ tự theo giờ không bảo đảm), trần 5 s.
+      await new Promise<void>((r) => {
+        if (res.destroyed || res.writableFinished) r();
+        else res.once('close', () => r());
+        setTimeout(r, 5_000).unref();
+      });
       try {
         await staged.commit();
         res.json({ ok: true });

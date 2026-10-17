@@ -115,6 +115,11 @@ describe('MediaUrlSigner', () => {
     const nowSec = NOW.getTime() / 1000;
     expect(Number(url.searchParams.get('exp')) - nowSec).toBeGreaterThanOrEqual(86_400);
     expect(Number(url.searchParams.get('exp')) - nowSec).toBeLessThanOrEqual(2 * 86_400);
+    const img = new URL(signer().chatImageUrl(ATT, 'thumb'));
+    expect(img.pathname).toBe(`/api/v1/media/chat/${ATT}/thumb`);
+    expect(img.searchParams.get('v')).toBe('1');
+    expect(Number(img.searchParams.get('exp')) - nowSec).toBeGreaterThanOrEqual(3_600);
+    expect(Number(img.searchParams.get('exp')) - nowSec).toBeLessThanOrEqual(7_200);
     const dl = new URL(signer().downloadUrl(ATT));
     expect(Number(dl.searchParams.get('exp')) - nowSec).toBe(60);
     expect(dl.pathname.endsWith('/file')).toBe(true);
