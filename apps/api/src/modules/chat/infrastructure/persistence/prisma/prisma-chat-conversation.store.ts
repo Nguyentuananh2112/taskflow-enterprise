@@ -105,6 +105,11 @@ export class PrismaChatConversationStore implements IChatConversationStore {
     return row ? toRecord(row) : null;
   }
 
+  async findByWorkspace(workspaceId: string): Promise<ConversationRecord | null> {
+    const row = await this.db().chatConversation.findUnique({ where: { workspaceId } });
+    return row ? toRecord(row) : null;
+  }
+
   async lock(id: string): Promise<void> {
     await this.db().$queryRaw`SELECT id FROM chat_conversations WHERE id = ${id}::uuid FOR UPDATE`;
   }
