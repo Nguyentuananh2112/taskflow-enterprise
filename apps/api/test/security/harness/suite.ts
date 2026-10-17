@@ -15,6 +15,16 @@ export interface ApiUnderTest {
   readonly webOrigin: string;
   request(req: RawRequest): Promise<RawResponse>;
   logs(): readonly string[];
+  /**
+   * ADR-140 (Mốc 3.5): dừng API rồi khởi động lại trên CÙNG DB / Valkey db với env ghi đè thêm (vd
+   * `TEST_CLOCK_ANCHOR` tiến). Phiên cũ vẫn hợp lệ theo giờ thật. Override cộng dồn qua các lần restart.
+   */
+  restart(overrides: Record<string, string>): Promise<void>;
+}
+
+/** Bước chạy sau reset DB, TRƯỚC khi khởi động API (vd `admin:bootstrap` — harness/company.ts). */
+export interface SuiteSetup {
+  beforeStart?: (ctx: { dbUrl: string; env: Record<string, string> }) => Promise<void>;
 }
 
 /**
@@ -36,19 +46,24 @@ export interface PendingStartup {
 export function useApi(
   envOverrides: Record<string, string> = {},
   pending?: PendingStartup,
+  setup: SuiteSetup = {},
 ): ApiUnderTest {
   const config = loadHarnessConfig();
   let db: SuiteDatabase | undefined;
   let api: RunningApi | undefined;
   let skipReason: string | undefined;
+  let overrides = { ...envOverrides };
 
   beforeAll(async () => {
     db = await prepareSuiteDatabase(config, API_DIR);
     // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
     // Chỉ SAU khi giữ khóa (prepareSuiteDatabase) — trước đó sẽ xóa giữa chừng của lần chạy khác.
     await flushRateLimitCounters();
+    const env = baseEnv(db.appUrl, overrides);
+    // Lỗi bootstrap là đỏ thật — không thuộc `pending` (chỉ áp cho lỗi khởi động API).
+    await setup.beforeStart?.({ dbUrl: db.appUrl, env });
     try {
-      api = await startApi(baseEnv(db.appUrl, envOverrides));
+      api = await startApi(env);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const forced = pending && process.env[pending.requiredEnv] === '1';
@@ -81,6 +96,13 @@ export function useApi(
     webOrigin: config.webOrigin,
     request: (req) => rawRequest(running().baseUrl, req),
     logs: () => running().logs(),
+    restart: async (extra) => {
+      if (!db) throw new Error('restart() chỉ dùng sau beforeAll của useApi()');
+      await running().stop();
+      api = undefined;
+      overrides = { ...overrides, ...extra };
+      api = await startApi(baseEnv(db.appUrl, overrides));
+    },
   };
 }
 

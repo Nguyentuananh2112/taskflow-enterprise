@@ -88,7 +88,7 @@ export class Actors {
     return data<unknown>(res, 201, `POST /workspaces/${wsId}/members`);
   }
 
-  async createProject(actor: Actor, wsId: string, keyPrefix: string) {
+  async createProject(actor: Pick<Actor, 'accessToken'>, wsId: string, keyPrefix: string) {
     const res = await this.json('POST', `/workspaces/${wsId}/projects`, actor.accessToken, {
       name: `Project ${keyPrefix}`,
       keyPrefix,
@@ -96,7 +96,12 @@ export class Actors {
     return data<{ id: string }>(res, 201, `POST /workspaces/${wsId}/projects`);
   }
 
-  async createTask(actor: Actor, wsId: string, projectId: string, title = 'sec task') {
+  async createTask(
+    actor: Pick<Actor, 'accessToken'>,
+    wsId: string,
+    projectId: string,
+    title = 'sec task',
+  ) {
     const res = await this.json(
       'POST',
       `/workspaces/${wsId}/projects/${projectId}/tasks`,

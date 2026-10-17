@@ -106,7 +106,7 @@ actors.offboard(hr, userId, lastDay)                 // PUT /hr/employees/:userI
 ### 1.3 Restart với mốc tiến
 
 ```ts
-await api.restart({ TEST_CLOCK_ANCHOR: addDays(anchor, 7) /* - 30 s */ })
+await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 // cùng DB, cùng Valkey db; phiên cũ còn hiệu lực theo giờ THẬT (JWT không theo giờ nghiệp vụ)
 ```
 
@@ -116,13 +116,14 @@ await api.restart({ TEST_CLOCK_ANCHOR: addDays(anchor, 7) /* - 30 s */ })
 
 - **`nextVnDateAnchor('MM-DD', 'HH:mm:ss', tz?)`:** mốc theo **ngày** (đầu tháng, 31/12, ngày đổi giờ Berlin), luôn ở tương lai.
 - **`reserveDate()` (E2E):** cấp ngày lễ xa (≥ +20 ngày làm việc từ mốc), mỗi lần một ngày mới, không trùng trong lượt chạy.
-- **`newNotifications(actor, since, { type, refId })`:** đọc `/me/notifications` rồi lọc theo `createdAt > since` + `type` + `refId`.
+- **`newNotifications(actor, before, { type, refId })`:** `before = await notificationIds(actor)` chụp trước thao tác; sau đó đọc hết các trang `/me/notifications` và lọc id mới + `type` + `refId`. So theo **id**, không theo `createdAt` (giờ nghiệp vụ dời theo mốc, không so được với giờ máy).
 
 ### 1.5 Bố cục file
 
 | File | Ca |
 |---|---|
-| `test/security/harness/company.ts` | bootstrap, `createUser`, `newWorkspace`, `offboard`, `restart` |
+| `test/security/harness/company.ts` | `useCompanyApi`, `CompanyActors` (`createUser`, `activate`, `setAccess`, `newWorkspace`, `addToWorkspace`, `offboard`, `reissueActivation`, `newNotifications`); `api.restart` ở `suite.ts` |
+| `test/security/harness/company-bootstrap.ts` | chạy CLI `admin:bootstrap --json`, đọc `{link, userId}`; không import vitest (dùng lại ở globalSetup E2E) |
 | `test/security/company-access.sec.ts` | SEC-HR-30…35, 38, 65 |
 | `test/security/company-idor.sec.ts` | SEC-HR-36, 37, 39 |
 | `test/security/company-activation.sec.ts` | SEC-HR-56…61, 63 |
