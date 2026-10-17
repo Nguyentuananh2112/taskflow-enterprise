@@ -6,17 +6,14 @@ import { apiCreateUser } from '../support/company';
 import { expect, loginViaUi, newUser, test, type E2EUser } from '../support/fixtures';
 import { API_ORIGIN } from '../support/env';
 import { call } from '../support/http';
-import { awaiting } from '../support/pending';
 import { arm, assertInert } from '../support/xss';
 
 // E2E-CH-07 (test-spec-chat §6, avatar-chat.md §7 a11y — phần của H): axe 0 serious / critical sáng + tối ở 360 / 1280;
-// vùng `aria-live` sr-only RIÊNG chỉ đọc tin ĐẾN sau lúc mở, `log "Tin nhắn"` không tự đọc. Cần route chat (T-069) +
-// event `chat:message:new` thật (T-070) ⇒ fixme tới khi E2E_RUN_PENDING chứa cả hai (không xanh giả).
-// Selector theo test-spec-chat §6.1 (H 18/10). E2E-CH-02…06 của F. Cùng file: SEC-CH-13 (XSS hiển thị, pending T-069) và
+// vùng `aria-live` sr-only RIÊNG chỉ đọc tin ĐẾN sau lúc mở, `log "Tin nhắn"` không tự đọc. Chạy trên route chat (T-069)
+// + event `chat:message:new` thật (T-070) — đã gộp feat/avatar-chat a42a924f.
+// Selector theo test-spec-chat §6.1 (H 18/10). E2E-CH-02…06 của F. Cùng file: SEC-CH-13 (XSS hiển thị) và
 // SEC-CH-20 phần web (Sentry không mang `sig` — chạy ở lượt có E2E_SENTRY_DSN).
 
-const T069 = 'T-069';
-const T070 = 'T-070';
 const REALTIME = { timeout: 5_000 };
 
 async function seriousViolations(page: Page): Promise<string[]> {
@@ -71,7 +68,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
   ]) {
     test.describe(`E2E-CH-07 axe trò chuyện (${colorScheme}, ${viewport.width}px)`, () => {
       test.use({ colorScheme, viewport });
-      test.fixme(awaiting(T069, T070), `[PENDING ${T069}, ${T070}] chờ route + realtime chat thật`);
 
       test('/chat, /chat/[id] (có tin, ảnh đại diện chữ cái), dialog Tin nhắn mới', async ({
         page,
@@ -107,8 +103,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
 }
 
 test.describe('E2E-CH-07 vùng aria-live', () => {
-  test.fixme(awaiting(T069, T070), `[PENDING ${T069}, ${T070}] chờ route + realtime chat thật`);
-
   test('mở luồng KHÔNG đọc lịch sử; tin ĐẾN realtime ⇒ đọc "Vic: …"; tin của mình không đọc; log không tự đọc', async ({
     page,
     request,
@@ -158,8 +152,6 @@ const XSS = {
 const BAD_LINKS = 'a[href^="javascript:" i], a[href^="data:" i], a[href^="vbscript:" i]';
 
 test.describe('SEC-CH-13 XSS trong trò chuyện', () => {
-  test.fixme(awaiting(T069), `[PENDING ${T069}] chờ route chat thật`);
-
   test('thân tin / javascript: / data: / tên nhóm chứa HTML ⇒ hiện nguyên văn, không chạy, không link javascript:', async ({
     page,
     context,
@@ -223,8 +215,6 @@ test.describe('SEC-CH-13 XSS trong trò chuyện', () => {
 });
 
 test.describe('SEC-CH-13 XSS — tin đến realtime khi KHÔNG mở luồng', () => {
-  test.fixme(awaiting(T069, T070), `[PENDING ${T069}, ${T070}] chờ route + realtime chat thật`);
-
   test('Mia ở /w, Vic gửi payload ⇒ badge / title / thông báo không chạy script, không hiện thân tin dạng HTML', async ({
     page,
     context,
