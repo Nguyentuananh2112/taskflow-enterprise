@@ -269,7 +269,8 @@ test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox;
   const off = hana.page.getByRole('dialog', { name: `Cho ${miaName} nghỉ việc` });
   await off.getByLabel('Ngày làm cuối').fill(addDays(vnDate(), -1));
   await off.getByRole('button', { name: 'Lên lịch nghỉ việc' }).click();
-  const done = hana.page.getByRole('dialog', { name: `Đã lên lịch nghỉ việc cho ${miaName}` });
+  // E (T-065f 385bf93): ngày cuối đã qua ⇒ hoàn tất ngay ⇒ "Đã cho {tên} nghỉ việc" (lên lịch tương lai: "Đã lên lịch…").
+  const done = hana.page.getByRole('dialog', { name: `Đã cho ${miaName} nghỉ việc` });
   await expect(done).toContainText(w3Name); // cảnh báo ws mồ côi
   await done.getByRole('button', { name: 'Đóng' }).click();
   await hana.close();
