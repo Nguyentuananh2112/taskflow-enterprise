@@ -69,11 +69,12 @@ export class AttendanceEventsUseCases {
         targetUserId: body.userId,
         reason: body.reason,
       });
-      assertInsideRetention(d.retention, body.date);
       // Chỉ nhân viên HIỆN TẠI (VIEWER là khách, người đã rời không chấm thêm) ⇒ còn lại 404 user.
       if (!(await d.hrAccess.isEmployee({ workspaceId, userId: body.userId }))) {
         throw new ResourceNotFoundError('user');
       }
+      // Thứ tự lỗi đã chốt: 404 tài nguyên con TRƯỚC 422 (review B, LOW-1).
+      assertInsideRetention(d.retention, body.date);
       const versions = await d.calendar.scheduleVersions(workspaceId);
       const { timezone } = effectiveSchedule(versions, body.date);
       const [h, m] = body.time.split(':').map(Number) as [number, number];

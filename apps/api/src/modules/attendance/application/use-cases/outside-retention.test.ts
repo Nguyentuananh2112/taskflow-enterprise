@@ -76,6 +76,16 @@ describe('lệnh ghi ngoài thời hạn lưu (job BẬT) ⇒ 422 OUTSIDE_RETENT
     await expect(t.eventUseCases.adjust(W1, HANA, adjustBody(CUTOFF))).resolves.toBeDefined();
   });
 
+  it('thứ tự lỗi: người không phải nhân viên + ngày < mốc ⇒ 404 user (TRƯỚC 422 OUTSIDE_RETENTION)', async () => {
+    const t = await setup('2026-11-17 10:00');
+    t.retention.cutoff = CUTOFF;
+    t.members.delete(MIA);
+    await expect(t.eventUseCases.adjust(W1, HANA, adjustBody('2026-11-09'))).rejects.toMatchObject({
+      statusCode: 404,
+      details: { resource: 'user' },
+    });
+  });
+
   it('void lượt có workDate < mốc ⇒ 422, lượt không bị hủy', async () => {
     const t = await setup('2026-11-17 10:00');
     const r = await t.eventUseCases.adjust(W1, HANA, adjustBody('2026-11-09'));
