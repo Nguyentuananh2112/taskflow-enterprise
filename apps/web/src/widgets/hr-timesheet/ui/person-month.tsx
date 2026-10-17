@@ -32,6 +32,7 @@ export function PersonMonth({ wsId, month, row, today, canEdit }: Props) {
         month={{ month, timezone, days: row.days }}
         caption={`${row.user.fullName}${row.left ? ' (đã rời)' : ''}`}
         onSelectDay={setDate}
+        today={today}
       />
       <DayPunchesDialog
         wsId={wsId}

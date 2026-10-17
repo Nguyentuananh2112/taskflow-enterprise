@@ -11,12 +11,13 @@ import {
 } from '@/entities/notification';
 import { useMarkAllRead, useMarkRead } from '@/features/notification-read';
 import { cn } from '@/shared/lib/cn';
+import { serverClock } from '@/shared/lib/server-clock';
 import { Button } from '@/shared/ui/button';
 import { Popover } from '@/shared/ui/popover';
 
 const relative = new Intl.RelativeTimeFormat('vi', { numeric: 'auto' });
 function ago(iso: string): string {
-  const min = Math.round((Date.parse(iso) - Date.now()) / 60_000);
+  const min = Math.round((Date.parse(iso) - serverClock.now()) / 60_000);
   if (Math.abs(min) < 60) return relative.format(min, 'minute');
   const h = Math.round(min / 60);
   return Math.abs(h) < 24 ? relative.format(h, 'hour') : relative.format(Math.round(h / 24), 'day');

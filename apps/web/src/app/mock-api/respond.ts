@@ -11,7 +11,15 @@ import type * as z from 'zod';
 // Dựng response của mock API. Mọi response đều được parse bằng CHÍNH schema của contracts trước khi
 // trả về ⇒ mock không thể trả dữ liệu mà server thật không được phép trả (T-019 việc 1).
 
-const meta = () => ({ timestamp: new Date().toISOString(), requestId: crypto.randomUUID() });
+// Giờ trong `meta.timestamp` = đồng hồ của mock (`createMockApi({ now })`), như API thật neo giờ khi test.
+let clock: () => number = Date.now;
+export function setMockClock(now: () => number): void {
+  clock = now;
+}
+const meta = () => ({
+  timestamp: new Date(clock()).toISOString(),
+  requestId: crypto.randomUUID(),
+});
 
 type Init = Readonly<{ status?: number; headers?: HeadersInit; page?: PageMeta }>;
 

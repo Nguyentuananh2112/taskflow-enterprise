@@ -13,6 +13,7 @@ import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
 import { createProjectHandlers } from './project-handlers';
 import { contentTypeGuard, createRateLimiter } from './request-guards';
+import { setMockClock } from './respond';
 import { createTaskHandlers } from './task-handlers';
 import { createWorkspaceHandlers } from './workspace-handlers';
 
@@ -42,6 +43,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     },
   });
   const allowedOrigins = new Set(options.allowedOrigins ?? [new URL(baseUrl).origin]);
+  setMockClock(options.now ?? Date.now);
   const limit = createRateLimiter(options.now ?? Date.now);
   const attendance = new MockAttendance(options.now ?? Date.now);
   const notifications = new MockNotifications(board, options.now ?? Date.now);

@@ -10,13 +10,15 @@ type Props = Readonly<{
   caption: string;
   /** Bấm ngày ⇒ xem lượt chấm (trang của tôi). */
   onSelectDay?: (date: string) => void;
+  /** "Hôm nay" THEO SERVER (múi giờ của lịch) — đánh dấu hàng, không dùng giờ máy. */
+  today?: string | undefined;
 }>;
 
 /**
  * Bảng công tháng (attendance-leave.md §6, E2E-HR-07): `<table>` có tiêu đề cột + tiêu đề HÀNG (ngày),
  * trạng thái bằng CHỮ + biểu tượng `aria-hidden` (không chỉ màu). Giờ theo `timezone` của lịch.
  */
-export function MonthTable({ month, caption, onSelectDay }: Props) {
+export function MonthTable({ month, caption, onSelectDay, today }: Props) {
   const { timezone: tz } = month;
   return (
     <div className="relative overflow-x-auto">
@@ -54,7 +56,12 @@ export function MonthTable({ month, caption, onSelectDay }: Props) {
             return (
               <tr
                 key={d.date}
-                className={cn('border-b border-border', !d.isWorkday && 'bg-bg-subtle')}
+                aria-current={d.date === today ? 'date' : undefined}
+                className={cn(
+                  'border-b border-border',
+                  !d.isWorkday && 'bg-bg-subtle',
+                  d.date === today && 'font-semibold',
+                )}
               >
                 <th scope="row" className="py-2 pr-3 text-left font-normal whitespace-nowrap">
                   {onSelectDay ? (
@@ -68,6 +75,7 @@ export function MonthTable({ month, caption, onSelectDay }: Props) {
                   ) : (
                     dayLabel(d.date)
                   )}
+                  {d.date === today && <span className="text-text-muted"> · hôm nay</span>}
                 </th>
                 <td className={cn('py-2 pr-3', s.tone)}>
                   <span aria-hidden="true">{s.icon} </span>
