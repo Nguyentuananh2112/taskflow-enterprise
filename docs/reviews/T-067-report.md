@@ -49,6 +49,9 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - `pnpm audit --prod`: **No known vulnerabilities found** (exit 0).
 - `pnpm peers check`: chỉ cảnh báo có sẵn `@babel/core` của `@sentry/bundler-plugins` — không liên quan sharp.
 - NOTICE LGPL-3.0 của libvips: `THIRD_PARTY_NOTICES.md` (liên kết động, không sửa libvips, link mã nguồn).
+- **B duyệt chuỗi cung ứng sharp (18/10):** B tự so integrity trên registry cho `@img/sharp-linux-x64@0.35.5`
+  và `@img/sharp-libvips-linux-x64@1.3.4`, khớp lockfile; `sharp` khớp giá trị B gửi trước; lockfile diff tối
+  thiểu; có NOTICE LGPL.
 
 ## Quyết định tự đưa ra ở bước 3
 
