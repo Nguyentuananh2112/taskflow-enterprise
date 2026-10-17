@@ -96,7 +96,8 @@ export function chatUploadProcessor(d: {
   };
 }
 
-async function deleteKeys(store: IFileStore, keys: readonly string[]): Promise<void> {
+/** Xóa blob theo khóa đã kiểm regex (khóa lạ bị bỏ qua — không bao giờ chạm ngoài kho). */
+export async function deleteKeys(store: IFileStore, keys: readonly string[]): Promise<void> {
   for (const key of new Set(keys)) if (isFileKey(key)) await store.delete(key);
 }
 

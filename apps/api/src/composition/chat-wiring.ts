@@ -13,6 +13,7 @@ import {
   type IChatUserRefs,
 } from '../modules/chat/chat.module';
 import { chatMedia, chatMediaResolver, chatUploadProcessor } from './chat-files';
+import { chatSweepTask } from './chat-sweep';
 import type { FilesBundle } from './files-setup';
 import type { AvatarRefs } from './avatar-refs';
 import type { Persistence } from './persistence';
@@ -69,6 +70,16 @@ export function chatRouters(
   const { persistence } = x;
   const repos = persistence.chat;
   files.resolvers.register('chat', chatMediaResolver(repos, x.business));
+  files.sweep.register(
+    chatSweepTask({
+      repos,
+      store: files.store,
+      uow: persistence.uow,
+      businessClock: x.business,
+      clock: d.clock,
+      orphanTtlSec: files.orphanTtlSec,
+    }),
+  );
   const users: IChatUserRefs = {
     refsOf: async (ids) => {
       const unique = [...new Set(ids)];

@@ -24,8 +24,11 @@ export interface IFileStore {
   purgeStaleTemp(before: Date): Promise<number>;
   /** Đặt mốc sửa đổi = `at` (T-068: avatar bị gỡ ⇒ blob giữ 30 ngày TỪ lúc gỡ — D13, B). Không có ⇒ bỏ qua. */
   touch(key: FileKey, at: Date): Promise<void>;
-  /** Blob có khóa bắt đầu bằng `prefix` kèm mốc sửa đổi — cho bước sweep của module (avatar: T-068). */
-  list(prefix: `avatars/${string}`): AsyncIterable<{ key: FileKey; modifiedAt: Date }>;
+  /**
+   * Blob kèm mốc sửa đổi — cho bước sweep của module: `avatars/…` theo tiền tố (T-068); `'random'` = mọi blob khóa
+   * ngẫu nhiên (đính kèm chat — tìm blob không còn tham chiếu, T-069).
+   */
+  list(prefix: `avatars/${string}` | 'random'): AsyncIterable<{ key: FileKey; modifiedAt: Date }>;
 }
 
 export interface StoredFile {

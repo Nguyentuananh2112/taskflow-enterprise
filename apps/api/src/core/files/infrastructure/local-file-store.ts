@@ -154,7 +154,19 @@ export class LocalFileStore implements IFileStore {
     });
   }
 
-  async *list(prefix: `avatars/${string}`): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
+  async *list(
+    prefix: `avatars/${string}` | 'random',
+  ): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
+    if (prefix === 'random') {
+      // `ab/cd/<key>` đúng vị trí của khóa (bỏ tmp/, avatars/, tệp lạ).
+      for await (const f of walkFiles(this.#root, '')) {
+        const key = /^[a-z2-7]{2}\/[a-z2-7]{2}\/([a-z2-7]{26})$/.exec(f.relative)?.[1];
+        if (key && isFileKey(key) && relativePathOf(key) === f.relative) {
+          yield { key, modifiedAt: f.modifiedAt };
+        }
+      }
+      return;
+    }
     // Chỉ tiền tố an toàn: `avatars/` hoặc `avatars/<uuid>/` (không `..`, không ký tự lạ) — trước mọi thao tác đĩa.
     if (!/^avatars\/(?:[0-9a-f-]{36}\/)?$/.test(prefix))
       throw new RangeError('tiền tố không hợp lệ');
