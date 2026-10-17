@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 import { apiCreateUser } from '../support/company';
-import { expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { expect, loginViaUi, newUser, test, type E2EUser } from '../support/fixtures';
 import { call } from '../support/http';
 import { awaiting } from '../support/pending';
 
@@ -52,6 +52,12 @@ const sendAs = (request: APIRequestContext, token: string, convId: string, body:
     201,
   );
 
+/** id sau apiCreateUser — thiếu ⇒ ném lỗi rõ (thay vì POST với '' ⇒ 400 khó đọc — F). */
+function idOf(user: E2EUser): string {
+  if (!user.userId) throw new Error(`${user.email} chưa được tạo (apiCreateUser)`);
+  return user.userId;
+}
+
 /** Vùng đọc to riêng của luồng tin. */
 const liveRegion = (page: Page) => page.locator('[aria-live="polite"].sr-only');
 
@@ -72,7 +78,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const vic = newUser(`ch7-vic-${colorScheme}-${viewport.width}`);
         await apiCreateUser(request, mia);
         const v = await apiCreateUser(request, vic);
-        const convId = await seedDirect(request, { token: v.accessToken }, mia.userId ?? '', [
+        const convId = await seedDirect(request, { token: v.accessToken }, idOf(mia), [
           'Chào Mia, xem giúp https://example.com nhé',
           'Tin thứ hai',
         ]);
@@ -108,9 +114,7 @@ test.describe('E2E-CH-07 vùng aria-live', () => {
     const vic = newUser('ch7-live-vic');
     await apiCreateUser(request, mia);
     const v = await apiCreateUser(request, vic);
-    const convId = await seedDirect(request, { token: v.accessToken }, mia.userId ?? '', [
-      'Lịch sử cũ',
-    ]);
+    const convId = await seedDirect(request, { token: v.accessToken }, idOf(mia), ['Lịch sử cũ']);
     await loginViaUi(page, mia);
     await page.goto(`/chat/${convId}`);
 
