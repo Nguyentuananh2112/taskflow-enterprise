@@ -102,6 +102,11 @@ export interface IChatConversationStore {
   }): Promise<ConversationRecord>;
 
   findById(id: string): Promise<ConversationRecord | null>;
+  /**
+   * Phòng WORKSPACE theo `workspace_id` (UNIQUE); chưa từng mở ⇒ null. KHÔNG xét quyền, KHÔNG xét ws xóa mềm / lưu trữ
+   * (G, T-070b: ws xóa mềm vẫn phải tìm được để phát `chat:conversation:removed`).
+   */
+  findByWorkspace(workspaceId: string): Promise<ConversationRecord | null>;
   /** `SELECT … FOR UPDATE` dòng hội thoại — tuần tự hóa thao tác nhóm (thêm / bớt / giao OWNER / rời). */
   lock(id: string): Promise<void>;
 

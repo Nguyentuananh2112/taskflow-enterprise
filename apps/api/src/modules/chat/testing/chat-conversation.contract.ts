@@ -167,6 +167,9 @@ export function describeChatConversationContract(name: string, make: () => Promi
         active: false,
       });
       expect(await b.run(() => b.conversations.canAccess(cid(5), U.Mia, NOW))).toBe(false);
+      // findByWorkspace (G, T-070b): ws ngừng hoạt động vẫn tìm được phòng để báo removed; ws chưa mở ⇒ null.
+      expect(await b.run(() => b.conversations.findByWorkspace(WS))).toMatchObject({ id: cid(5) });
+      expect(await b.run(() => b.conversations.findByWorkspace(cid(99)))).toBeNull();
     });
 
     it('công ty hoạt động: hết offboard_access_until / chờ kích hoạt ⇒ không; activeUserIds; searchPeople không có người đó', async () => {
