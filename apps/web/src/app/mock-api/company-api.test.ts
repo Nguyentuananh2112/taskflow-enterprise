@@ -135,6 +135,7 @@ describe('mock nhân viên + kích hoạt', () => {
     expect((sched.body.data.employee as { status: string }).status).toBe('OFFBOARDING');
     const cancelled = await send('DELETE', `/hr/employees/${mia.id}/offboarding`, adminToken);
     expect((cancelled.body.data as { status: string }).status).toBe('ACTIVE');
+    api.db.company.add(mia.id, '2026-10-01T00:00:00+07:00', '2026-10-01'); // vào làm 01/10 (ngày cuối không trước ngày vào)
     await send('PUT', `/hr/employees/${mia.id}/offboarding`, adminToken, { lastDay: '2026-10-14' });
     const left = await send('GET', '/hr/employees?status=left', adminToken);
     expect((left.body.data as unknown as Array<{ userId: string }>).map((e) => e.userId)).toEqual([
@@ -180,6 +181,54 @@ describe('mock nhân viên + kích hoạt', () => {
     );
     const maxToken = api.db.issueAccess(max).accessToken;
     expect((await send('GET', '/hr/employees', maxToken)).status).toBe(403);
+  });
+});
+
+describe('mock nghỉ việc theo T-062 (B)', () => {
+  it('HR nhắm Admin ⇒ 403; Admin cuối cùng ⇒ 409 last_admin; trước ngày vào làm ⇒ 422; hoàn tất đúng 06:00 hôm sau', async () => {
+    let now = Date.parse('2026-10-15T03:00:00.000Z'); // 10:00 VN
+    const api = createMockApi(BASE, { now: () => now });
+    const call = async (token: string, path: string, body: unknown, method = 'PUT') => {
+      const response = await getResponse(
+        api.handlers,
+        new Request(BASE + path, {
+          method,
+          headers: {
+            'content-type': 'application/json',
+            origin: ORIGIN,
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+      return { status: response?.status, body: (await response?.json()) as Json };
+    };
+    const mk = (email: string, name: string) =>
+      api.db.createUser({ email, password: PW, fullName: name }).user;
+    const admin = mk('olivia@example.com', 'Olivia');
+    api.db.company.setAccess(admin.id, 'ADMIN');
+    const pam = mk('pam@example.com', 'Pam');
+    api.db.company.setAccess(pam.id, 'EMPLOYEE', ['HR_MANAGE']);
+    const mia = mk('mia@example.com', 'Mia');
+    const adminToken = api.db.issueAccess(admin).accessToken;
+    const pamToken = api.db.issueAccess(pam).accessToken;
+    const off = (userId: string) => `/hr/employees/${userId}/offboarding`;
+    expect((await call(pamToken, off(admin.id), { lastDay: '2026-10-31' })).status).toBe(403);
+    const last = await call(adminToken, off(admin.id), { lastDay: '2026-10-31' });
+    expect([last.status, last.body.error?.details.reason]).toEqual([409, 'last_admin']);
+    const early = await call(adminToken, off(mia.id), { lastDay: '2026-10-14' });
+    expect(early.body.error?.details.rule).toBe('LAST_DAY_OUT_OF_RANGE'); // Mia vào làm 15/10
+    await call(adminToken, off(mia.id), { lastDay: '2026-10-15' });
+    now = Date.parse('2026-10-16T05:59:00+07:00');
+    expect(api.db.company.of(mia.id)?.status).toBe('OFFBOARDING');
+    const fresh = () => api.db.issueAccess(admin).accessToken; // đồng hồ nhảy qua đêm ⇒ token cũ hết hạn
+    const list = await call(fresh(), '/hr/employees?status=left', undefined, 'GET');
+    expect(list.body.data).toEqual([]);
+    now = Date.parse('2026-10-16T06:00:00+07:00');
+    const after = await call(fresh(), '/hr/employees?status=left', undefined, 'GET');
+    expect((after.body.data as unknown as Array<{ userId: string }>).map((e) => e.userId)).toEqual([
+      mia.id,
+    ]);
   });
 });
 
