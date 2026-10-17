@@ -1,5 +1,5 @@
 import type { TaskDto } from '@taskflow/contracts/task';
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query';
 
 import { taskApi, type TaskScope } from '../api/task.api';
 import { boardFromTasks, type BoardData } from './board-cache';
@@ -7,15 +7,18 @@ import { taskKeys } from './query-keys';
 
 /**
  * Board của project (frontend.md §3.2): `staleTime: Infinity` — giữ tươi bằng socket, refetch khi
- * reconnect/join lại; không refetch khi focus cửa sổ.
+ * reconnect/join lại; không refetch khi focus cửa sổ. Options dùng chung cho hook + prefetch (T-044 S3).
  */
-export function useBoard(scope: TaskScope) {
-  return useQuery({
+export const boardQuery = (scope: TaskScope) =>
+  queryOptions({
     queryKey: taskKeys.board(scope.wsId, scope.projectId),
     queryFn: async ({ signal }) => boardFromTasks(await taskApi.listAll(scope, signal)),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+
+export function useBoard(scope: TaskScope) {
+  return useQuery(boardQuery(scope));
 }
 
 /**

@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
@@ -7,6 +8,8 @@ import { session, useSession } from '@/entities/session';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Spinner } from '@/shared/ui/spinner';
+
+import { registerRoutePrefetch } from './route-prefetch';
 
 /**
  * Cổng khu đã đăng nhập (frontend.md §3.3): khôi phục phiên bằng /auth/refresh, KHÔNG render route
@@ -16,7 +19,11 @@ import { Spinner } from '@/shared/ui/spinner';
 export function AuthGate({ children }: Readonly<{ children: ReactNode }>) {
   // T-044 S2a: mở khôi phục phiên NGAY ở lượt render đầu (trước effect bên dưới); chỉ route có gate — landing / 404
   // không gửi refresh (review E). Tác dụng phụ có chủ ý trong render: idempotent, không đổi store (session.prestart).
-  if (typeof window !== 'undefined') session.prestart();
+  const queryClient = useQueryClient();
+  if (typeof window !== 'undefined') {
+    registerRoutePrefetch(queryClient); // S3: query của route chạy song song với /auth/me
+    session.prestart();
+  }
   const { status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
