@@ -6,13 +6,13 @@ import { useCompanyApi } from './harness/company';
 import { HR, eventsOf, hrClockEnv, todayVn } from './harness/hr';
 import { secCase } from './harness/suite';
 
-// SEC-HR-23 (test-spec-hr §7, T-042) — process API RIÊNG với TRUST_PROXY_HOPS=0 (suite chính chạy hops=1 để
-// mỗi actor có IP giả riêng). Không tin proxy nào ⇒ `X-Forwarded-For` client gửi bị bỏ qua: IP lưu ở lượt chấm
-// công là IP socket (loopback), không phải IP giả. Mọi request cùng một IP ⇒ chỉ đăng ký 2 user (Olivia là OWNER
-// nên có hr:manage để đọc IP qua attendance/events) cho khỏi chạm limiter đăng ký.
+// SEC-HR-23 (test-spec-hr §7, T-042; test-spec-company §6.1 P) — process API RIÊNG với TRUST_PROXY_HOPS=0 (suite
+// chính chạy hops=1 để mỗi actor có IP giả riêng). Không tin proxy nào ⇒ `X-Forwarded-For` client gửi bị bỏ qua: IP
+// lưu ở lượt chấm công là IP socket (loopback), không phải IP giả. Mọi request cùng một IP ⇒ chỉ tạo 2 người (Hana có
+// HR_MANAGE để đọc IP qua attendance/events).
 
 const { api, actors } = useCompanyApi({ TRUST_PROXY_HOPS: '0', ...hrClockEnv() });
-const AREA = 'Mốc 3 HR — proxy';
+const AREA = 'Mốc 3.5 HR — proxy';
 
 /** IP socket của client test chạy cùng máy: IPv4 loopback (có thể dạng IPv4-mapped) hoặc IPv6 loopback. */
 const LOOPBACK = /^(?:::ffff:)?127\.0\.0\.1$|^::1$/;
@@ -24,14 +24,12 @@ describe('Proxy tin cậy = 0', () => {
     'X-Forwarded-For giả khi TRUST_PROXY_HOPS=0 ⇒ IP lưu là IP socket (process API riêng hops=0)',
     AREA,
     async () => {
-      const olivia = await actors.register('hr-proxy-olivia');
-      const mia = await actors.register('hr-proxy-mia');
-      const ws = olivia.defaultWorkspaceId;
-      await actors.addMember(olivia, ws, mia, 'MEMBER');
+      const hana = await actors.createUser('hr-proxy-hana', { grants: ['HR_MANAGE'] });
+      const mia = await actors.createUser('hr-proxy-mia');
 
       const res = await api.request({
         method: 'POST',
-        path: `/api/v1${HR.checkIn(ws)}`,
+        path: `/api/v1${HR.checkIn}`,
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${mia.accessToken}`,
@@ -43,11 +41,7 @@ describe('Proxy tin cậy = 0', () => {
       });
       expect(res.status, res.text.slice(0, 200)).toBe(201);
 
-      const read = await actors.json(
-        'GET',
-        HR.eventsOf(ws, mia.userId, todayVn()),
-        olivia.accessToken,
-      );
+      const read = await actors.json('GET', HR.eventsOf(mia.userId, todayVn()), hana.accessToken);
       expect(read.status, read.text.slice(0, 200)).toBe(200);
       const events = eventsOf(read);
       expect(events).toHaveLength(1);
