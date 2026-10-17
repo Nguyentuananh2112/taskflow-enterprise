@@ -147,7 +147,15 @@ const XSS = {
   data: 'data:text/html,<script>parent.__xss(4)</script>',
   group: '"><iframe srcdoc="<script>parent.__xss(5)</script>"></iframe> Nhóm',
   safe: 'https://example.com/a?b=1',
+  // F (soát 16f1a0c0): hoa/thường, khoảng trắng trước, vbscript, URL https cố phá thuộc tính.
+  mixed: 'JaVaScRiPt:__xss(6)',
+  spaced: 'Thử   javascript:__xss(7)',
+  vb: 'vbscript:__xss(9)',
+  breaker: 'https://example.com/"><img src=x onerror=__xss(8)>',
 };
+
+/** Mọi link nguy hiểm, không phân biệt hoa/thường. */
+const BAD_LINKS = 'a[href^="javascript:" i], a[href^="data:" i], a[href^="vbscript:" i]';
 
 test.describe('SEC-CH-13 XSS trong trò chuyện', () => {
   test.fixme(awaiting(T069), `[PENDING ${T069}] chờ route chat thật`);
@@ -168,6 +176,9 @@ test.describe('SEC-CH-13 XSS trong trò chuyện', () => {
       XSS.body,
       `${XSS.js} và ${XSS.data}`,
       `Xem ${XSS.safe}`,
+      `${XSS.mixed} ${XSS.vb}`,
+      XSS.spaced,
+      `Link ${XSS.breaker}`,
     ]);
     const group = await call<{ id: string }>(
       request,
@@ -188,7 +199,14 @@ test.describe('SEC-CH-13 XSS trong trò chuyện', () => {
     const log = page.getByRole('log', { name: 'Tin nhắn' });
     await expect(log.getByText(XSS.body, { exact: true })).toBeVisible();
     await expect(log.getByText(`${XSS.js} và ${XSS.data}`, { exact: true })).toBeVisible();
-    await expect(log.locator('a[href^="javascript:"], a[href^="data:"]')).toHaveCount(0);
+    await expect(log.getByText(XSS.spaced, { exact: true })).toBeVisible();
+    await expect(log.locator(BAD_LINKS)).toHaveCount(0);
+    // URL cố phá thuộc tính: href (nếu có link) không chứa " hay <; không sinh thêm phần tử.
+    const hrefs = await log
+      .locator('a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href') ?? ''));
+    expect(hrefs.filter((h) => /["<>]/.test(h))).toEqual([]);
+    await expect(log.locator('img[src="x"], img[src="x>"]')).toHaveCount(0);
     const safe = log.getByRole('link', { name: XSS.safe });
     await expect(safe).toHaveAttribute('href', XSS.safe);
     await expect(safe).toHaveAttribute('rel', 'noopener noreferrer nofollow');
@@ -201,6 +219,34 @@ test.describe('SEC-CH-13 XSS trong trò chuyện', () => {
       page.getByRole('log', { name: 'Tin nhắn' }).getByText(XSS.body, { exact: true }),
     ).toBeVisible();
     await assertInert(page, dialogs, '/chat/[id] nhóm');
+  });
+});
+
+test.describe('SEC-CH-13 XSS — tin đến realtime khi KHÔNG mở luồng', () => {
+  test.fixme(awaiting(T069, T070), `[PENDING ${T069}, ${T070}] chờ route + realtime chat thật`);
+
+  test('Mia ở /w, Vic gửi payload ⇒ badge / title / thông báo không chạy script, không hiện thân tin dạng HTML', async ({
+    page,
+    context,
+    request,
+  }) => {
+    const dialogs = await arm(context);
+    const mia = newUser('xss-rt-mia');
+    const vic = newUser('xss-rt-vic');
+    await apiCreateUser(request, mia);
+    const v = await apiCreateUser(request, vic);
+    const convId = await seedDirect(request, { token: v.accessToken }, idOf(mia), []);
+    await loginViaUi(page, mia);
+    await page.goto('/w');
+    const title = await page.title();
+
+    await sendAs(request, v.accessToken, convId, XSS.body);
+    // Lối vào chỉ hiện SỐ (ADR-145: không chuông / toast cho chat) — chờ badge rồi kiểm không có gì chạy.
+    await expect(
+      page.getByRole('link', { name: /^Trò chuyện, 1 tin chưa đọc$/ }).first(),
+    ).toBeAttached(REALTIME);
+    expect(await page.title(), 'document.title không mang xem trước tin').toBe(title);
+    await assertInert(page, dialogs, '/w sau tin realtime');
   });
 });
 
@@ -224,6 +270,9 @@ test('SEC-CH-20 (web): lỗi client chứa URL media ký ⇒ event qua /monitori
 
   const sent = page.waitForRequest((req) => new URL(req.url()).pathname.startsWith('/monitoring'));
   await page.evaluate((url) => {
+    // Breadcrumb fetch / xhr mang URL đầy đủ — đường lọt hay gặp nhất (F). Web tắt breadcrumb (beforeBreadcrumb ⇒ null)
+    // và cắt query URL; envelope phải sạch cả ở đây.
+    void fetch(url).catch(() => undefined);
     setTimeout(() => {
       throw new Error(`e2e-media-probe ${url}`);
     }, 0);
