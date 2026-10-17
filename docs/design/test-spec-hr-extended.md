@@ -78,8 +78,8 @@ Bộ đọc **độc lập** với bộ ghi của API: unzip bằng `node:zlib` 
 
 | Env | Ai (vé) | Vì sao |
 |---|---|---|
-| `EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS` | B (T-055) | XL-05 vế 422: dựng 1 001 người ở local quá nặng ⇒ hạ trần còn 3 / 5 |
-| `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS` | B (T-055) | giữ export "đang chạy" đủ lâu, hộp đen: export thứ 3 đồng thời ⇒ 429 (SEC-HR-54), ghi song song trong lúc xuất (XL-07) |
+| `EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS` | B (T-055) — **nhận 18/10** (số nguyên dương; mặc định 1 000 / 20 000) | XL-05 vế 422: dựng 1 001 người ở local quá nặng ⇒ hạ trần còn 3 / 5 |
+| `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS` | B (T-055) — **nhận 18/10** (delay 0..5 000 ms, chèn GIỮA hai lô đọc, trong transaction REPEATABLE READ; mặc định 0) | giữ export "đang chạy" đủ lâu, hộp đen: export thứ 3 đồng thời ⇒ 429 (SEC-HR-54), ghi song song trong lúc xuất (XL-07) |
 | `LEAVE_CARRYOVER_ON_START=1` (một lượt trước `/readyz`, log `maintenance.run_done {job: 'leave-carryover', durationMs}` như mọi job — `MaintenanceScheduler.runNow`; số người chụp `snapshotted` ở log tóm tắt riêng của job; lỗi ⇒ `maintenance.run_failed`), `LEAVE_CARRYOVER_INTERVAL_MS` (≥ 1000) — **D nhận 18/10** | D (T-057) | CLK-HR-13, CC-HR-24. Job `leave-carryover` **luôn đăng ký** (cả test): mỗi 1 giờ + jitter ≤ 5 phút, lượt đầu 5–10 s sau start, chụp năm hiện tại cho nhân viên đang làm còn NULL ⇒ ca S nào cần `carriedFinal:false` (LP-12) phải tạo người **sau** lượt đầu (chờ log `maintenance.run_done` job `leave-carryover`) |
 
 Chưa có env ⇒ ca khai pending theo vé, không bỏ.
@@ -266,7 +266,7 @@ Kiểm kê tự động khi ca có code: `grep -o "SEC-HR-[0-9]*\|CC-HR-[0-9]*b\
 
 ## 12. Câu hỏi mở (chờ tác giả trả lời — không chặn harness)
 
-1. **B (T-055):** nhận 4 env test-only §1.3 (`EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS`, `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS`), từ chối khởi động khi `APP_ENV ≠ test`?
+1. ~~B (T-055): 4 env export~~ — **chốt (B 18/10):** nhận đúng 4 tên; đặt khi `APP_ENV ≠ test` ⇒ API từ chối khởi động, thông báo nêu tên env (như ADR-141). XL-06 B viết tầng H, dùng `readXlsx` + `expectSafeWorkbook`.
 2. ~~D (T-057): job 01/01~~ — **chốt (D 18/10):** job interval `leave-carryover` (1 giờ, luôn đăng ký) + `LEAVE_CARRYOVER_ON_START` / `LEAVE_CARRYOVER_INTERVAL_MS` test-only. Đã sửa §1.3, LP-12, CC-HR-24, CLK-HR-13.
 3. ~~A (T-056): `nextDay` ≥ 06:00~~ — **chốt (A 18/10):** 400 Zod (`refine`, path `nextDay`), IN `nextDay` cũng 400; CHECK DB là chốt cuối. Đã sửa CR-04.
 4. ~~A (T-056): bấm Ra sau OUT đã duyệt~~ — **chốt (A 18/10):** 201 (luật `decidePunch` Mốc 3 chỉ cần IN còn hiệu lực). Đã sửa CC-HR-21.
