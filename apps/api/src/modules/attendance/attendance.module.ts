@@ -23,6 +23,7 @@ import { CheckInOutUseCase } from './application/use-cases/check-in-out.use-case
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from './application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
+import { scheduleTimeZoneNow } from './application/schedule-timezone';
 import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
 import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memory/in-memory-work-calendar';
 import type { DbProvider } from './infrastructure/persistence/prisma/db';
@@ -31,7 +32,6 @@ import { PrismaWorkCalendarStore } from './infrastructure/persistence/prisma/pri
 import type { AttendanceCompanyMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
-import { localToday } from './domain/work-schedule';
 
 export interface AttendanceRepositories {
   events: IAttendanceEventStore;
@@ -114,7 +114,6 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
     routes: (authenticate) =>
       attendanceRoutes({ controller, membership: d.membership, authenticate, limit: d.limit }),
     workCalendar: new AttendanceWorkCalendar(d.repos.calendar),
-    timeZoneNow: async () =>
-      localToday(await d.repos.calendar.scheduleVersions(), d.clock.now()).timezone,
+    timeZoneNow: () => scheduleTimeZoneNow(d.repos.calendar, d.clock),
   };
 }
