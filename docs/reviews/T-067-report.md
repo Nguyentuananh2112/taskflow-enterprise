@@ -37,7 +37,8 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | 3 | edc564ae, 68c44f70 | `rawUpload` + ngoại lệ content-type đúng cặp method + path + `UploadSlots` (+ soát B L1–L3) |
 | — | 5be35027 | sharp 0.35.5 + `THIRD_PARTY_NOTICES.md` |
 | — | f5c94890 | `avatarUrl` ở `MemberDto` / `MemberCandidateDto` (H) |
-| 4 | (commit này) | `IImagePipeline` + `SharpImagePipeline` (pool worker sharp) + `DisabledImagePipeline` |
+| 4 | 79e09153 | `IImagePipeline` + `SharpImagePipeline` (pool worker sharp) + `DisabledImagePipeline` |
+| — | 265d08c4, 8d310b3e | contract chat sớm (phần contract của T-069) + parity realtime `PENDING_SERVER_EMIT` (T-070) |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -95,6 +96,13 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - Tệp mẫu tối giản `tiff()` / `svgScript()` làm chính `metadata()` lỗi ⇒ 422 `IMAGE_UNREADABLE` (không đọc được
   format); tầng route đã 415 ở `sniffType` trước đó. SVG hợp lệ khai là png ⇒ 415 ở `metadata().format`.
 - Commit sau `discard` (client đi khi worker còn chạy) ⇒ 503 `SERVICE_UNAVAILABLE` (test tầng route).
+- **B duyệt bước 4 (79e09153).** Ghi chú không chặn merge:
+  - **M:** `resourceLimits` chỉ chặn heap V8; bộ nhớ giải mã libvips là native — xấu nhất ≈ 2 worker × 40 MP ×
+    4 byte ≈ 320 MB + bộ đệm resize ⇒ tính vào `mem_limit` container (B ghi `devops.md`, T-074). Đề xuất G:
+    tách trần pixel theo mục đích ở **T-068** (avatar thấp, ví dụ 24 MP; chat 40 MP) — `transform` nhận thêm
+    trần, worker dùng `min(tham số, trần chung)`.
+  - **L:** `failOn` — đang hỏi lại B (theo tài liệu sharp, `truncated` lỏng hơn `error`; chặn JPEG cắt cụt cần
+    `warning`). Đề xuất giữ `error` như ADR-141 (ảnh cắt cụt chỉ là chất lượng, không phải bảo mật).
 
 ## Còn lại
 5 `/media` · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
