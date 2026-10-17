@@ -7,6 +7,7 @@ import {
   ListMembersQuery,
   ListProjectsQuery,
   ListWorkspacesQuery,
+  MemberCandidatesQuery,
   MemberParams,
   ProjectParams,
   UpdateProjectBody,
@@ -88,6 +89,14 @@ export function workspaceRoutes(d: WorkspaceRouteDeps): Router {
     '/:wsId/members',
     ...scoped(WorkspaceParams, 'member:read', { query: ListMembersQuery }),
     ws.listMembers,
+  );
+  // Danh bạ người thêm được (ADR-134, R41): 403 quyền → 429 hạn mức → 400 q — không lộ luật validate cho MEMBER.
+  router.get(
+    '/:wsId/member-candidates',
+    ...scoped(WorkspaceParams, 'member:add'),
+    ...d.limit(RATE_LIMIT_RULES.memberCandidates),
+    validate({ query: MemberCandidatesQuery }),
+    ws.memberCandidates,
   );
   router.post(
     '/:wsId/members',

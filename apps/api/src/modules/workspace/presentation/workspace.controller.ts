@@ -5,6 +5,7 @@ import type {
   DeleteWorkspaceBody,
   ListMembersQuery,
   ListWorkspacesQuery,
+  MemberCandidatesQuery,
   UpdateWorkspaceBody,
 } from '@taskflow/contracts';
 import type { Request, Response } from 'express';
@@ -17,6 +18,7 @@ import type { AddMemberUseCase } from '../application/use-cases/add-member.use-c
 import type { ChangeMemberRoleUseCase } from '../application/use-cases/change-member-role.use-case';
 import type { CreateWorkspaceUseCase } from '../application/use-cases/create-workspace.use-case';
 import type { DeleteWorkspaceUseCase } from '../application/use-cases/delete-workspace.use-case';
+import type { ListMemberCandidatesQuery } from '../application/use-cases/list-member-candidates.query';
 import type { ListMembersQuery as ListMembers } from '../application/use-cases/list-members.query';
 import type { RemoveMemberUseCase } from '../application/use-cases/remove-member.use-case';
 import type { RestoreWorkspaceUseCase } from '../application/use-cases/restore-workspace.use-case';
@@ -36,6 +38,7 @@ export interface WorkspaceControllerDeps {
   remove: Pick<DeleteWorkspaceUseCase, 'execute'>;
   restore: Pick<RestoreWorkspaceUseCase, 'execute'>;
   listMembers: Pick<ListMembers, 'execute'>;
+  memberCandidates: Pick<ListMemberCandidatesQuery, 'execute'>;
   addMember: Pick<AddMemberUseCase, 'execute'>;
   changeRole: Pick<ChangeMemberRoleUseCase, 'execute'>;
   removeMember: Pick<RemoveMemberUseCase, 'execute'>;
@@ -99,6 +102,11 @@ export class WorkspaceController {
       limit: query.limit,
     });
     this.d.responder.ok(res, page.items, pageMeta(MEMBERS_CURSOR, page.nextAfter, query.limit));
+  };
+
+  memberCandidates = async (req: Request, res: Response) => {
+    const { q } = req.query as unknown as MemberCandidatesQuery;
+    this.d.responder.ok(res, await this.d.memberCandidates.execute(actorOf(req), { q }));
   };
 
   addMember = async (req: Request, res: Response) => {

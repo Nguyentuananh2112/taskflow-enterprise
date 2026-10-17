@@ -116,7 +116,7 @@ describe('IDOR & thứ tự kiểm lỗi (ADR-020, data-and-api §2.2)', () => {
 });
 
 describe('members', () => {
-  it('thêm theo userId (201 MemberDto); user lạ / không thuộc công ty ⇒ 404 user; đã là thành viên ⇒ 409', async () => {
+  it('thêm theo userId (201 MemberDto); user lạ ⇒ 404 user; đã rời công ty ⇒ 422 NOT_ACTIVE_MEMBER; đã là thành viên ⇒ 409', async () => {
     const id = alice.workspaceId;
     const added = await as(alice).post(ws(`/${id}/members`), { userId: bob.id, role: 'MEMBER' });
     expect(added.status).toBe(201);
@@ -135,10 +135,13 @@ describe('members', () => {
       details: { resource: 'user' },
     });
     const gone = await t.register('Gone');
-    t.companyStore.removeMember(gone.id); // đã nghỉ việc ⇒ như không có
-    expect(
-      errorOf(await as(alice).post(ws(`/${id}/members`), { userId: gone.id, role: 'MEMBER' })),
-    ).toMatchObject({ code: 'RESOURCE_NOT_FOUND', details: { resource: 'user' } });
+    t.companyStore.removeMember(gone.id); // đã nghỉ việc (SEC-HR-37)
+    const left = await as(alice).post(ws(`/${id}/members`), { userId: gone.id, role: 'MEMBER' });
+    expect(left.status).toBe(422);
+    expect(errorOf(left)).toMatchObject({
+      code: 'BUSINESS_RULE_VIOLATION',
+      details: { rule: 'NOT_ACTIVE_MEMBER' },
+    });
     expect(
       (await as(alice).post(ws(`/${id}/members`), { userId: bob.id, role: 'VIEWER' })).status,
     ).toBe(409);

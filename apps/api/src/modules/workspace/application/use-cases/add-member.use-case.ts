@@ -1,5 +1,10 @@
 import type { IClock, IIdGenerator } from '../../../../core/domain';
-import { ForbiddenError, ResourceNotFoundError, ValidationError } from '../../../../core/errors';
+import {
+  BusinessRuleViolationError,
+  ForbiddenError,
+  ResourceNotFoundError,
+  ValidationError,
+} from '../../../../core/errors';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { assertWorkspaceLive } from '../workspace-guard';
@@ -27,7 +32,8 @@ export function parseRole(raw: string): WorkspaceRole {
 
 /**
  * `POST /workspaces/:wsId/members` — Mốc 3.5 (ADR-134): chọn người trong công ty theo `userId` (combobox
- * `member-candidates`), không còn nhập email tự do. Không thuộc công ty / đã nghỉ ⇒ 404 user (như không có).
+ * `member-candidates`), không còn nhập email tự do. Không có user ⇒ 404; có nhưng không thuộc công ty / đã có lịch
+ * nghỉ việc ⇒ 422 `NOT_ACTIVE_MEMBER` (company-level ADR-134, SEC-HR-37).
  */
 export class AddMemberUseCase {
   constructor(
@@ -49,9 +55,14 @@ export class AddMemberUseCase {
     // Kiểm quyền cấp role TRƯỚC khi tra user (MEM-03): không tốn truy vấn, không lộ email tồn tại.
     if (!canGrant(actor.role, role)) throw new ForbiddenError('member:add');
 
-    // Không có / không còn thuộc công ty ⇒ cùng 404 user (rate limit 30/giờ như trước).
     const user = await this.d.users.findById(input.userId);
-    if (!user || !(await this.d.company.isActive(user.id))) throw new ResourceNotFoundError('user');
+    if (!user) throw new ResourceNotFoundError('user');
+    if (!(await this.d.company.canJoinWorkspace(user.id))) {
+      throw new BusinessRuleViolationError(
+        'NOT_ACTIVE_MEMBER',
+        'Chỉ thêm được người đang thuộc công ty và chưa có lịch nghỉ việc.',
+      );
+    }
 
     return this.d.uow.run(async () => {
       // X6: role của người gọi đọc lại sau khóa owners — PM vừa bị hạ / xóa không thêm được ai.

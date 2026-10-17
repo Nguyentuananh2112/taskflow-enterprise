@@ -54,6 +54,8 @@ import {
   ActivationInspectResponse,
   HireEmployeeBody,
   HireEmployeeResponse,
+  MemberCandidateDto,
+  MemberCandidatesQuery,
 } from '../company/company.schemas';
 import {
   AuthTokenDto,
@@ -321,15 +323,28 @@ export const API_ROUTES: readonly ApiRoute[] = [
     response: { status: 200, data: z.array(MemberDto), paged: true },
   },
   {
+    method: 'get',
+    path: `${WS}/member-candidates`,
+    summary:
+      'Người thuộc công ty thêm được vào workspace (chưa có lịch nghỉ, chưa là thành viên) — tối đa 20, 60/giờ',
+    tag: 'members',
+    security: 'bearer',
+    params: WorkspaceParams,
+    query: MemberCandidatesQuery,
+    response: { status: 200, data: z.array(MemberCandidateDto) },
+    errors: ['RATE_LIMITED'],
+  },
+  {
     method: 'post',
     path: `${WS}/members`,
-    summary: 'Thêm thành viên đã có tài khoản',
+    summary:
+      'Thêm người thuộc công ty theo userId (422 NOT_ACTIVE_MEMBER nếu đã rời / có lịch nghỉ)',
     tag: 'members',
     security: 'bearer',
     params: WorkspaceParams,
     body: AddMemberBody,
     response: { status: 201, data: MemberDto },
-    errors: ['RESOURCE_CONFLICT'],
+    errors: ['RESOURCE_CONFLICT', 'BUSINESS_RULE_VIOLATION'],
   },
   {
     method: 'patch',
