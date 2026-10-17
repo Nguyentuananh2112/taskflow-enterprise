@@ -55,6 +55,14 @@ export class PrismaChatMessageStore implements IChatMessageStore, IChatReadState
     return row ? toMessage(row) : null;
   }
 
+  async findByClientMsgId(senderId: string, clientMsgId: string): Promise<MessageRecord | null> {
+    const row = await this.db().chatMessage.findUnique({
+      where: { senderId_clientMsgId: { senderId, clientMsgId } },
+      include: INCLUDE,
+    });
+    return row ? toMessage(row) : null;
+  }
+
   async lock(id: string): Promise<void> {
     await this.db().$queryRaw`SELECT id FROM chat_messages WHERE id = ${id}::uuid FOR UPDATE`;
   }

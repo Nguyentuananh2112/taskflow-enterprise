@@ -18,27 +18,32 @@ export function unreadOf(state: InMemoryChatState, c: ConversationRow, userId: s
   return capUnread(n);
 }
 
-export function summaryOf(
+export async function summaryOf(
   state: InMemoryChatState,
   c: ConversationRow,
   userId: string,
   now: Date,
-): ConversationSummary {
+): Promise<ConversationSummary> {
   const parts = [...state.participantsOf(c.id).values()];
   const peer = c.kind === 'DIRECT' ? (parts.find((p) => p.userId !== userId) ?? null) : null;
-  const access = state.accessIds(c.id, now);
+  const access = await state.accessIds(c.id, now);
   let myRole: ConversationSummary['myRole'] = null;
   if (c.kind === 'GROUP') {
-    const view = parts.map((p) => ({ ...p, effective: state.isEffective(c.kind, p, now) }));
+    const view = await Promise.all(
+      parts.map(async (p) => ({ ...p, effective: await state.isEffective(c.kind, p, now) })),
+    );
     myRole = effectiveGroupOwners(view).ownerIds.includes(userId) ? 'OWNER' : 'MEMBER';
   }
   const read = state.read(c.id, userId);
   const last = c.lastMessageId === null ? undefined : state.data.messages.get(c.lastMessageId);
   return {
     conversation: { ...c },
-    title: c.kind === 'WORKSPACE' ? (state.dir.workspace(c.workspaceId!)?.name ?? null) : c.title,
+    title:
+      c.kind === 'WORKSPACE'
+        ? ((await state.dir.workspace(c.workspaceId!))?.name ?? null)
+        : c.title,
     peerId: peer?.userId ?? null,
-    peerActive: peer ? state.isActive(peer.userId, now) : true,
+    peerActive: peer ? await state.isActive(peer.userId, now) : true,
     memberCount: c.kind === 'DIRECT' ? 2 : access.length,
     myRole,
     lastMessage: last ? lastMessageOf(state, last) : null,
@@ -72,4 +77,23 @@ export function byListOrder(a: ConversationRow, b: ConversationRow): number {
   const t = sortAt(b).getTime() - sortAt(a).getTime();
   if (t !== 0) return t;
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+/** Danh bạ: thuộc công ty hoạt động, tên chứa `q` (không phân biệt hoa — ILIKE phía Prisma); sắp tên, id. */
+export async function searchPeopleOf(
+  state: InMemoryChatState,
+  q: string,
+  limit: number,
+  now: Date,
+): Promise<{ id: string; fullName: string }[]> {
+  const needle = q.trim().toLowerCase();
+  const out: { id: string; fullName: string }[] = [];
+  for (const id of await state.dir.userIds()) {
+    const u = await state.dir.user(id);
+    if (!u || !u.fullName.toLowerCase().includes(needle) || !(await state.isActive(id, now)))
+      continue;
+    out.push({ id, fullName: u.fullName });
+  }
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return out.sort((a, b) => cmp(a.fullName, b.fullName) || cmp(a.id, b.id)).slice(0, limit);
 }

@@ -68,6 +68,11 @@ export interface IChatMessageStore {
    */
   insert(input: NewMessage): Promise<{ created: boolean; message: MessageRecord }>;
   findById(id: string): Promise<MessageRecord | null>;
+  /**
+   * Tin của `senderId` với `clientMsgId` (UNIQUE) — G, CC-CH-01: gửi lại có đính kèm phải thấy tin cũ TRƯỚC khi claim
+   * upload (upload đã gắn vào tin đầu ⇒ claim thiếu ⇒ nếu không tra trước sẽ 404 sai). Người gửi khác ⇒ null.
+   */
+  findByClientMsgId(senderId: string, clientMsgId: string): Promise<MessageRecord | null>;
   /** `SELECT … FOR UPDATE` (sửa / xóa đồng thời). */
   lock(id: string): Promise<void>;
   /**
