@@ -13,6 +13,9 @@ export interface RetentionStores {
   attendance: {
     scrubClientInfo(cutoff: Date, limit: number): Promise<number>;
     deleteEvents(cutoffDate: string, limit: number): Promise<number>;
+    /** D9 / D9' (Mốc 5, T-055): đơn bổ sung giờ. */
+    deleteCorrections(cutoffDate: string, limit: number): Promise<number>;
+    scrubCorrectionReasons(cutoffDate: string, limit: number): Promise<number>;
   };
   leave: {
     scrubReasons(cutoffDate: string, limit: number): Promise<number>;
