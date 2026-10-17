@@ -487,7 +487,9 @@ describe('Đăng nhập & mật khẩu', () => {
       ];
       for (const [i, [label, password, chars]] of accepted.entries()) {
         expect([...password.normalize('NFC')].length, `${label}: dữ liệu test`).toBe(chars);
-        // Lần đầu dùng lại token đã bị từ chối 5 lần ⇒ chứng minh mật khẩu sai không tiêu token.
+        // Lần đầu dùng lại token đã bị từ chối 5 lần ⇒ chứng minh mật khẩu sai không tiêu token (B: policy kiểm
+        // trước transaction). Hạn mức activation-ip (400/410, 10 lần/15 phút/IP) không chạm: `actors.json` gán
+        // IP ngẫu nhiên cho mỗi request chưa xác thực.
         const token =
           i === 0
             ? pending.token

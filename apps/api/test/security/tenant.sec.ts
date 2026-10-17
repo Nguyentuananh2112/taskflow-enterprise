@@ -185,6 +185,12 @@ describe('Toàn vẹn & race', () => {
         Array.from({ length: 5 }, () => actors.hire(actors.ada, { email, fullName: 'Same Email' })),
       );
       expect(sameEmail.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409]);
+      // B (T-062): cả hai đường đua (unique email ở users / PK company_members) ⇒ cùng một lỗi.
+      for (const res of sameEmail.filter((r) => r.status === 409)) {
+        const { error } = errorEnvelope(res);
+        expect(error.code).toBe('RESOURCE_CONFLICT');
+        expect(error.details).toMatchObject({ reason: 'already_employee', field: 'email' });
+      }
       const list = await actors.json(
         'GET',
         `/hr/employees?q=${encodeURIComponent(email)}`,
