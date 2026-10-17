@@ -146,17 +146,22 @@ export async function startServer(
         },
       ),
   });
-  const jobs = maintenanceJobs({
-    persistence,
-    env,
-    clock,
-    businessClock,
-    logger,
-    offboarding: container.company,
-  });
+  const jobs = [
+    ...maintenanceJobs({
+      persistence,
+      env,
+      clock,
+      businessClock,
+      logger,
+      offboarding: container.company,
+    }),
+    // Mốc 6 (ADR-141): dọn kho tệp — bật theo cờ bảo trì, hoặc ở test qua FILES_SWEEP_*.
+    ...(files.sweepJob ? [files.sweepJob] : []),
+  ];
   // Job dọn dẹp tắt ở local/test (mặc định); job hoàn tất nghỉ việc luôn có — xem `maintenanceJobs`.
+  const scheduledJobs = jobs.map(measured);
   const maintenance =
-    jobs.length > 0 ? new MaintenanceScheduler(jobs.map(measured), { logger }) : undefined;
+    scheduledJobs.length > 0 ? new MaintenanceScheduler(scheduledJobs, { logger }) : undefined;
 
   const metricsServer = await startMetricsServer({
     port: env.METRICS_PORT,
@@ -195,6 +200,10 @@ export async function startServer(
   lifecycleRef.current = lifecycle;
   lifecycle.installProcessHandlers();
 
+  // CHỈ APP_ENV=test (env.ts chặn nơi khác): một lượt files-sweep TRƯỚC khi nhận request — test hộp đen sau
+  // restart mốc tiến (CLK-CH) chờ log `maintenance.run_done` {job: 'files-sweep'}.
+  const sweepNow = scheduledJobs.find((j) => j.name === files.sweepJob?.name);
+  if (env.FILES_SWEEP_ON_START && maintenance && sweepNow) await maintenance.runNow(sweepNow);
   await listen(server, env.PORT);
   maintenance?.start();
   files.startHealthChecks();

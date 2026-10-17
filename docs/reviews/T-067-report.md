@@ -40,7 +40,8 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | 4 | 79e09153 | `IImagePipeline` + `SharpImagePipeline` (pool worker sharp) + `DisabledImagePipeline` |
 | — | 265d08c4, 8d310b3e | contract chat sớm (phần contract của T-069) + parity realtime `PENDING_SERVER_EMIT` (T-070) |
 | 5 | f0a8cea3, 03ce1754 | `/media` (`mediaRouter`) + `MediaUrlSigner` + port `IMediaResolver` + luật hạn mức `media-ip` (+ soát B L1) |
-| 6 | (commit này) | env + `.env.example`; `StorageQuota` (507) + `MediaResolverRegistry`; `createFiles` (composition); gắn `/media` trong `app.ts`; `start-server` |
+| 6 | 9584f6a9, 74afd33a, 70e994f5 | env + `.env.example`; `StorageQuota` (507) + `MediaResolverRegistry`; `createFiles` (composition); gắn `/media` trong `app.ts`; `start-server` |
+| 7 | (commit này) | `files-sweep` (bước tmp) + `FileSweepRegistry` + bật theo cờ / env test-only + lượt ON_START trước `listen` |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -170,8 +171,20 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
   `FILE_STORE_DIR=/var/lib/taskflow/files` không tồn tại ⇒ API từ chối khởi động ĐÚNG như ADR-141. Sửa test: dùng
   thư mục tạm thật (`mkdtemp`, dọn ở `afterAll`). Chạy lại 2 lượt: **65 file / 766 ca xanh**, exit 0.
 
+## Bước 7 — `files-sweep`
+
+- Job `files-sweep` (dạng `ScheduledJob` của maintenance scheduler, mẫu T-033): mỗi giờ + jitter 5 phút, lượt đầu sau
+  60 s; signal hủy ⇒ dừng giữa các bước. Bước T-067: tệp tạm cũ hơn `STALE_TEMP_AGE_MS` (1 giờ — lưới an toàn).
+- `FileSweepRegistry`: T-068 / T-069 đăng ký bước có DB (upload chưa gắn > `FILES_ORPHAN_TTL_SECONDS`, blob không
+  còn tham chiếu, avatar người đã rời + 30 ngày, `left_at` participant) — theo lô, idempotent, khóa advisory, xóa DB
+  trước rồi mới xóa đĩa. Một bước lỗi không chặn bước sau; lượt vẫn tính THẤT BẠI (`FilesSweepIncompleteError` ⇒
+  `maintenance.run_failed` + metric failure). Log `files.sweep_summary {removed, failed, aborted}` chỉ số đếm.
+- Bật: theo cờ bảo trì chung (`MAINTENANCE_JOBS_ENABLED`; staging/production mặc định bật), hoặc ở test khi đặt
+  `FILES_SWEEP_INTERVAL_MS` (không jitter, lượt đầu sau đúng chu kỳ) / `FILES_SWEEP_ON_START` (một lượt TRƯỚC
+  `listen`, log `maintenance.run_done {job: 'files-sweep'}` — CLK-CH của F).
+
 ## Còn lại
-7 `files-sweep` · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+8 compose volume + runbook backup tệp · 9 ca SEC-CH của G · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý

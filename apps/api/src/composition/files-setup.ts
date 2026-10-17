@@ -7,6 +7,7 @@ import type { RequestHandler, Router } from 'express';
 
 import type { Env } from '../config/env';
 import type { IClock } from '../core/domain';
+import { FileSweepRegistry, filesSweepJob } from '../core/files/files-sweep';
 import { DisabledImagePipeline } from '../core/files/infrastructure/disabled-image-pipeline';
 import { SharpImagePipeline } from '../core/files/infrastructure/image-pipeline';
 import { LocalFileStore } from '../core/files/infrastructure/local-file-store';
@@ -20,6 +21,7 @@ import { StorageQuota } from '../core/files/storage-quota';
 import { UploadSlots } from '../core/files/upload-slots';
 import type { ILogger } from '../core/logging/logger';
 import type { AppMetrics } from '../core/observability/metrics';
+import { maintenanceEnabled, type ScheduledJob } from './maintenance-jobs';
 
 /** ADR-141: avatar 24 giờ, ảnh chat 1 giờ, URL tải 60 s; im lặng 15 s / tổng 180 s; đối soát kho 60 s. */
 export const FILES_DEFAULTS = {
@@ -46,6 +48,13 @@ export interface FilesBundle {
   /** Router `/api/v1/media` (không Bearer). */
   media: Router;
   orphanTtlSec: number;
+  /** T-068 / T-069 đăng ký bước dọn có DB (upload mồ côi, blob mất tham chiếu, avatar người đã rời). */
+  sweep: FileSweepRegistry;
+  /**
+   * Job `files-sweep` khi được bật: theo cờ bảo trì chung (staging/production mặc định bật), hoặc ở test khi đặt
+   * `FILES_SWEEP_INTERVAL_MS` / `FILES_SWEEP_ON_START`. Tắt ⇒ undefined.
+   */
+  sweepJob: ScheduledJob | undefined;
   /** Tự kiểm worker sharp lúc khởi động + mỗi 5 phút (không chặn `/readyz`). */
   startHealthChecks(): void;
   close(): Promise<void>;
@@ -105,6 +114,22 @@ export async function createFiles(d: FilesSetupDeps): Promise<FilesBundle> {
     d.clock,
   );
   const resolvers = new MediaResolverRegistry();
+  const sweep = new FileSweepRegistry();
+  const sweepOn =
+    maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED) ||
+    env.FILES_SWEEP_INTERVAL_MS !== undefined ||
+    env.FILES_SWEEP_ON_START === true;
+  const sweepJob = sweepOn
+    ? filesSweepJob({
+        store,
+        registry: sweep,
+        clock: d.clock,
+        logger,
+        ...(env.FILES_SWEEP_INTERVAL_MS === undefined
+          ? {}
+          : { intervalMs: env.FILES_SWEEP_INTERVAL_MS }),
+      })
+    : undefined;
   const slots = new UploadSlots();
   const media = mediaRouter({
     store,
@@ -142,6 +167,8 @@ export async function createFiles(d: FilesSetupDeps): Promise<FilesBundle> {
     quota,
     media,
     orphanTtlSec: env.FILES_ORPHAN_TTL_SECONDS ?? FILES_DEFAULTS.orphanTtlSec,
+    sweep,
+    sweepJob,
     upload: (maxBytes) =>
       rawUpload({
         store,

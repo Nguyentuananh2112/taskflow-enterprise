@@ -179,3 +179,29 @@ describe('createFiles — khởi động', () => {
     expect(exp - clock.now().getTime() / 1000).toBe(3);
   });
 });
+
+describe('createFiles — files-sweep (ADR-141)', () => {
+  it.each([
+    ['local/test mặc định ⇒ tắt', {}, undefined],
+    [
+      'FILES_SWEEP_INTERVAL_MS (test) ⇒ bật, đúng chu kỳ',
+      { FILES_SWEEP_INTERVAL_MS: '1000' },
+      1_000,
+    ],
+    [
+      'FILES_SWEEP_ON_START (test) ⇒ bật, chu kỳ mặc định',
+      { FILES_SWEEP_ON_START: 'true' },
+      3_600_000,
+    ],
+    ['MAINTENANCE_JOBS_ENABLED=true ⇒ bật', { MAINTENANCE_JOBS_ENABLED: 'true' }, 3_600_000],
+  ])('%s', async (_n, over, interval) => {
+    files = await createFiles({
+      env: envWith(over),
+      clock,
+      logger: quietLogger(),
+      webOrigin: 'http://w',
+    });
+    expect(files.sweepJob?.intervalMs).toBe(interval);
+    if (files.sweepJob) expect(files.sweepJob.name).toBe('files-sweep');
+  });
+});
