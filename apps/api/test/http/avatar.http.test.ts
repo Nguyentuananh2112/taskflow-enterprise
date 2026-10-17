@@ -122,12 +122,13 @@ describe('PUT /me/avatar (ADR-142)', () => {
 
   it('6 MB ⇒ 413 (trần avatar 5 MB); thiếu X-Upload-Name ⇒ 400; không token ⇒ 401', async () => {
     const mia = await t.register('Mia');
-    // Vượt trần drain ⇒ server có thể cắt socket trước khi client gửi xong (ECONNRESET) — cả hai đều là từ chối.
+    // Vượt trần drain ⇒ server có thể cắt socket trước khi client gửi xong — client thấy ECONNRESET / EPIPE, hoặc
+    // ECANCELED (superagent hủy request khi socket bị cắt lúc máy tải nặng — cổng TL). Mọi dạng đều là từ chối.
     const big = await putAvatar(mia, Buffer.alloc(6 * 1024 * 1024)).then(
       (r) => r.status,
       (e: NodeJS.ErrnoException) => e.code,
     );
-    expect([413, 'ECONNRESET', 'EPIPE']).toContain(big);
+    expect([413, 'ECONNRESET', 'EPIPE', 'ECANCELED']).toContain(big);
     expect(await blobs(mia.id)).toEqual([]);
     const noName = await request(t.app)
       .put('/api/v1/me/avatar')
