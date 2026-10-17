@@ -54,8 +54,8 @@ beforeEach(async () => {
       offboardScheduledById: ids.olivia!,
     },
   });
-  const w = await prisma.workspace.create({ data: { name: 'A', slug: 'a' } });
-  const other = await prisma.workspace.create({ data: { name: 'B', slug: 'b' } });
+  const w = await prisma.workspace.create({ data: { name: 'A', slug: 'ws-alpha' } });
+  const other = await prisma.workspace.create({ data: { name: 'B', slug: 'ws-bravo' } });
   ws = w.id;
   await prisma.workspaceMember.createMany({
     data: [

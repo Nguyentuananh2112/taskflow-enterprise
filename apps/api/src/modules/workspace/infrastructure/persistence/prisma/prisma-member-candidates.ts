@@ -24,7 +24,7 @@ export class PrismaMemberCandidates implements IMemberCandidateDirectory {
          AND NOT EXISTS (
            SELECT 1 FROM workspace_members wm
             WHERE wm.workspace_id = ${input.workspaceId}::uuid AND wm.user_id = u.id)
-         AND (u.full_name ILIKE ${pattern} ESCAPE '\' OR u.email ILIKE ${pattern} ESCAPE '\')
+         AND (u.full_name ILIKE ${pattern} ESCAPE '\\' OR u.email ILIKE ${pattern} ESCAPE '\\')
        ORDER BY u.full_name, u.id
        LIMIT ${input.limit}`;
   }
