@@ -17,6 +17,7 @@ const day = (date: string, patch: Partial<AttendanceDayDto> = {}): AttendanceDay
   early: false,
   absentHalf: false,
   inProgress: false,
+  notCheckedInYet: false,
   firstIn: null,
   lastOut: null,
   leave: null,

@@ -66,7 +66,13 @@ describe('summarizeDay — giờ làm, muộn, sớm (SD-01..SD-10)', () => {
   it('SD-01 đúng giờ ⇒ PRESENT, 480 phút, không muộn/sớm', () => {
     const r = day(MON, [ev('IN', MON, '07:55'), ev('OUT', MON, '17:35')]);
     expect(r).toMatchObject({ status: 'PRESENT', workedMin: 480, lateMin: 0, earlyMin: 0 });
-    expect(r.flags).toEqual({ late: false, early: false, absentHalf: false, inProgress: false });
+    expect(r.flags).toEqual({
+      late: false,
+      early: false,
+      absentHalf: false,
+      inProgress: false,
+      notCheckedInYet: false,
+    });
   });
 
   it('SD-02 grace 0, vào 08:01 ⇒ late, lateMin 1, worked 479', () => {
@@ -233,6 +239,38 @@ describe('summarizeDay — lễ, OFF, vắng, chưa tới (SD-19..SD-26b, SD-34)
     expect(day(MON, [], { nowLocal: '17:30' }).status).toBe('PENDING');
   });
 
+  // TL d9 (demo 17/10): đã qua giờ vào ca mà chưa IN ⇒ vẫn PENDING (ABSENT chỉ sau giờ kết ca — không đổi), nhưng
+  // có cờ `notCheckedInYet` để web không hiện "Chưa tới giờ". Mốc = giờ bắt đầu ca hiệu lực (nghỉ AM ⇒ breakEnd).
+  const pending = (r: ReturnType<typeof day>) => [r.status, r.flags.notCheckedInYet];
+  it('SD-25b biên giờ vào ca: 07:59 ⇒ PENDING, chưa cờ; đúng 08:00 ⇒ PENDING + notCheckedInYet; tới 17:30 vẫn cờ; 17:31 ⇒ ABSENT, hết cờ', () => {
+    expect(pending(day(MON, [], { nowLocal: '07:59' }))).toEqual(['PENDING', false]);
+    expect(pending(day(MON, [], { nowLocal: '08:00' }))).toEqual(['PENDING', true]);
+    expect(pending(day(MON, [], { nowLocal: '17:30' }))).toEqual(['PENDING', true]);
+    expect(pending(day(MON, [], { nowLocal: '17:31' }))).toEqual(['ABSENT', false]);
+  });
+
+  it('SD-25c nghỉ AM ⇒ mốc là breakEnd (13:29 chưa, 13:30 có cờ); nghỉ PM ⇒ mốc 08:00, hết ca ở breakStart', () => {
+    expect(pending(day(MON, [], { nowLocal: '13:29', leave: 'AM' }))).toEqual(['PENDING', false]);
+    expect(pending(day(MON, [], { nowLocal: '13:30', leave: 'AM' }))).toEqual(['PENDING', true]);
+    expect(pending(day(MON, [], { nowLocal: '07:59', leave: 'PM' }))).toEqual(['PENDING', false]);
+    expect(pending(day(MON, [], { nowLocal: '08:00', leave: 'PM' }))).toEqual(['PENDING', true]);
+    expect(pending(day(MON, [], { nowLocal: '12:01', leave: 'PM' }))).toEqual(['ABSENT', false]);
+  });
+
+  it('SD-25d cờ KHÔNG bật khi: đã IN, nghỉ cả ngày, lễ, ngày nghỉ, ngày tương lai, ngoài nhiệm kỳ; ân hạn không dời mốc', () => {
+    const flag = (r: ReturnType<typeof day>) => r.flags.notCheckedInYet;
+    expect(flag(day(MON, [ev('IN', MON, '08:05')], { nowLocal: '09:00' }))).toBe(false);
+    expect(flag(day(MON, [], { nowLocal: '09:00', leave: 'FULL' }))).toBe(false);
+    expect(flag(day(MON, [], { nowLocal: '09:00', holiday: true }))).toBe(false);
+    expect(flag(day(SUN, [], { nowLocal: '09:00' }))).toBe(false);
+    expect(flag(day(MON, [], { now: at(addDays(MON, -1), '09:00') }))).toBe(false);
+    expect(flag(day(MON, [], { nowLocal: '09:00', employed: false }))).toBe(false);
+    // Ân hạn chỉ cho phép vào muộn không bị tính "muộn" — chưa IN lúc 08:00 vẫn là chưa chấm.
+    expect(flag(day(MON, [], { nowLocal: '08:00', schedule: { ...S0, graceMin: 10 } }))).toBe(true);
+    // OUT mồ côi (không IN) vẫn là chưa vào ca.
+    expect(flag(day(MON, [ev('OUT', MON, '08:30')], { nowLocal: '09:00' }))).toBe(true);
+  });
+
   it('SD-43 ngoài nhiệm kỳ, không lượt ⇒ NOT_EMPLOYED (thắng HOLIDAY / OFF / ON_LEAVE); 0 phút, không cờ', () => {
     for (const over of [{}, { holiday: true }, { leave: 'FULL' as const }]) {
       expect(day(MON, [], { ...over, employed: false })).toEqual({
@@ -242,7 +280,13 @@ describe('summarizeDay — lễ, OFF, vắng, chưa tới (SD-19..SD-26b, SD-34)
         workedMin: 0,
         lateMin: 0,
         earlyMin: 0,
-        flags: { late: false, early: false, absentHalf: false, inProgress: false },
+        flags: {
+          late: false,
+          early: false,
+          absentHalf: false,
+          inProgress: false,
+          notCheckedInYet: false,
+        },
       });
     }
     expect(day(SUN, [], { employed: false }).status).toBe('NOT_EMPLOYED');

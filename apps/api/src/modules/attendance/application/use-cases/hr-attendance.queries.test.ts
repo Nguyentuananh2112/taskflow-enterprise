@@ -53,6 +53,20 @@ describe('HrAttendanceQueries.today', () => {
       ['Mia', false, 'PRESENT'],
       ['Olivia', false, 'PENDING'],
     ]);
+    expect(r.members.every((m) => !m.day.notCheckedInYet)).toBe(true); // 07:55 — chưa tới giờ vào ca
+  });
+
+  it('tab Hôm nay sau giờ vào ca: người chưa chấm ⇒ PENDING + notCheckedInYet (không phải "Chưa tới giờ")', async () => {
+    const t = await setup('2026-11-17 09:00');
+    await t.punch('IN', key(1));
+    const r = await t.hrQueries.today(W1);
+    expect(AttendanceCompanyTodayDto.parse(r)).toEqual(r);
+    expect(r.members.map((m) => [m.user.fullName, m.day.status, m.day.notCheckedInYet])).toEqual([
+      ['Hana', 'PENDING', true],
+      ['Max', 'PENDING', true],
+      ['Mia', 'PRESENT', false],
+      ['Olivia', 'PENDING', true],
+    ]);
   });
 
   it('ngày lễ ⇒ isHoliday + tên; người đã rời có lượt hôm nay vẫn hiện, gắn left', async () => {
