@@ -57,7 +57,7 @@ describe('mất quyền ⇒ mất hội thoại', () => {
       const max = await actors.createUser(`cl4-max-${tag()}`);
       const g = await chat.group(mia, `CL4-G-${tag()}`, [otto.userId, max.userId]);
       expectStatus(await chat.call(otto, 'POST', CHAT.leave(g.id), {}), 204, 'Otto rời nhóm');
-      expectStatus(await chat.call(mia, 'DELETE', CHAT.member(g.id, max.userId)), 204, 'bớt Max');
+      expectStatus(await chat.call(mia, 'DELETE', CHAT.member(g.id, max.userId)), 200, 'bớt Max');
       for (const who of [otto, max]) {
         expectStatus(await chat.call(who, 'GET', CHAT.messages(g.id)), 404, 'đọc nhóm sau khi ra');
         expectStatus(
@@ -109,7 +109,7 @@ describe('mất quyền ⇒ mất hội thoại', () => {
 
       expectStatus(
         await chat.call(mia, 'POST', CHAT.members(g.id), { userIds: [quinn.userId] }),
-        204,
+        200,
         'OWNER thêm lại Quinn',
       );
       expect(await chat.conversationIds(back)).toContain(g.id);

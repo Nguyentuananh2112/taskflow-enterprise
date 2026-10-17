@@ -43,7 +43,7 @@ beforeAll(async () => {
   firstMessage = await chat.send(mia, direct.id, 'Chào Vic');
   g1 = await chat.group(mia, `G1-${randomUUID().slice(0, 6)}`, [vic.userId, otto.userId]);
   // Otto bị bớt khỏi G1 ⇒ từ giờ là người ngoài.
-  expectStatus(await chat.call(mia, 'DELETE', CHAT.member(g1.id, otto.userId)), 204, 'bớt Otto');
+  expectStatus(await chat.call(mia, 'DELETE', CHAT.member(g1.id, otto.userId)), 200, 'bớt Otto');
 }, 120_000);
 
 describe('IDOR hội thoại', () => {

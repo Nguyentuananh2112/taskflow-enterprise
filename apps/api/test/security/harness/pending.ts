@@ -14,34 +14,7 @@ export interface DeclaredPending {
   readonly ticket: string;
 }
 
-const T069: DeclaredPending = {
-  reason:
-    'upload chat — POST chat/uploads (G T-069) chưa nối vào app; T-067 chỉ có hạ tầng rawUpload / media',
-  ticket: 'T-069',
-};
-
 export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
-  // T-073 (F): chat-idor / chat-lifecycle / chat-races viết trước route chat (contract 265d08c4).
-  'SEC-CH-01': T069,
-  'SEC-CH-02': T069,
-  'SEC-CH-03': T069,
-  'SEC-CH-13s': T069,
-  'SEC-CH-38': T069,
-  'SEC-CH-04': T069,
-  'SEC-CH-28': T069,
-  'SEC-CH-39': T069,
-  'CC-CH-01': T069,
-  'CC-CH-01b': T069,
-  'CC-CH-02': T069,
-  // T-073 (F): chat-upload-limits.sec.ts viết trước route — mọi ca dùng cả POST chat/uploads (T-069; vế avatar
-  // cần thêm PUT me/avatar của T-068). T-069 vào feat/avatar-chat ⇒ xóa khối này + hằng T069.
-  'SEC-CH-08': T069,
-  'SEC-CH-09': T069,
-  'SEC-CH-12': T069,
-  'SEC-CH-24': T069,
-  'SEC-CH-26': T069,
-  'SEC-CH-27': T069,
-  'SEC-CH-34': T069,
   // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 (e0b0fc9), T-038 (0fb023f), T-039 (87255e8), T-040/T-040b (e330783) đã merge — mục của các vé đó đã gỡ.
 };
 
