@@ -25,3 +25,22 @@ export function removeLocal(key: string): void {
     // Không xóa được ⇒ bỏ qua (giá trị cũ sẽ bị đọc như hiện tại).
   }
 }
+
+/** Các khóa có tiền tố `prefix` (rỗng khi storage không truy cập được). */
+export function localKeys(prefix: string): string[] {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
+/** Xóa mọi khóa có tiền tố `prefix` (vd dọn dấu vết của user khi đăng xuất trên máy dùng chung). */
+export function removeLocalByPrefix(prefix: string): void {
+  localKeys(prefix).forEach(removeLocal);
+}

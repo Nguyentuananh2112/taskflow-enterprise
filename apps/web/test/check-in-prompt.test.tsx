@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,8 +8,10 @@ import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
 import { startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
+import { session } from '@/entities/session';
 import { getClientId } from '@/shared/lib/client-id';
 import { suppressDailyOnceForTest } from '@/shared/lib/daily-once';
+import { localKeys } from '@/shared/lib/storage';
 import { promptMemory } from '@/widgets/attendance-card';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
@@ -35,7 +37,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   cleanupApp();
-  promptMemory.resetForTest();
+  promptMemory.forgetAll(); // localStorage sống qua các test ⇒ mỗi test bắt đầu sạch
 });
 
 function seed() {
@@ -95,6 +97,20 @@ describe('dialog nhắc chấm công', () => {
     now = Date.parse('2026-10-16T09:00:00+07:00'); // thứ 6, 09:00
     open();
     expect(await prompt()).toBeTruthy();
+  });
+
+  it('đăng xuất ⇒ xóa dấu "đã nhắc" khỏi máy (máy dùng chung — review B LOW-1); khóa không chứa UUID thô', async () => {
+    const { f, open } = seed();
+    open();
+    await userEvent
+      .setup({ delay: null })
+      .click(within(await prompt()).getByRole('button', { name: 'Để sau' }));
+    const keys = localKeys('tf.checkin-prompt.v1:');
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).not.toContain(f.owner.id);
+    expect(keys[0]).not.toContain(f.wsId);
+    await act(() => session.logout());
+    expect(localKeys('tf.checkin-prompt.v1:')).toEqual([]);
   });
 
   it('Esc = "Để sau"', async () => {
