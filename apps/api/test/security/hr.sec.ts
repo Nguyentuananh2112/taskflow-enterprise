@@ -143,8 +143,8 @@ describe('Quyền & thứ tự lỗi', () => {
     const own = leaveOf(
       await submitLeave(actors, t.mia, {
         type: 'UNPAID',
-        startDate: workday(41),
-        endDate: workday(41),
+        startDate: workday(42),
+        endDate: workday(42),
       }),
     );
     expect(
@@ -163,7 +163,7 @@ describe('Quyền & thứ tự lỗi', () => {
     async () => {
       const t = await hr();
       expect((await withKey(api, 'POST', HR.checkIn, t.vic.accessToken)).status).toBe(201);
-      const body = { type: 'UNPAID', startDate: workday(42), endDate: workday(42) };
+      const body = { type: 'UNPAID', startDate: workday(52), endDate: workday(52) };
       expect((await submitLeave(actors, t.vic, body)).status).toBe(201);
       expect((await withKey(api, 'POST', HR.checkIn, t.ada.accessToken)).status).toBe(403);
       expect((await submitLeave(actors, t.ada, body)).status).toBe(403);
@@ -193,8 +193,8 @@ describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
     const own = leaveOf(
       await submitLeave(actors, t.hana, {
         type: 'UNPAID',
-        startDate: workday(43),
-        endDate: workday(43),
+        startDate: workday(54),
+        endDate: workday(54),
       }),
     );
     expect(
@@ -340,22 +340,24 @@ describe('CSV xuất bảng công (OWASP, B-L2..L4)', () => {
 describe('Dữ liệu cá nhân / nhạy cảm', () => {
   secCase(
     'SEC-HR-14',
-    'IP/UA: Mia thấy của mình (me/events); HR thấy qua attendance/events; Max không thấy của Mia',
+    'IP/UA: Ivy thấy của mình (me/events); HR thấy qua attendance/events; Max không thấy của Ivy',
     AREA,
     async () => {
       const t = await hr();
-      await withKey(api, 'POST', HR.checkIn, t.mia.accessToken);
-      const mine = eventsOf(await actors.json('GET', HR.myEvents(todayVn()), t.mia.accessToken));
+      // Nhân viên MỚI: lượt của Mia (bối cảnh chung) có cả ADJUSTMENT do HR thêm (SEC-HR-04) — lượt đó không có IP.
+      const ivy = await newcomer('ivy');
+      await withKey(api, 'POST', HR.checkIn, ivy.accessToken);
+      const mine = eventsOf(await actors.json('GET', HR.myEvents(todayVn()), ivy.accessToken));
       expect(mine.length).toBeGreaterThan(0);
-      expect(mine.every((e) => e.userId === t.mia.userId && e.ip !== null)).toBe(true);
+      expect(mine.every((e) => e.userId === ivy.userId && e.ip !== null)).toBe(true);
       const byHr = eventsOf(
-        await actors.json('GET', HR.eventsOf(t.mia.userId, todayVn()), t.hana.accessToken),
+        await actors.json('GET', HR.eventsOf(ivy.userId, todayVn()), t.hana.accessToken),
       );
       expect(byHr.map((e) => e.id)).toEqual(
         expect.arrayContaining(mine.map((e) => e.id)) as unknown,
       );
       const maxView = await actors.json('GET', HR.myEvents(todayVn()), t.max.accessToken);
-      expect(maxView.text).not.toContain(t.mia.userId);
+      expect(maxView.text).not.toContain(ivy.userId);
     },
   );
 
@@ -404,8 +406,8 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
       const secret = `LÝ-DO-${Date.now()}`;
       await submitLeave(actors, t.mia, {
         type: 'SICK',
-        startDate: workday(45),
-        endDate: workday(45),
+        startDate: workday(46),
+        endDate: workday(46),
         reason: secret,
       });
       const notes = await actors.json('GET', HR.notifications, t.hana.accessToken);
@@ -469,8 +471,8 @@ describe('Thông báo (ADR-123, B-M3)', () => {
     );
     await submitLeave(actors, t.mia, {
       type: 'UNPAID',
-      startDate: workday(46),
-      endDate: workday(46),
+      startDate: workday(48),
+      endDate: workday(48),
     });
     const list = (await actors.json('GET', HR.notifications, t.hana.accessToken)).json as {
       data: { id: string }[];
@@ -537,8 +539,8 @@ describe('Thông báo (ADR-123, B-M3)', () => {
       const secret = `RT-${Date.now()}`;
       const sent = await submitLeave(actors, t.mia, {
         type: 'SICK',
-        startDate: workday(48),
-        endDate: workday(48),
+        startDate: workday(50),
+        endDate: workday(50),
         reason: secret,
       });
       expect(sent.status, sent.text.slice(0, 200)).toBe(201);

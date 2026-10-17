@@ -492,6 +492,9 @@ describe('Đơn nghỉ song song', () => {
     async () => {
       for (let i = 0; i < RUNS; i += 1) {
         const t = await freshPair();
+        // Hana có sẵn HR_MANAGE (seedHr) ⇒ PUT "EMPLOYEE + HR_MANAGE" sẽ là no-op (200, không tăng version) ⇒ thu
+        // trước để hai lệnh đều là thay đổi thật trên cùng version.
+        expect((await setGrants(actors, t.hana.userId, [])).status, `#${String(i)}`).toBe(200);
         const expectedVersion = await accessVersion(actors, t.hana.userId);
         const put = (body: { role: 'ADMIN' | 'EMPLOYEE'; grants: string[] }) =>
           actors.json('PUT', HR.accessOf(t.hana.userId), t.ada.accessToken, {
