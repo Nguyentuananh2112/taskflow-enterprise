@@ -21,6 +21,18 @@ const T069: DeclaredPending = {
 };
 
 export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
+  // T-073 (F): chat-idor / chat-lifecycle / chat-races viết trước route chat (contract 265d08c4).
+  'SEC-CH-01': T069,
+  'SEC-CH-02': T069,
+  'SEC-CH-03': T069,
+  'SEC-CH-13s': T069,
+  'SEC-CH-38': T069,
+  'SEC-CH-04': T069,
+  'SEC-CH-28': T069,
+  'SEC-CH-39': T069,
+  'CC-CH-01': T069,
+  'CC-CH-01b': T069,
+  'CC-CH-02': T069,
   // T-073 (F): chat-upload-limits.sec.ts viết trước route — mọi ca dùng cả POST chat/uploads (T-069; vế avatar
   // cần thêm PUT me/avatar của T-068). T-069 vào feat/avatar-chat ⇒ xóa khối này + hằng T069.
   'SEC-CH-08': T069,

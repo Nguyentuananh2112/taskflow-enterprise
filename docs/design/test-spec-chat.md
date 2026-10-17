@@ -176,12 +176,15 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 | SEC-CH-35 | F | `chat-media.sec.ts` + `chat-media-rotate.sec.ts` | Đổi tuple giữ `sig` ⇒ 404. Ký bằng `_PREVIOUS` (file riêng, restart với secret mới + previous = cũ) ⇒ 200. Secret < 32 byte / = JWT ⇒ `startApi` thất bại với thông điệp rõ (mẫu `production.sec`) |
 | SEC-CH-36 | F | `chat-upload-types.sec.ts` | `macroEnabled`, `oleObject`, ODF `Basic/`, 2 001 entry, `.docm` → `.docx` ⇒ 415 |
 | SEC-CH-37 | F | `chat-upload-limits.sec.ts` | Ổ trống < trần: **I** (fs giả `statfs`) vì S không giả ổ đầy được. Valkey lỗi ⇒ upload 503 (container Valkey tạm như `valkey-outage.sec`) |
+| SEC-CH-38 | F | `chat-idor.sec.ts` | DIRECT tới chính mình ⇒ 422 `SELF_DIRECT`; tới người chờ kích hoạt / đã nghỉ ⇒ 422 `RECIPIENT_INACTIVE`; UUID lạ ⇒ 404; DIRECT cũ với người đã nghỉ: `canSend` false, gửi ⇒ 422 (TL 18/10) |
+| SEC-CH-39 | F | `chat-lifecycle.sec.ts` | Phòng ws: VIEWER (vai trò dự án) đọc + GỬI được; người ngoài ws / Admin không là thành viên ⇒ 404 (TL 18/10) |
 
 ## 4. CC-CH — đua (tầng C, ×20, mẫu `red[]`)
 
 | ID | Người viết | File | Mong đợi chi tiết |
 |---|---|---|---|
 | CC-CH-01 | F | `chat-races.sec.ts` | 5 POST cùng `clientMsgId` ⇒ [201, 200×4]; `messages` có đúng 1; socket người nhận đúng 1 `chat:message:new` |
+| CC-CH-01b | F | `chat-races.sec.ts` | Cùng `clientMsgId` khác thân ⇒ 422 `IDEMPOTENCY_KEY_REUSED`, tin đầu không đổi; cùng `clientMsgId` ở hội thoại khác ⇒ không trả tin chéo |
 | CC-CH-02 | F | `chat-races.sec.ts` | Mia, Vic cùng `POST chat/direct` ⇒ cùng `id` |
 | CC-CH-03 | F | `chat-races.sec.ts` | OWNER rời ‖ OWNER bớt người cuối ⇒ không 5xx; `effectiveGroupOwners` (đọc qua `GET conversation`) luôn có ≥ 1 OWNER hiệu lực hoặc nhóm không còn ai |
 | CC-CH-04 | F | `chat-races.sec.ts` | 2 `PUT me/avatar` ⇒ `avatar_version` cuối có blob; sau sweep (TTL test) không blob mồ côi trong `avatars/<id>/` |
@@ -245,8 +248,8 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 |---|---|---|---|
 | `test/security/harness/upload.ts`, `files/fixtures.ts`, `files/store.ts`, `useCompanyApi` + env | F | harness | chưa |
 | `e2e/support/chat.ts` + `apiServerEnv` | F | harness E | chưa |
-| `chat-idor.sec.ts` | F | SEC-CH-01, 02, 03, 13 (S) | chưa |
-| `chat-lifecycle.sec.ts` | F | SEC-CH-04, 28, 30 | chưa |
+| `chat-idor.sec.ts` | F | SEC-CH-01, 02, 03, 13s (S: thân lưu nguyên văn), 38 — **đã viết**, pending `T-069` | chưa chạy |
+| `chat-lifecycle.sec.ts` | F | SEC-CH-04 (vế REST), 28, 39 — **đã viết**, pending `T-069`; SEC-CH-30 chưa | một phần |
 | `chat-clock-0559.sec.ts` | F | SEC-CH-05 / CLK-CH-01 | chưa |
 | `chat-limits.sec.ts` | F | SEC-CH-14 | chưa |
 | `chat-groups.sec.ts` | F | SEC-CH-15 | chưa |
@@ -259,7 +262,7 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 | `chat-media-rotate.sec.ts` | F | SEC-CH-35r (xoay khóa `_PREVIOUS`) — **1/1 xanh** | xong |
 | `chat-upload-types.sec.ts` | F | SEC-CH-06, 07, 21, 23, 32, 33, 36 | chưa |
 | `chat-upload-limits.sec.ts` (NẶNG) | F | SEC-CH-08, 09, 12, 24, 26, 27, 34 (đã viết, pending `T-067`, chưa chạy); SEC-CH-37, CC-CH-09 chưa | một phần |
-| `chat-races.sec.ts` | F | CC-CH-01, 02, 03, 05, 06 (F); 04, 07, 08 (B) | chưa |
+| `chat-races.sec.ts` | F | CC-CH-01, 01b, 02 — **đã viết**, pending `T-069`; CC-CH-03…08 chưa | một phần |
 | `chat-clock-avatar.sec.ts`, `chat-clock-retention.sec.ts` | F | CLK-CH-02, 03 | chưa |
 | `e2e/specs/avatar.e2e.ts` | H | E2E-CH-01 | chưa |
 | `e2e/specs/chat.e2e.ts` | F / H | E2E-CH-02…06 (F); 07, SEC-CH-13 (H) | chưa |
