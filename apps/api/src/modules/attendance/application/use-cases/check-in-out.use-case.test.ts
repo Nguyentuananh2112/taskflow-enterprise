@@ -193,6 +193,27 @@ describe.each(['in-once-first', 'key-first'] as const)(
       expect(await t.backend.eventRows()).toHaveLength(1);
     });
 
+    it('bên thắng commit GIỮA hai câu đọc (READ COMMITTED: tìm theo key chưa thấy, danh sách lượt đã thấy IN của nó) ⇒ replay 200, không 409 (CC-HR-02 #17)', async () => {
+      const t = await setup();
+      uniqueOrder(t, order);
+      const first = await t.checkInOut.execute(IN_KEY1);
+      raceAfterFirst(t, false); // findByIdempotencyKey trả cũ; listForUser trả mới
+      const second = await t.checkInOut.execute(IN_KEY1);
+      expect(second.replayed).toBe(true);
+      expect(second.card.firstIn).toBe(first.card.firstIn);
+      expect(await t.backend.eventRows()).toHaveLength(1);
+    });
+
+    it('cùng khe đó nhưng key KHÁC ⇒ vẫn 409 already_checked_in', async () => {
+      const t = await setup();
+      uniqueOrder(t, order);
+      await t.checkInOut.execute(IN_KEY1);
+      raceAfterFirst(t, false);
+      await expect(
+        t.checkInOut.execute({ ...IN_KEY1, idempotencyKey: key(2) }),
+      ).rejects.toMatchObject({ statusCode: 409, details: { reason: 'already_checked_in' } });
+    });
+
     it('key KHÁC (thật sự chấm 2 lần) ⇒ 409 already_checked_in, không thêm dòng', async () => {
       const t = await setup();
       uniqueOrder(t, order);

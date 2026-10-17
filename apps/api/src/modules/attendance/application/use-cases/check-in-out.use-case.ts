@@ -89,6 +89,16 @@ export class CheckInOutUseCase {
       from: addDays(today, -2),
       to: today,
     });
+    // CC-HR-02 #17: READ COMMITTED ⇒ mỗi câu đọc một snapshot mới. Request song song cùng key có thể commit GIỮA
+    // `findByIdempotencyKey` (chưa thấy) và câu này (đã thấy) ⇒ kiểm key lại TRÊN dữ liệu mới nhất trước khi kết
+    // luận "đã chấm vào" (409) — cùng key là lặp lại, không phải chấm lần hai.
+    const sameKey = recent.find(
+      (e) => e.source === 'WEB' && e.idempotencyKey === input.idempotencyKey,
+    );
+    if (sameKey) {
+      if (sameKey.kind !== kind) throw keyReused();
+      return true;
+    }
     const live = recent.filter((e) => e.voidedAt === null);
     let workDate = toLocal(now, timezone).date;
     if (kind === 'IN') {
