@@ -1,6 +1,7 @@
 // Backend Postgres cho harness attendance (LSP, như task): cùng hợp đồng `AttendanceBackend` với bản
 // in-memory ⇒ chạy lại nguyên bộ test use case tầng A trên repo Prisma + unique index một phần thật.
 import { PrismaAttendanceEventStore } from '../../../src/modules/attendance/infrastructure/persistence/prisma/prisma-attendance-event.store';
+import { PrismaCorrectionStore } from '../../../src/modules/attendance/infrastructure/persistence/prisma/prisma-correction.store';
 import { PrismaWorkCalendarStore } from '../../../src/modules/attendance/infrastructure/persistence/prisma/prisma-work-calendar.store';
 import {
   byTime,
@@ -20,6 +21,7 @@ export function prismaAttendanceBackend(): AttendanceBackend {
     uow,
     events,
     calendar: new PrismaWorkCalendarStore(db),
+    corrections: new PrismaCorrectionStore(db),
     async seed() {
       for (const [id, fullName] of Object.entries(FIXTURE.users)) {
         await prisma.user.create({

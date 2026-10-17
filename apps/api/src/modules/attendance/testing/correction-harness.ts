@@ -9,11 +9,10 @@ import { createAttendanceHarness } from './attendance-harness';
  * Harness đơn bổ sung giờ (T-056) trên harness attendance chuẩn (Mia, Max, Vic nhân viên; Hana HR; Olivia Admin). Lưu
  * đơn in-memory — bản Prisma chạy lại qua runner LSP khi có migration 8 (T-055).
  */
-export async function createCorrectionHarness(
-  now = '2026-11-17 10:00',
-  corrections: ICorrectionStore = new InMemoryCorrectionStore(),
-) {
+export async function createCorrectionHarness(now = '2026-11-17 10:00', store?: ICorrectionStore) {
   const t = await createAttendanceHarness(now);
+  // Runner LSP: backend Postgres có store Prisma cùng transaction; in-memory ⇒ bản bộ nhớ.
+  const corrections = store ?? t.backend.corrections ?? new InMemoryCorrectionStore();
   const sent: Parameters<CorrectionNotifier['notify']>[0][] = [];
   const notifier: CorrectionNotifier = {
     notify: (n) => {
