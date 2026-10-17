@@ -3,7 +3,7 @@ import type * as z from 'zod';
 import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 
 import type { MockAttendance } from './mock-attendance';
-import type { MemberContext } from './mock-guard';
+import type { CompanyContext } from './mock-guard';
 import { fail } from './respond';
 
 // Kho đơn nghỉ giả + luật kiểm đơn dùng chung cho gửi và xem trước (leave-handlers.ts).
@@ -73,10 +73,11 @@ export class MockLeave {
 }
 
 export const strip = ({ workspaceId: _w, ...dto }: Leave) => dto;
-export const selfOnly = (ctx: MemberContext) =>
-  ctx.membership.role === 'VIEWER'
-    ? fail(403, 'FORBIDDEN_ACCESS', { required: 'leave:self' })
-    : null;
+/** Mốc 3.5: Admin không xin nghỉ (không có `leave:self` — ADR-134). */
+export const selfOnly = (ctx: CompanyContext) =>
+  ctx.company.permissions.includes('leave:self')
+    ? null
+    : fail(403, 'FORBIDDEN_ACCESS', { required: 'leave:self' });
 export const rule = (r: string) => fail(422, 'BUSINESS_RULE_VIOLATION', { rule: r });
 export const conflict = (reason: string) => fail(409, 'RESOURCE_CONFLICT', { reason });
 
@@ -88,7 +89,7 @@ type Draft = Pick<Leave, 'type' | 'startDate' | 'endDate' | 'dayPart'>;
  */
 export function evaluate(
   leave: MockLeave,
-  ctx: MemberContext,
+  ctx: CompanyContext,
   wsId: string,
   b: Draft,
 ): { response: Response; days?: never } | { days: number; response?: never } {

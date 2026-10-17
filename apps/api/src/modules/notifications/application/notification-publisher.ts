@@ -1,22 +1,16 @@
 import type { IClock, IIdGenerator } from '../../../core/domain';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type { NotificationRecord, NotificationType } from '../domain/notification';
-import type {
-  CanManageHr,
-  INotificationAudience,
-  INotificationRealtime,
-  INotificationStore,
-} from './ports';
+import type { INotificationAudience, INotificationRealtime, INotificationStore } from './ports';
 
 export type NotificationRecipient = { kind: 'user'; userId: string } | { kind: 'hr' };
 
 export interface NotifyInput {
-  workspaceId: string;
   type: NotificationType;
   refId: string;
   /** Người gây ra — không bao giờ tự nhận thông báo của chính mình. */
   actorId: string;
-  /** `hr` ⇒ mọi thành viên HIỆN có `hr:manage` trong ws (đọc trong cùng transaction). */
+  /** `hr` ⇒ mọi người HIỆN có `hr:manage` (Admin + HR, còn quyền; đọc trong cùng transaction). */
   recipient: NotificationRecipient;
 }
 
@@ -30,7 +24,6 @@ export class NotifyOutsideTransactionError extends Error {
 export interface NotificationPublisherDeps {
   store: INotificationStore;
   audience: INotificationAudience;
-  canManageHr: CanManageHr;
   realtime: INotificationRealtime;
   uow: IUnitOfWork;
   ids: IIdGenerator;
@@ -40,7 +33,7 @@ export interface NotificationPublisherDeps {
 /**
  * Port ghi thông báo cho attendance / leave / workspace (ADR-123). Ghi TRONG transaction của bên gọi
  * (rollback ⇒ không còn dòng nào, không event); `notification:new` chỉ phát SAU commit
- * (`uow.afterCommit`, best-effort). Payload event chỉ id + loại + ws (SEC-HR-20).
+ * (`uow.afterCommit`, best-effort). Payload event chỉ id + loại (SEC-HR-20).
  */
 export class NotificationPublisher {
   constructor(private readonly d: NotificationPublisherDeps) {}
@@ -53,7 +46,6 @@ export class NotificationPublisher {
     const createdAt = this.d.clock.now();
     const records: NotificationRecord[] = recipients.map((recipientId) => ({
       id: this.d.ids.next(),
-      workspaceId: input.workspaceId,
       recipientId,
       type: input.type,
       refId: input.refId,
@@ -73,7 +65,6 @@ export class NotificationPublisher {
             recipientId: r.recipientId,
             notificationId: r.id,
             type: r.type,
-            workspaceId: r.workspaceId,
           },
           meta,
         ),
@@ -83,9 +74,6 @@ export class NotificationPublisher {
 
   async #recipientsOf(input: NotifyInput): Promise<string[]> {
     if (input.recipient.kind === 'user') return [input.recipient.userId];
-    const members = await this.d.audience.membersOf(input.workspaceId);
-    return [
-      ...new Set(members.filter((m) => this.d.canManageHr(m.role, m.grants)).map((m) => m.userId)),
-    ];
+    return [...new Set(await this.d.audience.hrRecipients())];
   }
 }

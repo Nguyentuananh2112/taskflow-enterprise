@@ -13,7 +13,7 @@ import { HttpResponse, http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
 import { MOCK_SCHEDULE, MOCK_TZ } from './mock-attendance';
-import { forbiddenUnlessGranted, requireMember, type MemberContext } from './mock-guard';
+import { COMPANY_SCOPE, requireCompany, type CompanyContext } from './mock-guard';
 import {
   CSV_STATUS,
   conflictFail,
@@ -27,7 +27,7 @@ import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 
 // Chấm công phía HR (attendance-leave.md §5, DTO A chốt): mọi route `hr:manage` — kiểm quyền TRƯỚC
 // validate query/body (B-M4: thành viên thường gửi sai vẫn 403). Lệnh ghi với chính mình ⇒ 403 trừ
-// OWNER (B-H1). `userId` chưa từng có dữ liệu ⇒ 404.
+// Admin (B-H1). `userId` chưa từng có dữ liệu ⇒ 404.
 
 const MonthPageQuery = AttendanceMonthQuery.extend({
   cursor: Cursor.optional(),
@@ -37,20 +37,15 @@ const MonthPageQuery = AttendanceMonthQuery.extend({
 /** UTF-8 BOM để Excel đọc đúng tiếng Việt (§5). */
 const BOM = String.fromCharCode(0xfeff);
 
-const selfWrite = (ctx: MemberContext, userId: string) =>
-  userId === ctx.user.id && ctx.membership.role !== 'OWNER'
+const selfWrite = (ctx: CompanyContext, userId: string) =>
+  userId === ctx.user.id && ctx.company.role !== 'ADMIN'
     ? fail(403, 'FORBIDDEN_ACCESS', { required: 'hr:manage' })
     : null;
 
 export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHandler[] {
-  const base = `${baseUrl}/workspaces/:wsId/attendance`;
+  const base = `${baseUrl}/attendance`;
   const { db, attendance } = hr;
-  const guard = (request: Request, params: Record<string, unknown>) => {
-    const ctx = requireMember(request, db, { wsId: params.wsId as string });
-    if (ctx.response) return ctx;
-    const denied = forbiddenUnlessGranted(ctx.ok, db, 'hr:manage');
-    return denied ? { response: denied } : ctx;
-  };
+  const guard = (request: Request) => requireCompany(request, db, 'hr:manage');
   const rows = (wsId: string, month: string) => {
     const days = monthDays(month);
     return hr.people(wsId, days[0] ?? month, days.at(-1) ?? month).map(({ user, left }) => {
@@ -71,10 +66,10 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
   };
 
   return [
-    http.get(`${base}/today`, ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.get(`${base}/today`, ({ request }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const date = attendance.today();
       const holiday = hr.holidayOn(wsId, date);
       const members = hr
@@ -94,8 +89,8 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
       });
     }),
 
-    http.get(`${base}/export.csv`, ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.get(`${base}/export.csv`, ({ request }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const query = parseQuery(request, AttendanceMonthQuery);
       if (query.response) return query.response;
@@ -103,7 +98,7 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
       const lines = [
         ['Nhân viên', 'Ngày', 'Trạng thái', 'Vào', 'Ra', 'Giờ làm (phút)', 'Muộn (phút)'],
       ];
-      const body = rows(String(params.wsId), month).flatMap((r) =>
+      const body = rows(COMPANY_SCOPE, month).flatMap((r) =>
         r.days.map((d) =>
           [
             csvCell(r.user.fullName),
@@ -126,12 +121,12 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
       });
     }),
 
-    http.get(`${base}/events`, ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.get(`${base}/events`, ({ request }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const query = parseQuery(request, AttendanceEventsQuery);
       if (query.response) return query.response;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       if (!hr.known(wsId, query.data.userId))
         return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'user' });
       return ok(AttendanceEventsDto, {
@@ -140,13 +135,13 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
       });
     }),
 
-    http.post(`${base}/events`, async ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.post(`${base}/events`, async ({ request }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const body = await parseBody(request, AdjustAttendanceBody);
       if (body.response) return body.response;
       const b = body.data;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const denied = selfWrite(ctx.ok, b.userId);
       if (denied) return denied;
       if (!hr.known(wsId, b.userId)) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'user' });
@@ -162,11 +157,11 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
     }),
 
     http.post(`${base}/events/:id/void`, async ({ request, params }) => {
-      const ctx = guard(request, params);
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const body = await parseBody(request, VoidAttendanceBody);
       if (body.response) return body.response;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const hit = hr.locate(wsId, String(params.id));
       if (!hit) return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'attendance_event' });
       const denied = selfWrite(ctx.ok, hit.userId);
@@ -178,13 +173,13 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
     }),
 
     // Đặt SAU các route con: `${base}` không khớp `/today` nhưng giữ thứ tự cho dễ đọc.
-    http.get(base, ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.get(base, ({ request }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const query = parseQuery(request, MonthPageQuery);
       if (query.response) return query.response;
       const page = paginate(
-        rows(String(params.wsId), query.data.month),
+        rows(COMPANY_SCOPE, query.data.month),
         query.data.cursor,
         query.data.limit,
       );

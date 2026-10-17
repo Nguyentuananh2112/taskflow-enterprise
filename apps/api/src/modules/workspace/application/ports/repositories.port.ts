@@ -23,6 +23,11 @@ export interface IWorkspaceRepository {
    * deleted_at IS NOT NULL AND purge_at > now` — `false` khi không thỏa (đã purge/quá hạn/chưa xóa).
    */
   restoreIfWithinGrace(id: string, now: Date): Promise<boolean>;
+  /**
+   * Mốc 3.5 (T-061a): `UPDATE … SET archived_at = at, version + 1 WHERE id AND deleted_at IS NULL AND archived_at IS
+   * NULL` — `false` khi đã xóa mềm / đã lưu trữ / không có.
+   */
+  archive(id: string, at: Date): Promise<boolean>;
   /** Id workspace có `purge_at <= now`, tối đa `limit` (job purge, ADR-095). */
   listPurgeable(now: Date, limit: number): Promise<string[]>;
 }
@@ -38,6 +43,8 @@ export interface IMembershipRepository {
    */
   lockOwners(workspaceId: string): Promise<string[]>;
   listUserIds(workspaceId: string): Promise<string[]>;
+  /** Mọi workspace (kể cả đã xóa mềm) user là thành viên — rời hết khi nghỉ việc (T-062). */
+  listWorkspaceIdsOfUser(userId: string): Promise<string[]>;
   /**
    * Mốc 3 (B-H3a): đọc membership + khóa dòng `FOR SHARE` — gọi TRONG transaction. UPDATE dòng đó
    * (thu grant, đổi role) song song phải chờ ta commit và ngược lại. InMemory: như `find`.

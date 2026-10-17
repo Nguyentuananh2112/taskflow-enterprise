@@ -40,24 +40,24 @@ type Options = Readonly<{
   successTitle?: (today: AttendanceTodayDto, kind: CheckKind) => string;
 }>;
 
-export function useAttendanceCheck(wsId: string, options: Options = {}) {
+export function useAttendanceCheck(options: Options = {}) {
   const { successTitle } = options;
   return useMutation({
     mutationFn: ({ kind, key }: { kind: CheckKind; key: string }) =>
-      kind === 'IN' ? attendanceApi.checkIn(wsId, key) : attendanceApi.checkOut(wsId, key),
+      kind === 'IN' ? attendanceApi.checkIn(key) : attendanceApi.checkOut(key),
     retry: (failures, error) =>
       failures < 1 && isApiError(error) && error.code === CLIENT_ERROR_CODES.network,
     onSuccess: (today: AttendanceTodayDto, { kind }, _r, context) => {
-      context.client.setQueryData(attendanceKeys.today(wsId), today);
+      context.client.setQueryData(attendanceKeys.today(), today);
       // Bảng tháng + lượt chấm (chi tiết ngày hôm nay) đều đổi theo lượt vừa chấm.
       for (const part of ['month', 'events'] as const) {
-        void context.client.invalidateQueries({ queryKey: [...attendanceKeys.all(wsId), part] });
+        void context.client.invalidateQueries({ queryKey: [...attendanceKeys.all(), part] });
       }
       const title = successTitle?.(today, kind) ?? (kind === 'IN' ? 'Đã chấm vào' : 'Đã chấm ra');
       toast({ title, tone: 'success' });
     },
     onError: (error, _v, _r, context) => {
-      void context.client.invalidateQueries({ queryKey: attendanceKeys.today(wsId) });
+      void context.client.invalidateQueries({ queryKey: attendanceKeys.today() });
       toast({ title: checkErrorMessage(error), tone: 'error' });
     },
   });

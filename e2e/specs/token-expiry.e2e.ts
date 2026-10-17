@@ -1,4 +1,5 @@
 import { API_URL } from '../support/env';
+import { apiCreateUser } from '../support/company';
 import { expect, newUser, test } from '../support/fixtures';
 
 // E2E-11 (frontend.md §8): access token hết hạn ⇒ thao tác vẫn thành công nhờ refresh trong suốt.
@@ -16,20 +17,24 @@ function lifetime(jwt: string): { iat: number; exp: number } {
 
 test('E2E-11: access token hết hạn ⇒ sửa hồ sơ vẫn thành công (refresh trong suốt), không về /login', async ({
   page,
+  request,
 }) => {
   const refreshes: number[] = [];
   page.on('response', (res) => {
     if (res.url() === `${API_URL}/auth/refresh`) refreshes.push(res.status());
   });
 
+  // Mốc 3.5: /register bỏ ⇒ người do HR tạo (API), đăng nhập qua UI; token đo là token của lần đăng nhập đó.
   const user = newUser('ttl');
-  await page.goto('/register');
-  await page.getByLabel('Họ tên').fill(user.fullName);
+  await apiCreateUser(request, user);
+  await page.goto('/login');
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Mật khẩu').fill(user.password);
-  const registered = page.waitForResponse((res) => res.url() === `${API_URL}/auth/register`);
-  await page.getByRole('button', { name: /tạo tài khoản|đăng ký/i }).click();
-  const body = (await (await registered).json()) as { data: { accessToken: string } };
+  const loggedIn = page.waitForResponse(
+    (res) => res.url() === `${API_URL}/auth/login` && res.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: /đăng nhập/i }).click();
+  const body = (await (await loggedIn).json()) as { data: { accessToken: string } };
   const { iat, exp } = lifetime(body.data.accessToken);
   test.skip(
     exp - iat > 60,
@@ -40,7 +45,7 @@ test('E2E-11: access token hết hạn ⇒ sửa hồ sơ vẫn thành công (re
   await expect(page).toHaveURL(/\/account/);
   const refreshesBefore = refreshes.length;
 
-  // Chờ theo điều kiện (không waitForTimeout cố định): đồng hồ vượt exp của token cấp lúc đăng ký.
+  // Chờ theo điều kiện (không waitForTimeout cố định): đồng hồ vượt exp của token cấp lúc đăng nhập.
   await expect
     .poll(() => Math.floor(Date.now() / 1000), {
       timeout: (exp - iat + 15) * 1000,

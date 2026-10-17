@@ -25,7 +25,7 @@ beforeEach(async () => {
 const event = (msg: string) => h.logger.entries.filter((e) => e.msg === msg);
 
 describe('member.role_changed', () => {
-  it('đổi role ⇒ info { workspaceId, userId, actorId, from, to, grants }', async () => {
+  it('đổi role ⇒ info { workspaceId, userId, actorId, from, to }', async () => {
     await new ChangeMemberRoleUseCase(h).execute(ctx.alice, { userId: uid('mia'), role: 'PM' });
     expect(event('member.role_changed')).toEqual([
       expect.objectContaining({
@@ -36,7 +36,6 @@ describe('member.role_changed', () => {
           actorId: ctx.alice.userId,
           from: 'MEMBER',
           to: 'PM',
-          grants: [], // GR-10: grants còn lại sau khi đổi role
         },
       }),
     ]);
@@ -72,7 +71,7 @@ describe('member.removed', () => {
 
 describe('X9 (T-032): cấp quyền, xóa workspace, đổi slug', () => {
   it('thêm thành viên ⇒ info member.added { workspaceId, userId, actorId, role }', async () => {
-    await new AddMemberUseCase(h).execute(ctx.alice, { email: 'nina@example.com', role: 'PM' });
+    await new AddMemberUseCase(h).execute(ctx.alice, { userId: uid('nina'), role: 'PM' });
     expect(event('member.added')).toEqual([
       expect.objectContaining({
         level: 'info',

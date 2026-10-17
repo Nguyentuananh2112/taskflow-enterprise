@@ -8,7 +8,6 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { RealtimeGateway } from '../../src/core/realtime/gateway';
-import { socketAuthenticatorFrom } from '../../src/core/realtime/ports';
 import { createHttpServer, listen } from '../../src/server';
 import { envelopeOf } from '../support/http';
 import { createTestApp, WEB, type TestApp, type TestUser } from '../support/http-app';
@@ -34,7 +33,7 @@ beforeEach(async () => {
   const gateway = new RealtimeGateway(server, {
     corsOrigins: [WEB],
     trustProxyHops: 0,
-    authenticator: socketAuthenticatorFrom(t.container.auth.authenticator),
+    authenticator: t.container.socketAuth,
     accessChecker: t.container.workspace.accessChecker,
     logger: new SpyLogger(),
     clock: t.clock,
@@ -72,10 +71,25 @@ async function firstProjectId(u: TestUser): Promise<string> {
 }
 
 describe('gateway trên composition root thật', () => {
-  it('access token thật từ /auth/register kết nối được; token rác bị từ chối', async () => {
+  it('access token thật (login) kết nối được; token rác bị từ chối', async () => {
     const alice = await t.register('Alice');
     await connected(connect(alice.token));
     expect((await connectError(connect('garbage'))).code).toBe('UNAUTHORIZED');
+  });
+
+  it('SEC-HR-62 (HIGH-2): rời công ty / quá access_until ⇒ handshake SESSION_REVOKED dù token còn hạn', async () => {
+    const alice = await t.register('Alice');
+    const bob = await t.register('Bob');
+    t.companyStore.removeMember(alice.id);
+    expect((await connectError(connect(alice.token))).code).toBe('SESSION_REVOKED');
+    const m = await t.companyStore.find(bob.id);
+    t.companyStore.upsertMember({
+      ...m!,
+      offboardLastDay: '2026-10-31',
+      offboardAccessUntil: new Date(t.businessClock.now().getTime() - 1),
+      offboardScheduledById: alice.id,
+    });
+    expect((await connectError(connect(bob.token))).code).toBe('SESSION_REVOKED');
   });
 
   it('project:join dùng membership thật: project của mình ok, project workspace khác ⇒ RESOURCE_NOT_FOUND', async () => {
@@ -116,7 +130,7 @@ describe('gateway trên composition root thật', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'MEMBER' });
+      .send({ userId: bob.id, role: 'MEMBER' });
     const socket = connect(bob.token);
     await connected(socket);
     expect(
@@ -147,7 +161,7 @@ describe('gateway trên composition root thật', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'MEMBER' });
+      .send({ userId: bob.id, role: 'MEMBER' });
     const projectId = await firstProjectId(alice);
     const tasks = `/api/v1/workspaces/${alice.workspaceId}/projects/${projectId}/tasks`;
     const created = await request(t.app).post(tasks).set(alice.auth).send({ title: 'Kéo thả' });

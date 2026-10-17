@@ -1,4 +1,4 @@
-import { weekdayOf, type LocalDate } from './local-time';
+import { toLocal, weekdayOf, type LocalDate } from './local-time';
 
 /**
  * Lịch làm việc theo PHIÊN BẢN có hiệu lực từ ngày (ADR-121): đổi lịch không làm sai số liệu tháng cũ.
@@ -55,4 +55,24 @@ export function scheduleFor(
     if (v.effectiveFrom <= date && (!best || v.effectiveFrom > best.effectiveFrom)) best = v;
   }
   return best;
+}
+
+/** Múi giờ của lịch mặc định (workspace chưa lưu lịch nào). */
+export const DEFAULT_TIMEZONE = DEFAULT_SCHEDULE.timezone;
+
+/**
+ * "Hôm nay" theo múi giờ của LỊCH hiệu lực. Múi giờ phụ thuộc phiên bản, phiên bản phụ thuộc ngày ⇒ ước
+ * lượng ngày bằng múi giờ của phiên bản mới nhất rồi chọn lại phiên bản hiệu lực cho đúng ngày đó.
+ */
+export function localToday(
+  versions: readonly WorkSchedule[],
+  now: Date,
+): { date: LocalDate; schedule: WorkSchedule; timezone: string } {
+  const latest = versions.reduce<WorkSchedule | null>(
+    (a, v) => (!a || v.effectiveFrom > a.effectiveFrom ? v : a),
+    null,
+  );
+  const guess = toLocal(now, latest?.timezone ?? DEFAULT_TIMEZONE).date;
+  const schedule = effectiveSchedule(versions, guess);
+  return { date: toLocal(now, schedule.timezone).date, schedule, timezone: schedule.timezone };
 }

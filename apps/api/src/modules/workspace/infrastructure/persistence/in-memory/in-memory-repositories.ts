@@ -4,12 +4,6 @@ import type {
   IProjectRepository,
   IWorkspaceRepository,
 } from '../../../application/ports/repositories.port';
-import type {
-  HrAuditEntry,
-  HrAuditRow,
-  IHrAuditLog,
-} from '../../../application/ports/hr-audit.port';
-import type { Page, PageRequest } from '../../../application/ports/queries.port';
 import { Membership, type MembershipSnapshot } from '../../../domain/membership';
 import { Project, type ProjectSnapshot } from '../../../domain/project';
 import { Workspace, type WorkspaceSnapshot } from '../../../domain/workspace';
@@ -66,6 +60,14 @@ export class InMemoryWorkspaceRepository
     });
     return Promise.resolve(true);
   }
+  archive(id: string, at: Date): Promise<boolean> {
+    const row = this.byId.get(id);
+    if (!row || row.deletedAt !== null || (row.archivedAt ?? null) !== null) {
+      return Promise.resolve(false);
+    }
+    this.byId.set(id, { ...row, archivedAt: at, updatedAt: at, version: row.version + 1 });
+    return Promise.resolve(true);
+  }
   listPurgeable(now: Date, limit: number): Promise<string[]> {
     const ids = this.rows()
       .filter((r) => r.purgeAt !== null && r.purgeAt.getTime() <= now.getTime())
@@ -117,6 +119,13 @@ export class InMemoryMembershipRepository
       .sort((a, b) => a.id.localeCompare(b.id))
       .map((r) => r.userId);
     return Promise.resolve(owners);
+  }
+  listWorkspaceIdsOfUser(userId: string): Promise<string[]> {
+    return Promise.resolve(
+      this.rows()
+        .filter((r) => r.userId === userId)
+        .map((r) => r.workspaceId),
+    );
   }
   listUserIds(workspaceId: string): Promise<string[]> {
     return Promise.resolve(
@@ -181,28 +190,3 @@ export class InMemoryProjectRepository
 }
 
 /** HrAuditLog InMemory — chỉ thêm; tên actor lấy qua `nameOf` (directory của composition). */
-export class InMemoryHrAuditLog extends Table<HrAuditEntry> implements IHrAuditLog {
-  constructor(private readonly nameOf: (userId: string) => string | undefined) {
-    super();
-  }
-  append(entry: HrAuditEntry): Promise<void> {
-    this.byId.set(entry.id, { ...entry });
-    return Promise.resolve();
-  }
-  list(workspaceId: string, page: PageRequest): Promise<Page<HrAuditRow>> {
-    const newestFirst = (a: HrAuditEntry, b: HrAuditEntry) =>
-      b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id);
-    const all = this.rows()
-      .filter((r) => r.workspaceId === workspaceId)
-      .sort(newestFirst);
-    const start = page.after ? all.findIndex((r) => r.id === page.after) + 1 : 0;
-    const slice = (start > 0 || !page.after ? all.slice(start) : []).slice(0, page.limit + 1);
-    const items = slice
-      .slice(0, page.limit)
-      .map((r) => ({ ...r, actorName: this.nameOf(r.actorId) ?? '' }));
-    return Promise.resolve({
-      items,
-      nextAfter: slice.length > page.limit ? (items.at(-1)?.id ?? null) : null,
-    });
-  }
-}

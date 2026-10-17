@@ -9,10 +9,10 @@ const nextCursor = (last: {
 }) => (last.page?.hasMore ? (last.page.nextCursor ?? undefined) : undefined);
 
 /** "Hôm nay" cả công ty — làm mới mỗi phút (ai vừa vào/ra). */
-export function useCompanyToday(wsId: string, enabled: boolean) {
+export function useCompanyToday(enabled: boolean) {
   return useQuery({
-    queryKey: hrKeys.today(wsId),
-    queryFn: () => hrAttendanceApi.today(wsId),
+    queryKey: hrKeys.today(),
+    queryFn: () => hrAttendanceApi.today(),
     enabled,
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -20,10 +20,10 @@ export function useCompanyToday(wsId: string, enabled: boolean) {
 }
 
 /** Bảng công tháng, 50 nhân viên mỗi trang. */
-export function useTimesheet(wsId: string, month: string | null) {
+export function useTimesheet(month: string | null) {
   return useInfiniteQuery({
-    queryKey: hrKeys.month(wsId, month ?? ''),
-    queryFn: ({ pageParam }) => hrAttendanceApi.month(wsId, month ?? '', pageParam),
+    queryKey: hrKeys.month(month ?? ''),
+    queryFn: ({ pageParam }) => hrAttendanceApi.month(month ?? '', pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextCursor,
     enabled: month !== null,
@@ -32,38 +32,37 @@ export function useTimesheet(wsId: string, month: string | null) {
 }
 
 /** Lượt thô của một người trong một ngày (gồm lượt đã hủy, IP/UA — chỉ HR). */
-export function useHrEvents(wsId: string, userId: string, date: string | null) {
+export function useHrEvents(userId: string, date: string | null) {
   return useQuery({
-    queryKey: hrKeys.events(wsId, userId, date ?? ''),
-    queryFn: () => hrAttendanceApi.events(wsId, userId, date ?? ''),
+    queryKey: hrKeys.events(userId, date ?? ''),
+    queryFn: () => hrAttendanceApi.events(userId, date ?? ''),
     enabled: date !== null,
   });
 }
 
-export function useSchedules(wsId: string, enabled: boolean) {
+export function useSchedules(enabled: boolean) {
   return useQuery({
-    queryKey: hrKeys.schedules(wsId),
-    queryFn: () => hrAttendanceApi.schedules(wsId),
+    queryKey: hrKeys.schedules(),
+    queryFn: () => hrAttendanceApi.schedules(),
     enabled,
     staleTime: 5 * 60_000,
   });
 }
 
-export function useHolidays(wsId: string, year: number | null) {
+export function useHolidays(year: number | null) {
   return useQuery({
-    queryKey: hrKeys.holidays(wsId, year ?? 0),
-    queryFn: () => hrAttendanceApi.holidays(wsId, year ?? 0),
+    queryKey: hrKeys.holidays(year ?? 0),
+    queryFn: () => hrAttendanceApi.holidays(year ?? 0),
     enabled: year !== null,
     staleTime: 5 * 60_000,
   });
 }
 
 /** Đơn nghỉ cả công ty theo trạng thái (`ALL` = mọi trạng thái), mới nhất trước. */
-export function useHrLeaveRequests(wsId: string, status: LeaveStatus | 'ALL', enabled: boolean) {
+export function useHrLeaveRequests(status: LeaveStatus | 'ALL', enabled: boolean) {
   return useInfiniteQuery({
-    queryKey: hrKeys.leaveList(wsId, status),
-    queryFn: ({ pageParam }) =>
-      hrLeaveApi.list(wsId, status === 'ALL' ? undefined : status, pageParam),
+    queryKey: hrKeys.leaveList(status),
+    queryFn: ({ pageParam }) => hrLeaveApi.list(status === 'ALL' ? undefined : status, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextCursor,
     enabled,
@@ -72,20 +71,20 @@ export function useHrLeaveRequests(wsId: string, status: LeaveStatus | 'ALL', en
 }
 
 /** Số đơn chờ duyệt cả công ty (trang đầu ≤ 50; `more` ⇒ "50+"). Chỉ gọi khi có `hr:manage`. */
-export function useHrPendingLeaveCount(wsId: string, enabled: boolean) {
+export function useHrPendingLeaveCount(enabled: boolean) {
   return useQuery({
-    queryKey: hrKeys.leavePendingCount(wsId),
-    queryFn: () => hrLeaveApi.list(wsId, 'PENDING'),
+    queryKey: hrKeys.leavePendingCount(),
+    queryFn: () => hrLeaveApi.list('PENDING'),
     select: (r) => ({ count: r.data.length, more: r.page?.hasMore ?? false }),
     enabled,
     staleTime: 30_000,
   });
 }
 
-export function useLeaveBalances(wsId: string, year: number | null) {
+export function useLeaveBalances(year: number | null) {
   return useInfiniteQuery({
-    queryKey: hrKeys.balances(wsId, year ?? 0),
-    queryFn: ({ pageParam }) => hrLeaveApi.balances(wsId, year ?? 0, pageParam),
+    queryKey: hrKeys.balances(year ?? 0),
+    queryFn: ({ pageParam }) => hrLeaveApi.balances(year ?? 0, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextCursor,
     enabled: year !== null,

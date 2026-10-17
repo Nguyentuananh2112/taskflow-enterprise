@@ -1,19 +1,17 @@
 import type { LeaveStatus } from '@taskflow/contracts/hr';
 
-// Dưới gốc ['ws', wsId] (frontend.md §3.2) ⇒ mất quyền workspace (`forgetWorkspace`) dọn luôn; mất
-// `hr:manage` ⇒ `useForgetHrWhenRevoked` xóa nhánh 'hr' (không để lại dữ liệu nhạy cảm trong cache).
+// Mốc 3.5: dưới gốc ['company'] (ADR-139); mất `hr:manage` ⇒ xóa nhánh ['company', 'hr'] (không để lại dữ liệu nhạy
+// cảm trong cache); đăng xuất / SESSION_REVOKED ⇒ `queryClient.clear()`.
 export const hrKeys = {
-  all: (wsId: string) => ['ws', wsId, 'hr'] as const,
-  today: (wsId: string) => ['ws', wsId, 'hr', 'today'] as const,
-  month: (wsId: string, month: string) => ['ws', wsId, 'hr', 'month', month] as const,
-  events: (wsId: string, userId: string, date: string) =>
-    ['ws', wsId, 'hr', 'events', userId, date] as const,
-  schedules: (wsId: string) => ['ws', wsId, 'hr', 'schedules'] as const,
-  holidays: (wsId: string, year: number) => ['ws', wsId, 'hr', 'holidays', year] as const,
-  leave: (wsId: string) => ['ws', wsId, 'hr', 'leave'] as const,
+  all: () => ['company', 'hr'] as const,
+  today: () => ['company', 'hr', 'today'] as const,
+  month: (month: string) => ['company', 'hr', 'month', month] as const,
+  events: (userId: string, date: string) => ['company', 'hr', 'events', userId, date] as const,
+  schedules: () => ['company', 'hr', 'schedules'] as const,
+  holidays: (year: number) => ['company', 'hr', 'holidays', year] as const,
+  leave: () => ['company', 'hr', 'leave'] as const,
   /** Số đơn chờ (lối tắt trên thẻ Chấm công, T-045) — dưới `leave` ⇒ duyệt / realtime làm mới. */
-  leavePendingCount: (wsId: string) => ['ws', wsId, 'hr', 'leave', 'pending-count'] as const,
-  leaveList: (wsId: string, status: LeaveStatus | 'ALL') =>
-    ['ws', wsId, 'hr', 'leave', status] as const,
-  balances: (wsId: string, year: number) => ['ws', wsId, 'hr', 'balances', year] as const,
+  leavePendingCount: () => ['company', 'hr', 'leave', 'pending-count'] as const,
+  leaveList: (status: LeaveStatus | 'ALL') => ['company', 'hr', 'leave', status] as const,
+  balances: (year: number) => ['company', 'hr', 'balances', year] as const,
 };

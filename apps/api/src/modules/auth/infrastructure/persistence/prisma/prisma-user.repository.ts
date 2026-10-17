@@ -25,6 +25,16 @@ export class PrismaUserRepository implements IUserRepository {
     return row ? User.reconstitute(row) : null;
   }
 
+  async findManyByIds(ids: readonly string[]): Promise<User[]> {
+    // `in: []` không khớp dòng nào (khác `OR: []` khớp MỌI dòng) — vẫn bỏ qua truy vấn cho rẻ.
+    if (ids.length === 0) return [];
+    const rows = await this.db().user.findMany({
+      where: { id: { in: [...ids] } },
+      select: USER_COLUMNS,
+    });
+    return rows.map((r) => User.reconstitute(r));
+  }
+
   async findByEmail(email: Email): Promise<User | null> {
     const row = await this.db().user.findUnique({
       where: { email: email.value },
@@ -81,6 +91,15 @@ export class PrismaUserRepository implements IUserRepository {
          SET password_hash = ${input.newHash}, password_changed_at = ${input.at},
              token_version = token_version + 1, updated_at = ${input.at}
        WHERE id = ${input.id}::uuid AND password_hash = ${input.oldHash} AND deleted_at IS NULL
+      RETURNING token_version`;
+    return rows[0]?.token_version ?? null;
+  }
+
+  async setInitialPassword(input: { id: string; hash: string; at: Date }): Promise<number | null> {
+    const rows = await this.db().$queryRaw<{ token_version: number }[]>`
+      UPDATE users SET password_hash = ${input.hash}, password_changed_at = ${input.at},
+             updated_at = ${input.at}
+       WHERE id = ${input.id}::uuid AND password_hash IS NULL AND deleted_at IS NULL
       RETURNING token_version`;
     return rows[0]?.token_version ?? null;
   }

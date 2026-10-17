@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLeaveHarness, NOW, U, W1, W2 } from '../testing/leave-harness';
+import { createLeaveHarness, NOW, U } from '../testing/leave-harness';
 import { DELETED_USER_NAME } from './leave-dto';
 
 const id = (n: number) => `00000000-0000-7000-8000-0000000d${n.toString().padStart(4, '0')}`;
@@ -29,7 +29,6 @@ describe('LeaveQueries — danh sách đơn (thiết kế §5)', () => {
       reason: null,
     });
     await h.seed({ id: id(3), createdAt: at(3), userId: U.Max });
-    await h.seed({ id: id(4), createdAt: at(4), workspaceId: W2 });
     const page = await h.queries.listMine(h.as(U.Mia), { limit: 20 });
     expect(page.items.map((r) => r.id)).toEqual([id(2), id(1)]);
     expect(page.items[0]).toMatchObject({
@@ -42,7 +41,7 @@ describe('LeaveQueries — danh sách đơn (thiết kế §5)', () => {
     expect(page.page).toEqual({ nextCursor: null, hasMore: false, limit: 20 });
   });
 
-  it('listMine lọc status; Vic (VIEWER) ⇒ 403; Otto (không thuộc W1) ⇒ 404 workspace', async () => {
+  it('listMine lọc status; Vic (Admin, không phải nhân viên) ⇒ 403; Otto (không thuộc công ty) ⇒ 401', async () => {
     const h = await createLeaveHarness();
     await h.seed({ id: id(1), status: 'REJECTED' });
     await h.seed({ id: id(2), startDate: '2026-11-25', endDate: '2026-11-25' });
@@ -52,7 +51,7 @@ describe('LeaveQueries — danh sách đơn (thiết kế §5)', () => {
       statusCode: 403,
     });
     await expect(h.queries.listMine(h.as(U.Otto), { limit: 20 })).rejects.toMatchObject({
-      statusCode: 404,
+      statusCode: 401,
     });
   });
 
@@ -80,11 +79,10 @@ describe('LeaveQueries — danh sách đơn (thiết kế §5)', () => {
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it('listForHr: Mia ⇒ 403; Hana thấy đơn mọi người của W1 (không W2), có reason (hr:manage đọc được — B-H2)', async () => {
+  it('listForHr: Mia ⇒ 403; Hana thấy đơn mọi người của công ty, có reason (hr:manage đọc được — B-H2)', async () => {
     const h = await createLeaveHarness();
     await h.seed({ id: id(1), createdAt: at(1) });
     await h.seed({ id: id(2), createdAt: at(2), userId: U.Max, status: 'APPROVED' });
-    await h.seed({ id: id(3), createdAt: at(3), workspaceId: W2, userId: U.Otto });
     await expect(h.queries.listForHr(h.as(U.Mia), { limit: 20 })).rejects.toMatchObject({
       statusCode: 403,
     });
@@ -130,7 +128,7 @@ describe('LeaveQueries — số dư của tôi (LB-01/02/08)', () => {
       pendingDays: 0,
       remainingDays: 12,
     });
-    expect(await h.requests.hasHistory(W1, U.Mia)).toBe(false);
+    expect(await h.readModel.findBalance(U.Mia, 2026)).toBeNull();
   });
 
   it('dùng / chờ / điều chỉnh âm ⇒ remaining có thể âm (Q4); đơn SICK không trừ; năm khác không tính', async () => {
@@ -170,7 +168,7 @@ describe('LeaveQueries — preview (TL duyệt)', () => {
     ).resolves.toEqual({ days: 2, remainingDays: 12 });
     expect(h.locks).toEqual([]);
     expect(await h.rows()).toEqual([]);
-    expect(await h.requests.hasHistory(W1, U.Mia)).toBe(false);
+    expect(await h.readModel.findBalance(U.Mia, 2026)).toBeNull();
     expect(h.notifier.sent).toEqual([]);
     expect(h.audit.entries).toEqual([]);
   });
@@ -223,9 +221,7 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
     });
     await h.seed({ id: id(3), startDate: '2026-11-18', endDate: '2026-11-18' }); // PENDING
     await h.seed({ id: id(4), status: 'REVOKED', startDate: '2026-11-19', endDate: '2026-11-19' });
-    await h.seed({ id: id(5), status: 'APPROVED', workspaceId: W2, userId: U.Otto });
     const all = await h.queries.approvedLeaves({
-      workspaceId: W1,
       from: '2026-11-15',
       to: '2026-11-30',
     });
@@ -236,7 +232,6 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
     ]);
     await expect(
       h.queries.approvedLeaves({
-        workspaceId: W1,
         userIds: [U.Max],
         from: '2026-11-01',
         to: '2026-11-30',
@@ -244,7 +239,6 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
     ).resolves.toEqual([{ userId: U.Max, date: '2026-11-20', part: 'AM' }]);
     await expect(
       h.queries.approvedLeaves({
-        workspaceId: W1,
         userIds: [],
         from: '2026-11-01',
         to: '2026-11-30',
@@ -271,7 +265,6 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
       dayPart: 'PM',
     });
     const rows = await h.queries.approvedLeaves({
-      workspaceId: W1,
       userIds: [U.Mia],
       from: '2026-11-01',
       to: '2026-11-30',
@@ -300,8 +293,8 @@ describe('Lý do nghỉ tùy chọn (TL: trim, rỗng ⇒ null; ≤ 1000 ở con
   });
 });
 
-describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=)', () => {
-  it('mọi nhân viên hiện tại (không VIEWER, không người đã rời), sắp theo tên; người chưa có dòng ⇒ 12; không tạo dòng', async () => {
+describe('LeaveQueries — số dư cả công ty (HR, GET leave/balances?year=)', () => {
+  it('mọi nhân viên hiện tại (không Admin, không người đã nghỉ), sắp theo tên; người chưa có dòng ⇒ 12; không tạo dòng', async () => {
     const h = await createLeaveHarness();
     await h.seed({ id: id(1), status: 'APPROVED', startDate: '2026-11-23', endDate: '2026-11-24' });
     await h.seed({
@@ -314,7 +307,7 @@ describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=
     await h.seed({ id: id(3), userId: U.Rex, status: 'APPROVED' }); // đã rời
     await h.leave.adjustBalance(h.as(U.Olivia), { userId: U.Pam, year: 2026, adjustment: 3 });
     const page = await h.queries.listBalances(h.as(U.Hana), { year: 2026, limit: 50 });
-    expect(page.items.map((r) => r.user.fullName)).toEqual(['Hana', 'Max', 'Mia', 'Olivia', 'Pam']);
+    expect(page.items.map((r) => r.user.fullName)).toEqual(['Hana', 'Max', 'Mia', 'Pam']);
     expect(page.items.find((r) => r.userId === U.Mia)).toMatchObject({
       year: 2026,
       usedDays: 2,
@@ -328,7 +321,7 @@ describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=
       adjustmentDays: 1.5,
       remainingDays: 13.5,
     });
-    expect(await h.requests.hasHistory(W1, U.Hana)).toBe(false);
+    expect(await h.readModel.findBalance(U.Hana, 2026)).toBeNull();
   });
 
   it('phân trang theo (tên, id); cursor của endpoint khác ⇒ 400; Mia ⇒ 403', async () => {
@@ -337,14 +330,8 @@ describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=
     expect(p1.items.map((r) => r.user.fullName)).toEqual(['Hana', 'Max']);
     const cursor = p1.page.nextCursor ?? '';
     const p2 = await h.queries.listBalances(h.as(U.Hana), { year: 2026, limit: 2, cursor });
-    expect(p2.items.map((r) => r.user.fullName)).toEqual(['Mia', 'Olivia']);
-    const p3 = await h.queries.listBalances(h.as(U.Hana), {
-      year: 2026,
-      limit: 2,
-      cursor: p2.page.nextCursor ?? '',
-    });
-    expect(p3.items.map((r) => r.user.fullName)).toEqual(['Pam']);
-    expect(p3.page).toMatchObject({ hasMore: false, nextCursor: null });
+    expect(p2.items.map((r) => r.user.fullName)).toEqual(['Mia', 'Pam']); // Admin không có
+    expect(p2.page).toMatchObject({ hasMore: false, nextCursor: null });
     await expect(h.queries.listMine(h.as(U.Mia), { limit: 2, cursor })).rejects.toMatchObject({
       statusCode: 400,
     });
@@ -357,15 +344,10 @@ describe('LeaveQueries — số dư cả workspace (HR, GET leave-balances?year=
 });
 
 describe('leaveSummaries — reader cho notifications (T-040b)', () => {
-  it('tra theo cặp (ws, id): ws khác / id lạ không khớp; chỉ loại + ngày, không reason', async () => {
+  it('tra theo id: id lạ không khớp; chỉ loại + ngày, không reason', async () => {
     const h = await createLeaveHarness();
     await h.seed({ id: id(1), reason: 'sốt cao' });
-    await h.seed({ id: id(2), workspaceId: W2, userId: U.Otto });
-    const map = await h.readModel.leaveSummaries([
-      { workspaceId: W1, refId: id(1) },
-      { workspaceId: W1, refId: id(2) },
-      { workspaceId: W1, refId: id(9) },
-    ]);
+    const map = await h.readModel.leaveSummaries([id(1), id(9)]);
     expect([...map.entries()]).toEqual([
       [id(1), { type: 'ANNUAL', startDate: '2026-11-23', endDate: '2026-11-23' }],
     ]);

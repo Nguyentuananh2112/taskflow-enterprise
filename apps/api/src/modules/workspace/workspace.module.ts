@@ -1,3 +1,4 @@
+import { AdminWorkspaceOps } from './application/use-cases/admin-workspace-ops';
 import type { RequestHandler, Router } from 'express';
 
 import type { IClock, IIdGenerator, IRandom } from '../../core/domain';
@@ -9,10 +10,12 @@ import { WorkspaceMembershipReader } from './application/adapters/membership-rea
 import { WorkspaceProjectAccessChecker } from './application/adapters/project-access-checker';
 import { WorkspaceAccess } from './application/adapters/workspace-access';
 import { DefaultWorkspaceProvisioner } from './application/adapters/workspace-provisioner';
+import { WorkspaceExit } from './application/adapters/workspace-exit';
 import type {
   ITaskAssignmentCleaner,
+  ICompanyMembershipGate,
+  IMemberCandidateDirectory,
   IUserDirectory,
-  IHrGrantNotifier,
   IWorkspaceRealtimeNotifier,
 } from './application/ports/collaborators.port';
 import type { IWorkspaceQueries } from './application/ports/queries.port';
@@ -22,16 +25,11 @@ import type {
   IWorkspaceRepository,
 } from './application/ports/repositories.port';
 import { AddMemberUseCase } from './application/use-cases/add-member.use-case';
-import { HrAccess } from './application/adapters/hr-access';
-import { HrAuditWriter } from './application/hr-audit-writer';
-import type { IHrAuditLog } from './application/ports/hr-audit.port';
-import type { IMemberDepartureLog, IMembershipTenureReader } from './application/ports/tenure.port';
 import { ChangeMemberRoleUseCase } from './application/use-cases/change-member-role.use-case';
-import { ListHrAuditLogsQuery } from './application/use-cases/list-hr-audit-logs.query';
-import { SetMemberGrantsUseCase } from './application/use-cases/set-member-grants.use-case';
 import { CreateProjectUseCase } from './application/use-cases/create-project.use-case';
 import { CreateWorkspaceUseCase } from './application/use-cases/create-workspace.use-case';
 import { DeleteWorkspaceUseCase } from './application/use-cases/delete-workspace.use-case';
+import { ListMemberCandidatesQuery } from './application/use-cases/list-member-candidates.query';
 import { ListMembersQuery } from './application/use-cases/list-members.query';
 import { GetProjectQuery, ListProjectsQuery } from './application/use-cases/project.queries';
 import { RemoveMemberUseCase } from './application/use-cases/remove-member.use-case';
@@ -49,17 +47,11 @@ import {
   InMemoryWorkspaceQueries,
 } from './infrastructure/persistence/in-memory/in-memory-queries';
 import {
-  InMemoryHrAuditLog,
   InMemoryMembershipRepository,
   InMemoryProjectRepository,
   InMemoryWorkspaceRepository,
 } from './infrastructure/persistence/in-memory/in-memory-repositories';
-import {
-  InMemoryMemberDepartures,
-  InMemoryMembershipTenureReader,
-} from './infrastructure/persistence/in-memory/in-memory-tenure';
 import { requireProject } from './presentation/membership';
-import { HrController } from './presentation/hr.controller';
 import { ProjectController } from './presentation/project.controller';
 import { WorkspaceController } from './presentation/workspace.controller';
 import { workspaceRoutes } from './presentation/workspace.routes';
@@ -69,11 +61,8 @@ export interface WorkspaceRepositories {
   memberships: IMembershipRepository;
   projects: IProjectRepository;
   queries: IWorkspaceQueries;
-  /** Mốc 3: HrAuditLog — dùng chung với attendance / leave qua `HrAuditWriter` (T-037). */
-  hrAudit: IHrAuditLog;
-  /** T-037b: nhiệm kỳ đã kết thúc (ghi khi xóa thành viên) + đọc nhiệm kỳ cho bảng công. */
-  departures: IMemberDepartureLog;
-  tenure: IMembershipTenureReader;
+  /** `member-candidates` — đọc bảng công ty (Prisma) / store công ty (bộ nhớ), nối ở composition. */
+  candidates: IMemberCandidateDirectory;
 }
 
 /** Repository InMemory (dev/test); `directory` cần được đồng bộ với user của auth (composition root). */
@@ -83,10 +72,7 @@ export function createInMemoryWorkspaceRepositories() {
   const projects = new InMemoryProjectRepository();
   const directory = new InMemoryUserDirectory();
   const queries = new InMemoryWorkspaceQueries(workspaces, memberships, projects, directory);
-  const hrAudit = new InMemoryHrAuditLog((id) => directory.users.get(id)?.fullName);
-  const departures = new InMemoryMemberDepartures();
-  const tenure = new InMemoryMembershipTenureReader(memberships, departures);
-  return { workspaces, memberships, projects, queries, directory, hrAudit, departures, tenure };
+  return { workspaces, memberships, projects, queries, directory };
 }
 
 export interface WorkspaceModuleDeps {
@@ -94,8 +80,8 @@ export interface WorkspaceModuleDeps {
   /** Tra user theo email/id — composition root bọc repository user của auth (ADR-093). */
   users: IUserDirectory;
   notifier: IWorkspaceRealtimeNotifier;
-  /** HR_GRANTED / HR_REVOKED bền (ADR-123) — composition nối vào module notifications. */
-  hrNotifier: IHrGrantNotifier;
+  /** Mốc 3.5: còn thuộc công ty + chưa quá `access_until` (module company, nối ở composition). */
+  company: ICompanyMembershipGate;
   cleaner: ITaskAssignmentCleaner;
   uow: IUnitOfWork;
   ids: IIdGenerator;
@@ -110,24 +96,21 @@ export interface WorkspaceModule {
   /** Router cần `authenticate` của auth — tạo sau khi có module auth. */
   routes(authenticate: RequestHandler): Router;
   access: WorkspaceAccess;
-  /** Mốc 3 (T-037): chốt mọi lệnh ghi `hr:manage` — attendance (T-038) / leave (T-039) gọi trong tx. */
-  hrAccess: HrAccess;
-  /** Mốc 3: ghi HrAuditLog trong transaction của bên gọi. */
-  hrAudit: HrAuditWriter;
-  /** T-037b: `IMembershipTenurePort` của attendance (khớp cấu trúc). */
-  tenure: IMembershipTenureReader;
   accessChecker: WorkspaceProjectAccessChecker;
   provisioner: DefaultWorkspaceProvisioner;
   membershipReader: WorkspaceMembershipReader;
+  /** `IWorkspaceExitPort` của company — rời mọi ws khi hoàn tất nghỉ việc (T-062). */
+  exit: WorkspaceExit;
+  /** T-061a: dữ liệu workspace cho Admin công ty (`IAdminWorkspaces` của company — khớp cấu trúc). */
+  adminWorkspaces: AdminWorkspaceOps;
 }
 
 /** Composition của module Workspace/Member/Project (ADR-016). */
 export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
-  const { workspaces, memberships, projects, queries, hrAudit } = d.repos;
-  const { uow, ids, clock, random, logger, notifier, cleaner, users } = d;
+  const { workspaces, memberships, projects, queries, candidates } = d.repos;
+  const { uow, ids, clock, random, logger, notifier, cleaner, users, company } = d;
   const creator = new WorkspaceCreator({ workspaces, memberships, ids, clock });
-  const access = new WorkspaceAccess({ workspaces, memberships });
-  const audit = new HrAuditWriter({ hrAudit, ids, clock });
+  const access = new WorkspaceAccess({ workspaces, memberships, company });
 
   const workspaceController = new WorkspaceController({
     listMine: new ListMyWorkspacesQuery({ queries, clock }),
@@ -145,15 +128,23 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     }),
     restore: new RestoreWorkspaceUseCase({ workspaces, memberships, uow, clock, logger }),
     listMembers: new ListMembersQuery({ queries }),
-    addMember: new AddMemberUseCase({ memberships, workspaces, users, uow, ids, clock, logger }),
+    memberCandidates: new ListMemberCandidatesQuery({ candidates }),
+    addMember: new AddMemberUseCase({
+      memberships,
+      workspaces,
+      users,
+      company,
+      uow,
+      ids,
+      clock,
+      logger,
+    }),
     changeRole: new ChangeMemberRoleUseCase({
       memberships,
       workspaces,
       users,
       cleaner,
       notifier,
-      audit,
-      hrNotifier: d.hrNotifier,
       uow,
       clock,
       logger,
@@ -164,9 +155,6 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       projects,
       cleaner,
       notifier,
-      departures: d.repos.departures,
-      ids,
-      clock,
       uow,
       logger,
     }),
@@ -187,32 +175,37 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       workspaceRoutes({
         workspaces: workspaceController,
         projects: projectController,
-        hr: new HrController({
-          setGrants: new SetMemberGrantsUseCase({
-            memberships,
-            workspaces,
-            users,
-            audit,
-            notifier,
-            hrNotifier: d.hrNotifier,
-            uow,
-            clock,
-            logger,
-          }),
-          listAuditLogs: new ListHrAuditLogsQuery({ hrAudit }),
-          responder: d.responder,
-        }),
         access,
         projectExists: requireProject(getProject),
         authenticate,
         limit: d.limit,
       }),
     access,
-    hrAccess: new HrAccess({ workspaces, memberships }),
-    hrAudit: audit,
-    tenure: d.repos.tenure,
-    accessChecker: new WorkspaceProjectAccessChecker({ workspaces, memberships, projects }),
+    accessChecker: new WorkspaceProjectAccessChecker({
+      workspaces,
+      memberships,
+      projects,
+      company,
+    }),
     provisioner: new DefaultWorkspaceProvisioner({ creator, projects, random, ids, clock }),
     membershipReader: new WorkspaceMembershipReader({ queries }),
+    exit: new WorkspaceExit({
+      workspaces,
+      memberships,
+      projects,
+      queries,
+      cleaner,
+      notifier,
+      uow,
+      logger,
+    }),
+    adminWorkspaces: new AdminWorkspaceOps({
+      workspaces,
+      memberships,
+      queries,
+      notifier,
+      uow,
+      clock,
+    }),
   };
 }

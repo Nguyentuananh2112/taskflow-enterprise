@@ -5,7 +5,6 @@ import type { MemberDto } from '@taskflow/contracts/workspace';
 
 import { ROLE_LABEL, type PermissionApi } from '@/entities/workspace';
 import { RoleSelect } from '@/features/member-change-role';
-import { HrGrantSwitch } from '@/features/member-grants';
 import { RemoveMemberButton } from '@/features/member-remove';
 import { Avatar } from '@/shared/ui/avatar';
 import { Badge } from '@/shared/ui/badge';
@@ -49,11 +48,6 @@ export function MemberRow({ wsId, member, permission, onLeft }: Props) {
           <Badge>{ROLE_LABEL[member.role]}</Badge>
         )}
       </td>
-      {permission.can('hr:grant') && (
-        <td className="py-2 pr-3">
-          <HrGrantSwitch wsId={wsId} member={member} />
-        </td>
-      )}
       <td className="hidden py-2 pr-3 text-sm sm:table-cell">{joined(member.joinedAt)}</td>
       <td className="py-2 text-right">
         {showRemove && (

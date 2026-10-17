@@ -9,28 +9,27 @@ import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
 import { AccessTokenAuthenticator } from './application/access-token-authenticator';
 import { ACCESS_TOKEN_TTL_SECONDS } from './application/auth-shared';
 import type { IAccessTokenService } from './application/ports/access-token-service.port';
+import type { IActivationTokenRepository } from './application/ports/activation-token-repository.port';
 import type {
   IAuthRealtimeNotifier,
+  ICompanySessionGate,
   IMembershipReader,
-  IWorkspaceProvisioner,
 } from './application/ports/collaborators.port';
 import type { IPasswordHasher } from './application/ports/password-hasher.port';
 import type { IRefreshTokenRepository } from './application/ports/refresh-token-repository.port';
 import type { ISessionRevocationStore } from './application/ports/session-revocation-store.port';
 import type { IUserRepository } from './application/ports/user-repository.port';
+import { createAuthAccounts, type AuthAccounts } from './application/auth-accounts';
 import { SessionIssuer } from './application/session-issuer';
+import { createActivation } from './application/use-cases/activation.use-cases';
 import { ChangePasswordUseCase } from './application/use-cases/change-password.use-case';
 import { GetMeQuery } from './application/use-cases/get-me.query';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 import { LogoutAllUseCase } from './application/use-cases/logout-all.use-case';
 import { LogoutUseCase } from './application/use-cases/logout.use-case';
 import { RefreshSessionUseCase } from './application/use-cases/refresh-session.use-case';
-import { RegisterUseCase } from './application/use-cases/register.use-case';
 import { UpdateMeUseCase } from './application/use-cases/update-me.use-case';
 import type { PasswordPolicy } from './domain/password-policy';
-import { InMemoryRefreshTokenRepository } from './infrastructure/persistence/in-memory/in-memory-refresh-token.repository';
-import { InMemorySessionRevocationStore } from './infrastructure/persistence/in-memory/in-memory-session-revocation.store';
-import { InMemoryUserRepository } from './infrastructure/persistence/in-memory/in-memory-user.repository';
 import { CryptoRefreshTokenFactory } from './infrastructure/security/crypto-refresh-token-factory';
 import { JoseAccessTokenService } from './infrastructure/security/jose-access-token-service';
 import { AuthController } from './presentation/auth.controller';
@@ -42,16 +41,10 @@ export interface AuthRepositories {
   users: IUserRepository;
   refreshTokens: IRefreshTokenRepository;
   sessions: ISessionRevocationStore;
+  activationTokens: IActivationTokenRepository;
 }
 
-/** Repository InMemory (dev/test). Prisma/Valkey của T-020 thay qua cùng interface. */
-export function createInMemoryAuthRepositories() {
-  return {
-    users: new InMemoryUserRepository(),
-    refreshTokens: new InMemoryRefreshTokenRepository(),
-    sessions: new InMemorySessionRevocationStore(),
-  };
-}
+export { createInMemoryAuthRepositories } from './infrastructure/persistence/in-memory/in-memory-auth-repositories';
 
 export const JWT_ISSUER = 'taskflow-api';
 export const JWT_AUDIENCE = 'taskflow-web';
@@ -64,14 +57,17 @@ export interface AuthModuleDeps {
   cookieSecure: boolean;
   /** Middleware Origin ∈ whitelist cho /refresh, /logout. */
   requireAllowedOrigin: RequestHandler;
-  /** Port do module Workspace hiện thực — wire ở composition root (ADR-093). */
-  provisioner: IWorkspaceProvisioner;
+  /** Port do module Workspace / company hiện thực — wire ở composition root (ADR-093). */
   memberships: IMembershipReader;
+  company: ICompanySessionGate;
+  webOrigin: string; // gốc link `<webOrigin>/activate#t=…`
   notifier: IAuthRealtimeNotifier;
   uow: IUnitOfWork;
   events: IEventBus;
   ids: IIdGenerator;
   clock: IClock;
+  /** Giờ NGHIỆP VỤ cho `expires_at` token kích hoạt (CLI + API cùng mốc TEST_CLOCK_ANCHOR); thiếu ⇒ `clock`. */
+  activationClock?: IClock;
   logger: ILogger;
   responder: HttpResponder;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
@@ -85,11 +81,13 @@ export interface AuthModule {
   authenticate: RequestHandler;
   /** Lõi xác thực — gateway Socket.io bọc bằng `socketAuthenticatorFrom`. */
   authenticator: AccessTokenAuthenticator;
+  /** Tài khoản cho module company (thêm nhân viên / bootstrap) — gọi TRONG transaction của bên gọi. */
+  accounts: AuthAccounts;
 }
 
 /** Composition của module auth (ADR-016): chỉ wire nội bộ module, port ngoài được tiêm vào. */
 export function createAuthModule(d: AuthModuleDeps): AuthModule {
-  const { users, refreshTokens, sessions: store } = d.repos;
+  const { users, refreshTokens, sessions: store, activationTokens } = d.repos;
   const { uow, clock, logger, events, ids, hasher, policy, notifier } = d;
   const accessTokens =
     d.accessTokens ??
@@ -121,20 +119,26 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     clock,
   });
   const authenticate = createAuthenticate(authenticator);
+  const company = d.company;
+  const activation = createActivation({
+    tokens: activationTokens,
+    factory: refreshTokenFactory,
+    users,
+    company,
+    clock: d.activationClock ?? clock,
+    ids,
+    webOrigin: d.webOrigin,
+    hasher,
+    policy,
+    issuer,
+    uow,
+    logger,
+  });
 
   const controller = new AuthController({
-    register: new RegisterUseCase({
-      users,
-      provisioner: d.provisioner,
-      issuer,
-      hasher,
-      policy,
-      uow,
-      events,
-      ids,
-      clock,
-    }),
-    login: new LoginUseCase({ users, issuer, hasher, uow, clock, logger }),
+    login: new LoginUseCase({ users, issuer, hasher, company, uow, clock, logger }),
+    inspectActivation: activation.inspect,
+    activate: activation.activate,
     refresh: new RefreshSessionUseCase({
       users,
       refreshTokens,
@@ -142,6 +146,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
       issuer,
       store,
       notifier,
+      company,
       uow,
       clock,
       logger,
@@ -165,7 +170,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
       clock,
       logger,
     }),
-    getMe: new GetMeQuery({ users, memberships: d.memberships }),
+    getMe: new GetMeQuery({ users, memberships: d.memberships, company }),
     updateMe: new UpdateMeUseCase({ users, uow, clock }),
     changePassword: new ChangePasswordUseCase({
       users,
@@ -190,5 +195,16 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     requireAllowedOrigin: d.requireAllowedOrigin,
     limit: d.limit,
   });
-  return { router, authenticate, authenticator };
+  const accounts = createAuthAccounts({
+    users,
+    refreshTokens,
+    store,
+    notifier,
+    activationIssuer: activation.issuer,
+    ids,
+    clock,
+    uow,
+    logger,
+  });
+  return { router, authenticate, authenticator, accounts };
 }

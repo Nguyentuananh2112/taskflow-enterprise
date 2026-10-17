@@ -1,6 +1,7 @@
-// T-039: route nghỉ phép (thiết kế §5) qua app thật (InMemory) — thứ tự lỗi 404 → 403 → 400, permit TRƯỚC validate
-// (SEC-HR-02), route `me` không nhận userId (SEC-HR-03), IDOR / tenant (SEC-HR-01/05/25), không tự xử lý (SEC-HR-07),
-// reason chỉ người gửi + HR (SEC-HR-15), audit qua HrAuditLog của T-037.
+// T-039 → T-064 (cấp công ty): route nghỉ phép `/api/v1/leave` qua app thật (InMemory) — thứ tự lỗi 401 → 403 →
+// 400, permit TRƯỚC validate (SEC-HR-02), route `me` không nhận userId (SEC-HR-03), người ngoài công ty 401
+// SESSION_REVOKED, Admin không phải nhân viên (ADR-134), không tự xử lý (SEC-HR-07), reason chỉ người gửi + HR
+// (SEC-HR-15), audit qua HrAuditLog cấp công ty.
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -8,20 +9,18 @@ import { envelopeOf, errorOf } from '../support/http';
 import { createTestApp, type TestApp, type TestUser } from '../support/http-app';
 
 let t: TestApp;
-let olivia: TestUser; // OWNER
-let hana: TestUser; // MEMBER + HR_MANAGE
+let olivia: TestUser; // Admin — duyệt được, không xin nghỉ
+let hana: TestUser; // nhân viên + HR_MANAGE
 let mia: TestUser;
 let max: TestUser;
-let vic: TestUser; // VIEWER
-let otto: TestUser; // OWNER workspace khác
-let wsId: string;
+let otto: TestUser; // đã đăng nhập rồi rời công ty
 
-const base = () => `/api/v1/workspaces/${wsId}`;
-const get = (by: TestUser, path: string) => request(t.app).get(`${base()}${path}`).set(by.auth);
+const leave = (path: string) => `/api/v1/leave${path}`;
+const get = (by: TestUser, path: string) => request(t.app).get(leave(path)).set(by.auth);
 const post = (by: TestUser, path: string, body: object = {}) =>
-  request(t.app).post(`${base()}${path}`).set(by.auth).send(body);
+  request(t.app).post(leave(path)).set(by.auth).send(body);
 const patch = (by: TestUser, path: string, body: object) =>
-  request(t.app).patch(`${base()}${path}`).set(by.auth).send(body);
+  request(t.app).patch(leave(path)).set(by.auth).send(body);
 const twoDays = { type: 'ANNUAL', startDate: '2026-11-23', endDate: '2026-11-24' };
 
 interface LeaveDto {
@@ -33,83 +32,64 @@ interface LeaveDto {
   decidedBy: { id: string; fullName: string } | null;
 }
 
+/** HrAuditLog cấp công ty qua `GET /hr/audit-logs` (chỉ Admin — Olivia). */
+const auditRows = async () =>
+  envelopeOf<{ action: string; after: Record<string, unknown> | null }[]>(
+    await request(t.app).get('/api/v1/hr/audit-logs?limit=100').set(olivia.auth),
+  ).data ?? [];
+
 beforeEach(async () => {
-  t = createTestApp();
-  olivia = await t.register('Olivia');
-  wsId = olivia.workspaceId;
-  [hana, mia, max, vic, otto] = [
-    await t.register('Hana'),
-    await t.register('Mia'),
-    await t.register('Max'),
-    await t.register('Vic'),
-    await t.register('Otto'),
-  ];
-  for (const [u, role] of [
-    [hana, 'MEMBER'],
-    [mia, 'MEMBER'],
-    [max, 'MEMBER'],
-    [vic, 'VIEWER'],
-  ] as const) {
-    const res = await request(t.app)
-      .post(`${base()}/members`)
-      .set(olivia.auth)
-      .send({ email: u.email, role });
-    expect(res.status).toBe(201);
-  }
-  const grant = await request(t.app)
-    .put(`${base()}/members/${hana.id}/grants`)
-    .set(olivia.auth)
-    .send({ grants: ['HR_MANAGE'] });
-  expect(grant.status).toBe(200);
+  t = createTestApp(); // nhân viên có nhiệm kỳ từ 01/11/2026 (giờ nghiệp vụ của harness)
+  olivia = await t.register('Olivia', undefined, { role: 'ADMIN' });
+  hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'] });
+  [mia, max, otto] = [await t.register('Mia'), await t.register('Max'), await t.register('Otto')];
+  t.persistence.companyStore!.removeMember(otto.id);
 });
 
 describe('leave HTTP — luồng chính', () => {
   it('Mia gửi (reason bỏ trống ⇒ null) → danh sách của tôi + số dư → Hana duyệt → audit LEAVE_DECIDE không chứa reason', async () => {
-    const submitted = await post(mia, '/leave-requests', twoDays);
+    const submitted = await post(mia, '/requests', twoDays);
     expect(submitted.status).toBe(201);
     const dto = envelopeOf<LeaveDto>(submitted).data;
     expect(dto).toMatchObject({ status: 'PENDING', days: 2, reason: null, version: 1 });
     expect(submitted.headers['cache-control']).toBe('no-store');
 
-    const mine = await get(mia, '/leave-requests?mine=1');
+    const mine = await get(mia, '/requests?mine=1');
     expect(mine.status).toBe(200);
     expect(envelopeOf<LeaveDto[]>(mine).data?.map((r) => r.id)).toEqual([dto?.id]);
     expect(envelopeOf(mine).meta?.page).toMatchObject({ hasMore: false, limit: 50 });
-    const balance = await get(mia, '/leave-balances/me?year=2026');
+    const balance = await get(mia, '/balances/me?year=2026');
     expect(envelopeOf(balance).data).toMatchObject({ pendingDays: 2, remainingDays: 10 });
 
-    const approved = await post(hana, `/leave-requests/${dto?.id}/approve`, {
-      expectedVersion: 1,
-    });
+    const approved = await post(hana, `/requests/${dto?.id}/approve`, { expectedVersion: 1 });
     expect(approved.status).toBe(200);
     expect(envelopeOf<LeaveDto>(approved).data).toMatchObject({
       status: 'APPROVED',
       version: 2,
       decidedBy: { id: hana.id, fullName: 'Hana' },
     });
-    const audit = await get(olivia, '/hr-audit-logs');
-    const actions = envelopeOf<{ action: string }[]>(audit).data?.map((a) => a.action);
+    const actions = (await auditRows()).map((a) => a.action);
     expect(actions).toEqual(expect.arrayContaining(['LEAVE_SUBMIT', 'LEAVE_DECIDE']));
   });
 
   it('preview: { days, remainingDays } không ghi gì; Chủ nhật ⇒ 422 NO_WORKING_DAYS', async () => {
     const res = await get(
       mia,
-      '/leave-requests/preview?type=ANNUAL&startDate=2026-11-23&endDate=2026-11-24',
+      '/requests/preview?type=ANNUAL&startDate=2026-11-23&endDate=2026-11-24',
     );
     expect(res.status).toBe(200);
     expect(envelopeOf(res).data).toEqual({ days: 2, remainingDays: 12 });
     const sunday = await get(
       mia,
-      '/leave-requests/preview?type=ANNUAL&startDate=2026-11-22&endDate=2026-11-22',
+      '/requests/preview?type=ANNUAL&startDate=2026-11-22&endDate=2026-11-22',
     );
     expect(sunday.status).toBe(422);
     expect(errorOf(sunday).details).toMatchObject({ rule: 'NO_WORKING_DAYS' });
-    expect(envelopeOf<unknown[]>(await get(mia, '/leave-requests?mine=1')).data).toEqual([]);
+    expect(envelopeOf<unknown[]>(await get(mia, '/requests?mine=1')).data).toEqual([]);
   });
 
-  it('PATCH số dư (Hana) ⇒ 200 dòng số dư mới; danh sách số dư HR sắp theo tên, không có VIEWER', async () => {
-    const res = await patch(hana, `/leave-balances/${mia.id}/2026`, { adjustmentDays: -2.5 });
+  it('PATCH số dư (Hana) ⇒ 200 dòng số dư mới; danh sách số dư HR = nhân viên công ty theo tên (không Admin, không người đã rời)', async () => {
+    const res = await patch(hana, `/balances/${mia.id}/2026`, { adjustmentDays: -2.5 });
     expect(res.status).toBe(200);
     expect(envelopeOf(res).data).toMatchObject({
       userId: mia.id,
@@ -117,11 +97,18 @@ describe('leave HTTP — luồng chính', () => {
       adjustmentDays: -2.5,
       remainingDays: 9.5,
     });
-    const list = await get(hana, '/leave-balances?year=2026');
+    const list = await get(hana, '/balances?year=2026');
     expect(list.status).toBe(200);
     expect(
       envelopeOf<{ user: { fullName: string } }[]>(list).data?.map((r) => r.user.fullName),
-    ).toEqual(['Hana', 'Max', 'Mia', 'Olivia']);
+    ).toEqual(['Hana', 'Max', 'Mia']);
+  });
+
+  it('Admin (Olivia) duyệt được đơn của nhân viên', async () => {
+    const dto = envelopeOf<LeaveDto>(await post(mia, '/requests', twoDays)).data;
+    const res = await post(olivia, `/requests/${dto?.id}/approve`, { expectedVersion: 1 });
+    expect(res.status).toBe(200);
+    expect(envelopeOf<LeaveDto>(res).data).toMatchObject({ decidedBy: { id: olivia.id } });
   });
 });
 
@@ -136,7 +123,7 @@ describe('leave HTTP — thông báo bền (T-040, adapter thật)', () => {
 
   it('Mia gửi ⇒ HR (Olivia, Hana) nhận LEAVE_SUBMITTED kèm loại + ngày, không reason; Hana duyệt ⇒ Mia nhận LEAVE_APPROVED', async () => {
     const dto = envelopeOf<LeaveDto>(
-      await post(mia, '/leave-requests', { ...twoDays, reason: 'sốt cao' }),
+      await post(mia, '/requests', { ...twoDays, reason: 'sốt cao' }),
     ).data;
     for (const hr of [olivia, hana]) {
       const notes = (await inbox(hr)).filter((n) => n.type === 'LEAVE_SUBMITTED');
@@ -145,28 +132,28 @@ describe('leave HTTP — thông báo bền (T-040, adapter thật)', () => {
       expect(JSON.stringify(notes)).not.toContain('sốt cao');
     }
     expect((await inbox(max)).filter((n) => n.type.startsWith('LEAVE_'))).toEqual([]);
-    await post(hana, `/leave-requests/${dto?.id}/approve`, { expectedVersion: 1 });
+    await post(hana, `/requests/${dto?.id}/approve`, { expectedVersion: 1 });
     expect((await inbox(mia)).map((n) => n.type)).toContain('LEAVE_APPROVED');
   });
 
   it('Hana (HR) tự gửi đơn ⇒ chỉ HR KHÁC (Olivia) nhận — không tự báo cho chính mình', async () => {
-    await post(hana, '/leave-requests', twoDays);
+    await post(hana, '/requests', twoDays);
     expect((await inbox(olivia)).map((n) => n.type)).toContain('LEAVE_SUBMITTED');
     expect((await inbox(hana)).filter((n) => n.type === 'LEAVE_SUBMITTED')).toEqual([]);
   });
 });
 
-describe('leave ↔ attendance (T-038 nối thật)', () => {
+describe('leave ↔ attendance (T-063 nối thật)', () => {
   interface Day {
     date: string;
     status: string;
     leave: string | null;
   }
-  it('duyệt đơn FULL ⇒ attendance/me?month có ngày đó ON_LEAVE (FULL); bảng công HR tăng leaveDays', async () => {
-    const dto = envelopeOf<LeaveDto>(await post(mia, '/leave-requests', twoDays)).data;
-    await post(hana, `/leave-requests/${dto?.id}/approve`, { expectedVersion: 1 });
+  it('duyệt đơn FULL ⇒ attendance/me?month có ngày đó ON_LEAVE (FULL); bảng công HR tăng upcomingLeaveDays', async () => {
+    const dto = envelopeOf<LeaveDto>(await post(mia, '/requests', twoDays)).data;
+    await post(hana, `/requests/${dto?.id}/approve`, { expectedVersion: 1 });
 
-    const mine = await get(mia, '/attendance/me?month=2026-11');
+    const mine = await request(t.app).get('/api/v1/attendance/me?month=2026-11').set(mia.auth);
     expect(mine.status).toBe(200);
     const days = envelopeOf<{ days: Day[] }>(mine).data?.days ?? [];
     for (const date of ['2026-11-23', '2026-11-24']) {
@@ -177,7 +164,7 @@ describe('leave ↔ attendance (T-038 nối thật)', () => {
     }
     expect(days.find((d) => d.date === '2026-11-25')?.leave).toBeNull();
 
-    const hr = await get(hana, '/attendance?month=2026-11');
+    const hr = await request(t.app).get('/api/v1/attendance?month=2026-11').set(hana.auth);
     expect(hr.status).toBe(200);
     // T-046 (TL d9): tổng chỉ đếm tới hôm nay — đơn đã duyệt ở tương lai vào cột "Phép sắp tới".
     const rows =
@@ -193,76 +180,78 @@ describe('leave ↔ attendance (T-038 nối thật)', () => {
 
   it('lịch thật của attendance: ngày lễ HR đặt giữa khoảng đơn ⇒ preview / số ngày đơn không tính ngày đó', async () => {
     const put = await request(t.app)
-      .put(`${base()}/attendance/holidays/2026-11-24`)
-      .set(olivia.auth)
+      .put('/api/v1/attendance/holidays/2026-11-24')
+      .set(hana.auth)
       .send({ name: 'Lễ thử' });
     expect([200, 201]).toContain(put.status);
     const res = await get(
       mia,
-      '/leave-requests/preview?type=ANNUAL&startDate=2026-11-23&endDate=2026-11-24',
+      '/requests/preview?type=ANNUAL&startDate=2026-11-23&endDate=2026-11-24',
     );
     expect(envelopeOf(res).data).toEqual({ days: 1, remainingDays: 12 });
   });
 });
 
 describe('leave HTTP — thứ tự lỗi & bảo mật', () => {
-  it('SEC-HR-01: Otto (ws khác) gọi route leave của W1 ⇒ 404 workspace', async () => {
+  it('chưa đăng nhập ⇒ 401; Otto (đã rời công ty, token còn hạn) ⇒ 401 SESSION_REVOKED ở mọi route', async () => {
+    expect((await request(t.app).get(leave('/requests?mine=1'))).status).toBe(401);
     for (const res of [
-      await get(otto, '/leave-requests?mine=1'),
-      await post(otto, '/leave-requests', twoDays),
-      await get(otto, '/leave-balances/me?year=2026'),
+      await get(otto, '/requests?mine=1'),
+      await post(otto, '/requests', twoDays),
+      await get(otto, '/balances/me?year=2026'),
     ]) {
-      expect(res.status).toBe(404);
-      expect(errorOf(res).details).toMatchObject({ resource: 'workspace' });
+      expect(res.status).toBe(401);
+      expect(errorOf(res).code).toBe('SESSION_REVOKED');
     }
   });
 
   it('SEC-HR-02: Mia gọi route hr:manage ⇒ 403 — kể cả body/query SAI (permit trước validate)', async () => {
     for (const res of [
-      await get(mia, '/leave-requests'),
-      await get(mia, '/leave-requests?status=NOPE'),
-      await get(mia, '/leave-balances?year=abc'),
-      await post(mia, `/leave-requests/${olivia.id}/approve`, { expectedVersion: 'x' }),
-      await post(mia, `/leave-requests/${olivia.id}/revoke`, {}),
-      await patch(mia, `/leave-balances/${max.id}/2026`, { adjustmentDays: 'x' }),
+      await get(mia, '/requests'),
+      await get(mia, '/requests?status=NOPE'),
+      await get(mia, '/balances?year=abc'),
+      await post(mia, `/requests/${olivia.id}/approve`, { expectedVersion: 'x' }),
+      await post(mia, `/requests/${olivia.id}/revoke`, {}),
+      await patch(mia, `/balances/${max.id}/2026`, { adjustmentDays: 'x' }),
     ]) {
       expect(res.status).toBe(403);
       expect(errorOf(res).details).toMatchObject({ required: 'hr:manage' });
     }
   });
 
-  it('SEC-HR-03: route của tôi không nhận userId (strict ⇒ 400); SEC-HR-06: Vic gửi đơn ⇒ 403', async () => {
-    const res = await get(mia, `/leave-requests?mine=1&userId=${max.id}`);
-    expect(res.status).toBe(400);
-    const bal = await get(mia, `/leave-balances/me?year=2026&userId=${max.id}`);
-    expect(bal.status).toBe(400);
-    const vicRes = await post(vic, '/leave-requests', twoDays);
-    expect(vicRes.status).toBe(403);
-    expect(errorOf(vicRes).details).toMatchObject({ required: 'leave:self' });
+  it('SEC-HR-03: route của tôi không nhận userId (strict ⇒ 400); ADR-134: Admin gửi đơn / xem số dư của mình ⇒ 403 leave:self', async () => {
+    expect((await get(mia, `/requests?mine=1&userId=${max.id}`)).status).toBe(400);
+    expect((await get(mia, `/balances/me?year=2026&userId=${max.id}`)).status).toBe(400);
+    for (const res of [
+      await post(olivia, '/requests', twoDays),
+      await get(olivia, '/balances/me?year=2026'),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(errorOf(res).details).toMatchObject({ required: 'leave:self' });
+    }
   });
 
   it('SEC-HR-05: Max hủy đơn của Mia ⇒ 404; SEC-HR-15: Hana (HR) thấy reason, Max không có route nào thấy', async () => {
     const dto = envelopeOf<LeaveDto>(
-      await post(mia, '/leave-requests', { ...twoDays, reason: 'khám bệnh' }),
+      await post(mia, '/requests', { ...twoDays, reason: 'khám bệnh' }),
     ).data;
-    const cancel = await post(max, `/leave-requests/${dto?.id}/cancel`, { expectedVersion: 1 });
+    const cancel = await post(max, `/requests/${dto?.id}/cancel`, { expectedVersion: 1 });
     expect(cancel.status).toBe(404);
-    const hr = envelopeOf<LeaveDto[]>(await get(hana, '/leave-requests?status=PENDING')).data;
+    const hr = envelopeOf<LeaveDto[]>(await get(hana, '/requests?status=PENDING')).data;
     expect(hr?.[0]?.reason).toBe('khám bệnh');
-    expect(envelopeOf<LeaveDto[]>(await get(max, '/leave-requests?mine=1')).data).toEqual([]);
-    const audit = await get(olivia, '/hr-audit-logs');
-    expect(JSON.stringify(envelopeOf(audit).data)).not.toContain('khám bệnh');
+    expect(envelopeOf<LeaveDto[]>(await get(max, '/requests?mine=1')).data).toEqual([]);
+    expect(JSON.stringify(await auditRows())).not.toContain('khám bệnh');
   });
 
   it('SEC-HR-07: Hana tự duyệt / tự PATCH số dư ⇒ 403; LV-20: revoke thiếu lý do ⇒ 400', async () => {
-    const own = envelopeOf<LeaveDto>(await post(hana, '/leave-requests', twoDays)).data;
-    const self = await post(hana, `/leave-requests/${own?.id}/approve`, { expectedVersion: 1 });
+    const own = envelopeOf<LeaveDto>(await post(hana, '/requests', twoDays)).data;
+    const self = await post(hana, `/requests/${own?.id}/approve`, { expectedVersion: 1 });
     expect(self.status).toBe(403);
-    const selfPatch = await patch(hana, `/leave-balances/${hana.id}/2026`, { adjustmentDays: 5 });
+    const selfPatch = await patch(hana, `/balances/${hana.id}/2026`, { adjustmentDays: 5 });
     expect(selfPatch.status).toBe(403);
-    const miaReq = envelopeOf<LeaveDto>(await post(mia, '/leave-requests', twoDays)).data;
-    await post(hana, `/leave-requests/${miaReq?.id}/approve`, { expectedVersion: 1 });
-    const revoke = await post(hana, `/leave-requests/${miaReq?.id}/revoke`, {
+    const miaReq = envelopeOf<LeaveDto>(await post(mia, '/requests', twoDays)).data;
+    await post(hana, `/requests/${miaReq?.id}/approve`, { expectedVersion: 1 });
+    const revoke = await post(hana, `/requests/${miaReq?.id}/revoke`, {
       expectedVersion: 2,
       note: '  ',
     });
@@ -271,26 +260,28 @@ describe('leave HTTP — thứ tự lỗi & bảo mật', () => {
 
   it('audit duyệt / thu hồi: KHÔNG chứa reason của đơn; note quản trị (trim) nằm ở after.note (B, B-H2)', async () => {
     const dto = envelopeOf<LeaveDto>(
-      await post(mia, '/leave-requests', { ...twoDays, reason: 'sốt cao' }),
+      await post(mia, '/requests', { ...twoDays, reason: 'sốt cao' }),
     ).data;
-    await post(hana, `/leave-requests/${dto?.id}/approve`, { expectedVersion: 1 });
-    await post(hana, `/leave-requests/${dto?.id}/revoke`, {
+    await post(hana, `/requests/${dto?.id}/approve`, { expectedVersion: 1 });
+    await post(hana, `/requests/${dto?.id}/revoke`, {
       expectedVersion: 2,
       note: '  thiếu người  ',
     });
-    const audit = envelopeOf<{ action: string; after: Record<string, unknown> | null }[]>(
-      await get(olivia, '/hr-audit-logs'),
-    ).data;
+    const audit = await auditRows();
     expect(JSON.stringify(audit)).not.toContain('sốt cao');
-    const revoke = audit?.find((a) => a.action === 'LEAVE_REVOKE');
-    expect(revoke?.after).toMatchObject({ status: 'REVOKED', note: 'thiếu người' });
-    expect(audit?.find((a) => a.action === 'LEAVE_DECIDE')?.after).not.toHaveProperty('note');
+    expect(audit.find((a) => a.action === 'LEAVE_REVOKE')?.after).toMatchObject({
+      status: 'REVOKED',
+      note: 'thiếu người',
+    });
+    expect(audit.find((a) => a.action === 'LEAVE_DECIDE')?.after).not.toHaveProperty('note');
   });
 
-  it('SEC-HR-25: PATCH số dư cho user của workspace khác ⇒ 404; năm ngoài ±1 ⇒ 400', async () => {
-    const other = await patch(hana, `/leave-balances/${otto.id}/2026`, { adjustmentDays: 1 });
-    expect(other.status).toBe(404);
-    const far = await patch(hana, `/leave-balances/${mia.id}/2024`, { adjustmentDays: 1 });
+  it('SEC-HR-25: PATCH số dư cho người chưa từng là nhân viên năm đó (Admin, người ngoài) ⇒ 404; năm ngoài ±1 ⇒ 400', async () => {
+    for (const userId of [olivia.id, '0199e5a2-0000-7000-8000-000000000999']) {
+      const res = await patch(hana, `/balances/${userId}/2026`, { adjustmentDays: 1 });
+      expect(res.status).toBe(404);
+    }
+    const far = await patch(hana, `/balances/${mia.id}/2024`, { adjustmentDays: 1 });
     expect(far.status).toBe(400);
   });
 });

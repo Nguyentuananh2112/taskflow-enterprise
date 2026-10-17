@@ -10,26 +10,25 @@ import {
   ListLeaveRequestsQuery,
   RevokeLeaveBody,
   SubmitLeaveBody,
-  WorkspaceParams,
 } from '@taskflow/contracts';
 import { Router, type RequestHandler } from 'express';
 import type * as z from 'zod';
 
 import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
 import { validate } from '../../../core/http/validate';
-import type { ILeaveMembership } from '../application/ports/leave.ports';
+import type { ILeaveCompany } from '../application/ports/leave.ports';
 import { listPermission, permitLeave } from './leave-access';
 import type { LeaveController } from './leave.controller';
 
 export interface LeaveRouteDeps {
   controller: LeaveController;
-  membership: Pick<ILeaveMembership, 'reloadActor'>;
+  company: Pick<ILeaveCompany, 'reloadActor'>;
   authenticate: RequestHandler;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
 }
 
 /** Gắn dưới `/api/v1` (mergeParams). */
-export const LEAVE_PATH = '/workspaces/:wsId';
+export const LEAVE_PATH = '/leave';
 
 const SELF = 'leave:self';
 const HR = 'hr:manage';
@@ -45,62 +44,50 @@ export function leaveRoutes(d: LeaveRouteDeps): Router {
     res.set('Cache-Control', 'no-store');
     next();
   };
-  // Gắn THEO TỪNG ROUTE, không `router.use`: router này mount ở `/workspaces/:wsId` nên `use` sẽ chạy cả cho route
-  // của module Workspace đi ngang qua ⇒ xác thực + đếm limiter 2 lần (cùng lỗi audit T-028 F1 của Task).
+  // Gắn THEO TỪNG ROUTE (giữ từ khi router còn mount chung tiền tố với Workspace — T-028 F1); nay mount ở `/leave`.
   const base = [noStore, d.authenticate, ...d.limit(RATE_LIMIT_RULES.authenticated)];
   const guard = (
-    params: z.ZodType,
+    params: z.ZodType | null,
     permission: Parameters<typeof permitLeave>[1],
     input: { body?: z.ZodType; query?: z.ZodType } = {},
-  ) => [...base, validate({ params }), permitLeave(d.membership, permission), validate(input)];
+  ) => [
+    ...base,
+    ...(params ? [validate({ params })] : []),
+    permitLeave(d.company, permission),
+    validate(input),
+  ];
 
   router.get(
-    '/leave-requests',
-    ...guard(WorkspaceParams, listPermission, { query: ListLeaveRequestsQuery }),
+    '/requests',
+    ...guard(null, listPermission, { query: ListLeaveRequestsQuery }),
     c.list,
   );
-  router.get(
-    '/leave-requests/preview',
-    ...guard(WorkspaceParams, SELF, { query: LeavePreviewQuery }),
-    c.preview,
-  );
+  router.get('/requests/preview', ...guard(null, SELF, { query: LeavePreviewQuery }), c.preview);
+  router.post('/requests', ...guard(null, SELF, { body: SubmitLeaveBody }), c.submit);
   router.post(
-    '/leave-requests',
-    ...guard(WorkspaceParams, SELF, { body: SubmitLeaveBody }),
-    c.submit,
-  );
-  router.post(
-    '/leave-requests/:requestId/cancel',
+    '/requests/:requestId/cancel',
     ...guard(LeaveRequestParams, SELF, { body: CancelLeaveBody }),
     c.cancel,
   );
   router.post(
-    '/leave-requests/:requestId/approve',
+    '/requests/:requestId/approve',
     ...guard(LeaveRequestParams, HR, { body: DecideLeaveBody }),
     c.approve,
   );
   router.post(
-    '/leave-requests/:requestId/reject',
+    '/requests/:requestId/reject',
     ...guard(LeaveRequestParams, HR, { body: DecideLeaveBody }),
     c.reject,
   );
   router.post(
-    '/leave-requests/:requestId/revoke',
+    '/requests/:requestId/revoke',
     ...guard(LeaveRequestParams, HR, { body: RevokeLeaveBody }),
     c.revoke,
   );
-  router.get(
-    '/leave-balances/me',
-    ...guard(WorkspaceParams, SELF, { query: LeaveBalanceQuery }),
-    c.myBalance,
-  );
-  router.get(
-    '/leave-balances',
-    ...guard(WorkspaceParams, HR, { query: ListLeaveBalancesQuery }),
-    c.listBalances,
-  );
+  router.get('/balances/me', ...guard(null, SELF, { query: LeaveBalanceQuery }), c.myBalance);
+  router.get('/balances', ...guard(null, HR, { query: ListLeaveBalancesQuery }), c.listBalances);
   router.patch(
-    '/leave-balances/:userId/:year',
+    '/balances/:userId/:year',
     ...guard(LeaveBalanceParams, HR, { body: AdjustLeaveBalanceBody }),
     c.adjustBalance,
   );

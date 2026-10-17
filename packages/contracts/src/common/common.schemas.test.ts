@@ -78,7 +78,7 @@ describe('envelope', () => {
       ApiError.safeParse({ success: false, error: { ...body, code: 'TEAPOT' }, meta: META })
         .success,
     ).toBe(false);
-    expect(ErrorCode.options).toHaveLength(21);
+    expect(ErrorCode.options).toHaveLength(24);
   });
 });
 

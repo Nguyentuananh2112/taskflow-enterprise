@@ -1,6 +1,7 @@
 import type { MembershipDto, UserDto } from '@taskflow/contracts/auth';
 import type { WorkspaceRole } from '@taskflow/contracts/rbac';
 
+import { MockCompany } from './mock-company';
 import { MockWorkspaces } from './mock-workspaces';
 
 // Trạng thái trong bộ nhớ của mock API (T-019). Mô phỏng ĐÚNG hành vi phiên của server thật
@@ -35,6 +36,8 @@ export class MockDb {
   private readonly users = new Map<string, MockUser>();
   /** Workspace + thành viên (T-034) — nguồn duy nhất cho tên/slug/role/xóa mềm. */
   readonly workspaces: MockWorkspaces;
+  /** Mốc 3.5: MỘT công ty (ADR-133) — mọi user mock là nhân viên trừ khi test đổi role/grant. */
+  readonly company = new MockCompany();
   private readonly access = new Map<string, AccessEntry>();
   private readonly refresh = new Map<string, RefreshEntry>();
 
@@ -53,7 +56,8 @@ export class MockDb {
     return this.users.get(id);
   }
 
-  createUser(input: { email: string; password: string; fullName: string }) {
+  /** `workspace: false` = tài khoản HR thêm (ADR-137: chờ kích hoạt, `password` rỗng, chưa có workspace). */
+  createUser(input: { email: string; password: string; fullName: string; workspace?: boolean }) {
     const user: MockUser = {
       id: crypto.randomUUID(),
       email: input.email,
@@ -63,8 +67,18 @@ export class MockDb {
       tokenVersion: 1,
     };
     this.users.set(user.id, user);
+    this.company.add(user.id, user.createdAt);
+    if (input.workspace === false) return { user, defaultWorkspaceId: '' };
     const workspaceId = this.createWorkspace(`Workspace của ${input.fullName}`, undefined, user.id);
     return { user, defaultWorkspaceId: workspaceId };
+  }
+
+  /** Nhân viên công ty hiện tại kèm user (bảng công HR, mock-hr). */
+  companyEmployees(): Array<{ user: MockUser; joinedAt: string }> {
+    return this.company.employees().flatMap(({ userId, joinedAt }) => {
+      const user = this.users.get(userId);
+      return user ? [{ user, joinedAt }] : [];
+    });
   }
 
   /** POST /workspaces và register (ADR-103): người tạo là OWNER; slug trống ⇒ sinh từ tên. */

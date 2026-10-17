@@ -10,6 +10,7 @@ import {
 } from '../support/api';
 import { card, column, waitBoardReady } from '../support/board';
 import { expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { addMemberViaUi } from '../support/members';
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
@@ -113,10 +114,8 @@ test('SEC-49: họ tên chứa payload ⇒ toast "Đã thêm …", danh sách th
 
   await loginViaUi(page, a);
   await page.goto(`/w/${sa.workspaceId}/settings/members`);
-  const form = page.getByRole('form', { name: 'Thêm thành viên' });
-  await form.getByLabel('Email').fill(evil.email);
-  await form.getByLabel('Vai trò').selectOption({ label: 'Thành viên' });
-  await form.getByRole('button', { name: 'Thêm' }).click();
+  // Option của combobox cũng hiển thị họ tên ⇒ thêm một chỗ phải chỉ là text.
+  await addMemberViaUi(page, evil, 'Thành viên');
   await expect(
     page.getByRole('region', { name: /Thông báo/ }).getByText(`Đã thêm ${EVIL_NAME}`),
   ).toBeVisible();

@@ -5,8 +5,13 @@ import type {
   AttendanceEventsDto,
 } from '@taskflow/contracts';
 
-import { ResourceConflictError, ResourceNotFoundError } from '../../../../core/errors';
+import {
+  BusinessRuleViolationError,
+  ResourceConflictError,
+  ResourceNotFoundError,
+} from '../../../../core/errors';
 import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
+import { employedOn } from '../../domain/tenure';
 import { effectiveSchedule } from '../../domain/work-schedule';
 import { toEventDtos } from '../attendance-event-dto';
 import type { AttendanceDeps } from '../attendance-days';
@@ -15,14 +20,14 @@ import { assertInsideRetention } from '../retention-guard';
 import type { AttendanceEventRecord } from '../ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
-  IHrAccess,
+  ICompanyAccess,
   IHrAuditRecorder,
   IUserRefReader,
 } from '../ports/collaborators.port';
 
 export interface AttendanceEventDeps extends AttendanceDeps {
   users: IUserRefReader;
-  hrAccess: IHrAccess;
+  company: ICompanyAccess;
   notifier: AttendanceNotifier;
   audit: IHrAuditRecorder;
 }
@@ -30,52 +35,52 @@ export interface AttendanceEventDeps extends AttendanceDeps {
 /**
  * Lượt chấm thô (§5): HR xem / thêm (ADJUSTMENT) / hủy; nhân viên xem lượt của chính mình kèm IP/UA
  * (NĐ 13 Đ.14). Log bất biến (ADR-121): hủy chỉ đánh dấu, không xóa dòng. Quyền + luật "không tự điều
- * chỉnh công của mình" (B-H1, trừ OWNER) do `hrAccess.authorizeWrite` chốt TRONG transaction (đọc lại grant
+ * chỉnh công của mình" (B-H1 — tuyệt đối, cấp công ty) do `company.authorizeWrite` chốt TRONG transaction (đọc lại grant
  * sau FOR SHARE). Mọi ADJUSTMENT/void bắt buộc lý do (lưu ở `note` / `voidReason` của lượt chấm — audit
  * không chép văn bản tự do, B-H2), ghi `HrAuditLog` + thông báo cho nhân viên trong CÙNG transaction (ADR-123).
  */
+/** Mọi nhiệm kỳ của một người (biên ngày của contract — DateOnly). */
+const EVER = { from: '1900-01-01', to: '9999-12-31' } as const;
+
 export class AttendanceEventsUseCases {
   constructor(private readonly d: AttendanceEventDeps) {}
 
-  /** `GET attendance/events?userId&date` (HR). Người chưa từng có lượt chấm trong ws ⇒ 404. */
-  async listForHr(q: { workspaceId: string; userId: string; date: LocalDate }) {
-    if (!(await this.d.events.hasAnyForUser(q.workspaceId, q.userId))) {
+  /** `GET attendance/events?userId&date` (HR). Người chưa từng có lượt chấm ⇒ 404. */
+  async listForHr(q: { userId: string; date: LocalDate }) {
+    if (!(await this.d.events.hasAnyForUser(q.userId))) {
       throw new ResourceNotFoundError('user');
     }
     return this.#list(q);
   }
 
   /** `GET attendance/me/events?date` — chỉ của chính người gọi. */
-  listMine(q: {
-    workspaceId: string;
-    userId: string;
-    date: LocalDate;
-  }): Promise<AttendanceEventsDto> {
+  listMine(q: { userId: string; date: LocalDate }): Promise<AttendanceEventsDto> {
     return this.#list(q);
   }
 
   /** `POST attendance/events` (ADJUSTMENT) ⇒ 201 `{ event, day }`. */
-  async adjust(
-    workspaceId: string,
-    actorId: string,
-    body: AdjustAttendanceBody,
-  ): Promise<AttendanceEventChangeDto> {
+  async adjust(actorId: string, body: AdjustAttendanceBody): Promise<AttendanceEventChangeDto> {
     const { d } = this;
     const id = d.ids.next();
     await d.uow.run(async () => {
-      await d.hrAccess.authorizeWrite({
-        workspaceId,
-        actorId,
-        targetUserId: body.userId,
-        reason: body.reason,
+      await d.company.authorizeWrite({ actorId, targetUserId: body.userId });
+      // A S2 (company-level ADR-136): người đang làm HOẶC đã nghỉ, miễn `date` thuộc một nhiệm kỳ EMPLOYEE của họ
+      // (HR sửa được công tháng cuối sau khi nghỉ việc). Chưa từng là nhân viên ⇒ 404 user.
+      const tenures = await d.tenures.tenuresOf({
+        userIds: [body.userId],
+        from: EVER.from,
+        to: EVER.to,
       });
-      // Chỉ nhân viên HIỆN TẠI (VIEWER là khách, người đã rời không chấm thêm) ⇒ còn lại 404 user.
-      if (!(await d.hrAccess.isEmployee({ workspaceId, userId: body.userId }))) {
-        throw new ResourceNotFoundError('user');
-      }
+      if (tenures.length === 0) throw new ResourceNotFoundError('user');
       // Thứ tự lỗi đã chốt: 404 tài nguyên con TRƯỚC 422 (review B, LOW-1).
       assertInsideRetention(d.retention, body.date);
-      const versions = await d.calendar.scheduleVersions(workspaceId);
+      if (!employedOn(tenures, body.date)) {
+        throw new BusinessRuleViolationError(
+          'NOT_EMPLOYED',
+          'Ngày này nằm ngoài thời gian người đó làm việc ở công ty.',
+        );
+      }
+      const versions = await d.calendar.scheduleVersions();
       const { timezone } = effectiveSchedule(versions, body.date);
       const [h, m] = body.time.split(':').map(Number) as [number, number];
       const occurredAt = instantOf(
@@ -85,7 +90,6 @@ export class AttendanceEventsUseCases {
       );
       await d.events.add({
         id,
-        workspaceId,
         userId: body.userId,
         kind: body.kind,
         source: 'ADJUSTMENT',
@@ -101,7 +105,6 @@ export class AttendanceEventsUseCases {
         voidReason: null,
       });
       await d.audit.record({
-        workspaceId,
         actorId,
         action: 'EVENT_ADJUST',
         targetUserId: body.userId,
@@ -110,36 +113,28 @@ export class AttendanceEventsUseCases {
       });
       if (body.userId !== actorId) {
         await d.notifier.attendanceAdjusted({
-          workspaceId,
           recipientId: body.userId,
           eventId: id,
           actorId,
         });
       }
     });
-    return this.#change(workspaceId, id);
+    return this.#change(id);
   }
 
   /** `POST attendance/events/:id/void` ⇒ 200 `{ event, day }`; đã hủy ⇒ 409 `already_voided`. */
   async void(
-    workspaceId: string,
     actorId: string,
     q: { id: string; reason: string },
   ): Promise<AttendanceEventChangeDto> {
     const { d } = this;
     await d.uow.run(async () => {
-      const event = await d.events.findById(workspaceId, q.id);
+      const event = await d.events.findById(q.id);
       if (!event) throw new ResourceNotFoundError('attendance_event');
       // Cần chủ của lượt chấm cho luật "không tự hủy" ⇒ chốt sau khi đọc lượt, vẫn TRƯỚC lệnh ghi.
-      await d.hrAccess.authorizeWrite({
-        workspaceId,
-        actorId,
-        targetUserId: event.userId,
-        reason: q.reason,
-      });
+      await d.company.authorizeWrite({ actorId, targetUserId: event.userId });
       assertInsideRetention(d.retention, event.workDate);
       const ok = await d.events.void({
-        workspaceId,
         id: q.id,
         voidedAt: d.clock.now(),
         voidedBy: actorId,
@@ -149,7 +144,6 @@ export class AttendanceEventsUseCases {
         throw new ResourceConflictError({ reason: 'already_voided' }, 'Lượt chấm này đã bị hủy.');
       }
       await d.audit.record({
-        workspaceId,
         actorId,
         action: 'EVENT_VOID',
         targetUserId: event.userId,
@@ -159,24 +153,19 @@ export class AttendanceEventsUseCases {
       });
       if (event.userId !== actorId) {
         await d.notifier.attendanceAdjusted({
-          workspaceId,
           recipientId: event.userId,
           eventId: q.id,
           actorId,
         });
       }
     });
-    return this.#change(workspaceId, q.id);
+    return this.#change(q.id);
   }
 
-  async #list(q: {
-    workspaceId: string;
-    userId: string;
-    date: LocalDate;
-  }): Promise<AttendanceEventsDto> {
+  async #list(q: { userId: string; date: LocalDate }): Promise<AttendanceEventsDto> {
     const [events, versions] = await Promise.all([
       this.d.events.listForUser({ ...q, from: q.date, to: q.date }),
-      this.d.calendar.scheduleVersions(q.workspaceId),
+      this.d.calendar.scheduleVersions(),
     ]);
     events.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
     return {
@@ -185,11 +174,10 @@ export class AttendanceEventsUseCases {
     };
   }
 
-  async #change(workspaceId: string, id: string): Promise<AttendanceEventChangeDto> {
-    const event = (await this.d.events.findById(workspaceId, id))!;
+  async #change(id: string): Promise<AttendanceEventChangeDto> {
+    const event = (await this.d.events.findById(id))!;
     const [dto] = await this.#toDtos([event]);
     const { day, totals } = await monthTotalsOf(this.d, {
-      workspaceId,
       userId: event.userId,
       date: event.workDate,
     });

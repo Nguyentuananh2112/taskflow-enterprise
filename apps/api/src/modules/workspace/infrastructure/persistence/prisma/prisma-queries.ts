@@ -1,12 +1,13 @@
 import type { IUserDirectory, UserSummary } from '../../../application/ports/collaborators.port';
 import type {
+  AdminWorkspaceRow,
   IWorkspaceQueries,
   MemberRow,
   Page,
   PageRequest,
 } from '../../../application/ports/queries.port';
 import type { ProjectSnapshot } from '../../../domain/project';
-import type { MemberGrant, WorkspaceRole } from '../../../domain/roles';
+import type { WorkspaceRole } from '../../../domain/roles';
 import type { WorkspaceSnapshot } from '../../../domain/workspace';
 import type { DbProvider } from './db';
 
@@ -22,6 +23,31 @@ const WS = {
   createdAt: true,
   updatedAt: true,
 } as const;
+/** Màn Quản trị (T-061a): KHÔNG chọn dự án / task. */
+const ADMIN_WS = {
+  id: true,
+  name: true,
+  deletedAt: true,
+  archivedAt: true,
+  members: { select: { userId: true, role: true, user: { select: { fullName: true } } } },
+} as const;
+const byNameThenId = (a: { name: string; id: string }, b: { name: string; id: string }) =>
+  a.name.localeCompare(b.name, 'vi') || (a.id < b.id ? -1 : 1);
+const adminRow = (r: {
+  id: string;
+  name: string;
+  deletedAt: Date | null;
+  archivedAt: Date | null;
+  members: { userId: string; role: WorkspaceRole; user: { fullName: string } }[];
+}): AdminWorkspaceRow => ({
+  id: r.id,
+  name: r.name,
+  deletedAt: r.deletedAt,
+  archivedAt: r.archivedAt,
+  members: r.members
+    .map((m) => ({ userId: m.userId, fullName: m.user.fullName, role: m.role }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, 'vi') || (a.userId < b.userId ? -1 : 1)),
+});
 const PROJECT = {
   id: true,
   workspaceId: true,
@@ -50,21 +76,31 @@ export function escapeLike(q: string): string {
 export class PrismaWorkspaceQueries implements IWorkspaceQueries {
   constructor(private readonly db: DbProvider) {}
 
+  async listForAdmin(): Promise<AdminWorkspaceRow[]> {
+    const rows = await this.db().workspace.findMany({
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      select: ADMIN_WS,
+    });
+    return rows.map(adminRow).sort(byNameThenId);
+  }
+
+  async findForAdmin(id: string): Promise<AdminWorkspaceRow | null> {
+    const row = await this.db().workspace.findUnique({ where: { id }, select: ADMIN_WS });
+    return row ? adminRow(row) : null;
+  }
+
   async listActiveForUser(
     userId: string,
-  ): Promise<
-    { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
-  > {
+  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; joinedAt: Date }[]> {
     const rows = await this.db().workspaceMember.findMany({
       where: { userId, workspace: { deletedAt: null } },
       orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
       take: MAX_MY_WORKSPACES,
-      select: { role: true, grants: true, joinedAt: true, workspace: { select: WS } },
+      select: { role: true, joinedAt: true, workspace: { select: WS } },
     });
     return rows.map((r) => ({
       workspace: r.workspace,
       role: r.role,
-      grants: r.grants,
       joinedAt: r.joinedAt,
     }));
   }
@@ -74,15 +110,6 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
       where: { purgeAt: { gt: now }, members: { some: { userId, role: 'OWNER' } } },
       orderBy: { deletedAt: 'desc' },
       select: WS,
-    });
-  }
-
-  listMemberAccess(
-    workspaceId: string,
-  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]> {
-    return this.db().workspaceMember.findMany({
-      where: { workspaceId },
-      select: { userId: true, role: true, grants: true },
     });
   }
 
@@ -99,14 +126,13 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
         workspace_id: string;
         user_id: string;
         role: WorkspaceRole;
-        grants: MemberGrant[];
         joined_at: Date;
         updated_at: Date;
         email: string;
         full_name: string;
       }[]
     >`
-      SELECT m.id, m.workspace_id, m.user_id, m.role, m.grants::text[] AS grants, m.joined_at, m.updated_at,
+      SELECT m.id, m.workspace_id, m.user_id, m.role, m.joined_at, m.updated_at,
              u.email, u.full_name
         FROM workspace_members m JOIN users u ON u.id = m.user_id
        WHERE m.workspace_id = ${workspaceId}::uuid
@@ -123,7 +149,6 @@ export class PrismaWorkspaceQueries implements IWorkspaceQueries {
         workspaceId: r.workspace_id,
         userId: r.user_id,
         role: r.role,
-        grants: r.grants,
         joinedAt: r.joined_at,
         updatedAt: r.updated_at,
         email: r.email,

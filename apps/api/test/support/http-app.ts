@@ -4,11 +4,16 @@ import request, { type Response } from 'supertest';
 
 import { createContainer, type ContainerConfig } from '../../src/composition/container';
 import { createMemoryPersistence } from '../../src/composition/persistence';
+import { toLocal } from '../../src/core/domain/local-time';
+import { ResourceConflictError } from '../../src/core/errors';
 import { AnchoredClock } from '../../src/core/infrastructure/anchored-clock';
 import { CryptoRandom } from '../../src/core/infrastructure/system';
 import { createLogger } from '../../src/core/logging/pino-logger';
 import type { DestinationStream } from 'pino';
+import { Email } from '../../src/modules/auth/domain/email';
 import { PasswordPolicy } from '../../src/modules/auth/domain/password-policy';
+import { User } from '../../src/modules/auth/domain/user';
+import { DEFAULT_COMPANY_TIME_ZONE } from '../../src/modules/company/domain/company-member';
 import { FakePasswordHasher } from '../../src/modules/auth/testing/fakes';
 import { envelopeOf } from './http';
 import { FakeClock, SequentialIdGenerator } from './time-and-ids';
@@ -41,6 +46,8 @@ export function createTestApp(
   );
   const persistence = createMemoryPersistence(logger);
   const stores = new Map<string, MemoryStore>();
+  const ids = new SequentialIdGenerator();
+  const hasher = new FakePasswordHasher();
   const container = createContainer({
     config: {
       gitSha: 'test',
@@ -56,9 +63,9 @@ export function createTestApp(
     logger,
     clock,
     businessClock,
-    ids: new SequentialIdGenerator(),
+    ids,
     random: new CryptoRandom(),
-    hasher: new FakePasswordHasher(),
+    hasher,
     policy: new PasswordPolicy(new Set(['password123456'])),
     persistence,
     rateLimitStore: (rule) => {
@@ -75,32 +82,99 @@ export function createTestApp(
   let ipSeq = 0;
   const nextIp = () => `198.51.100.${++ipSeq}`;
 
-  async function register(fullName: string, email = `${fullName.toLowerCase()}@example.com`) {
-    const ip = nextIp();
-    const res = await request(app)
-      .post('/api/v1/auth/register')
-      .set('X-Forwarded-For', ip)
-      .send({ email, password: PASSWORD, fullName });
-    if (res.status !== 201)
-      throw new Error(`register ${email}: ${res.status} ${JSON.stringify(res.body)}`);
-    const data = envelopeOf<{
-      accessToken: string;
-      user: { id: string; email: string };
-      defaultWorkspaceId: string;
-    }>(res).data;
-    if (!data) throw new Error('register: thiếu data');
+  const companyStore = persistence.companyStore;
+  if (!companyStore) throw new Error('createTestApp: persistence bộ nhớ phải có companyStore');
+
+  /**
+   * Mốc 3.5 (ADR-137): KHÔNG còn `/auth/register`. Helper in-process (TL chấp nhận — không phải hộp đen) tạo
+   * user + dòng `company_members` + (mặc định) workspace mặc định NGAY trong store, rồi ĐĂNG NHẬP THẬT qua HTTP ⇒
+   * trả cùng hình dạng như register cũ (token, cookie, workspaceId). Đường hộp đen hire → activate: suite security.
+   */
+  async function register(
+    fullName: string,
+    email = `${fullName.toLowerCase()}@example.com`,
+    opts: {
+      role?: 'ADMIN' | 'EMPLOYEE';
+      grants?: ('HR_MANAGE' | 'PAYROLL_MANAGE')[];
+      /** false ⇒ không tạo workspace mặc định (`workspaceId` = ''). */
+      workspace?: boolean;
+      /** EMPLOYEE: ngày đầu nhiệm kỳ (mặc định hôm nay theo giờ nghiệp vụ). */
+      startDate?: string;
+    } = {},
+  ) {
+    const role = opts.role ?? 'EMPLOYEE';
+    const passwordHash = await hasher.hash(PASSWORD);
+    const { userId, workspaceId } = await persistence.uow.run(async () => {
+      const user = User.register({
+        id: ids.next(),
+        email: Email.create(email),
+        passwordHash,
+        fullName,
+        now: clock.now(),
+      });
+      await persistence.auth.users.add(user);
+      await companyStore!.insert({
+        userId: user.id,
+        role,
+        grants: role === 'EMPLOYEE' ? (opts.grants ?? []) : [],
+        startDate:
+          role === 'EMPLOYEE'
+            ? (opts.startDate ?? toLocal(businessClock.now(), DEFAULT_COMPANY_TIME_ZONE).date)
+            : null,
+        at: businessClock.now(),
+      });
+      if (opts.workspace === false) return { userId: user.id, workspaceId: '' };
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const ws = await container.workspace.provisioner.provisionDefault({
+            ownerId: user.id,
+            ownerFullName: fullName,
+            attempt,
+          });
+          return { userId: user.id, workspaceId: ws.workspaceId };
+        } catch (err) {
+          if (!(err instanceof ResourceConflictError) || attempt > 3) throw err;
+        }
+      }
+    });
+    const { ip, token, cookie } = await login(email);
     return {
       ip,
       email,
-      id: data.user.id,
-      token: data.accessToken,
-      workspaceId: data.defaultWorkspaceId,
-      cookie: refreshCookieOf(res),
-      auth: { Authorization: `Bearer ${data.accessToken}`, 'X-Forwarded-For': ip },
+      id: userId,
+      token,
+      workspaceId,
+      cookie,
+      auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': ip },
     };
   }
 
-  return { app, container, persistence, clock, businessClock, register, nextIp };
+  /** Đăng nhập thật (`POST /auth/login`) từ một IP mới. */
+  async function login(email: string, password = PASSWORD) {
+    const ip = nextIp();
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .set('X-Forwarded-For', ip)
+      .send({ email, password });
+    if (res.status !== 200)
+      throw new Error(`login ${email}: ${res.status} ${JSON.stringify(res.body)}`);
+    const data = envelopeOf<{ accessToken: string }>(res).data;
+    if (!data) throw new Error('login: thiếu data');
+    const cookieName = overrides.cookieSecure ? '__Host-tf_rt' : 'tf_rt';
+    return { ip, token: data.accessToken, cookie: refreshCookieOf(res, cookieName) };
+  }
+
+  return {
+    app,
+    container,
+    persistence,
+    companyStore,
+    clock,
+    businessClock,
+    register,
+    login,
+    nextIp,
+  };
 }
 
 export type TestApp = ReturnType<typeof createTestApp>;

@@ -9,7 +9,6 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { RealtimeGateway } from '../../src/core/realtime/gateway';
-import { socketAuthenticatorFrom } from '../../src/core/realtime/ports';
 import { createHttpServer, listen } from '../../src/server';
 import { envelopeOf } from '../support/http';
 import { createTestApp, WEB, type TestApp, type TestUser } from '../support/http-app';
@@ -28,7 +27,7 @@ beforeEach(async () => {
   const gateway = new RealtimeGateway(server, {
     corsOrigins: [WEB],
     trustProxyHops: 0,
-    authenticator: socketAuthenticatorFrom(t.container.auth.authenticator),
+    authenticator: t.container.socketAuth,
     accessChecker: t.container.workspace.accessChecker,
     logger: new SpyLogger(),
     clock: t.clock,
@@ -73,7 +72,7 @@ describe('project:updated qua gateway thật', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'VIEWER' });
+      .send({ userId: bob.id, role: 'VIEWER' });
     const projectId = await firstProjectId(alice);
     const bobSocket = connect(bob.token);
     const carolSocket = connect(carol.token);

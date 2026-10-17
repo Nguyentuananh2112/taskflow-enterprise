@@ -1,14 +1,18 @@
 import { apiCreateTask, apiMoveTask, apiRegister, boardPath } from '../support/api';
 import { card, column, dragByMouse, titlesIn, waitBoardReady } from '../support/board';
 import { API_URL } from '../support/env';
-import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fixtures';
+import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 
 // frontend.md §8 E2E-01..04 trên API thật (Prisma) + web production.
 
-test('@main E2E-01: đăng ký → workspace → project mặc định → tạo task ⇒ ở cuối cột Cần làm', async ({
+// Mốc 3.5: không còn tự đăng ký ⇒ người + workspace + project do API dựng (alias apiRegister), luồng UI giữ nguyên.
+test('@main E2E-01: đăng nhập → workspace → project → tạo task ⇒ ở cuối cột Cần làm', async ({
   page,
+  request,
 }) => {
-  await registerViaUi(page, newUser('e2e01'));
+  const user = newUser('e2e01');
+  await apiRegister(request, user);
+  await loginViaUi(page, user);
   // /w ⇒ workspace mặc định ⇒ danh sách project ⇒ project mặc định (chỉ bấm, không goto).
   // Thẻ workspace (tên gồm vai trò) — từ T-034 trang /w còn có link "Tạo workspace".
   await page

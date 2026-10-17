@@ -11,6 +11,7 @@ import {
 } from '../support/api';
 import { waitBoardReady } from '../support/board';
 import { expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { NO_CANDIDATE, addMemberViaUi } from '../support/members';
 import { openAs } from '../support/users';
 
 // T-034 — màn quản trị workspace / thành viên / dự án (frontend.md §8 + TL). Thao tác qua UI thật,
@@ -22,7 +23,8 @@ const toast = (page: Page, text: string | RegExp) =>
     .first();
 const membersPath = (ws: string) => `/w/${ws}/settings/members`;
 
-test('T-034: thêm thành viên theo email (+ email lạ ⇒ thông báo chung, không lộ tồn tại)', async ({
+// Mốc 3.5 (ADR-134, T-065c): chọn người thuộc công ty bằng combobox — người ngoài công ty không có gợi ý (không lộ tồn tại).
+test('T-034: thêm thành viên bằng combobox nhân viên (+ email lạ ⇒ không gợi ý, không lộ tồn tại)', async ({
   page,
   request,
 }) => {
@@ -34,13 +36,14 @@ test('T-034: thêm thành viên theo email (+ email lạ ⇒ thông báo chung, 
   await page.goto(membersPath(sa.workspaceId));
 
   const form = page.getByRole('form', { name: 'Thêm thành viên' });
-  await form.getByLabel('Email').fill(`nobody-${String(Date.now())}@e2e.example`);
-  await form.getByRole('button', { name: 'Thêm' }).click();
-  await expect(form.getByRole('alert')).toContainText('Không thể thêm người này');
+  await form
+    .getByRole('combobox', { name: 'Tìm nhân viên' })
+    .fill(`nobody-${String(Date.now())}@e2e.example`);
+  // Chữ nằm trong listbox của combobox (chỉ hiện khi đang mở; trước đó là "Đang tìm…") ⇒ chờ toBeVisible.
+  await expect(form.getByText(NO_CANDIDATE, { exact: true })).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Thêm', exact: true })).toBeDisabled();
 
-  await form.getByLabel('Email').fill(b.email);
-  await form.getByLabel('Vai trò').selectOption({ label: 'Thành viên' });
-  await form.getByRole('button', { name: 'Thêm' }).click();
+  await addMemberViaUi(page, b, 'Thành viên');
   await expect(toast(page, `Đã thêm ${b.fullName}`)).toBeVisible();
   await expect(page.getByRole('row', { name: new RegExp(b.fullName) })).toBeVisible();
 });

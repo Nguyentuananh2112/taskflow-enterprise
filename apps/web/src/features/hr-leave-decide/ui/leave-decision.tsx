@@ -26,11 +26,10 @@ const COPY: Record<Action, { button: string; title: string; done: string; label:
 };
 
 type Props = Readonly<{
-  wsId: string;
   request: LeaveRequestDto;
   /** Ngày theo lịch (server) — chỉ thu hồi đơn APPROVED chưa tới ngày bắt đầu (§9). */
   today: string;
-  /** Đơn của chính mình: chỉ OWNER tự xử lý được và PHẢI ghi lý do (B-H1). */
+  /** Đơn của chính mình: chỉ Admin tự xử lý được và PHẢI ghi lý do (B-H1). */
   own: boolean;
 }>;
 
@@ -39,13 +38,13 @@ type Props = Readonly<{
  * tùy chọn khi duyệt/từ chối; thu hồi hoặc tự xử lý đơn của mình ⇒ bắt buộc. Ghi chú KHÔNG chép lý do
  * nghỉ (dữ liệu sức khỏe — B-H2): gợi ý ngay dưới ô nhập.
  */
-export function LeaveDecision({ wsId, request, today, own }: Props) {
+export function LeaveDecision({ request, today, own }: Props) {
   const [action, setAction] = useState<Action | null>(null);
   const [note, setNote] = useState('');
   const required = action === 'revoke' || own;
   const decide = useMutation({
     mutationFn: (a: Action) =>
-      hrLeaveApi.decide(wsId, request.id, a, {
+      hrLeaveApi.decide(request.id, a, {
         expectedVersion: request.version,
         ...(note.trim() ? { note: note.trim() } : {}),
       }),
@@ -57,9 +56,9 @@ export function LeaveDecision({ wsId, request, today, own }: Props) {
     onError: (error) => toast({ title: decideErrorMessage(error).text, tone: 'error' }),
     onSettled: (_d, error, _a, _r, context) => {
       if (error && !decideErrorMessage(error).stale) return;
-      void context.client.invalidateQueries({ queryKey: hrKeys.leave(wsId) });
+      void context.client.invalidateQueries({ queryKey: hrKeys.leave() });
       void context.client.invalidateQueries({
-        queryKey: hrKeys.balances(wsId, Number(request.startDate.slice(0, 4))),
+        queryKey: hrKeys.balances(Number(request.startDate.slice(0, 4))),
       });
       if (error) setAction(null);
     },

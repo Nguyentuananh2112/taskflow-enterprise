@@ -19,45 +19,215 @@ beforeEach(() => {
 
 const post = (path: string) => request(t.app).post(`/api/v1/auth${path}`);
 
-describe('POST /auth/register', () => {
-  it('201: AuthTokenDto + user + defaultWorkspaceId, cookie refresh đúng thuộc tính, no-store', async () => {
+/** Admin (in-process) thêm nhân viên qua route thật ⇒ token kích hoạt (một lần trong response). */
+async function hire(email = 'mia@example.com', fullName = 'Mia') {
+  const admin = await t.register('Olivia', 'olivia@example.com', {
+    role: 'ADMIN',
+    workspace: false,
+  });
+  const res = await request(t.app)
+    .post('/api/v1/hr/employees')
+    .set(admin.auth)
+    .send({ email, fullName });
+  expect(res.status).toBe(201);
+  const data = envelopeOf<{
+    employee: { userId: string; status: string };
+    activation: { token: string; link: string; expiresAt: string } | null;
+  }>(res).data;
+  return { admin, res, data, token: data?.activation?.token ?? '' };
+}
+const activate = (token: string, password = PASSWORD) =>
+  post('/activate').set('Origin', WEB).set('X-Forwarded-For', t.nextIp()).send({ token, password });
+
+describe('Mốc 3.5 (ADR-137): không còn tự đăng ký', () => {
+  it('POST /auth/register ⇒ 404', async () => {
     const res = await post('/register').send({
-      email: ' Mia@Example.com ',
+      email: 'x@example.com',
       password: PASSWORD,
-      fullName: 'Mia',
+      fullName: 'X',
     });
-    expect(res.status).toBe(201);
-    const data = envelopeOf<Record<string, unknown>>(res).data;
-    expect(data).toMatchObject({
-      accessToken: expect.any(String) as string,
-      expiresIn: 900,
-      user: { email: 'mia@example.com', fullName: 'Mia', createdAt: '2026-11-01T00:00:00.000Z' },
-      defaultWorkspaceId: expect.any(String) as string,
-    });
-    expect(Object.keys(data ?? {}).sort()).toEqual([
-      'accessToken',
-      'defaultWorkspaceId',
-      'expiresIn',
-      'user',
-    ]);
-    const cookie = setCookieOf(res) ?? '';
-    expect(cookie).toMatch(/^tf_rt=[A-Za-z0-9_-]{20,};/);
-    expect(cookie).toContain('Path=/api/v1/auth');
-    expect(cookie).toContain('HttpOnly');
-    expect(cookie).toContain('SameSite=Strict');
-    expect(cookie).toContain('Max-Age=604800'); // 7 ngày trượt
-    expect(cookie).not.toContain('Secure');
-    expect(cookie).not.toContain('Domain');
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /hr/employees ⇒ POST /auth/activate (ADR-137)', () => {
+  it('201: tài khoản chờ kích hoạt + link `#t=` 7 ngày, no-store; token chỉ có trong response này', async () => {
+    const { res, data, token } = await hire();
     expect(res.headers['cache-control']).toBe('no-store');
+    expect(data).toMatchObject({
+      employee: { status: 'PENDING_ACTIVATION', version: 1 },
+      accountCreated: true,
+      activation: { link: `${WEB}/activate#t=${token}` },
+    });
+    expect(new Date(data?.activation?.expiresAt ?? 0).getTime() - t.clock.now().getTime()).toBe(
+      7 * 24 * 3600 * 1000,
+    );
   });
 
-  it('production (COOKIE_SECURE, ADR-109): __Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/; không Domain', async () => {
-    t = createTestApp({ cookieSecure: true });
-    const res = await post('/register').send({
-      email: 'a@example.com',
-      password: PASSWORD,
-      fullName: 'A',
+  it('chờ kích hoạt: login mọi mật khẩu ⇒ 401 INVALID_CREDENTIALS như không có user (SEC-HR-58)', async () => {
+    await hire();
+    for (const password of [PASSWORD, '', 'whatever-long-pass']) {
+      const res = await post('/login')
+        .set('X-Forwarded-For', t.nextIp())
+        .send({ email: 'mia@example.com', password });
+      expect([res.status, errorOf(res).code]).toEqual(
+        password === '' ? [400, 'VALIDATION_ERROR'] : [401, 'INVALID_CREDENTIALS'],
+      );
+    }
+  });
+
+  it('inspect chỉ đọc: tên + email + công ty; xem nhiều lần token vẫn dùng được (bot xem trước link)', async () => {
+    const { token } = await hire();
+    for (let i = 0; i < 3; i += 1) {
+      const res = await post('/activation/inspect')
+        .set('Origin', WEB)
+        .set('X-Forwarded-For', t.nextIp())
+        .send({ token });
+      expect(res.status).toBe(200);
+      expect(envelopeOf(res).data).toEqual({
+        fullName: 'Mia',
+        email: 'mia@example.com',
+        companyName: null,
+      });
+    }
+    expect((await activate(token)).status).toBe(200);
+  });
+
+  it('mật khẩu yếu ⇒ 400 path password, không phản chiếu mật khẩu, token VẪN sống', async () => {
+    const { token } = await hire();
+    for (const password of ['short', 'password123456', 'mia-is-my-password']) {
+      const res = await activate(token, password);
+      expect(res.status, password).toBe(400);
+      expect(errorOf(res).details?.issues?.some((i) => i.path[0] === 'password')).toBe(true);
+      expect(JSON.stringify(res.body)).not.toContain(password);
+    }
+    expect((await activate(token)).status).toBe(200);
+  });
+
+  it('200: phiên mới như login (cookie refresh đúng thuộc tính, no-store); dùng lại ⇒ 410; token lạ ⇒ 400', async () => {
+    const { token } = await hire();
+    const res = await activate(token);
+    expect(res.status).toBe(200);
+    expect(envelopeOf(res).data).toMatchObject({
+      accessToken: expect.any(String) as string,
+      expiresIn: 900,
+      user: { email: 'mia@example.com', fullName: 'Mia' },
     });
+    const cookie = setCookieOf(res) ?? '';
+    expect(cookie).toMatch(/^tf_rt=[A-Za-z0-9_-]{20,};/);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Strict');
+    expect(res.headers['cache-control']).toBe('no-store');
+
+    expect(errorOf(await activate(token)).code).toBe('ACTIVATION_GONE');
+    expect((await activate(token)).status).toBe(410);
+    expect(errorOf(await activate('A'.repeat(43))).code).toBe('ACTIVATION_INVALID');
+    // Đã kích hoạt ⇒ đăng nhập được bằng mật khẩu vừa đặt.
+    const login = await post('/login')
+      .set('X-Forwarded-For', t.nextIp())
+      .send({ email: 'mia@example.com', password: PASSWORD });
+    expect(login.status).toBe(200);
+  });
+
+  it('activate / inspect cần Origin cho phép (403 ORIGIN_NOT_ALLOWED); body lạ ⇒ 400', async () => {
+    const { token } = await hire();
+    const noOrigin = await post('/activate').send({ token, password: PASSWORD });
+    expect(errorOf(noOrigin).code).toBe('ORIGIN_NOT_ALLOWED');
+    const extra = await post('/activate')
+      .set('Origin', WEB)
+      .send({ token, password: PASSWORD, userId: 'x' });
+    expect(extra.status).toBe(400);
+  });
+
+  it('SEC-40: 5 lần thêm song song cùng email ⇒ đúng một 201, còn lại 409 already_employee', async () => {
+    const admin = await t.register('Olivia', 'olivia@example.com', {
+      role: 'ADMIN',
+      workspace: false,
+    });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        request(t.app)
+          .post('/api/v1/hr/employees')
+          .set(admin.auth)
+          .send({ email: 'twin@example.com', fullName: 'Song Sinh' }),
+      ),
+    );
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409]);
+    for (const r of results.filter((x) => x.status === 409)) {
+      expect(errorOf(r)).toMatchObject({
+        code: 'RESOURCE_CONFLICT',
+        details: { reason: 'already_employee', field: 'email' },
+      });
+    }
+  });
+
+  it('nhân viên thường (không hr:manage) thêm ⇒ 403; người đã rời công ty ⇒ 401 SESSION_REVOKED', async () => {
+    const mia = await t.register('Mia', undefined, { workspace: false });
+    const body = { email: 'new@example.com', fullName: 'New' };
+    const forbidden = await request(t.app).post('/api/v1/hr/employees').set(mia.auth).send(body);
+    expect(forbidden.status).toBe(403);
+    t.companyStore.removeMember(mia.id);
+    const revoked = await request(t.app).post('/api/v1/hr/employees').set(mia.auth).send(body);
+    expect([revoked.status, errorOf(revoked).code]).toEqual([401, 'SESSION_REVOKED']);
+  });
+});
+
+describe('cổng công ty ở login / refresh / me (Mốc 3.5, B HIGH-2)', () => {
+  it('rời công ty ⇒ login 401 INVALID_CREDENTIALS; refresh 401 SESSION_REVOKED + xóa cookie, không xoay (SEC-HR-69)', async () => {
+    const mia = await t.register('Mia');
+    t.companyStore.removeMember(mia.id);
+    const login = await post('/login')
+      .set('X-Forwarded-For', t.nextIp())
+      .send({ email: mia.email, password: PASSWORD });
+    expect([login.status, errorOf(login).code]).toEqual([401, 'INVALID_CREDENTIALS']);
+    const refresh = await post('/refresh')
+      .set('Origin', WEB)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', mia.cookie);
+    expect([refresh.status, errorOf(refresh).code]).toEqual([401, 'SESSION_REVOKED']);
+    expect(setCookieOf(refresh)).toMatch(/^tf_rt=;/);
+    const me = await request(t.app).get('/api/v1/auth/me').set(mia.auth);
+    expect([me.status, errorOf(me).code]).toEqual([401, 'SESSION_REVOKED']);
+  });
+
+  it('quá access_until (job chưa chạy) ⇒ refresh 401 SESSION_REVOKED dù refresh token còn hạn', async () => {
+    const mia = await t.register('Mia');
+    const m = await t.companyStore.find(mia.id);
+    t.companyStore.upsertMember({
+      ...m!,
+      offboardLastDay: '2026-10-31',
+      offboardAccessUntil: new Date(t.businessClock.now().getTime() - 1),
+      offboardScheduledById: mia.id,
+    });
+    const refresh = await post('/refresh')
+      .set('Origin', WEB)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', mia.cookie);
+    expect([refresh.status, errorOf(refresh).code]).toEqual([401, 'SESSION_REVOKED']);
+  });
+
+  it('/auth/me có company {name, role, grants, permissions, status, offboardLastDay}', async () => {
+    const hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'] });
+    const me = await request(t.app).get('/api/v1/auth/me').set(hana.auth);
+    expect(me.status).toBe(200);
+    expect(envelopeOf<{ company: unknown }>(me).data?.company).toEqual({
+      name: null,
+      role: 'EMPLOYEE',
+      grants: ['HR_MANAGE'],
+      permissions: ['attendance:self', 'hr:manage', 'leave:self', 'workspace:create'],
+      status: 'ACTIVE',
+      offboardLastDay: null,
+    });
+  });
+});
+
+describe('cookie production (COOKIE_SECURE, ADR-109)', () => {
+  it('__Host-tf_rt; Secure; HttpOnly; SameSite=Strict; Path=/; không Domain', async () => {
+    t = createTestApp({ cookieSecure: true });
+    await t.register('A', 'a@example.com', { workspace: false });
+    const res = await post('/login')
+      .set('X-Forwarded-For', t.nextIp())
+      .send({ email: 'a@example.com', password: PASSWORD });
     const cookie = setCookieOf(res, '__Host-tf_rt') ?? '';
     expect(cookie).toMatch(/^__Host-tf_rt=[^;]+;/);
     expect(cookie).toContain('Secure');
@@ -65,70 +235,6 @@ describe('POST /auth/register', () => {
     expect(cookie).toContain('SameSite=Strict');
     expect(cookie).toMatch(/Path=\/(;|$)/);
     expect(cookie).not.toContain('Domain');
-  });
-
-  it('409 EMAIL_ALREADY_EXISTS khi trùng email (ADR-049)', async () => {
-    await t.register('Mia');
-    const res = await post('/register')
-      .set('X-Forwarded-For', t.nextIp())
-      .send({ email: 'MIA@example.com', password: PASSWORD, fullName: 'Mia 2' });
-    expect(res.status).toBe(409);
-    expect(errorOf(res).code).toBe('EMAIL_ALREADY_EXISTS');
-  });
-
-  it.each([
-    [
-      'mật khẩu < 12 ký tự',
-      { email: 'x@example.com', password: 'short', fullName: 'X' },
-      'password',
-    ],
-    [
-      'mật khẩu phổ biến',
-      { email: 'x@example.com', password: 'password123456', fullName: 'X' },
-      'password',
-    ],
-    ['email sai', { email: 'not-an-email', password: PASSWORD, fullName: 'X' }, 'email'],
-  ])('400 VALIDATION_ERROR: %s', async (_label, body, field) => {
-    const res = await post('/register').send(body);
-    expect(res.status).toBe(400);
-    expect(errorOf(res).details?.issues?.some((i) => i.path[0] === field)).toBe(true);
-  });
-
-  it('SEC-57 mass assignment: field lạ (role, tokenVersion) ⇒ 400, không phản chiếu mật khẩu (ADR-096)', async () => {
-    const res = await post('/register').send({
-      email: 'x@example.com',
-      password: 'hunter2-is-secret!',
-      fullName: 'X',
-      role: 'OWNER',
-      tokenVersion: 9,
-    });
-    expect(res.status).toBe(400);
-    expect(errorOf(res).details?.issues?.map((i) => i.code)).toContain('unrecognized_keys');
-    expect(JSON.stringify(res.body)).not.toContain('hunter2-is-secret!');
-  });
-});
-
-describe('đồng thời (SEC-40, lỗi QA F ở T-021)', () => {
-  it('5 register song song (email khác, cùng fullName ⇒ va slug) ⇒ cả 5 đều 201, mỗi người có workspace OWNER', async () => {
-    const results = await Promise.all(
-      Array.from({ length: 5 }, (_, i) =>
-        post('/register')
-          .set('X-Forwarded-For', t.nextIp())
-          .send({ email: `twin${i}@example.com`, password: PASSWORD, fullName: 'Song Sinh' }),
-      ),
-    );
-    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
-    for (const res of results) {
-      const data = envelopeOf<{ accessToken: string; defaultWorkspaceId: string }>(res).data;
-      const me = await request(t.app)
-        .get('/api/v1/auth/me')
-        .set('Authorization', `Bearer ${data?.accessToken ?? ''}`);
-      expect(
-        envelopeOf<{ memberships: { workspaceId: string; role: string }[] }>(me).data?.memberships,
-      ).toEqual([
-        expect.objectContaining({ workspaceId: data?.defaultWorkspaceId, role: 'OWNER' }),
-      ]);
-    }
   });
 });
 

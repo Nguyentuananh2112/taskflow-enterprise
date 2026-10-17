@@ -54,7 +54,9 @@ export class ChangePasswordUseCase {
   async execute(input: ChangePasswordInput): Promise<{ session: IssuedSession; user: UserView }> {
     const current = await this.d.users.findById(input.userId);
     if (!current || current.isDeleted) throw new UnauthorizedError();
-    if (!(await this.d.hasher.verify(current.passwordHash, input.currentPassword))) {
+    const currentHash = current.passwordHash;
+    if (currentHash === null) throw new UnauthorizedError(); // chờ kích hoạt: không thể có phiên
+    if (!(await this.d.hasher.verify(currentHash, input.currentPassword))) {
       // ASVS V16.3.1 (X9): dò mật khẩu hiện tại bằng access token trộm được là dấu hiệu tấn công.
       this.d.logger.warn(
         { userId: input.userId, ip: input.meta.ip },
@@ -86,7 +88,7 @@ export class ChangePasswordUseCase {
       // vừa bị đổi ở request khác) ⇒ mật khẩu hiện tại không còn đúng ⇒ 400, không đổi gì.
       const tokenVersion = await this.d.users.changePassword({
         id: user.id,
-        oldHash: current.passwordHash,
+        oldHash: currentHash,
         newHash,
         at: now,
       });

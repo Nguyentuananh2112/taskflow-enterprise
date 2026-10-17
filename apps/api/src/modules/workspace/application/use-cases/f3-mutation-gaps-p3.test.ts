@@ -148,7 +148,7 @@ describe('F3 workspace — GAP P3: nhánh 404 (và `details.resource`, W-21)', (
   it('W-21: actor mất membership giữa chừng ⇒ 404 workspace (owner-guard)', async () => {
     await h.memberships.remove(ctx.A, ctx.pam.userId);
     const err = await caught(
-      new AddMemberUseCase(h).execute(ctx.pam, { email: 'nina@example.com', role: 'VIEWER' }),
+      new AddMemberUseCase(h).execute(ctx.pam, { userId: uid('nina'), role: 'VIEWER' }),
     );
     expect(resourceOf(err)).toEqual({ resource: 'workspace' });
   });
@@ -204,7 +204,7 @@ describe('F3 workspace — GAP P3: hợp đồng lỗi `details` (W-20, W-22)', 
   it('W-20: issues của ValidationError — đúng path:code ở từng chỗ ném', async () => {
     const add = new AddMemberUseCase(h);
     expect(
-      codes(await caught(add.execute(ctx.alice, { email: 'nina@example.com', role: 'ADMIN' }))),
+      codes(await caught(add.execute(ctx.alice, { userId: uid('nina'), role: 'ADMIN' }))),
     ).toEqual(['role:invalid_value']);
     expect(
       codes(await caught(new DeleteWorkspaceUseCase(h).execute(ctx.alice, { confirmSlug: 'sai' }))),
@@ -265,7 +265,7 @@ describe('F3 workspace — GAP P3: hợp đồng lỗi `details` (W-20, W-22)', 
 
   it('W-22: details.required của 403 — PM cấp OWNER (member:add), PM xóa OWNER (member:remove)', async () => {
     const grant = await caught(
-      new AddMemberUseCase(h).execute(ctx.pam, { email: 'nina@example.com', role: 'OWNER' }),
+      new AddMemberUseCase(h).execute(ctx.pam, { userId: uid('nina'), role: 'OWNER' }),
     );
     expect(grant).toBeInstanceOf(ForbiddenError);
     expect((grant as ForbiddenError).details).toEqual({ required: 'member:add' });

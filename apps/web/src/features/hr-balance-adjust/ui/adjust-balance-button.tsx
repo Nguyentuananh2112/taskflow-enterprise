@@ -15,7 +15,7 @@ import { toast } from '@/shared/ui/toast';
 
 import { adjustErrorMessage } from '../model/adjust-errors';
 
-type Props = Readonly<{ wsId: string; row: LeaveBalanceRowDto; own: boolean }>;
+type Props = Readonly<{ row: LeaveBalanceRowDto; own: boolean }>;
 type Pages = InfiniteData<ApiResult<LeaveBalanceRowDto[]>>;
 
 /** Số hợp lệ: bước 0,5 (chấp nhận dấu phẩy kiểu Việt). */
@@ -26,23 +26,23 @@ function parseDays(text: string): number | null {
 
 /**
  * Chỉnh "điều chỉnh" số phép năm (PATCH — GIÁ TRỊ MỚI tuyệt đối, bước 0,5, được âm; D chốt). Người vào
- * giữa năm: HR tự giảm theo tỷ lệ tháng. Tự chỉnh của mình: chỉ OWNER, bắt buộc ghi chú (B-H1). Kết quả
+ * giữa năm: HR tự giảm theo tỷ lệ tháng. Tự chỉnh của mình: chỉ Admin, bắt buộc ghi chú (B-H1). Kết quả
  * thay đúng một dòng trong cache (không tải lại cả bảng).
  */
-export function AdjustBalanceButton({ wsId, row, own }: Props) {
+export function AdjustBalanceButton({ row, own }: Props) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(String(row.adjustmentDays));
   const [note, setNote] = useState('');
   const days = parseDays(value);
   const save = useMutation({
     mutationFn: () =>
-      hrLeaveApi.adjustBalance(wsId, row.userId, row.year, {
+      hrLeaveApi.adjustBalance(row.userId, row.year, {
         adjustmentDays: days ?? 0,
         ...(note.trim() ? { note: note.trim() } : {}),
       }),
     onSuccess: (next, _v, _r, context) => {
       context.client.setQueryData<Pages>(
-        hrKeys.balances(wsId, row.year),
+        hrKeys.balances(row.year),
         (old) =>
           old && {
             ...old,

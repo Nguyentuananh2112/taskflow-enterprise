@@ -1,17 +1,17 @@
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { nextVnAnchor } from './harness/clock';
 import { HR, hrClockEnv, withKey } from './harness/hr';
 import { seedTrio, today } from './harness/hr-clock';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
-// CLK-HR-04 (test-spec-hr §5b): CHỦ NHẬT (S0 nghỉ). Mốc Chủ nhật 10:00 VN — process API riêng. Chấm vào vẫn được
-// ghi nhưng ngày OFF có ưu tiên cao hơn PRESENT (SD thứ tự ưu tiên) ⇒ không "đang làm", không bị tính vắng.
+// CLK-HR-04 (test-spec-hr §5b; test-spec-company §5): CHỦ NHẬT (S0 nghỉ). Mốc Chủ nhật 10:00 VN — process API riêng.
+// Chấm vào vẫn được ghi nhưng ngày OFF có ưu tiên cao hơn PRESENT (SD thứ tự ưu tiên) ⇒ không "đang làm", không bị
+// tính vắng.
 const ANCHOR = nextVnAnchor(0, '10:00:00');
-const api = useApi(hrClockEnv(ANCHOR));
-const actors = new Actors(api);
-const AREA = 'Mốc 3 HR — biên giờ';
+const { api, actors } = useCompanyApi(hrClockEnv(ANCHOR));
+const AREA = 'Mốc 3.5 HR — biên giờ';
 
 describe('Chủ nhật', () => {
   secCase(
@@ -20,18 +20,18 @@ describe('Chủ nhật', () => {
     AREA,
     async () => {
       const t = await seedTrio(actors, 'clksun');
-      expect(await today(actors, t.mia, t.ws)).toMatchObject({
+      expect(await today(actors, t.mia)).toMatchObject({
         isWorkday: false,
         status: 'OFF',
         inProgress: false,
         firstIn: null,
       });
-      const res = await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
+      const res = await withKey(api, 'POST', HR.checkIn, t.mia.accessToken);
       expect(res.status, res.text.slice(0, 200)).toBe(201);
-      const after = await today(actors, t.mia, t.ws);
+      const after = await today(actors, t.mia);
       expect(after).toMatchObject({ status: 'OFF', inProgress: false });
       expect(after.firstIn).not.toBeNull();
-      expect(await today(actors, t.max, t.ws)).toMatchObject({ status: 'OFF' });
+      expect(await today(actors, t.max)).toMatchObject({ status: 'OFF' });
     },
   );
 });

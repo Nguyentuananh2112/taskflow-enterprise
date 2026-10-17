@@ -4,8 +4,6 @@ import {
   LoginBody,
   LoginResponse,
   MeResponse,
-  RegisterBody,
-  RegisterResponse,
   UpdateMeBody,
   UserDto,
 } from '@taskflow/contracts/auth';
@@ -14,13 +12,18 @@ import { http, type HttpHandler } from 'msw';
 import type { MockDb } from './mock-db';
 import { rejectsOrigin } from './request-guards';
 import { authenticate as authenticateRequest } from './mock-guard';
-import { fail, noContent, ok, parseBody, ruleViolation } from './respond';
+import { fail, noContent, ok, parseBody } from './respond';
 
 // Handler /auth/* của mock API — hành vi theo data-and-api.md §2.4 và security.md §1, §2.3, §6.4–6.5.
 
 const COOKIE = 'tf_rt';
 /** Mẫu nhỏ của danh sách mật khẩu phổ biến (server thật dùng file ~10k mục — security.md §6.5). */
-const COMMON_PASSWORDS = new Set(['password1234', '123456789012', 'qwertyuiop12', 'matkhau12345']);
+export const COMMON_PASSWORDS = new Set([
+  'password1234',
+  '123456789012',
+  'qwertyuiop12',
+  'matkhau12345',
+]);
 const LOGIN_FAILURE_LIMIT = 5;
 
 const readCookie = (request: Request): string | undefined =>
@@ -31,7 +34,7 @@ const readCookie = (request: Request): string | undefined =>
     .find(([name]) => name === COOKIE)?.[1];
 
 /** `basePath` = pathname của API_URL (vd `/api/v1`) — cookie chỉ gửi cho `${basePath}/auth`. */
-const cookieHeader = (basePath: string, token: string | null) =>
+export const cookieHeader = (basePath: string, token: string | null) =>
   `${COOKIE}=${token ?? ''}; Path=${basePath}/auth; HttpOnly; SameSite=Strict; Max-Age=${token ? 30 * 86_400 : 0}`;
 
 export function createAuthHandlers(
@@ -50,30 +53,7 @@ export function createAuthHandlers(
   };
 
   return [
-    http.post(url('/auth/register'), async ({ request }) => {
-      const body = await parseBody(request, RegisterBody);
-      if (body.response) return body.response;
-      const { email, password, fullName } = body.data;
-      if (COMMON_PASSWORDS.has(password.toLowerCase())) {
-        return ruleViolation(
-          'password',
-          'common_password',
-          'Mật khẩu quá phổ biến, hãy chọn mật khẩu khác.',
-        );
-      }
-      const localPart = email.split('@')[0] ?? '';
-      if (localPart.length >= 3 && password.toLowerCase().includes(localPart)) {
-        return ruleViolation('password', 'contains_email', 'Mật khẩu không được chứa email.');
-      }
-      if (db.findUserByEmail(email)) return fail(409, 'EMAIL_ALREADY_EXISTS');
-      const { user, defaultWorkspaceId } = db.createUser({ email, password, fullName });
-      const tokens = db.issueAccess(user);
-      return ok(
-        RegisterResponse,
-        { ...tokens, user: UserDto.parse(user), defaultWorkspaceId },
-        { status: 201, headers: setCookie(db.issueRefresh(user.id)) },
-      );
-    }),
+    // ADR-137: KHÔNG có /auth/register (tắt tự đăng ký) — request tới đó không có handler (server thật 404).
 
     http.post(url('/auth/login'), async ({ request }) => {
       const body = await parseBody(request, LoginBody);
@@ -89,7 +69,8 @@ export function createAuthHandlers(
         );
       }
       const user = db.findUserByEmail(email);
-      if (!user || user.password !== password) {
+      // ADR-137: chờ kích hoạt (mật khẩu rỗng) hoặc đã nghỉ (không thuộc công ty) ⇒ như sai thông tin.
+      if (!user || user.password === '' || user.password !== password || !db.company.of(user.id)) {
         loginFailures.set(email, failures + 1);
         return fail(401, 'INVALID_CREDENTIALS');
       }
@@ -130,9 +111,13 @@ export function createAuthHandlers(
     http.get(url('/auth/me'), ({ request }) => {
       const auth = authenticate(request);
       if (auth.response) return auth.response;
+      const company = db.company.of(auth.user.id);
+      // ADR-135: không thuộc công ty ⇒ 401 SESSION_REVOKED (không có "đăng nhập mà không thuộc công ty").
+      if (!company) return fail(401, 'SESSION_REVOKED');
       return ok(MeResponse, {
         user: UserDto.parse(auth.user),
         memberships: db.membershipsOf(auth.user.id),
+        company,
       });
     }),
 

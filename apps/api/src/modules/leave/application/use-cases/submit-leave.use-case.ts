@@ -5,10 +5,12 @@ import {
   type CalendarDate,
   type LeaveDayPart,
 } from '../../domain/leave-days';
+import { assertNotAfterLastDay } from '../../domain/leave-tenure';
 import type { LeaveRequestDto } from '../leave-dto';
 import {
   PERMISSION_LEAVE_SELF,
   auditView,
+  countingTenure,
   yearOf,
   type LeaveKit,
   type LeaveScope,
@@ -30,39 +32,45 @@ export function normalizeReason(reason: string | null | undefined): string | nul
   return trimmed === '' ? null : trimmed;
 }
 
-/** Gửi đơn (thiết kế §9 dòng "(mới) → PENDING", test-spec LV-01..07, LD-06..08). */
+/**
+ * Gửi đơn (attendance-leave §9 "(mới) → PENDING", LV-01..07, LD-06..08; company-level ADR-136): khóa
+ * `taskflow:leave:<user>` → nhân viên còn hiệu lực SAU khóa (A C2) → `AFTER_LAST_DAY` (D H1) → đếm + số dư theo
+ * nhiệm kỳ hiện tại (D H2).
+ */
 export class SubmitLeaveUseCase {
   constructor(private readonly kit: LeaveKit) {}
 
   async execute(scope: LeaveScope, input: SubmitLeaveInput): Promise<LeaveRequestDto> {
     assertLeaveRange(input); // hình dạng sai ⇒ 400/422 TRƯỚC khi khóa
-    const { workspaceId, actorId } = scope;
+    const { actorId } = scope;
     const d = this.kit.d;
     return d.uow.run(async () => {
-      await d.requests.lockUser(workspaceId, actorId);
-      await this.kit.requireActor(workspaceId, actorId, PERMISSION_LEAVE_SELF);
+      await d.requests.lockUser(actorId);
+      await this.kit.requireActor(actorId, PERMISSION_LEAVE_SELF);
+      await d.company.assertActiveEmployee(actorId);
+      const employment = await d.company.employmentOf(actorId);
+      assertNotAfterLastDay(input, employment.lastDay);
 
       const year = yearOf(input.startDate);
-      const calendar = await this.kit.yearCalendar(workspaceId, year);
+      const calendar = await this.kit.yearCalendar(year);
       const halfDays = countLeaveHalfDays(input, calendar);
       assertHasWorkingDays(halfDays);
 
-      const holding = await d.requests.listHolding(workspaceId, actorId, year);
+      const holding = await d.requests.listHolding(actorId, year);
       assertNoOverlap(holding, input);
       await this.kit.assertBalance({
-        workspaceId,
         userId: actorId,
         year,
         type: input.type,
         requested: halfDays,
         holding,
         calendar,
+        tenure: countingTenure(employment),
       });
 
       const now = d.clock.now();
       const record: LeaveRequestRecord = {
         id: d.ids.next(),
-        workspaceId,
         userId: actorId,
         type: input.type,
         startDate: input.startDate,
@@ -79,7 +87,6 @@ export class SubmitLeaveUseCase {
       };
       await d.requests.add(record);
       await d.audit.record({
-        workspaceId,
         actorId,
         action: 'LEAVE_SUBMIT',
         targetUserId: actorId,
@@ -88,7 +95,6 @@ export class SubmitLeaveUseCase {
         after: auditView(record),
       });
       await d.notifier.notify({
-        workspaceId,
         type: 'LEAVE_SUBMITTED',
         requestId: record.id,
         actorId,

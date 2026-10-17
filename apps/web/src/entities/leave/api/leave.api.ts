@@ -8,31 +8,31 @@ import {
   type SubmitLeaveBody,
 } from '@taskflow/contracts/leave';
 
-const base = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}`;
+// Mốc 3.5 (ADR-136): nghỉ phép thuộc CÔNG TY — route gốc `/leave/…`, không còn `wsId`.
+const requests = '/leave/requests';
 
-/** attendance-leave.md §5 (đơn của tôi + số phép). */
+/** attendance-leave.md §5, company-level.md §4 (đơn của tôi + số phép). */
 export const leaveApi = {
-  mine: (wsId: string, cursor?: string) =>
-    http.request('GET', `${base(wsId)}/leave-requests`, {
+  mine: (cursor?: string) =>
+    http.request('GET', requests, {
       schema: z.array(LeaveRequestDto),
       query: { mine: 1, cursor, limit: 50 },
     }),
   /** Đơn CHỜ DUYỆT của tôi — chỉ để đếm (lối tắt trên thẻ Chấm công, T-045). */
-  minePending: (wsId: string) =>
-    http.request('GET', `${base(wsId)}/leave-requests`, {
+  minePending: () =>
+    http.request('GET', requests, {
       schema: z.array(LeaveRequestDto),
       query: { mine: 1, status: 'PENDING', limit: 50 },
     }),
-  create: (wsId: string, body: SubmitLeaveBody) =>
-    http.post(`${base(wsId)}/leave-requests`, { schema: LeaveRequestDto, body }),
-  cancel: (wsId: string, id: string, expectedVersion: number) =>
-    http.post(`${base(wsId)}/leave-requests/${encodeURIComponent(id)}/cancel`, {
+  create: (body: SubmitLeaveBody) => http.post(requests, { schema: LeaveRequestDto, body }),
+  cancel: (id: string, expectedVersion: number) =>
+    http.post(`${requests}/${encodeURIComponent(id)}/cancel`, {
       schema: LeaveRequestDto,
       body: { expectedVersion },
     }),
   /** Xem trước số ngày (chỉ đọc; lỗi giống khi gửi). */
-  preview: (wsId: string, q: Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>) =>
-    http.get(`${base(wsId)}/leave-requests/preview`, { schema: LeavePreviewDto, query: q }),
-  myBalance: (wsId: string, year: number) =>
-    http.get(`${base(wsId)}/leave-balances/me`, { schema: LeaveBalanceDto, query: { year } }),
+  preview: (q: Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>) =>
+    http.get(`${requests}/preview`, { schema: LeavePreviewDto, query: q }),
+  myBalance: (year: number) =>
+    http.get('/leave/balances/me', { schema: LeaveBalanceDto, query: { year } }),
 };

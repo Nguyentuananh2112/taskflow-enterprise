@@ -18,7 +18,8 @@ export function createTestPrisma(): PrismaClient {
 
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE task_audit_logs, tasks, projects, workspace_members, refresh_tokens, workspaces, users CASCADE',
+    // holidays / companies không có FK tới users ⇒ CASCADE không dọn (A, T-063 @78884e3 — giữ khi gộp).
+    'TRUNCATE task_audit_logs, tasks, projects, workspace_members, refresh_tokens, workspaces, users, holidays, companies CASCADE',
   );
 }
 

@@ -6,26 +6,21 @@ import {
   ListMembersQuery,
   MemberDto,
   RemoveMemberResponse,
-  SetMemberGrantsBody,
 } from '@taskflow/contracts/workspace';
+import { MemberCandidateDto, MemberCandidatesQuery } from '@taskflow/contracts/company';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
 import type { MockBoard } from './mock-board';
 import type { MockDb } from './mock-db';
-import {
-  forbiddenUnless,
-  forbiddenUnlessGranted,
-  originClientId,
-  requireMember,
-  type MemberContext,
-} from './mock-guard';
+import { forbiddenUnless, originClientId, requireMember, type MemberContext } from './mock-guard';
 import type { RateLimiter } from './request-guards';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
-import { accessRevoked, grantsChanged, roleChanged, unassignAll } from './workspace-events';
+import { accessRevoked, roleChanged, unassignAll } from './workspace-events';
 
 // Thành viên (data-and-api §2.5, security.md §3.2, ADR-044/046). Hành vi theo use case của API:
-// add-member / change-member-role / remove-member (thứ tự lỗi ghi ở từng handler).
+// add-member / change-member-role / remove-member (thứ tự lỗi ghi ở từng handler). Mốc 3.5 (ADR-134): thêm theo
+// `userId` của NHÂN VIÊN công ty (chọn từ `member-candidates`), workspace không còn grants.
 
 /** PM chỉ cấp MEMBER/VIEWER; OWNER cấp bất kỳ. */
 const canGrant = (actor: WorkspaceRole, role: WorkspaceRole) =>
@@ -50,7 +45,6 @@ export function createMemberHandlers(
       email: row.user.email,
       fullName: row.user.fullName,
       role: row.membership.role,
-      grants: ws.member(wsId, userId)?.grants ?? [], // ADR-119
       joinedAt: row.joinedAt,
     };
   };
@@ -77,7 +71,33 @@ export function createMemberHandlers(
       return ok(z.array(MemberDto), page.data, { page: page.page });
     }),
 
-    // 403 quyền chung → 400 body → 403 cấp role → 404 user (không lộ email tồn tại trước khi kiểm quyền) → 409.
+    // `member:add` 403 → 400 q (2..100) → nhân viên đang làm / chờ kích hoạt, chưa ở ws, khớp tên/email; ≤ 20; chỉ id, tên,
+    // email (ADR-134). Người có lịch nghỉ việc không là ứng viên.
+    http.get(`${baseUrl}/workspaces/:wsId/member-candidates`, ({ request, params }) => {
+      const ctx = requireMember(request, db, params);
+      if (ctx.response) return ctx.response;
+      const denied = forbiddenUnless(ctx.ok, 'member:add');
+      if (denied) return denied;
+      const query = parseQuery(request, MemberCandidatesQuery);
+      if (query.response) return query.response;
+      const q = query.data.q.toLowerCase();
+      const wsId = String(params.wsId);
+      const rows = db.company
+        .members()
+        .filter(([id, row]) => !row.offboardLastDay && !ws.member(wsId, id))
+        .flatMap(([id]) => {
+          const u = db.getUser(id);
+          return u && `${u.fullName} ${u.email}`.toLowerCase().includes(q)
+            ? [{ id, fullName: u.fullName, email: u.email }]
+            : [];
+        })
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'vi'))
+        .slice(0, 20);
+      return ok(z.array(MemberCandidateDto), rows);
+    }),
+
+    // 403 quyền chung → 400 body → 403 cấp role → 404 user → 422 NOT_ACTIVE_MEMBER (không thuộc công ty / có lịch nghỉ)
+    // → 409 đã là thành viên.
     http.post(base, async ({ request, params }) => {
       const ctx = requireMember(request, db, params);
       if (ctx.response) return ctx.response;
@@ -90,8 +110,12 @@ export function createMemberHandlers(
       if (!canGrant(ctx.ok.membership.role, body.data.role)) {
         return fail(403, 'FORBIDDEN_ACCESS', { required: 'member:add' });
       }
-      const user = db.findUserByEmail(body.data.email);
+      const user = db.getUser(body.data.userId);
       if (!user) return notFoundUser();
+      const employee = db.company.row(user.id);
+      if (!employee || employee.offboardLastDay) {
+        return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'NOT_ACTIVE_MEMBER' });
+      }
       const wsId = String(params.wsId);
       if (ws.member(wsId, user.id)) {
         // Như API thật (`CONFLICTS` của prisma/db.ts): không có `field` (G1 I2).
@@ -118,11 +142,8 @@ export function createMemberHandlers(
         });
       }
       if (target.role === 'OWNER' && ownersOf(wsId).length === 1) return lastOwner();
-      const hadGrants = target.grants.length > 0;
       ws.setMember(wsId, target.userId, body.data.role);
       const o = origin(ctx.ok, request);
-      // ADR-119 / B-M2: sang OWNER / VIEWER ⇒ grants về [] trong cùng thao tác + báo người đó.
-      if (hadGrants && target.grants.length === 0) grantsChanged(board, o, wsId, target.userId, []);
       const unassignedTaskCount =
         body.data.role === 'VIEWER'
           ? unassignAll(board, o, actorRef(ctx.ok), wsId, target.userId)
@@ -132,25 +153,6 @@ export function createMemberHandlers(
         member: toDto(wsId, target.userId),
         unassignedTaskCount,
       });
-    }),
-
-    // ADR-119: `hr:grant` (chỉ OWNER) 403 → 400 body → 404 user → 422 GRANT_NOT_ALLOWED (OWNER / VIEWER).
-    http.put(`${base}/:userId/grants`, async ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
-      if (ctx.response) return ctx.response;
-      const denied = forbiddenUnlessGranted(ctx.ok, db, 'hr:grant');
-      if (denied) return denied;
-      const body = await parseBody(request, SetMemberGrantsBody);
-      if (body.response) return body.response;
-      const wsId = String(params.wsId);
-      const target = ws.member(wsId, String(params.userId));
-      if (!target) return notFoundUser();
-      if (body.data.grants.length > 0 && (target.role === 'OWNER' || target.role === 'VIEWER')) {
-        return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'GRANT_NOT_ALLOWED' });
-      }
-      ws.setGrants(wsId, target.userId, body.data.grants);
-      grantsChanged(board, origin(ctx.ok, request), wsId, target.userId, target.grants);
-      return ok(MemberDto, toDto(wsId, target.userId));
     }),
 
     // Tự rời: `member:leave` (mọi role); người khác: `member:remove`. 403 → 404 → 403 theo role mục tiêu → 422.

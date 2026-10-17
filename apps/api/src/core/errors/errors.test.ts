@@ -2,6 +2,9 @@ import { ErrorCode } from '@taskflow/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ActivationGoneError,
+  ActivationInvalidError,
+  SessionRevokedError,
   AppError,
   BusinessRuleViolationError,
   EmailAlreadyExistsError,
@@ -74,6 +77,9 @@ const CATALOG: [AppError, number, string, unknown][] = [
   [new RateLimitedError(30), 429, 'RATE_LIMITED', { retryAfterSec: 30 }],
   [new InternalError(new Error('db exploded')), 500, 'INTERNAL_ERROR', null],
   [new ServiceUnavailableError(), 503, 'SERVICE_UNAVAILABLE', null],
+  [new SessionRevokedError(), 401, 'SESSION_REVOKED', null],
+  [new ActivationInvalidError(), 400, 'ACTIVATION_INVALID', null],
+  [new ActivationGoneError(), 410, 'ACTIVATION_GONE', null],
 ];
 
 describe('danh mục lỗi (data-and-api.md §3.2)', () => {

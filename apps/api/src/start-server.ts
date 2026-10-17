@@ -5,11 +5,8 @@ import type { Logger } from 'pino';
 
 import { appConfigFromEnv } from './app';
 import { createContainer } from './composition/container';
-import {
-  assertPersistenceAllowed,
-  createMemoryPersistence,
-  createPrismaPersistence,
-} from './composition/persistence';
+import { assertPersistenceAllowed, createMemoryPersistence } from './composition/persistence';
+import { createPrismaPersistence } from './composition/prisma-persistence';
 import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
 import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
 import type { Env } from './config/env';
@@ -24,7 +21,6 @@ import { createGracefulShutdown, type GracefulShutdown } from './core/lifecycle/
 import { createPgPool, createPrismaClient } from './core/persistence/database';
 import { RealtimeGateway } from './core/realtime/gateway';
 import { PrismaClient } from './generated/prisma/client';
-import { socketAuthenticatorFrom } from './core/realtime/ports';
 import { createValkeyAdapter } from './core/realtime/redis-adapter';
 import { PasswordPolicy } from './modules/auth/domain/password-policy';
 import { Argon2idPasswordHasher } from './modules/auth/infrastructure/security/argon2id-password-hasher';
@@ -104,7 +100,7 @@ export async function startServer(
   const gateway = new RealtimeGateway(server, {
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
-    authenticator: socketAuthenticatorFrom(container.auth.authenticator),
+    authenticator: container.socketAuth,
     accessChecker: container.workspace.accessChecker,
     handshakeLimiter: createHitLimiter(RATE_LIMIT_RULES.socketHandshake[0], {
       storeFor: rateLimitStore,
@@ -135,8 +131,15 @@ export async function startServer(
         },
       ),
   });
-  const jobs = maintenanceJobs({ persistence, env, clock, businessClock, logger });
-  // Tắt ở local/test (mặc định) ⇒ `jobs` rỗng ⇒ không có scheduler — xem `maintenanceJobs`.
+  const jobs = maintenanceJobs({
+    persistence,
+    env,
+    clock,
+    businessClock,
+    logger,
+    offboarding: container.company,
+  });
+  // Job dọn dẹp tắt ở local/test (mặc định); job hoàn tất nghỉ việc luôn có — xem `maintenanceJobs`.
   const maintenance =
     jobs.length > 0 ? new MaintenanceScheduler(jobs.map(measured), { logger }) : undefined;
 

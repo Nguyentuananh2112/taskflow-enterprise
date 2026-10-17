@@ -4,39 +4,23 @@ import type { IClock, IIdGenerator } from '../core/domain';
 import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import type { AuthModule } from '../modules/auth/auth.module';
-import type { AttendanceModule } from '../modules/attendance/attendance.module';
-import type { ApprovedLeavePort } from '../modules/attendance/application/ports/approved-leave.port';
+import type { IWorkCalendarPort } from '../modules/leave/application/ports/leave.ports';
 import { createLeaveModule } from '../modules/leave/leave.module';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
-import type { WorkspaceModule } from '../modules/workspace/workspace.module';
-import { leaveAudit, leaveMembership } from './leave-adapters';
+import {
+  leaveAudit,
+  leaveCompanyFrom,
+  type CompanyPortsForLeave,
+  type HrAuditWriterForLeave,
+} from './leave-adapters';
 import { leaveNotifierFrom } from './notification-adapters';
 import type { Persistence } from './persistence';
 
 export type LeaveModule = ReturnType<typeof createLeaveModule>;
 
 /**
- * `ApprovedLeavePort` của attendance trỏ TRỄ sang leave: attendance cần ngày nghỉ đã duyệt, leave cần lịch của
- * attendance ⇒ tạo attendance trước với đối tượng này, gắn leave sau (`bind`). Attendance chỉ gọi port khi xử lý
- * request, không gọi lúc khởi tạo (A).
- */
-export class LateApprovedLeaves implements ApprovedLeavePort {
-  #leave: LeaveModule | undefined;
-
-  bind(leave: LeaveModule): LeaveModule {
-    this.#leave = leave;
-    return leave;
-  }
-
-  approvedLeaves(q: Parameters<ApprovedLeavePort['approvedLeaves']>[0]) {
-    if (!this.#leave) throw new Error('leave module chưa được tạo');
-    return this.#leave.approvedLeaves.approvedLeaves(q);
-  }
-}
-
-/**
- * Module leave (T-039) với adapter thật: lịch ← attendance (T-038), quyền / chốt ghi HR / audit ← workspace (T-037),
- * thông báo ← notifications (T-040), tên ← reader user của task/auth.
+ * Module leave (T-039/T-064) với adapter thật: lịch ← attendance, quyền / nhân viên / nhiệm kỳ + audit ← company
+ * (T-061), thông báo ← notifications, tên ← reader user của task/auth.
  */
 export function wireLeave(
   d: {
@@ -45,8 +29,9 @@ export function wireLeave(
     ids: IIdGenerator;
   },
   m: {
-    workspace: WorkspaceModule;
-    attendance: Pick<AttendanceModule, 'workCalendar'>;
+    company: () => CompanyPortsForLeave;
+    hrAudit: () => HrAuditWriterForLeave;
+    attendance: { workCalendar: IWorkCalendarPort };
     notifications: Pick<NotificationsModule, 'publisher'>;
     auth: Pick<AuthModule, 'authenticate'>;
   },
@@ -57,8 +42,8 @@ export function wireLeave(
     users: d.persistence.task.users,
     calendar: m.attendance.workCalendar,
     notifier: leaveNotifierFrom(m.notifications.publisher),
-    membership: leaveMembership(() => m.workspace),
-    audit: leaveAudit(() => m.workspace),
+    company: leaveCompanyFrom(m.company),
+    audit: leaveAudit(m.hrAudit),
     uow: d.persistence.uow,
     clock: d.clock,
     ids: d.ids,

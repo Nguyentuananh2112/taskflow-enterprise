@@ -7,21 +7,17 @@ import type {
 import type { DbProvider } from './db';
 
 /**
- * Nhân viên hiện tại (OWNER/PM/MEMBER — khớp `HrAccess.isEmployee` của T-037) đọc thẳng `workspace_members` JOIN
- * `users` (CQRS-lite, như read model task). Keyset (fullName, id) tăng dần.
+ * Nhân viên hiện tại của công ty — `company_members.role = 'EMPLOYEE'` (đang làm, chờ kích hoạt, sắp nghỉ; D M3) —
+ * đọc thẳng `company_members` JOIN `users` (CQRS-lite, như read model task). Admin không có. Keyset (fullName, id)
+ * tăng dần.
  */
 export class PrismaLeaveEmployeeDirectory implements ILeaveEmployeeDirectory {
   constructor(private readonly db: DbProvider) {}
 
-  async listEmployees(
-    workspaceId: string,
-    after: EmployeeKey | null,
-    limit: number,
-  ): Promise<UserRefDto[]> {
-    const rows = await this.db().workspaceMember.findMany({
+  async listEmployees(after: EmployeeKey | null, limit: number): Promise<UserRefDto[]> {
+    const rows = await this.db().companyMember.findMany({
       where: {
-        workspaceId,
-        role: { in: ['OWNER', 'PM', 'MEMBER'] },
+        role: 'EMPLOYEE',
         ...(after
           ? {
               user: {

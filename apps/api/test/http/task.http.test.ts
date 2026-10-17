@@ -36,7 +36,7 @@ async function join(u: TestUser, role: string) {
   await request(t.app)
     .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
     .set(alice.auth)
-    .send({ email: u.email, role });
+    .send({ userId: u.id, role });
 }
 
 async function createTask(u: TestUser, body: object = { title: 'Viết test' }) {

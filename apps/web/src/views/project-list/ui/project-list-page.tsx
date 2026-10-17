@@ -12,7 +12,6 @@ import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { PageMain } from '@/shared/ui/page';
-import { AttendanceCard, CheckInPrompt } from '@/widgets/attendance-card';
 
 import { ProjectListHeader } from './project-list-header';
 
@@ -28,7 +27,7 @@ export function ProjectListPage() {
     useSearchParams().get('archived') === 'true' ? 'true' : 'false';
   const valid = Uuid.safeParse(wsId).success;
   const projects = useProjects(wsId, archived, valid);
-  const { can, role } = usePermission(wsId);
+  const { can } = usePermission(wsId);
   const list = projects.data?.pages.flatMap((page) => page.data) ?? [];
 
   if (!valid || isApiError(projects.error, 'RESOURCE_NOT_FOUND')) {
@@ -40,14 +39,6 @@ export function ProjectListPage() {
   }
   return (
     <PageMain className="gap-6">
-      {/* Màn hạ cánh sau khi chọn workspace ⇒ thẻ Chấm công ở ĐẦU trang (attendance-leave.md §6). */}
-      <AttendanceCard
-        wsId={wsId}
-        enabled={valid && can('attendance:self')}
-        pending={valid && role === null}
-      />
-      {/* T-045: nhắc chấm công giữa màn hình — tối đa 1 lần / ngày, chỉ khi server cho thấy phải chấm mà chưa. */}
-      <CheckInPrompt wsId={wsId} enabled={valid && can('attendance:self')} />
       <ProjectListHeader wsId={wsId} canCreate={can('project:create')} />
       <nav aria-label="Lọc dự án" className="flex gap-2">
         {TABS.map((tab) => (

@@ -63,9 +63,10 @@ describe('member', () => {
     expect(ListMembersQuery.safeParse({ q: 'x'.repeat(101) }).success).toBe(false);
     expect(ListMembersQuery.safeParse({ limit: '101' }).success).toBe(false);
   });
-  it('AddMemberBody chuẩn hóa email, role hợp lệ', () => {
-    expect(AddMemberBody.parse({ email: ' Max@X.VN ', role: 'MEMBER' }).email).toBe('max@x.vn');
-    expect(AddMemberBody.safeParse({ email: 'max@x.vn', role: 'ADMIN' }).success).toBe(false);
+  it('AddMemberBody (Mốc 3.5): chọn theo userId; email tự do / role lạ ⇒ lỗi', () => {
+    expect(AddMemberBody.safeParse({ userId: ID, role: 'MEMBER' }).success).toBe(true);
+    expect(AddMemberBody.safeParse({ email: 'max@x.vn', role: 'MEMBER' }).success).toBe(false);
+    expect(AddMemberBody.safeParse({ userId: ID, role: 'ADMIN' }).success).toBe(false);
   });
   it('ChangeMemberRoleBody strict', () => {
     expect(ChangeMemberRoleBody.safeParse({ role: 'VIEWER' }).success).toBe(true);

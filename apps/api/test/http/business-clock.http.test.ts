@@ -15,7 +15,7 @@ describe('giờ nghiệp vụ neo (TEST_CLOCK_ANCHOR)', () => {
   it('me/today + check-in theo MỐC (thứ Ba trong ca ⇒ PRESENT, đang làm), dù giờ thật là Chủ nhật', async () => {
     const t = createTestApp({}, { businessAnchor: ANCHOR });
     const mia = await t.register('Mia');
-    const att = (path: string) => `/api/v1/workspaces/${mia.workspaceId}/attendance${path}`;
+    const att = (path: string) => `/api/v1/attendance${path}`;
 
     const today = await request(t.app).get(att('/me/today')).set(mia.auth);
     expect(today.status).toBe(200);
@@ -48,9 +48,7 @@ describe('giờ nghiệp vụ neo (TEST_CLOCK_ANCHOR)', () => {
     const t = createTestApp({}, { businessAnchor: ANCHOR });
     const mia = await t.register('Mia');
     t.clock.advance(90_000);
-    const res = await request(t.app)
-      .get(`/api/v1/workspaces/${mia.workspaceId}/attendance/me/today`)
-      .set(mia.auth);
+    const res = await request(t.app).get('/api/v1/attendance/me/today').set(mia.auth);
     expect(envelopeOf<{ serverNow: string; status: string }>(res).data).toMatchObject({
       serverNow: '2026-11-03T03:01:30.000Z',
       status: 'PENDING',
@@ -60,9 +58,7 @@ describe('giờ nghiệp vụ neo (TEST_CLOCK_ANCHOR)', () => {
   it('mốc TRƯỚC giờ thật (thứ Ba 27/10): workspace cũng theo giờ nghiệp vụ ⇒ joinedAt = mốc ⇒ hôm nay KHÔNG NOT_EMPLOYED', async () => {
     const t = createTestApp({}, { businessAnchor: '2026-10-27T10:00:00+07:00' });
     const mia = await t.register('Mia');
-    const res = await request(t.app)
-      .get(`/api/v1/workspaces/${mia.workspaceId}/attendance/me/today`)
-      .set(mia.auth);
+    const res = await request(t.app).get('/api/v1/attendance/me/today').set(mia.auth);
     expect(envelopeOf(res).data).toMatchObject({ date: '2026-10-27', status: 'PENDING' });
   });
 
@@ -81,9 +77,7 @@ describe('giờ nghiệp vụ neo (TEST_CLOCK_ANCHOR)', () => {
   it('không đặt mốc ⇒ giờ nghiệp vụ = giờ thật (Chủ nhật ⇒ OFF)', async () => {
     const t = createTestApp();
     const mia = await t.register('Mia');
-    const res = await request(t.app)
-      .get(`/api/v1/workspaces/${mia.workspaceId}/attendance/me/today`)
-      .set(mia.auth);
+    const res = await request(t.app).get('/api/v1/attendance/me/today').set(mia.auth);
     expect(envelopeOf(res).data).toMatchObject({
       serverNow: NOW,
       date: '2026-11-01',

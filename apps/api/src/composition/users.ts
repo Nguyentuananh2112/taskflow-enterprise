@@ -60,6 +60,10 @@ export class MirroringUserRepository implements IUserRepository {
     return this.inner.findById(id);
   }
 
+  findManyByIds(ids: readonly string[]) {
+    return this.inner.findManyByIds(ids);
+  }
+
   findByEmail(email: Email) {
     return this.inner.findByEmail(email);
   }
@@ -77,6 +81,10 @@ export class MirroringUserRepository implements IUserRepository {
 
   rehashPassword(input: Parameters<IUserRepository['rehashPassword']>[0]) {
     return this.inner.rehashPassword(input);
+  }
+
+  setInitialPassword(input: Parameters<IUserRepository['setInitialPassword']>[0]) {
+    return this.inner.setInitialPassword(input);
   }
 
   changePassword(input: Parameters<IUserRepository['changePassword']>[0]) {

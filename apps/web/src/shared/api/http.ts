@@ -220,8 +220,12 @@ export function createHttpClient(deps: HttpDeps) {
           if (ok) return request(method, path, opts, true, read);
         }
         deps.auth.onSessionEnded('expired');
-      } else if (error.code === 'UNAUTHORIZED' && sentToken !== null) {
-        // tv lệch / sid bị thu hồi (security.md §2.5): token không còn giá trị, không refresh.
+      } else if (
+        (error.code === 'UNAUTHORIZED' || error.code === 'SESSION_REVOKED') &&
+        sentToken !== null
+      ) {
+        // tv lệch / sid bị thu hồi (security.md §2.5), hoặc không còn thuộc công ty / quá giờ nghỉ việc (ADR-135
+        // SESSION_REVOKED): token không còn giá trị, KHÔNG refresh — về đăng nhập.
         deps.auth.onSessionEnded('revoked');
       }
       throw error;

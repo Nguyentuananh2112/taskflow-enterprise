@@ -1,5 +1,8 @@
-// T-037: ràng buộc DB của migration 3 (attendance-leave.md §3) — chốt chặn cuối khi app quên.
-// Các CHECK nghiệp vụ đơn nghỉ / số dư do test của T-038 / T-039 phủ theo use case.
+// T-037 / T-066: ràng buộc DB của chấm công / nghỉ phép / audit HR (migration 3, 4; Mốc 3.5 migration 5 bỏ
+// `workspace_id` — chấm công thuộc công ty) — chốt chặn cuối khi app quên. Ràng buộc của bảng công ty
+// (company_members, departures, token kích hoạt) ở company-constraints.int.ts; `workspace_members.grants` và
+// `workspace_member_departures` đã bỏ ở migration 5 (grant ⇒ company_members, departure ⇒ company_member_departures).
+// Các CHECK nghiệp vụ đơn nghỉ / số dư do test của T-038 / T-039 / T-063 / T-064 phủ theo use case.
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -16,16 +19,10 @@ beforeEach(async () => {
 });
 afterAll(() => prisma.$disconnect());
 
-const member = (role: 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER', grants: 'HR_MANAGE'[]) =>
-  prisma.workspaceMember.create({
-    data: { workspaceId: ctx.w1.id, userId: ctx.user.id, role, grants },
-  });
-
 const event = (over: Record<string, unknown> = {}) =>
   prisma.attendanceEvent.create({
     data: {
       id: randomUUID(),
-      workspaceId: ctx.w1.id,
       userId: ctx.user.id,
       kind: 'IN',
       source: 'WEB',
@@ -36,34 +33,7 @@ const event = (over: Record<string, unknown> = {}) =>
     },
   });
 
-describe('workspace_members.grants (ADR-119, B-M2)', () => {
-  it.each(['OWNER', 'VIEWER'] as const)('%s có grant ⇒ CHECK chặn', async (role) => {
-    await expect(member(role, ['HR_MANAGE'])).rejects.toThrow(/workspace_members_grants_role_chk/);
-  });
-
-  it('MEMBER / PM có grant hợp lệ; mặc định grants = {}', async () => {
-    await expect(member('MEMBER', ['HR_MANAGE'])).resolves.toMatchObject({ grants: ['HR_MANAGE'] });
-    await prisma.workspaceMember.deleteMany();
-    await expect(member('PM', ['HR_MANAGE'])).resolves.toBeDefined();
-    await prisma.workspaceMember.deleteMany();
-    const plain = await prisma.workspaceMember.create({
-      data: { workspaceId: ctx.w1.id, userId: ctx.user.id, role: 'VIEWER' },
-    });
-    expect(plain.grants).toEqual([]);
-  });
-
-  it('nâng MEMBER có grant lên OWNER mà quên xóa grants ⇒ CHECK chặn UPDATE', async () => {
-    await member('MEMBER', ['HR_MANAGE']);
-    await expect(
-      prisma.workspaceMember.updateMany({
-        where: { userId: ctx.user.id },
-        data: { role: 'OWNER' },
-      }),
-    ).rejects.toThrow(/workspace_members_grants_role_chk/);
-  });
-});
-
-describe('attendance_events (ADR-121)', () => {
+describe('attendance_events (ADR-121, theo người — Mốc 3.5)', () => {
   it('một IN WEB còn hiệu lực / người / ngày; lượt đã hủy không giữ chỗ', async () => {
     const first = await event();
     await expect(event()).rejects.toThrow(/attendance_events_web_in_once_key|Unique constraint/);
@@ -75,7 +45,7 @@ describe('attendance_events (ADR-121)', () => {
     await expect(event({ kind: 'OUT' })).resolves.toBeDefined();
   });
 
-  it('idempotency_key duy nhất theo (ws, user, source)', async () => {
+  it('idempotency_key duy nhất theo (user, source)', async () => {
     await event({ kind: 'OUT', idempotencyKey: 'k-1' });
     await expect(event({ kind: 'OUT', idempotencyKey: 'k-1' })).rejects.toThrow(
       /attendance_events_idempotency_key|Unique constraint/,
@@ -96,12 +66,11 @@ describe('attendance_events (ADR-121)', () => {
   });
 });
 
-describe('work_schedules (ADR-120)', () => {
+describe('work_schedules (ADR-120, một lịch công ty)', () => {
   const schedule = (over: Record<string, unknown> = {}) =>
     prisma.workSchedule.create({
       data: {
         id: randomUUID(),
-        workspaceId: ctx.w1.id,
         effectiveFrom: new Date('2026-10-01'),
         workdays: 31,
         startMin: 480,
@@ -115,9 +84,29 @@ describe('work_schedules (ADR-120)', () => {
 
   it('ca hợp lệ; workdays / thứ tự giờ / grace sai ⇒ CHECK', async () => {
     await expect(schedule()).resolves.toBeDefined();
-    await expect(schedule({ workdays: 0 })).rejects.toThrow(/work_schedules_workdays_chk/);
-    await expect(schedule({ breakStartMin: 1100 })).rejects.toThrow(/work_schedules_times_chk/);
-    await expect(schedule({ graceMin: 241 })).rejects.toThrow(/work_schedules_grace_chk/);
+    await expect(schedule({ effectiveFrom: new Date('2026-10-02'), workdays: 0 })).rejects.toThrow(
+      /work_schedules_workdays_chk/,
+    );
+    await expect(
+      schedule({ effectiveFrom: new Date('2026-10-03'), breakStartMin: 1100 }),
+    ).rejects.toThrow(/work_schedules_times_chk/);
+    await expect(
+      schedule({ effectiveFrom: new Date('2026-10-04'), graceMin: 241 }),
+    ).rejects.toThrow(/work_schedules_grace_chk/);
+  });
+
+  it('một phiên bản / ngày hiệu lực cho cả công ty', async () => {
+    await schedule();
+    await expect(schedule()).rejects.toThrow(/work_schedules_effective_from_key|Unique constraint/);
+  });
+});
+
+describe('holidays (một bảng công ty)', () => {
+  it('khóa là ngày: cùng ngày hai lần ⇒ trùng khóa', async () => {
+    await prisma.holiday.create({ data: { date: new Date('2026-12-25'), name: 'Lễ' } });
+    await expect(
+      prisma.holiday.create({ data: { date: new Date('2026-12-25'), name: 'Lễ 2' } }),
+    ).rejects.toThrow(/holidays_pkey|Unique constraint/);
   });
 });
 
@@ -127,7 +116,6 @@ describe('hr_audit_logs (B-L1, quyết định d)', () => {
       prisma.hrAuditLog.create({
         data: {
           id: randomUUID(),
-          workspaceId: ctx.w1.id,
           actorId: ctx.user.id,
           action: 'LEAVE_DECIDE',
           targetUserId: randomUUID(),
@@ -137,22 +125,30 @@ describe('hr_audit_logs (B-L1, quyết định d)', () => {
     ).resolves.toBeDefined();
   });
 
+  it('actor_id NULL hợp lệ (admin:bootstrap — CLI, không có người)', async () => {
+    await expect(
+      prisma.hrAuditLog.create({
+        data: { id: randomUUID(), actorId: null, action: 'COMPANY_ROLE_SET' },
+      }),
+    ).resolves.toMatchObject({ actorId: null });
+  });
+
   it('actor_id FK Restrict: không xóa được user còn audit HR', async () => {
     await prisma.hrAuditLog.create({
-      data: { id: randomUUID(), workspaceId: ctx.w1.id, actorId: ctx.user.id, action: 'GRANT' },
+      data: { id: randomUUID(), actorId: ctx.user.id, action: 'GRANT_SET' },
     });
     await expect(prisma.user.delete({ where: { id: ctx.user.id } })).rejects.toThrow();
   });
 });
 
-describe('migration 4 (T-037b)', () => {
+describe('leave_requests (migration 4, theo người — Mốc 3.5)', () => {
   const leave = (reason: string | null) =>
     prisma.$executeRaw`
-      INSERT INTO leave_requests (id, workspace_id, user_id, type, start_date, end_date, reason, updated_at)
-      VALUES (${randomUUID()}::uuid, ${ctx.w1.id}::uuid, ${ctx.user.id}::uuid, 'ANNUAL',
+      INSERT INTO leave_requests (id, user_id, type, start_date, end_date, reason, updated_at)
+      VALUES (${randomUUID()}::uuid, ${ctx.user.id}::uuid, 'ANNUAL',
               DATE '2026-10-20', DATE '2026-10-20', ${reason}, now())`;
 
-  it('leave_requests.reason: NULL hợp lệ; rỗng / chỉ khoảng trắng ⇒ CHECK', async () => {
+  it('reason: NULL hợp lệ; rỗng / chỉ khoảng trắng ⇒ CHECK', async () => {
     await expect(leave(null)).resolves.toBe(1);
     await expect(leave('ốm')).resolves.toBe(1);
     for (const blank of ['', '   ']) {
@@ -160,23 +156,20 @@ describe('migration 4 (T-037b)', () => {
     }
   });
 
-  it('workspace_member_departures: left_at < joined_at ⇒ CHECK; user FK Restrict', async () => {
-    const row = (joinedAt: Date, leftAt: Date) =>
-      prisma.workspaceMemberDeparture.create({
-        data: {
-          id: randomUUID(),
-          workspaceId: ctx.w1.id,
-          userId: ctx.user.id,
-          role: 'MEMBER',
-          joinedAt,
-          leftAt,
-          reason: 'LEFT',
-        },
-      });
-    await expect(row(new Date('2026-10-02'), new Date('2026-10-01'))).rejects.toThrow(
-      /workspace_member_departures_range_chk/,
-    );
-    await expect(row(new Date('2026-10-01'), new Date('2026-10-01'))).resolves.toBeDefined();
+  it('user FK Restrict: không xóa được user còn đơn nghỉ', async () => {
+    await leave(null);
     await expect(prisma.user.delete({ where: { id: ctx.user.id } })).rejects.toThrow();
+  });
+});
+
+describe('leave_balances (khóa theo người + năm — Mốc 3.5)', () => {
+  it('một dòng / người / năm', async () => {
+    await prisma.leaveBalance.create({ data: { userId: ctx.user.id, year: 2026 } });
+    await expect(
+      prisma.leaveBalance.create({ data: { userId: ctx.user.id, year: 2026 } }),
+    ).rejects.toThrow(/leave_balances_pkey|Unique constraint/);
+    await expect(
+      prisma.leaveBalance.create({ data: { userId: ctx.user.id, year: 2027 } }),
+    ).resolves.toBeDefined();
   });
 });

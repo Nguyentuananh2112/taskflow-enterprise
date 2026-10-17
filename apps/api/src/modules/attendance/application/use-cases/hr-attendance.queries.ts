@@ -8,9 +8,9 @@ import type {
 import * as z from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../../../core/http/cursor';
-import { toLocal, type LocalDate } from '../../domain/local-time';
-import { effectiveSchedule, isWorkday } from '../../domain/work-schedule';
-import { localToday, summarizeUsers, tenureWindow, type AttendanceDeps } from '../attendance-days';
+import type { LocalDate } from '../../domain/local-time';
+import { isWorkday } from '../../domain/work-schedule';
+import { localToday, summarizeUsers, type AttendanceDeps } from '../attendance-days';
 import { UNKNOWN_USER } from '../attendance-event-dto';
 import { totalsOf } from '../attendance-totals';
 import type { IUserRefReader } from '../ports/collaborators.port';
@@ -41,21 +41,17 @@ export class HrAttendanceQueries {
   constructor(private readonly d: HrAttendanceDeps) {}
 
   /** `GET attendance/today` — không phân trang (vài trăm người). */
-  async today(workspaceId: string): Promise<AttendanceCompanyTodayDto> {
+  async today(): Promise<AttendanceCompanyTodayDto> {
     const { d } = this;
     const now = d.clock.now();
-    const { date, schedule, timezone } = localToday(
-      await d.calendar.scheduleVersions(workspaceId),
-      now,
-    );
-    const roster = await this.roster(workspaceId, date, date);
+    const { date, schedule, timezone } = localToday(await d.calendar.scheduleVersions(), now);
+    const roster = await this.roster(date, date);
     const days = await summarizeUsers(d, {
-      workspaceId,
       userIds: roster.map((r) => r.user.id),
       from: date,
       to: date,
     });
-    const [holiday] = await d.calendar.holidays({ workspaceId, from: date, to: date });
+    const [holiday] = await d.calendar.holidays({ from: date, to: date });
     return {
       serverNow: now.toISOString(),
       date,
@@ -76,12 +72,11 @@ export class HrAttendanceQueries {
 
   /** `GET attendance?month=&cursor&limit` — mỗi dòng một người, đủ ngày của tháng + tổng. */
   async month(
-    workspaceId: string,
     q: AttendanceCompanyMonthQuery,
   ): Promise<{ data: AttendanceMemberMonthDto[]; page: PageMeta }> {
     const from = `${q.month}-01`;
     const to = lastDayOf(q.month);
-    const roster = await this.roster(workspaceId, from, to);
+    const roster = await this.roster(from, to);
     const after = q.cursor === undefined ? null : decodeCursor(q.cursor, CURSOR_KIND, AfterKey);
     const rest = after
       ? roster.filter(
@@ -91,8 +86,8 @@ export class HrAttendanceQueries {
     const pageRows = rest.slice(0, q.limit);
     const hasMore = rest.length > q.limit;
     const [days, versions] = await Promise.all([
-      summarizeUsers(this.d, { workspaceId, userIds: pageRows.map((r) => r.user.id), from, to }),
-      this.d.calendar.scheduleVersions(workspaceId),
+      summarizeUsers(this.d, { userIds: pageRows.map((r) => r.user.id), from, to }),
+      this.d.calendar.scheduleVersions(),
     ]);
     // T-046: tổng chỉ đếm tới HÔM NAY theo lịch (cùng hàm với me?month).
     const today = localToday(versions, this.d.clock.now()).date;
@@ -113,22 +108,18 @@ export class HrAttendanceQueries {
     };
   }
 
-  /** Người của khoảng `[from, to]`, đã sắp (dùng chung với xuất CSV). */
-  async roster(workspaceId: string, from: LocalDate, to: LocalDate): Promise<RosterEntry[]> {
+  /**
+   * Người của khoảng `[from, to]`, đã sắp (dùng chung với xuất CSV): có nhiệm kỳ EMPLOYEE giao khoảng (port trả đúng
+   * theo ngày) + người có lượt chấm trong khoảng (đã nghỉ — R30). Admin không có trừ ngày thuộc nhiệm kỳ EMPLOYEE cũ.
+   * `left` = không còn nhiệm kỳ đang mở (đã nghỉ / đã lên Admin).
+   */
+  async roster(from: LocalDate, to: LocalDate): Promise<RosterEntry[]> {
     const { d } = this;
-    const [versions, tenures, withEvents] = await Promise.all([
-      d.calendar.scheduleVersions(workspaceId),
-      d.tenures.tenuresOf({ workspaceId, ...tenureWindow(from, to) }),
-      d.events.userIdsWithEvents({ workspaceId, from, to }),
+    const [tenures, withEvents] = await Promise.all([
+      d.tenures.tenuresOf({ from, to }),
+      d.events.userIdsWithEvents({ from, to }),
     ]);
-    // Cửa sổ instant nới ±1 ngày ⇒ lọc lại theo ngày địa phương (múi giờ lịch ở hai đầu khoảng).
-    const inRange = tenures.filter(
-      (t) =>
-        toLocal(t.from, effectiveSchedule(versions, to).timezone).date <= to &&
-        (t.until === null ||
-          toLocal(t.until, effectiveSchedule(versions, from).timezone).date >= from),
-    );
-    const ids = [...new Set([...inRange.map((t) => t.userId), ...withEvents])];
+    const ids = [...new Set([...tenures.map((t) => t.userId), ...withEvents])];
     const current = new Set(tenures.filter((t) => t.until === null).map((t) => t.userId));
     const refs = await d.users.findRefs(ids);
     return ids

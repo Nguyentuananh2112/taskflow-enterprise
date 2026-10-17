@@ -1,23 +1,28 @@
-// T-040 tầng I (ADR-123, attendance-leave.md §9 B-M3 / B-H3b / B-H2): store + audience + context Prisma
-// trên Postgres thật — ghi trong transaction của bên gọi (rollback ⇒ 0 dòng), WHERE luôn có recipient_id,
-// loại dành cho HR lọc theo quyền hiện tại đọc từ workspace_members, ngữ cảnh đơn không bao giờ chứa lý do.
-import { hasPermission } from '@taskflow/contracts';
+// T-040 tầng I (ADR-123; Mốc 3.5 ADR-136): store + audience + context Prisma trên Postgres thật — ghi trong
+// transaction của bên gọi (rollback ⇒ 0 dòng), WHERE luôn có recipient_id, loại dành cho HR lọc theo quyền
+// công ty HIỆN TẠI đọc từ company_members (audience của module company), ngữ cảnh không bao giờ chứa lý do.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { UuidV7Generator } from '../../../src/core/infrastructure/system';
+import { notificationContextFrom } from '../../../src/composition/notification-adapters';
+import { PrismaUserRefReader } from '../../../src/modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
+import { createCompanyModule } from '../../../src/modules/company/company.module';
+import {
+  PrismaCompany,
+  PrismaCompanyMembers,
+  PrismaCompanyTenureReader,
+} from '../../../src/modules/company/infrastructure/prisma/prisma-company';
+import { PrismaCompanyOffboarding } from '../../../src/modules/company/infrastructure/prisma/prisma-company-offboarding';
+import { PrismaHrAuditLog } from '../../../src/modules/company/infrastructure/prisma/prisma-hr-audit-log';
+import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
 import {
   NotifyOutsideTransactionError,
   NotificationPublisher,
 } from '../../../src/modules/notifications/application/notification-publisher';
 import { NotificationQueries } from '../../../src/modules/notifications/application/notification.queries';
-import { notificationContextFrom } from '../../../src/composition/notification-adapters';
-import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
-import { PrismaUserRefReader } from '../../../src/modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
-import { WorkspaceNotificationAudience } from '../../../src/modules/workspace/application/adapters/notification-audience';
-import { PrismaWorkspaceQueries } from '../../../src/modules/workspace/infrastructure/persistence/prisma/prisma-queries';
 import { PrismaNotificationStore } from '../../../src/modules/notifications/infrastructure/prisma/prisma-notification.store';
 import { SpyRealtime } from '../../../src/modules/notifications/testing/notification-harness';
-import { FakeClock } from '../../support';
+import { FakeClock, SpyLogger } from '../../support';
 import {
   RecordingUnitOfWork,
   disconnectTestPrisma,
@@ -25,17 +30,15 @@ import {
   testPrisma,
 } from '../support/prisma-test-kit';
 
-const REASON = 'Sốt cao — lý do sức khỏe nhạy cảm';
-
 let uow: RecordingUnitOfWork;
 let clock: FakeClock;
 let realtime: SpyRealtime;
 let publisher: NotificationPublisher;
 let queries: NotificationQueries;
-let ids: Record<
-  'olivia' | 'hana' | 'mia' | 'max' | 'otto' | 'w1' | 'w2' | 'leave' | 'leaveW2',
-  string
->;
+let ids: Record<'olivia' | 'hana' | 'mia' | 'max' | 'otto' | 'leave', string>;
+
+const START = new Date('2026-10-01T00:00:00.000Z');
+const REASON = 'Sốt cao — lý do sức khỏe nhạy cảm';
 
 async function seed() {
   const prisma = testPrisma();
@@ -46,34 +49,29 @@ async function seed() {
   const [olivia, hana, mia, max, otto] = await Promise.all(
     ['Olivia', 'Hana', 'Mia', 'Max', 'Otto'].map(user),
   );
-  const w1 = await prisma.workspace.create({ data: { name: 'Công ty Một', slug: 'w-one' } });
-  const w2 = await prisma.workspace.create({ data: { name: 'Công ty Hai', slug: 'w-two' } });
-  await prisma.workspaceMember.createMany({
+  const since = new Date(0);
+  const employee = (userId: string, grants: 'HR_MANAGE'[] = []) => ({
+    userId,
+    role: 'EMPLOYEE' as const,
+    grants,
+    startDate: START,
+    createdAt: since,
+  });
+  await prisma.companyMember.createMany({
     data: [
-      { workspaceId: w1.id, userId: olivia!.id, role: 'OWNER' },
-      { workspaceId: w1.id, userId: hana!.id, role: 'MEMBER', grants: ['HR_MANAGE'] },
-      { workspaceId: w1.id, userId: mia!.id, role: 'MEMBER' },
-      { workspaceId: w1.id, userId: max!.id, role: 'MEMBER' },
-      { workspaceId: w2.id, userId: otto!.id, role: 'OWNER' },
+      { userId: olivia!.id, role: 'ADMIN', createdAt: since },
+      employee(hana!.id, ['HR_MANAGE']),
+      employee(mia!.id),
+      employee(max!.id),
+      employee(otto!.id),
     ],
   });
   const leave = await prisma.leaveRequest.create({
     data: {
-      workspaceId: w1.id,
       userId: mia!.id,
       type: 'SICK',
       startDate: new Date('2026-11-18'),
       endDate: new Date('2026-11-19'),
-      reason: REASON,
-    },
-  });
-  const leaveW2 = await prisma.leaveRequest.create({
-    data: {
-      workspaceId: w2.id,
-      userId: otto!.id,
-      type: 'ANNUAL',
-      startDate: new Date('2026-12-01'),
-      endDate: new Date('2026-12-01'),
       reason: REASON,
     },
   });
@@ -83,10 +81,7 @@ async function seed() {
     mia: mia!.id,
     max: max!.id,
     otto: otto!.id,
-    w1: w1.id,
-    w2: w2.id,
     leave: leave.id,
-    leaveW2: leaveW2.id,
   };
 }
 
@@ -98,13 +93,38 @@ beforeEach(async () => {
   realtime = new SpyRealtime();
   const db = () => uow.db();
   const store = new PrismaNotificationStore(db);
-  const audience = new WorkspaceNotificationAudience({ queries: new PrismaWorkspaceQueries(db) });
-  const canManageHr = (role: Parameters<typeof hasPermission>[0], grants: readonly 'HR_MANAGE'[]) =>
-    hasPermission(role, grants, 'hr:manage');
+  const company = createCompanyModule({
+    repos: {
+      company: new PrismaCompany(db),
+      members: new PrismaCompanyMembers(db),
+      tenures: new PrismaCompanyTenureReader(db),
+      hrAudit: new PrismaHrAuditLog(db),
+      offboarding: new PrismaCompanyOffboarding(db),
+    },
+    ids: new UuidV7Generator(),
+    clock,
+    uow,
+    logger: new SpyLogger(),
+    responder: {} as never,
+    limit: () => [],
+    accounts: { current: null },
+    collaborators: () => {
+      throw new Error('không dùng ở ca này');
+    },
+    // Không dùng ở ca này (chỉ audience): route admin / dọn đơn không chạy.
+    offboardLeave: { offboardCleanup: () => Promise.resolve({ cancelled: 0, revoked: 0 }) },
+    accessEvents: {
+      accessChanged: () => Promise.resolve(),
+      pushAccessChanged: () => Promise.resolve(),
+    },
+    adminWorkspaces: () => {
+      throw new Error('không dùng ở ca này');
+    },
+  });
+  const audience = company.notificationAudience;
   publisher = new NotificationPublisher({
     store,
     audience,
-    canManageHr,
     realtime,
     uow,
     ids: new UuidV7Generator(),
@@ -115,9 +135,8 @@ beforeEach(async () => {
     audience,
     context: notificationContextFrom({
       users: new PrismaUserRefReader(db),
-      leaves: new PrismaLeaveReadModel(db), // = `leave.summaries` nối ở persistence.ts (production)
+      leaves: new PrismaLeaveReadModel(db), // = `leave.readModel` nối ở persistence.ts (production)
     }),
-    canManageHr,
     clock,
   });
 });
@@ -126,7 +145,6 @@ afterAll(disconnectTestPrisma);
 const miaSubmits = (refId = ids.leave) =>
   uow.run(() =>
     publisher.notify({
-      workspaceId: ids.w1,
       type: 'LEAVE_SUBMITTED',
       refId,
       actorId: ids.mia,
@@ -137,7 +155,7 @@ const rows = () =>
   testPrisma().notification.findMany({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
 
 describe('ghi (ADR-123)', () => {
-  it('fan-out HR trong transaction: dòng cho OWNER + HR grant, không cho người gửi / MEMBER / ws khác; event sau commit', async () => {
+  it('fan-out HR trong transaction: dòng cho Admin + nhân viên có grant HR, không cho người gửi / nhân viên thường; event sau commit', async () => {
     await miaSubmits();
     const stored = await rows();
     expect(stored.map((r) => r.recipientId).sort()).toEqual([ids.olivia, ids.hana].sort());
@@ -147,11 +165,23 @@ describe('ghi (ADR-123)', () => {
     );
   });
 
+  it('fan-out bỏ người đã quá access_until (job hoàn tất chưa chạy)', async () => {
+    await testPrisma().companyMember.update({
+      where: { userId: ids.hana },
+      data: {
+        offboardLastDay: new Date('2026-11-15T00:00:00.000Z'),
+        offboardAccessUntil: new Date(clock.now().getTime() - 1),
+        offboardScheduledById: ids.olivia,
+      },
+    });
+    await miaSubmits();
+    expect((await rows()).map((r) => r.recipientId)).toEqual([ids.olivia]);
+  });
+
   it('nghiệp vụ ném sau khi ghi thông báo ⇒ rollback thật: 0 dòng, 0 event', async () => {
     await expect(
       uow.run(async () => {
         await publisher.notify({
-          workspaceId: ids.w1,
           type: 'LEAVE_SUBMITTED',
           refId: ids.leave,
           actorId: ids.mia,
@@ -167,7 +197,6 @@ describe('ghi (ADR-123)', () => {
   it('ngoài transaction ⇒ NotifyOutsideTransactionError, không ghi', async () => {
     await expect(
       publisher.notify({
-        workspaceId: ids.w1,
         type: 'LEAVE_APPROVED',
         refId: ids.leave,
         actorId: ids.hana,
@@ -177,40 +206,35 @@ describe('ghi (ADR-123)', () => {
     expect(await rows()).toEqual([]);
   });
 
-  it('xóa cứng workspace (purge) ⇒ thông báo cascade theo (FK workspace_id ON DELETE CASCADE)', async () => {
+  it('Mốc 3.5: purge workspace KHÔNG đụng thông báo (không còn workspace_id)', async () => {
     await miaSubmits();
-    await testPrisma().workspace.delete({ where: { id: ids.w1 } });
-    expect(await rows()).toEqual([]);
+    const ws = await testPrisma().workspace.create({ data: { name: 'W', slug: 'w-purge' } });
+    await testPrisma().workspace.delete({ where: { id: ws.id } });
+    expect(await rows()).toHaveLength(2);
   });
 });
 
-describe('đọc — recipient_id = me, ws còn là thành viên, loại HR theo quyền hiện tại', () => {
-  it('DTO join tên ws, actor, loại + khoảng ngày đơn; KHÔNG có lý do ở bất kỳ đâu (B-H2)', async () => {
+describe('đọc — recipient_id = me, còn thuộc công ty, loại HR theo quyền hiện tại', () => {
+  it('DTO join actor + loại / khoảng ngày đơn; KHÔNG có lý do ở bất kỳ đâu (B-H2); không còn trường workspace', async () => {
     await miaSubmits();
     const { items } = await queries.list(ids.hana, { limit: 20 });
     expect(items).toEqual([
       expect.objectContaining({
         type: 'LEAVE_SUBMITTED',
         refId: ids.leave,
-        workspaceId: ids.w1,
-        workspaceName: 'Công ty Một',
         actor: { id: ids.mia, fullName: 'Mia' },
         leave: { type: 'SICK', startDate: '2026-11-18', endDate: '2026-11-19' },
         readAt: null,
       }),
     ]);
+    expect(items[0]).not.toHaveProperty('workspaceId');
     expect(JSON.stringify(items)).not.toContain(REASON);
   });
 
-  it('refId trỏ đơn của ws khác ⇒ không join (tra theo cặp ws + id)', async () => {
-    await miaSubmits(ids.leaveW2);
-    expect((await queries.list(ids.olivia, { limit: 20 })).items[0]?.leave).toBeNull();
-  });
-
-  it('SEC-HR-19: thu grant (UPDATE workspace_members) ⇒ request kế tiếp ẩn loại HR + không đánh dấu được', async () => {
+  it('SEC-HR-19: thu grant (UPDATE company_members) ⇒ request kế tiếp ẩn loại HR + không đánh dấu được', async () => {
     await miaSubmits();
     const [n] = (await queries.list(ids.hana, { limit: 20 })).items;
-    await testPrisma().workspaceMember.updateMany({
+    await testPrisma().companyMember.updateMany({
       where: { userId: ids.hana },
       data: { grants: [] },
     });
@@ -221,29 +245,33 @@ describe('đọc — recipient_id = me, ws còn là thành viên, loại HR theo
     });
   });
 
-  it('SEC-HR-18 + ws xóa mềm: rời ws / ws deleted_at ⇒ ẩn hết', async () => {
+  it('SEC-HR-18 (Mốc 3.5): quá access_until (job chưa chạy) / đã rời công ty ⇒ ẩn hết', async () => {
     await miaSubmits();
-    await testPrisma().workspaceMember.deleteMany({ where: { userId: ids.hana } });
-    expect(await queries.unreadCount(ids.hana)).toBe(0);
-    await testPrisma().workspace.update({
-      where: { id: ids.w1 },
-      data: { deletedAt: clock.now(), purgeAt: clock.now() },
+    await testPrisma().companyMember.update({
+      where: { userId: ids.hana },
+      data: {
+        offboardLastDay: new Date('2026-11-15T00:00:00.000Z'),
+        offboardAccessUntil: new Date(clock.now().getTime() - 1),
+        offboardScheduledById: ids.olivia,
+      },
     });
+    expect(await queries.unreadCount(ids.hana)).toBe(0);
+    await testPrisma().companyMember.delete({ where: { userId: ids.olivia } });
     expect(await queries.unreadCount(ids.olivia)).toBe(0);
   });
 
-  it('T-040b: xóa rồi mời lại (joined_at mới) ⇒ thông báo nhiệm kỳ cũ ẩn ở list / unread / markRead / read-all', async () => {
+  it('T-040b: nghỉ rồi nhận lại (created_at mới) ⇒ thông báo tư cách cũ ẩn ở list / unread / markRead / read-all', async () => {
     await miaSubmits();
     const [old] = (await queries.list(ids.hana, { limit: 20 })).items;
     clock.advance(60_000);
-    await testPrisma().workspaceMember.deleteMany({ where: { userId: ids.hana } });
-    await testPrisma().workspaceMember.create({
+    await testPrisma().companyMember.delete({ where: { userId: ids.hana } });
+    await testPrisma().companyMember.create({
       data: {
-        workspaceId: ids.w1,
         userId: ids.hana,
-        role: 'MEMBER',
+        role: 'EMPLOYEE',
         grants: ['HR_MANAGE'],
-        joinedAt: clock.now(),
+        startDate: new Date('2026-11-17T00:00:00.000Z'),
+        createdAt: clock.now(),
       },
     });
     expect((await queries.list(ids.hana, { limit: 20 })).items).toEqual([]);
@@ -254,7 +282,7 @@ describe('đọc — recipient_id = me, ws còn là thành viên, loại HR theo
     await queries.markAllRead(ids.hana);
     expect((await rows()).find((r) => r.id === old?.id)?.readAt).toBeNull(); // read-all không chạm dòng cũ
 
-    await miaSubmits(); // cùng mili giây với joined_at ⇒ thuộc nhiệm kỳ mới
+    await miaSubmits(); // cùng mili giây với created_at ⇒ thuộc tư cách mới
     expect(await queries.unreadCount(ids.hana)).toBe(1);
   });
 

@@ -1,4 +1,7 @@
+import { createActivationHandlers } from './activation-handlers';
+import { createAdminHandlers } from './admin-handlers';
 import { createAttendanceHandlers } from './attendance-handlers';
+import { createEmployeeHandlers } from './employee-handlers';
 import { createAuthHandlers } from './auth-handlers';
 import { createHrAttendanceHandlers } from './hr-attendance-handlers';
 import { createHrCalendarHandlers } from './hr-calendar-handlers';
@@ -59,6 +62,8 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins),
+      ...createActivationHandlers(baseUrl, db),
+      ...createAdminHandlers(baseUrl, db),
       ...createWorkspaceHandlers(baseUrl, db, board, limit),
       ...createMemberHandlers(baseUrl, db, board, limit),
       ...createProjectHandlers(baseUrl, db, board),
@@ -69,6 +74,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createHrLeaveHandlers(baseUrl, hr, notifications),
       ...createHrAttendanceHandlers(baseUrl, hr),
       ...createHrCalendarHandlers(baseUrl, hr),
+      ...createEmployeeHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
     ],
   };

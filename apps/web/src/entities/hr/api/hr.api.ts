@@ -18,42 +18,41 @@ import * as z from 'zod';
 
 import { http } from '@/shared/api';
 
-const ws = (wsId: string) => `/workspaces/${encodeURIComponent(wsId)}`;
-const att = (wsId: string) => `${ws(wsId)}/attendance`;
+// Mốc 3.5 (ADR-136): HR cấp CÔNG TY — route gốc `/attendance`, `/leave`, không còn `wsId` (company-level.md §4).
+const att = '/attendance';
 const enc = encodeURIComponent;
 
 /** Chấm công phía HR (`hr:manage` — attendance-leave.md §5). */
 export const hrAttendanceApi = {
-  today: (wsId: string) => http.get(`${att(wsId)}/today`, { schema: AttendanceCompanyTodayDto }),
+  today: () => http.get(`${att}/today`, { schema: AttendanceCompanyTodayDto }),
   /** Một trang 50 nhân viên của bảng công tháng (cursor). */
-  month: (wsId: string, month: string, cursor?: string) =>
-    http.request('GET', att(wsId), {
+  month: (month: string, cursor?: string) =>
+    http.request('GET', att, {
       schema: z.array(AttendanceMemberMonthDto),
       query: { month, cursor, limit: 50 },
     }),
   /** CSV cả công ty: fetch (Bearer) → Blob (§5 — không dùng URL ký). */
-  exportCsv: (wsId: string, month: string) =>
-    http.download(`${att(wsId)}/export.csv`, { query: { month }, accept: 'text/csv' }),
-  events: (wsId: string, userId: string, date: string) =>
-    http.get(`${att(wsId)}/events`, { schema: AttendanceEventsDto, query: { userId, date } }),
-  adjust: (wsId: string, body: AdjustAttendanceBody) =>
-    http.post(`${att(wsId)}/events`, { schema: AttendanceEventChangeDto, body }),
-  void: (wsId: string, eventId: string, reason: string) =>
-    http.post(`${att(wsId)}/events/${enc(eventId)}/void`, {
+  exportCsv: (month: string) =>
+    http.download(`${att}/export.csv`, { query: { month }, accept: 'text/csv' }),
+  events: (userId: string, date: string) =>
+    http.get(`${att}/events`, { schema: AttendanceEventsDto, query: { userId, date } }),
+  adjust: (body: AdjustAttendanceBody) =>
+    http.post(`${att}/events`, { schema: AttendanceEventChangeDto, body }),
+  void: (eventId: string, reason: string) =>
+    http.post(`${att}/events/${enc(eventId)}/void`, {
       schema: AttendanceEventChangeDto,
       body: { reason },
     }),
-  schedules: (wsId: string) =>
-    http.get(`${att(wsId)}/schedules`, { schema: z.array(WorkScheduleDto) }),
-  createSchedule: (wsId: string, body: CreateWorkScheduleBody) =>
-    http.post(`${att(wsId)}/schedules`, { schema: WorkScheduleDto, body }),
-  holidays: (wsId: string, year: number) =>
-    http.get(`${att(wsId)}/holidays`, { schema: z.array(HolidayDto), query: { year } }),
-  putHoliday: (wsId: string, date: string, body: { name: string; reason?: string }) =>
-    http.put(`${att(wsId)}/holidays/${enc(date)}`, { schema: HolidayDto, body }),
+  schedules: () => http.get(`${att}/schedules`, { schema: z.array(WorkScheduleDto) }),
+  createSchedule: (body: CreateWorkScheduleBody) =>
+    http.post(`${att}/schedules`, { schema: WorkScheduleDto, body }),
+  holidays: (year: number) =>
+    http.get(`${att}/holidays`, { schema: z.array(HolidayDto), query: { year } }),
+  putHoliday: (date: string, body: { name: string; reason?: string }) =>
+    http.put(`${att}/holidays/${enc(date)}`, { schema: HolidayDto, body }),
   /** 204 idempotent; không body (A) — chỉ ngày đã qua (OWNER) mới gửi JSON `{ reason }`. */
-  deleteHoliday: (wsId: string, date: string, reason?: string) =>
-    http.delete(`${att(wsId)}/holidays/${enc(date)}`, {
+  deleteHoliday: (date: string, reason?: string) =>
+    http.delete(`${att}/holidays/${enc(date)}`, {
       schema: z.undefined(),
       ...(reason ? { body: { reason } } : {}),
     }),
@@ -61,28 +60,27 @@ export const hrAttendanceApi = {
 
 /** Nghỉ phép phía HR (§9 — `expectedVersion` cho mọi chuyển trạng thái). */
 export const hrLeaveApi = {
-  list: (wsId: string, status: LeaveStatus | undefined, cursor?: string) =>
-    http.request('GET', `${ws(wsId)}/leave-requests`, {
+  list: (status: LeaveStatus | undefined, cursor?: string) =>
+    http.request('GET', `/leave/requests`, {
       schema: z.array(LeaveRequestDto),
       query: { status, cursor, limit: 50 },
     }),
   decide: (
-    wsId: string,
     id: string,
     action: 'approve' | 'reject' | 'revoke',
     body: { expectedVersion: number; note?: string | null },
   ) =>
-    http.post(`${ws(wsId)}/leave-requests/${enc(id)}/${action}`, {
+    http.post(`/leave/requests/${enc(id)}/${action}`, {
       schema: LeaveRequestDto,
       body,
     }),
-  balances: (wsId: string, year: number, cursor?: string) =>
-    http.request('GET', `${ws(wsId)}/leave-balances`, {
+  balances: (year: number, cursor?: string) =>
+    http.request('GET', `/leave/balances`, {
       schema: z.array(LeaveBalanceRowDto),
       query: { year, cursor, limit: 50 },
     }),
-  adjustBalance: (wsId: string, userId: string, year: number, body: AdjustLeaveBalanceBody) =>
-    http.patch(`${ws(wsId)}/leave-balances/${enc(userId)}/${year}`, {
+  adjustBalance: (userId: string, year: number, body: AdjustLeaveBalanceBody) =>
+    http.patch(`/leave/balances/${enc(userId)}/${year}`, {
       schema: LeaveBalanceRowDto,
       body,
     }),

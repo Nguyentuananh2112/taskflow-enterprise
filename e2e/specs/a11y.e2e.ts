@@ -3,7 +3,8 @@ import type { Page } from '@playwright/test';
 
 import { apiAddMember, apiCreateTask, apiRegister, boardPath } from '../support/api';
 import { card, column, waitBoardReady } from '../support/board';
-import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fixtures';
+import { apiCreateUser } from '../support/company';
+import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 
 // E2E-12 (frontend.md §8): axe không có vi phạm serious/critical, cả sáng và tối.
 
@@ -18,8 +19,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`E2E-12 axe (${colorScheme})`, () => {
     test.use({ colorScheme });
 
-    test('login, register', async ({ page }) => {
-      for (const path of ['/login', '/register']) {
+    // Mốc 3.5: /register bỏ ⇒ trang công khai thứ hai là /activate (không token ⇒ câu hướng dẫn).
+    test('login, activate', async ({ page }) => {
+      for (const path of ['/login', '/activate']) {
         await page.goto(path);
         await page.waitForLoadState('networkidle');
         expect(await seriousViolations(page), path).toEqual([]);
@@ -47,8 +49,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect(await seriousViolations(page), 'thành viên').toEqual([]);
     });
 
-    test('/w, /account (đã đăng nhập)', async ({ page }) => {
-      await registerViaUi(page, newUser(`axe-${colorScheme}`));
+    test('/w, /account (đã đăng nhập)', async ({ page, request }) => {
+      const user = newUser(`axe-${colorScheme}`);
+      await apiCreateUser(request, user);
+      await loginViaUi(page, user);
       for (const path of ['/w', '/account']) {
         await page.goto(path);
         await page.waitForLoadState('networkidle');

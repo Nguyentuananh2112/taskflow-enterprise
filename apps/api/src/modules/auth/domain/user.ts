@@ -10,7 +10,8 @@ const CONTROL_CHARS = /\p{Cc}/u;
 export interface UserSnapshot {
   id: string;
   email: string;
-  passwordHash: string;
+  /** null = chờ kích hoạt (ADR-137): đăng nhập như không có user, chỉ `POST /auth/activate` đặt được. */
+  passwordHash: string | null;
   fullName: string;
   tokenVersion: number;
   passwordChangedAt: Date | null;
@@ -46,10 +47,11 @@ export class User extends AggregateRoot<UserEvent> {
     return normalizeFullName(raw);
   }
 
+  /** Tạo tài khoản — `passwordHash: null` khi HR thêm nhân viên / bootstrap (chờ kích hoạt). */
   static register(input: {
     id: string;
     email: Email;
-    passwordHash: string;
+    passwordHash: string | null;
     fullName: string;
     now: Date;
   }): User {
@@ -76,7 +78,7 @@ export class User extends AggregateRoot<UserEvent> {
   get email(): Email {
     return this.state.email;
   }
-  get passwordHash(): string {
+  get passwordHash(): string | null {
     return this.state.passwordHash;
   }
   get fullName(): string {

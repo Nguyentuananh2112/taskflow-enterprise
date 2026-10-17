@@ -7,7 +7,6 @@ import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
 import { NotificationPublisher } from './application/notification-publisher';
 import { NotificationQueries } from './application/notification.queries';
 import type {
-  CanManageHr,
   INotificationAudience,
   INotificationContextReader,
   INotificationRealtime,
@@ -31,7 +30,6 @@ export function createInMemoryNotificationStore(): InMemoryNotificationStore {
 
 export interface NotificationsModuleDeps {
   repos: NotificationRepositories;
-  canManageHr: CanManageHr;
   realtime: INotificationRealtime;
   uow: IUnitOfWork;
   ids: IIdGenerator;
@@ -49,18 +47,17 @@ export interface NotificationsModule {
 /** Composition của module notifications (ADR-016, ADR-123). */
 export function createNotificationsModule(d: NotificationsModuleDeps): NotificationsModule {
   const { store, audience, context } = d.repos;
-  const { canManageHr, clock } = d;
+  const { clock } = d;
   const publisher = new NotificationPublisher({
     store,
     audience,
-    canManageHr,
     realtime: d.realtime,
     uow: d.uow,
     ids: d.ids,
     clock,
   });
   const controller = new NotificationController({
-    queries: new NotificationQueries({ store, audience, context, canManageHr, clock }),
+    queries: new NotificationQueries({ store, audience, context, clock }),
     responder: d.responder,
   });
   return {

@@ -6,13 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MAX_REFRESH_COOKIES } from '../../src/modules/auth/presentation/refresh-cookie';
 import { errorOf } from '../support/http';
-import {
-  createTestApp,
-  refreshCookieOf,
-  setCookieOf,
-  WEB,
-  type TestApp,
-} from '../support/http-app';
+import { createTestApp, setCookieOf, WEB, type TestApp } from '../support/http-app';
 
 let t: TestApp;
 beforeEach(() => {
@@ -60,11 +54,7 @@ describe('cookie tossing: hai cookie refresh trùng tên', () => {
 describe('ADR-109: production chỉ đọc __Host-tf_rt (Domain= bị trình duyệt cấm với tiền tố này)', () => {
   it('nạn nhân KHÔNG có cookie + kẻ tấn công cài cookie khác tên (tf_rt / __Secure-tf_rt) ⇒ 401, không đăng nhập vào tài khoản kẻ tấn công', async () => {
     const prod = createTestApp({ cookieSecure: true });
-    const reg = await request(prod.app)
-      .post('/api/v1/auth/register')
-      .set('Content-Type', 'application/json')
-      .send({ email: 'eve@example.com', password: 'correct-horse-12', fullName: 'Eve' });
-    const attacker = refreshCookieOf(reg, '__Host-tf_rt'); // `__Host-tf_rt=<token sống>`
+    const attacker = (await prod.register('Eve')).cookie; // `__Host-tf_rt=<token sống>` (login thật)
     const token = attacker.slice(attacker.indexOf('=') + 1);
 
     for (const tossed of [`tf_rt=${token}`, `__Secure-tf_rt=${token}`]) {

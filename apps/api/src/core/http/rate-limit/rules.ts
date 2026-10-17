@@ -9,7 +9,9 @@ export type RateLimitKey =
   | 'user'
   /** SHA-256 của email (trim + lowercase) trong body. */
   | 'email'
-  | 'ip+email';
+  | 'ip+email'
+  /** `:userId` của route — người BỊ tác động (vd tạo lại link cho MỘT người, bất kể ai làm). */
+  | 'target';
 
 export interface RateLimitRule {
   /** Tiền tố khóa Valkey, duy nhất. */
@@ -63,7 +65,20 @@ export const RATE_LIMIT_RULES = {
       countOnlyStatuses: [401],
     }),
   ],
-  register: [rule({ id: 'register-ip', windowMs: HOUR, limit: 5, key: 'ip', failMode: 'closed' })],
+  /**
+   * `inspect` + `activate` (ADR-137, SEC-HR-57): CHUNG một bộ đếm theo IP, chỉ đếm lần sai (400 / 410) —
+   * 10 lần / 15 phút, lần 11 ⇒ 429. Fail-closed như login (dò token không được tự do khi Valkey chết).
+   */
+  activation: [
+    rule({
+      id: 'activation-ip',
+      windowMs: 15 * MINUTE,
+      limit: 10,
+      key: 'ip',
+      failMode: 'closed',
+      countOnlyStatuses: [400, 410],
+    }),
+  ],
   refresh: [
     rule({ id: 'refresh-ip', windowMs: 5 * MINUTE, limit: 60, key: 'ip', failMode: 'closed' }),
   ],
@@ -83,6 +98,30 @@ export const RATE_LIMIT_RULES = {
   ],
   updateMe: [
     rule({ id: 'update-me-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),
+  ],
+  /** `POST /hr/employees` — 30/giờ/actor (thiết kế Mốc 3.5 §5). */
+  hireEmployee: [
+    rule({ id: 'hire-employee-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),
+  ],
+  /** `GET /workspaces/:wsId/member-candidates` — danh bạ email nội bộ: 60/giờ/actor (R41). */
+  memberCandidates: [
+    rule({
+      id: 'member-candidates-user',
+      windowMs: HOUR,
+      limit: 60,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
+  /** `POST hr/employees/:userId/activation-link` — 10/giờ cho MỖI người đích (SEC-HR-63), tách khỏi hạn mức thêm. */
+  activationLink: [
+    rule({
+      id: 'activation-link-target',
+      windowMs: HOUR,
+      limit: 10,
+      key: 'target',
+      failMode: 'open',
+    }),
   ],
   addMember: [
     rule({ id: 'add-member-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),

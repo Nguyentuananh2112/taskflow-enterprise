@@ -1,14 +1,13 @@
 import { afterEach, describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { connected, connectError, disconnected, nextEvent, openSocket } from './harness/socket';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // SEC-38 cần access token hết hạn TRONG lúc chạy ⇒ API riêng với TTL ngắn nhất cho phép (5 s, chỉ khi
 // APP_ENV=test — env.ts). File riêng vì `useApi` làm mới DB suite + giữ khóa suốt file: hai `useApi`
 // trong cùng file sẽ xóa DB của nhau.
-const api = useApi({ JWT_ACCESS_TTL_SECONDS: '5' });
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi({ JWT_ACCESS_TTL_SECONDS: '5' });
 const opened: ReturnType<typeof openSocket>[] = [];
 afterEach(() => {
   for (const socket of opened.splice(0)) socket.close();

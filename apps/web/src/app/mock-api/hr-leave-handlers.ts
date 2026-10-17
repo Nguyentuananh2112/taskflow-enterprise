@@ -12,7 +12,7 @@ import {
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
-import { forbiddenUnlessGranted, requireMember, type MemberContext } from './mock-guard';
+import { COMPANY_SCOPE, requireCompany, type CompanyContext } from './mock-guard';
 import { conflictFail, ruleFail, type MockHr } from './mock-hr';
 import type { MockNotifications } from './notification-handlers';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
@@ -36,17 +36,12 @@ export function createHrLeaveHandlers(
   hr: MockHr,
   notifications: MockNotifications,
 ): HttpHandler[] {
-  const base = `${baseUrl}/workspaces/:wsId`;
+  const base = `${baseUrl}/leave`;
   const { db, leave } = hr;
-  const guard = (request: Request, params: Record<string, unknown>) => {
-    const ctx = requireMember(request, db, { wsId: params.wsId as string });
-    if (ctx.response) return ctx;
-    const denied = forbiddenUnlessGranted(ctx.ok, db, 'hr:manage');
-    return denied ? { response: denied } : ctx;
-  };
-  const self = (ctx: MemberContext, userId: string, note: string | null | undefined) => {
+  const guard = (request: Request) => requireCompany(request, db, 'hr:manage');
+  const self = (ctx: CompanyContext, userId: string, note: string | null | undefined) => {
     if (userId !== ctx.user.id) return null;
-    if (ctx.membership.role !== 'OWNER')
+    if (ctx.company.role !== 'ADMIN')
       return fail(403, 'FORBIDDEN_ACCESS', { required: 'hr:manage' });
     return note?.trim() ? null : ruleFail('REASON_REQUIRED');
   };
@@ -57,15 +52,15 @@ export function createHrLeaveHandlers(
   });
 
   const decide = (action: Action) =>
-    http.post(`${base}/leave-requests/:id/${action}`, async ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.post(`${base}/requests/:id/${action}`, async ({ request, params }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const body = await parseBody(
         request,
         action === 'revoke' ? RevokeLeaveBody : DecideLeaveBody,
       );
       if (body.response) return body.response;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const l = Uuid.safeParse(params.id).success
         ? leave.items.find((x) => x.id === params.id && x.workspaceId === wsId)
         : undefined;
@@ -80,9 +75,9 @@ export function createHrLeaveHandlers(
           ? l.status === 'APPROVED' && l.startDate > leave.today()
           : l.status === 'PENDING';
       if (!valid) return conflictFail('invalid_transition');
-      const requester = db.membershipIn(l.userId, wsId);
-      if (action === 'approve' && (!requester || requester.role === 'VIEWER'))
-        return conflictFail('requester_not_member');
+      // Mốc 3.5: người xin nghỉ phải còn là NHÂN VIÊN công ty (không phải thành viên workspace).
+      const employed = db.company.joinedAt(l.userId) !== undefined;
+      if (action === 'approve' && !employed) return conflictFail('requester_not_member');
       if (action === 'approve' && l.type === 'ANNUAL') {
         const bal = leave.balance(wsId, l.userId, Number(l.startDate.slice(0, 4)));
         if (bal.remainingDays < l.days) return ruleFail('INSUFFICIENT_BALANCE');
@@ -99,8 +94,6 @@ export function createHrLeaveHandlers(
       notifications.notify(l.userId, {
         type: NOTIFY[action],
         refId: l.id,
-        workspaceId: wsId,
-        workspaceName: requester?.workspaceName ?? '',
         actor: by,
         leave: { type: l.type, startDate: l.startDate, endDate: l.endDate },
       });
@@ -108,15 +101,15 @@ export function createHrLeaveHandlers(
     });
 
   return [
-    http.get(`${base}/leave-requests`, ({ request, params }) => {
+    http.get(`${base}/requests`, ({ request }) => {
       if (new URL(request.url).searchParams.has('mine')) return undefined; // ⇒ leave-handlers (E)
-      const ctx = guard(request, params);
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const query = parseQuery(request, ListLeaveRequestsQuery);
       if (query.response) return query.response;
       const { status, cursor, limit } = query.data;
       const all = leave.items
-        .filter((l) => l.workspaceId === params.wsId && (!status || l.status === status))
+        .filter((l) => l.workspaceId === COMPANY_SCOPE && (!status || l.status === status))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       const page = paginate(all.map(strip), cursor, limit);
       return ok(z.array(LeaveRequestDto), page.data, { page: page.page });
@@ -125,15 +118,14 @@ export function createHrLeaveHandlers(
     decide('reject'),
     decide('revoke'),
 
-    http.get(`${base}/leave-balances`, ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.get(`${base}/balances`, ({ request }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const query = parseQuery(request, ListLeaveBalancesQuery);
       if (query.response) return query.response;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const rows = db
-        .membersOf(wsId)
-        .filter((m) => m.membership.role !== 'VIEWER')
+        .companyEmployees()
         .map((m) => rowOf(wsId, m.user.id, query.data.year))
         .sort(
           (a, b) =>
@@ -144,8 +136,8 @@ export function createHrLeaveHandlers(
       return ok(z.array(LeaveBalanceRowDto), page.data, { page: page.page });
     }),
 
-    http.patch(`${base}/leave-balances/:userId/:year`, async ({ request, params }) => {
-      const ctx = guard(request, params);
+    http.patch(`${base}/balances/:userId/:year`, async ({ request, params }) => {
+      const ctx = guard(request);
       if (ctx.response) return ctx.response;
       const userId = Uuid.safeParse(params.userId);
       const year = ListLeaveBalancesQuery.shape.year.safeParse(params.year);
@@ -157,7 +149,7 @@ export function createHrLeaveHandlers(
       if (body.response) return body.response;
       const denied = self(ctx.ok, userId.data, body.data.note);
       if (denied) return denied;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       if (Math.abs(year.data - Number(leave.today().slice(0, 4))) > 1)
         return fail(400, 'VALIDATION_ERROR', {
           issues: [{ path: ['year'], code: 'too_big', message: 'Chỉ chỉnh trong ±1 năm' }],

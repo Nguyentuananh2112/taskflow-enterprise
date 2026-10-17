@@ -2,13 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BusinessRule,
+  CompanyAccessChangedEventEnvelope,
   HrAuditLogDto,
   HrConflictReason,
   MemberDto,
-  MemberGrantsChangedEvent,
   NotificationDto,
   NotificationNewEvent,
-  SetMemberGrantsBody,
   WorkspaceDto,
 } from '../index';
 
@@ -16,17 +15,7 @@ const ID = '0199e5a2-7c1e-7cc3-9a3b-000000000001';
 const NOW = '2026-10-17T01:02:03.000Z';
 
 describe('Mốc 3 — hợp đồng dùng chung (T-037)', () => {
-  it('SetMemberGrantsBody: strict, chỉ grant đã biết, không trùng quá số loại', () => {
-    expect(SetMemberGrantsBody.safeParse({ grants: ['HR_MANAGE'] }).success).toBe(true);
-    expect(SetMemberGrantsBody.safeParse({ grants: [] }).success).toBe(true);
-    expect(SetMemberGrantsBody.safeParse({ grants: ['ADMIN'] }).success).toBe(false);
-    expect(SetMemberGrantsBody.safeParse({ grants: ['HR_MANAGE', 'HR_MANAGE'] }).success).toBe(
-      false,
-    );
-    expect(SetMemberGrantsBody.safeParse({ grants: [], role: 'OWNER' }).success).toBe(false);
-  });
-
-  it('WorkspaceDto.myGrants và MemberDto.grants là bắt buộc', () => {
+  it('Mốc 3.5: WorkspaceDto / MemberDto KHÔNG còn grants (quyền nhân sự là quyền công ty)', () => {
     const ws = {
       id: ID,
       name: 'W',
@@ -35,11 +24,9 @@ describe('Mốc 3 — hợp đồng dùng chung (T-037)', () => {
       createdAt: NOW,
       updatedAt: NOW,
     };
-    expect(WorkspaceDto.safeParse(ws).success).toBe(false);
-    expect(WorkspaceDto.safeParse({ ...ws, myGrants: ['HR_MANAGE'] }).success).toBe(true);
+    expect(WorkspaceDto.parse({ ...ws, myGrants: ['HR_MANAGE'] })).not.toHaveProperty('myGrants');
     const m = { userId: ID, email: 'a@b.vn', fullName: 'A', role: 'MEMBER', joinedAt: NOW };
-    expect(MemberDto.safeParse(m).success).toBe(false);
-    expect(MemberDto.safeParse({ ...m, grants: [] }).success).toBe(true);
+    expect(MemberDto.parse({ ...m, grants: [] })).not.toHaveProperty('grants');
   });
 
   it('NotificationDto: leave KHÔNG mang lý do (B-H2) — trường lạ bị loại khi parse', () => {
@@ -47,8 +34,6 @@ describe('Mốc 3 — hợp đồng dùng chung (T-037)', () => {
       id: ID,
       type: 'LEAVE_SUBMITTED',
       refId: ID,
-      workspaceId: ID,
-      workspaceName: 'Acme',
       actor: { id: ID, fullName: 'Mia' },
       leave: { type: 'SICK', startDate: '2026-10-20', endDate: '2026-10-21', reason: 'sốt' },
       readAt: null,
@@ -57,11 +42,11 @@ describe('Mốc 3 — hợp đồng dùng chung (T-037)', () => {
     expect(Object.keys(dto.leave ?? {}).sort()).toEqual(['endDate', 'startDate', 'type']);
   });
 
-  it('event realtime: grants-changed chỉ { workspaceId, grants }; notification:new chỉ id + loại + ws', () => {
+  it('event realtime: company:access-changed chỉ { role, grants }; notification:new chỉ id + loại', () => {
     expect(
-      MemberGrantsChangedEvent.safeParse({
-        type: 'member:grants-changed',
-        data: { workspaceId: ID, grants: [] },
+      CompanyAccessChangedEventEnvelope.safeParse({
+        type: 'company:access-changed',
+        data: { role: 'EMPLOYEE', grants: ['HR_MANAGE'] },
         eventId: ID,
         occurredAt: NOW,
         actorId: ID,
@@ -70,20 +55,20 @@ describe('Mốc 3 — hợp đồng dùng chung (T-037)', () => {
     ).toBe(true);
     const n = NotificationNewEvent.parse({
       type: 'notification:new',
-      data: { notificationId: ID, type: 'HR_GRANTED', workspaceId: ID, reason: 'x' },
+      data: { notificationId: ID, type: 'ACCESS_CHANGED', workspaceId: ID, reason: 'x' },
       eventId: ID,
       occurredAt: NOW,
       actorId: ID,
       originClientId: null,
     });
-    expect(Object.keys(n.data).sort()).toEqual(['notificationId', 'type', 'workspaceId']);
+    expect(Object.keys(n.data).sort()).toEqual(['notificationId', 'type']);
   });
 
   it('HrAuditLogDto và mã lỗi HR đã chốt (422 VIẾT HOA, 409 viết thường)', () => {
     expect(
       HrAuditLogDto.safeParse({
         id: ID,
-        action: 'GRANT',
+        action: 'GRANT_SET',
         actor: { id: ID, fullName: 'Olivia' },
         targetUserId: ID,
         refId: null,

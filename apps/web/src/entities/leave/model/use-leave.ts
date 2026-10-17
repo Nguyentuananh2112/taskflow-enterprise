@@ -7,20 +7,20 @@ import { leaveApi } from '../api/leave.api';
 
 type Draft = Pick<SubmitLeaveBody, 'type' | 'startDate' | 'endDate' | 'dayPart'>;
 
-// Dưới gốc ['ws', wsId] ⇒ mất quyền workspace dọn luôn (frontend.md §3.2).
+// Mốc 3.5: dưới gốc ['company'] (ADR-139) — đăng xuất / SESSION_REVOKED ⇒ `queryClient.clear()` dọn hết.
 export const leaveKeys = {
-  all: (wsId: string) => ['ws', wsId, 'leave'] as const,
-  mine: (wsId: string) => ['ws', wsId, 'leave', 'mine'] as const,
-  minePending: (wsId: string) => ['ws', wsId, 'leave', 'mine-pending'] as const,
-  balance: (wsId: string, year: number) => ['ws', wsId, 'leave', 'balance', year] as const,
-  preview: (wsId: string, d: Draft | null) => ['ws', wsId, 'leave', 'preview', d] as const,
+  all: () => ['company', 'leave'] as const,
+  mine: () => ['company', 'leave', 'mine'] as const,
+  minePending: () => ['company', 'leave', 'mine-pending'] as const,
+  balance: (year: number) => ['company', 'leave', 'balance', year] as const,
+  preview: (d: Draft | null) => ['company', 'leave', 'preview', d] as const,
 };
 
 /** Đơn của tôi, mới nhất trước, phân trang cursor (50/trang) ⇒ "Tải thêm". */
-export function useMyLeaveRequests(wsId: string, enabled: boolean) {
+export function useMyLeaveRequests(enabled: boolean) {
   return useInfiniteQuery({
-    queryKey: leaveKeys.mine(wsId),
-    queryFn: ({ pageParam }) => leaveApi.mine(wsId, pageParam),
+    queryKey: leaveKeys.mine(),
+    queryFn: ({ pageParam }) => leaveApi.mine(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) =>
       last.page?.hasMore ? (last.page.nextCursor ?? undefined) : undefined,
@@ -31,20 +31,20 @@ export function useMyLeaveRequests(wsId: string, enabled: boolean) {
 }
 
 /** Số đơn chờ duyệt của tôi (trang đầu ≤ 50; `more` ⇒ hiện "50+"). Dưới `leaveKeys.all` ⇒ gửi/hủy/duyệt làm mới. */
-export function useMyPendingLeaveCount(wsId: string, enabled: boolean) {
+export function useMyPendingLeaveCount(enabled: boolean) {
   return useQuery({
-    queryKey: leaveKeys.minePending(wsId),
-    queryFn: () => leaveApi.minePending(wsId),
+    queryKey: leaveKeys.minePending(),
+    queryFn: () => leaveApi.minePending(),
     select: (r) => ({ count: r.data.length, more: r.page?.hasMore ?? false }),
     enabled,
     staleTime: 30_000,
   });
 }
 
-export function useMyLeaveBalance(wsId: string, year: number | null) {
+export function useMyLeaveBalance(year: number | null) {
   return useQuery({
-    queryKey: leaveKeys.balance(wsId, year ?? 0),
-    queryFn: () => leaveApi.myBalance(wsId, year ?? 0),
+    queryKey: leaveKeys.balance(year ?? 0),
+    queryFn: () => leaveApi.myBalance(year ?? 0),
     enabled: year !== null,
     staleTime: 30_000,
   });
@@ -54,11 +54,11 @@ export function useMyLeaveBalance(wsId: string, year: number | null) {
  * Xem trước số ngày khi người dùng đổi loại / ngày / buổi (debounce 400 ms — TL duyệt). Không gửi khi
  * khoảng ngày chưa hợp lệ (`draft = null`). Lỗi trả như khi gửi (vd không đủ phép) — form hiển thị câu.
  */
-export function useLeavePreview(wsId: string, draft: Draft | null) {
+export function useLeavePreview(draft: Draft | null) {
   const debounced = useDebouncedValue(draft, 400);
   return useQuery({
-    queryKey: leaveKeys.preview(wsId, debounced),
-    queryFn: () => leaveApi.preview(wsId, debounced as Draft),
+    queryKey: leaveKeys.preview(debounced),
+    queryFn: () => leaveApi.preview(debounced as Draft),
     enabled: debounced !== null,
     staleTime: 15_000,
     retry: false,

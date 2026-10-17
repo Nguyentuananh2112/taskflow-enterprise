@@ -8,23 +8,13 @@ import {
   useAttendanceToday,
   useServerClock,
 } from '@/entities/attendance';
-import { usePermission } from '@/entities/workspace';
 import { CheckButtons } from '@/features/attendance-check';
 import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/button';
 
-import { AttendanceShortcuts } from './attendance-shortcuts';
 import { CARD_FRAME, CardNote, CardSkeleton } from './card-frame';
 
-type Props = Readonly<{
-  wsId: string;
-  enabled: boolean;
-  /**
-   * Quyền chưa biết (workspace đang tải) ⇒ vẫn giữ chỗ bằng skeleton — tránh thẻ "xuất hiện" sau đó đẩy danh sách
-   * dự án xuống (E2E-HR-14, demo TL d9). Biết là VIEWER ⇒ không có thẻ.
-   */
-  pending?: boolean;
-}>;
+type Props = Readonly<{ enabled: boolean }>;
 
 const clockFormat = (timeZone: string) =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -43,15 +33,17 @@ const dayFormat = (timeZone: string) =>
     year: 'numeric',
   });
 
-/** Thẻ Chấm công đầu trang danh sách dự án (attendance-leave.md §6). Ẩn với VIEWER (`enabled`). */
-export function AttendanceCard({ wsId, enabled, pending = false }: Props) {
-  const today = useAttendanceToday(wsId, enabled);
+/**
+ * Thẻ Chấm công GỌN ở trang chính (ADR-139): giờ server, ca, trạng thái, Vào/Ra, một nút. Ẩn với Admin (`enabled` =
+ * `attendance:self`). Lối tắt Bảng công / Xin nghỉ nằm ngoài thẻ (`HomeShortcuts`).
+ */
+export function AttendanceCard({ enabled }: Props) {
+  const today = useAttendanceToday(enabled);
   const clock = useServerClock(today.data?.serverNow, today.dataUpdatedAt);
-  const canManageHr = usePermission(wsId).can('hr:manage');
-  if (!enabled) return pending ? <CardSkeleton /> : null;
+  if (!enabled) return null;
   if (!today.data) {
     return today.isError ? (
-      // Cùng khung ⇒ "Thử lại" thành công không đẩy danh sách dự án.
+      // Cùng khung ⇒ "Thử lại" thành công không đẩy nội dung bên dưới.
       <div className={`${CARD_FRAME} justify-center`}>
         <p className="flex flex-wrap items-center gap-2 text-sm">
           Không tải được chấm công.
@@ -106,10 +98,9 @@ export function AttendanceCard({ wsId, enabled, pending = false }: Props) {
           </dd>
         </dl>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 whitespace-nowrap sm:ml-auto">
-          <CheckButtons wsId={wsId} today={t} />
+          <CheckButtons today={t} />
         </div>
       </div>
-      <AttendanceShortcuts wsId={wsId} today={t.date} canManageHr={canManageHr} />
     </section>
   );
 }

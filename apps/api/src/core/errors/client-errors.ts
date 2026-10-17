@@ -94,7 +94,9 @@ export type ResourceKind =
   | 'holiday'
   | 'work_schedule'
   // Mốc 3 (T-040)
-  | 'notification';
+  | 'notification'
+  // Mốc 3.5: chưa `admin:bootstrap` ⇒ chưa có dòng `companies`
+  | 'company';
 
 /** 404 — không tồn tại **hoặc** thuộc tenant khác (ADR-020): cùng một hình dạng cho cả hai. */
 export class ResourceNotFoundError extends AppError {

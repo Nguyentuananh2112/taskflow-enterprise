@@ -79,7 +79,7 @@ export function NotificationBell() {
               <Link
                 href={notificationHref(n)}
                 // Tên đọc rõ ràng (các span cạnh nhau bị ghép dính chữ khi tính tên truy cập).
-                aria-label={`${n.readAt === null ? 'Chưa đọc: ' : ''}${notificationText(n)}. ${n.workspaceName}, ${ago(n.createdAt)}`}
+                aria-label={`${n.readAt === null ? 'Chưa đọc: ' : ''}${notificationText(n)}. ${ago(n.createdAt)}`}
                 onClick={() => {
                   if (n.readAt === null) markRead.mutate(n.id);
                   setOpen(false);
@@ -93,9 +93,7 @@ export function NotificationBell() {
                   {n.readAt === null && <span className="sr-only">Chưa đọc: </span>}
                   {notificationText(n)}
                 </span>
-                <span className="text-xs font-normal text-text-muted">
-                  {n.workspaceName} · {ago(n.createdAt)}
-                </span>
+                <span className="text-xs font-normal text-text-muted">{ago(n.createdAt)}</span>
               </Link>
             </li>
           ))}

@@ -1,17 +1,17 @@
 import { SignJWT, decodeJwt, decodeProtectedHeader } from 'jose';
 import { describe, expect } from 'vitest';
 
-import { Actors, refreshCookieOf, type Actor } from './harness/actors';
+import { refreshCookieOf, type Actor } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { TEST_JWT_SECRET } from './harness/config';
 import { backdateRefreshFamily } from './harness/db-clock';
 import { errorEnvelope } from './harness/http-client';
-import { outOfScope, secCase, useApi } from './harness/suite';
+import { outOfScope, secCase } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
 
 // Phiên & token (security.md §2–3, SEC-17..27, 32..34, 57). Chờ auth routes (Phase 3).
 
-const api = useApi();
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi();
 const AUTH = 'auth routes (Phase 3)';
 const T020 = 'T-020 Prisma + Valkey (ADR-104/105)';
 
@@ -458,26 +458,23 @@ describe('Đăng nhập & mật khẩu', () => {
   }
   secCase(
     'SEC-32',
-    'Mật khẩu 11/257 ký tự, phổ biến, chứa email ⇒ 400; 12/256 (cả tiếng Việt) ⇒ 201',
-    AUTH,
+    // Mốc 3.5: mật khẩu đặt lần đầu ở `POST auth/activate` (không còn register) — cùng chính sách.
+    'Kích hoạt với mật khẩu 11/257 ký tự, phổ biến, chứa email ⇒ 400 (token không bị tiêu); 12/256 (cả tiếng Việt) ⇒ 200',
+    'auth/activate (T-061)',
     async () => {
-      const fresh = () => `policy${Math.random().toString(36).slice(2, 10)}`;
-      const register = (local: string, password: string) =>
-        actors.json('POST', '/auth/register', undefined, {
-          email: `${local}@sec.example`,
-          password,
-          fullName: 'Sec Policy',
-        });
-      const withEmail = fresh(); // policy kiểm theo TOÀN BỘ phần local của email
-      const rejected: [string, string, string][] = [
-        ['ngắn 11', fresh(), 'abcdefghij1'],
-        ['dài 257', fresh(), `${'y'.repeat(256)}1`],
-        ['phổ biến', fresh(), 'password1234'],
-        ['phổ biến (chữ hoa)', fresh(), 'PASSWORD1234'],
-        ['chứa email', withEmail, `my-${withEmail.toUpperCase()}-pass`],
+      const activate = (token: string, password: string) =>
+        actors.json('POST', '/auth/activate', undefined, { token, password });
+      const pending = await actors.createUser('policy', { pending: true });
+      const local = pending.email.split('@')[0] ?? ''; // policy kiểm theo TOÀN BỘ phần local của email
+      const rejected: [string, string][] = [
+        ['ngắn 11', 'abcdefghij1'],
+        ['dài 257', `${'y'.repeat(256)}1`],
+        ['phổ biến', 'password1234'],
+        ['phổ biến (chữ hoa)', 'PASSWORD1234'],
+        ['chứa email', `my-${local.toUpperCase()}-pass`],
       ];
-      for (const [label, local, password] of rejected) {
-        const res = await register(local, password);
+      for (const [label, password] of rejected) {
+        const res = await activate(pending.token, password);
         expect(res.status, `${label}: ${res.text.slice(0, 200)}`).toBe(400);
         expect(errorEnvelope(res).error.code, label).toBe('VALIDATION_ERROR');
         expect(res.text, `${label}: không phản chiếu mật khẩu (ADR-096)`).not.toContain(password);
@@ -488,10 +485,17 @@ describe('Đăng nhập & mật khẩu', () => {
         // 12 KÝ TỰ nhưng > 12 byte UTF-8: đếm theo ký tự (NFC), không theo byte.
         ['tiếng Việt 12 ký tự', 'mậtkhẩuđẹpqá', 12],
       ];
-      for (const [label, password, chars] of accepted) {
+      for (const [i, [label, password, chars]] of accepted.entries()) {
         expect([...password.normalize('NFC')].length, `${label}: dữ liệu test`).toBe(chars);
-        const res = await register(fresh(), password);
-        expect(res.status, `${label}: ${res.text.slice(0, 200)}`).toBe(201);
+        // Lần đầu dùng lại token đã bị từ chối 5 lần ⇒ chứng minh mật khẩu sai không tiêu token (B: policy kiểm
+        // trước transaction). Hạn mức activation-ip (400/410, 10 lần/15 phút/IP) không chạm: `actors.json` gán
+        // IP ngẫu nhiên cho mỗi request chưa xác thực.
+        const token =
+          i === 0
+            ? pending.token
+            : (await actors.createUser(`policy-${i}`, { pending: true })).token;
+        const res = await activate(token, password);
+        expect(res.status, `${label}: ${res.text.slice(0, 200)}`).toBe(200);
       }
     },
   );

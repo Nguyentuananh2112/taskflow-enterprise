@@ -182,8 +182,8 @@ export class RealtimeGateway {
   readonly #users = new UserNotifications((room, type, data, meta) =>
     this.#emit(room, type, data, meta),
   );
-  readonly notifyGrantsChanged: UserNotifications['grantsChanged'] = (i, m) =>
-    this.#users.grantsChanged(i, m);
+  readonly notifyCompanyAccessChanged: UserNotifications['companyAccessChanged'] = (i, m) =>
+    this.#users.companyAccessChanged(i, m);
   readonly notifyNotification: UserNotifications['notification'] = (i, m) =>
     this.#users.notification(i, m);
 

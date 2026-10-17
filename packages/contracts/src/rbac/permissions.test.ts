@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  GRANT_PERMISSIONS,
-  MemberGrant,
   Permission,
   ROLE_PERMISSIONS,
   ROLE_RANK,
@@ -10,8 +8,6 @@ import {
   TASK_STATUS_TRANSITIONS,
   TaskStatus,
   WorkspaceRole,
-  effectivePermissions,
-  hasPermission,
   roleHasPermission,
 } from '../index';
 
@@ -79,28 +75,12 @@ describe('TASK_STATUS_TRANSITIONS (blueprint §3.2)', () => {
   });
 });
 
-describe('grants (ADR-119)', () => {
-  it('effectivePermissions = role ∪ grant; không grant ⇒ đúng bằng role', () => {
-    expect([...effectivePermissions('MEMBER')].sort()).toEqual([...ROLE_PERMISSIONS.MEMBER].sort());
-    const hr = effectivePermissions('MEMBER', ['HR_MANAGE']);
-    expect([...hr].sort()).toEqual([...ROLE_PERMISSIONS.MEMBER, 'hr:manage'].sort());
-  });
-
-  it('hasPermission: grant HR_MANAGE mở hr:manage, KHÔNG mở hr:grant / member:add', () => {
-    expect(hasPermission('MEMBER', ['HR_MANAGE'], 'hr:manage')).toBe(true);
-    expect(hasPermission('MEMBER', ['HR_MANAGE'], 'hr:grant')).toBe(false);
-    expect(hasPermission('MEMBER', ['HR_MANAGE'], 'member:add')).toBe(false);
-    expect(hasPermission('PM', [], 'hr:manage')).toBe(false);
-    expect(hasPermission('OWNER', [], 'hr:grant')).toBe(true);
-  });
-
-  it('VIEWER không có quyền chấm công / xin nghỉ; OWNER/PM/MEMBER có', () => {
-    for (const role of ['OWNER', 'PM', 'MEMBER'] as const) {
-      expect(hasPermission(role, [], 'attendance:self'), role).toBe(true);
-      expect(hasPermission(role, [], 'leave:self'), role).toBe(true);
+describe('Mốc 3.5 (ADR-134): quyền workspace chỉ còn quyền dự án', () => {
+  it('không role workspace nào có quyền chấm công / nghỉ phép / nhân sự', () => {
+    for (const perms of Object.values(ROLE_PERMISSIONS)) {
+      for (const p of ['attendance:self', 'leave:self', 'hr:manage', 'hr:grant']) {
+        expect((perms as readonly string[]).includes(p), p).toBe(false);
+      }
     }
-    expect(hasPermission('VIEWER', [], 'attendance:self')).toBe(false);
-    expect(MemberGrant.options).toEqual(['HR_MANAGE']);
-    expect(GRANT_PERMISSIONS.HR_MANAGE).toEqual(['hr:manage']);
   });
 });

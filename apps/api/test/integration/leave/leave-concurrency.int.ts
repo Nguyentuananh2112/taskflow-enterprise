@@ -2,7 +2,7 @@
 // (`LEAVE_CC_REPEAT`). Kiểm khóa advisory (ws, user) + UPDATE có điều kiện version cho ra kết quả như chạy tuần tự.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { createLeaveHarness, U, W1 } from '../../../src/modules/leave/testing/leave-harness';
+import { createLeaveHarness, U } from '../../../src/modules/leave/testing/leave-harness';
 import { disconnectTestPrisma, resetDatabase, testPrisma } from '../support/prisma-test-kit';
 import { prismaLeaveBackend } from './prisma-leave-backend';
 
@@ -184,16 +184,16 @@ describe.each(rounds)('leave — đồng thời (lượt %i)', () => {
     const h = await harness();
     await h.seed({ id: R1, startDate: '2026-11-23', endDate: '2026-11-23' });
     const events: string[] = [];
-    const reload = h.membership.reloadActor.bind(h.membership);
-    h.membership.reloadActor = async (ws, user) => {
-      const actor = await reload(ws, user);
+    const reload = h.company.reloadActor.bind(h.company);
+    h.company.reloadActor = async (user) => {
+      const actor = await reload(user);
       if (user === U.Hana)
         events.push(actor?.permissions.has('hr:manage') ? 'reload:hr' : 'reload:-');
       return actor;
     };
     const revoke = async () => {
       await new Promise((r) => setImmediate(r));
-      h.membership.revokeGrant(W1, U.Hana, 'HR_MANAGE');
+      h.company.revokeGrant(U.Hana, 'HR_MANAGE');
       events.push('revoke');
     };
     const [a] = await Promise.all([settle(h.leave.approve(h.as(U.Hana), R1, 1)), revoke()]);
@@ -213,12 +213,10 @@ describe.each(rounds)('leave — đồng thời (lượt %i)', () => {
   it('CC-HR-12: tạo lười LeaveBalance song song (2 transaction lần đầu) ⇒ đúng 1 dòng, không lỗi trùng khóa', async () => {
     const h = await harness();
     const results = await Promise.all([
-      settle(h.uow.run(() => h.requests.getOrCreateBalance(W1, U.Mia, 2026))),
-      settle(h.uow.run(() => h.requests.getOrCreateBalance(W1, U.Mia, 2026))),
+      settle(h.uow.run(() => h.requests.getOrCreateBalance(U.Mia, 2026))),
+      settle(h.uow.run(() => h.requests.getOrCreateBalance(U.Mia, 2026))),
     ]);
     expect(results.every((r) => r.ok)).toBe(true);
-    expect(
-      await testPrisma().leaveBalance.count({ where: { workspaceId: W1, userId: U.Mia } }),
-    ).toBe(1);
+    expect(await testPrisma().leaveBalance.count({ where: { userId: U.Mia } })).toBe(1);
   });
 });

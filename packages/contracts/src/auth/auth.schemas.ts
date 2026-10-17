@@ -1,5 +1,7 @@
 import * as z from 'zod';
 
+import { MeCompanyDto } from '../company/company-roles';
+
 import { WorkspaceRole } from '../rbac/permissions';
 import { IsoDateTime, Uuid, singleLineText } from '../common/primitives';
 
@@ -33,13 +35,6 @@ const PasswordInput = codePointLength(1, 256);
 
 export const FullName = singleLineText(1, 100);
 export type FullName = z.infer<typeof FullName>;
-
-export const RegisterBody = z.strictObject({
-  email: Email,
-  password: Password,
-  fullName: FullName,
-});
-export type RegisterBody = z.infer<typeof RegisterBody>;
 
 export const LoginBody = z.strictObject({ email: Email, password: PasswordInput });
 export type LoginBody = z.infer<typeof LoginBody>;
@@ -79,11 +74,13 @@ export const MembershipDto = z.object({
 });
 export type MembershipDto = z.infer<typeof MembershipDto>;
 
-export const RegisterResponse = AuthTokenDto.extend({ user: UserDto, defaultWorkspaceId: Uuid });
-export type RegisterResponse = z.infer<typeof RegisterResponse>;
-
 export const LoginResponse = AuthTokenDto.extend({ user: UserDto });
 export type LoginResponse = z.infer<typeof LoginResponse>;
 
-export const MeResponse = z.object({ user: UserDto, memberships: z.array(MembershipDto) });
+/** Mốc 3.5 (ADR-135): `company` — người không còn thuộc công ty ⇒ 401 SESSION_REVOKED, không có response này. */
+export const MeResponse = z.object({
+  user: UserDto,
+  memberships: z.array(MembershipDto),
+  company: MeCompanyDto,
+});
 export type MeResponse = z.infer<typeof MeResponse>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLeaveHarness, U, W1, W2 } from '../testing/leave-harness';
+import { createLeaveHarness, REX_LAST_DAY, U } from '../testing/leave-harness';
 
 const mia2days = {
   type: 'ANNUAL' as const,
@@ -21,10 +21,9 @@ describe('LeaveCommands.submit (test-spec §2, §3)', () => {
       userId: U.Mia,
       reason: 'về quê',
     });
-    expect(h.locks).toEqual([`taskflow:leave:${W1}:${U.Mia}`]);
+    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
     expect(h.notifier.sent).toEqual([
       {
-        workspaceId: W1,
         type: 'LEAVE_SUBMITTED',
         requestId: dto.id,
         actorId: U.Mia,
@@ -126,7 +125,7 @@ describe('LeaveCommands.submit (test-spec §2, §3)', () => {
     );
   });
 
-  it('LV-07: VIEWER ⇒ 403 leave:self (kiểm SAU khóa, trong transaction)', async () => {
+  it('LV-07: Admin (không phải nhân viên) ⇒ 403 leave:self (kiểm SAU khóa, trong transaction)', async () => {
     const h = await createLeaveHarness();
     await expect(h.leave.submit(h.as(U.Vic), mia2days)).rejects.toMatchObject({
       statusCode: 403,
@@ -134,12 +133,14 @@ describe('LeaveCommands.submit (test-spec §2, §3)', () => {
     });
   });
 
-  it('không còn là thành viên ⇒ 404 workspace (ADR-020)', async () => {
+  it('không thuộc công ty (chưa từng / đã nghỉ) ⇒ 401 SESSION_REVOKED (company-level ADR-135)', async () => {
     const h = await createLeaveHarness();
-    await expect(h.leave.submit(h.as(U.Otto, W1), mia2days)).rejects.toMatchObject({
-      statusCode: 404,
-      details: { resource: 'workspace' },
-    });
+    for (const who of [U.Otto, U.Rex]) {
+      await expect(h.leave.submit(h.as(who), mia2days)).rejects.toMatchObject({
+        statusCode: 401,
+        code: 'SESSION_REVOKED',
+      });
+    }
   });
 });
 
@@ -156,10 +157,9 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
       decidedAt: '2026-11-17T03:00:00.000Z',
       days: 1,
     });
-    expect(h.locks).toEqual([`taskflow:leave:${W1}:${U.Mia}`]);
+    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
     expect(h.notifier.sent).toEqual([
       {
-        workspaceId: W1,
         type: 'LEAVE_APPROVED',
         requestId: 'r1',
         actorId: U.Hana,
@@ -197,23 +197,15 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     expect(h.audit.entries).toEqual([]);
   });
 
-  it('LV-10: Olivia (OWNER) tự duyệt ⇒ thiếu lý do 422 REASON_REQUIRED (quy ước B), có lý do ⇒ 200 + audit note (R26)', async () => {
+  it('LV-10 (cấp công ty): luật self TUYỆT ĐỐI — Admin cũng không duyệt đơn có targetUserId = mình; HR khác duyệt đơn của HR', async () => {
     const h = await createLeaveHarness();
-    await h.seed({ id: 'boss', userId: U.Olivia });
-    for (const note of [null, '   ']) {
-      await expect(h.leave.approve(h.as(U.Olivia), 'boss', 1, note)).rejects.toMatchObject({
-        statusCode: 422,
-        details: { rule: 'REASON_REQUIRED' },
-      });
-    }
-    await expect(
-      h.leave.approve(h.as(U.Olivia), 'boss', 1, 'chủ công ty tự duyệt'),
-    ).resolves.toMatchObject({
-      status: 'APPROVED',
+    await h.seed({ id: 'hr', userId: U.Hana });
+    await expect(h.leave.approve(h.as(U.Hana), 'hr', 1, 'có lý do')).rejects.toMatchObject({
+      statusCode: 403,
     });
-    expect(h.audit.entries.at(-1)).toMatchObject({
-      action: 'LEAVE_DECIDE',
-      note: 'chủ công ty tự duyệt',
+    await expect(h.leave.approve(h.as(U.Olivia), 'hr', 1)).resolves.toMatchObject({
+      status: 'APPROVED',
+      decidedBy: { id: U.Olivia },
     });
   });
 
@@ -256,10 +248,10 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     });
   });
 
-  it('LV-13: Mia đã rời ws ⇒ duyệt 409 requester_not_member; TỪ CHỐI vẫn được (D-M4)', async () => {
+  it('LV-13: Mia đã nghỉ việc ⇒ duyệt 409 requester_not_member; TỪ CHỐI vẫn được (D-M4)', async () => {
     const h = await createLeaveHarness();
     await h.seed({ id: 'r1' });
-    h.membership.remove(W1, U.Mia);
+    h.company.offboard(U.Mia, '2026-11-20');
     await expect(h.leave.approve(h.as(U.Hana), 'r1', 1)).rejects.toMatchObject({
       statusCode: 409,
       details: { reason: 'requester_not_member' },
@@ -300,9 +292,9 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     const h = await createLeaveHarness();
     await h.seed({ id: 'r1' });
     const lock = h.requests.lockUser.bind(h.requests);
-    h.requests.lockUser = async (ws, user) => {
-      h.membership.revokeGrant(W1, U.Hana, 'HR_MANAGE'); // thu grant đúng lúc đang chờ khóa
-      return lock(ws, user);
+    h.requests.lockUser = async (user) => {
+      h.company.revokeGrant(U.Hana, 'HR_MANAGE'); // thu grant đúng lúc đang chờ khóa
+      return lock(user);
     };
     await expect(h.leave.approve(h.as(U.Hana), 'r1', 1)).rejects.toMatchObject({ statusCode: 403 });
     expect((await h.rows())[0]).toMatchObject({ status: 'PENDING' });
@@ -312,14 +304,14 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     const h = await createLeaveHarness();
     await h.seed({ id: 'r1', status: 'APPROVED', startDate: '2026-11-30', endDate: '2026-11-30' });
     const lock = h.requests.lockUser.bind(h.requests);
-    h.requests.lockUser = async (ws, user) => {
-      h.membership.revokeGrant(W1, U.Hana, 'HR_MANAGE');
-      return lock(ws, user);
+    h.requests.lockUser = async (user) => {
+      h.company.revokeGrant(U.Hana, 'HR_MANAGE');
+      return lock(user);
     };
     await expect(h.leave.revoke(h.as(U.Hana), 'r1', 1, 'thiếu người')).rejects.toMatchObject({
       statusCode: 403,
     });
-    h.membership.set(W1, U.Hana, 'MEMBER', ['HR_MANAGE']);
+    h.company.set(U.Hana, 'EMPLOYEE', ['HR_MANAGE']);
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -2 }),
     ).rejects.toMatchObject({ statusCode: 403 });
@@ -339,11 +331,11 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
     });
   });
 
-  it('IDOR: đơn của W2 nhìn từ W1 ⇒ 404 như không tồn tại', async () => {
+  it('id đơn không tồn tại ⇒ 404 leave_request (một công ty — không còn IDOR liên workspace)', async () => {
     const h = await createLeaveHarness();
-    await h.seed({ id: 'w2req', workspaceId: W2, userId: U.Otto });
-    await expect(h.leave.approve(h.as(U.Hana), 'w2req', 1)).rejects.toMatchObject({
+    await expect(h.leave.approve(h.as(U.Hana), 'nope-2', 1)).rejects.toMatchObject({
       statusCode: 404,
+      details: { resource: 'leave_request' },
     });
   });
 });
@@ -450,11 +442,11 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
   it('LB-04: Hana chỉnh số dư của Mia ⇒ audit BALANCE_ADJUST trước/sau, khóa (ws, Mia)', async () => {
     const h = await createLeaveHarness();
     await h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -3 });
-    expect(await h.requests.getOrCreateBalance(W1, U.Mia, 2026)).toEqual({
+    expect(await h.requests.getOrCreateBalance(U.Mia, 2026)).toEqual({
       entitled: 24,
       adjustment: -3,
     });
-    expect(h.locks).toEqual([`taskflow:leave:${W1}:${U.Mia}`]);
+    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
     expect(h.audit.entries[0]).toMatchObject({
       action: 'BALANCE_ADJUST',
       targetUserId: U.Mia,
@@ -463,7 +455,7 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
     });
   });
 
-  it('LB-05: Hana chỉnh của chính Hana ⇒ 403 dù CÓ lý do (self kiểm trước lý do); OWNER tự chỉnh thiếu lý do ⇒ 422 REASON_REQUIRED', async () => {
+  it('LB-05: Hana chỉnh của chính Hana ⇒ 403 dù CÓ lý do; Admin tự chỉnh cũng 403 (self tuyệt đối)', async () => {
     const h = await createLeaveHarness();
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), {
@@ -472,15 +464,7 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
         adjustment: 4,
         note: 'có lý do',
       }),
-    ).rejects.toMatchObject({
-      statusCode: 403,
-    });
-    await expect(
-      h.leave.adjustBalance(h.as(U.Olivia), { userId: U.Olivia, year: 2026, adjustment: 4 }),
-    ).rejects.toMatchObject({
-      statusCode: 422,
-      details: { rule: 'REASON_REQUIRED' },
-    });
+    ).rejects.toMatchObject({ statusCode: 403 });
     await expect(
       h.leave.adjustBalance(h.as(U.Olivia), {
         userId: U.Olivia,
@@ -488,10 +472,19 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
         adjustment: 4,
         note: 'thâm niên',
       }),
-    ).resolves.toMatchObject({ userId: U.Olivia });
+    ).rejects.toMatchObject({ statusCode: 403 });
   });
 
-  it('LB-06: userId chưa từng có dữ liệu trong ws ⇒ 404 user; người đã rời nhưng còn đơn ⇒ được', async () => {
+  it('PATCH cho Admin (chưa từng là nhân viên) / người chưa từng thuộc công ty ⇒ 404 user', async () => {
+    const h = await createLeaveHarness();
+    for (const userId of [U.Vic, U.Otto]) {
+      await expect(
+        h.leave.adjustBalance(h.as(U.Hana), { userId, year: 2026, adjustment: 1 }),
+      ).rejects.toMatchObject({ statusCode: 404, details: { resource: 'user' } });
+    }
+  });
+
+  it('LB-06: chưa từng có nhiệm kỳ trong năm ⇒ 404 user; người đã nghỉ (nhiệm kỳ giao năm) ⇒ được', async () => {
     const h = await createLeaveHarness();
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), { userId: 'u-stranger', year: 2026, adjustment: 1 }),
@@ -499,7 +492,13 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
       statusCode: 404,
       details: { resource: 'user' },
     });
-    await h.seed({ id: 'rex', userId: U.Rex, status: 'APPROVED' });
+    await h.seed({
+      id: 'rex',
+      userId: U.Rex,
+      status: 'APPROVED',
+      startDate: REX_LAST_DAY,
+      endDate: REX_LAST_DAY,
+    });
     await expect(
       h.leave.adjustBalance(h.as(U.Hana), { userId: U.Rex, year: 2026, adjustment: 1 }),
     ).resolves.toMatchObject({ userId: U.Rex });

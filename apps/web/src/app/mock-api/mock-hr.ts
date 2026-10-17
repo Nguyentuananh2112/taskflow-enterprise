@@ -32,7 +32,8 @@ export class MockHr {
 
   day(wsId: string, userId: string, date: string): AttendanceDayDto {
     // Ngày trước khi gia nhập (theo lịch) ⇒ NOT_EMPLOYED (E, TL chốt) — không đè bằng lễ/nghỉ.
-    const joined = this.db.workspaces.member(wsId, userId)?.joinedAt;
+    // Mốc 3.5: nhiệm kỳ là của CÔNG TY (ADR-133), không theo membership dự án.
+    const joined = this.db.company.joinedAt(userId);
     const day = this.attendance.summarize(wsId, userId, date, joined && localDate(joined));
     if (day.status === 'NOT_EMPLOYED') return day;
     const holiday = this.holidayOn(wsId, date);
@@ -54,11 +55,10 @@ export class MockHr {
     return day;
   }
 
-  /** Nhân viên hiện tại (không VIEWER) + người đã rời có lượt chấm trong khoảng (`left`), sắp theo tên. */
+  /** Nhân viên công ty hiện tại (không Admin) + người đã nghỉ có lượt chấm trong khoảng (`left`), sắp theo tên. */
   people(wsId: string, from: string, to: string): Array<{ user: UserRefDto; left: boolean }> {
     const current = this.db
-      .membersOf(wsId)
-      .filter((m) => m.membership.role !== 'VIEWER')
+      .companyEmployees()
       .map((m) => ({ user: { id: m.user.id, fullName: m.user.fullName }, left: false }));
     const ids = new Set(current.map((p) => p.user.id));
     const gone = [...this.usersWithPunches(wsId, from, to)]
@@ -94,7 +94,7 @@ export class MockHr {
   /** Có dữ liệu trong workspace (thành viên hiện tại hoặc từng chấm công) — không thì 404. */
   known(wsId: string, userId: string): boolean {
     return (
-      this.db.workspaces.member(wsId, userId) !== undefined ||
+      this.db.company.joinedAt(userId) !== undefined ||
       this.usersWithPunches(wsId, '0000-01-01', '9999-12-31').has(userId)
     );
   }

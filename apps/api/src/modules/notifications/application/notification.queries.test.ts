@@ -3,23 +3,22 @@ import { describe, expect, it } from 'vitest';
 
 import { ResourceNotFoundError } from '../../../core/errors';
 import { HR_AUDIENCE_TYPES, NOTIFICATION_TYPES } from '../domain/notification';
-import { createNotificationHarness, U, W1, W2 } from '../testing/notification-harness';
+import { createNotificationHarness, U } from '../testing/notification-harness';
 
 const REQ = '0000aaaa-0000-7000-8000-00000000aaaa';
-const REQ_W2 = '0000bbbb-0000-7000-8000-00000000bbbb';
+const OTHER = '0000bbbb-0000-7000-8000-00000000bbbb';
 
-/** Olivia (OWNER W1) có: 1 LEAVE_SUBMITTED (HR) từ Mia + 1 HR_GRANTED… ; Mia có LEAVE_APPROVED. */
+/** Olivia (ADMIN) + Hana (HR) có: 1 LEAVE_SUBMITTED (HR) từ Mia; Mia có LEAVE_APPROVED. */
 async function seeded() {
   const h = createNotificationHarness();
   h.context.users.set(U.mia, 'Mia Nguyễn');
   h.context.users.set(U.hana, 'Hana Trần');
-  h.context.leaves.set(`${W1}:${REQ}`, {
+  h.context.leaves.set(REQ, {
     type: 'ANNUAL',
     startDate: '2026-11-18',
     endDate: '2026-11-19',
   });
   await h.notifyInTx({
-    workspaceId: W1,
     type: 'LEAVE_SUBMITTED',
     refId: REQ,
     actorId: U.mia,
@@ -27,7 +26,6 @@ async function seeded() {
   });
   h.clock.advance(1000);
   await h.notifyInTx({
-    workspaceId: W1,
     type: 'LEAVE_APPROVED',
     refId: REQ,
     actorId: U.hana,
@@ -36,8 +34,8 @@ async function seeded() {
   return h;
 }
 
-describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành viên, loại HR theo quyền hiện tại', () => {
-  it('DTO join tên ws, actor, loại + khoảng ngày đơn; parse được bằng NotificationDto; KHÔNG có lý do', async () => {
+describe('NotificationQueries — chỉ của mình, chỉ khi còn thuộc công ty, loại HR theo quyền hiện tại', () => {
+  it('DTO join actor, loại + khoảng ngày đơn; parse được bằng NotificationDto; KHÔNG có lý do', async () => {
     const h = await seeded();
     const { items, nextAfter } = await h.queries.list(U.hana, { limit: 20 });
     expect(nextAfter).toBeNull();
@@ -47,8 +45,6 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     expect(dto).toMatchObject({
       type: 'LEAVE_SUBMITTED',
       refId: REQ,
-      workspaceId: W1,
-      workspaceName: 'Công ty Một',
       actor: { id: U.mia, fullName: 'Mia Nguyễn' },
       leave: { type: 'ANNUAL', startDate: '2026-11-18', endDate: '2026-11-19' },
       readAt: null,
@@ -65,18 +61,18 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     ]);
   });
 
-  it('SEC-HR-18: bị xóa khỏi ws ⇒ danh sách + số chưa đọc không còn thông báo của ws đó', async () => {
+  it('SEC-HR-18 (Mốc 3.5): nghỉ việc / quá access_until ⇒ danh sách + số chưa đọc rỗng', async () => {
     const h = await seeded();
-    h.audience.remove(W1, U.mia);
+    h.audience.remove(U.mia);
     expect((await h.queries.list(U.mia, { limit: 20 })).items).toEqual([]);
     expect(await h.queries.unreadCount(U.mia)).toBe(0);
   });
 
-  it('T-040b: bị xóa rồi mời lại ⇒ thông báo của nhiệm kỳ CŨ ẩn ở list / unread / markRead (404); mới thì thấy', async () => {
+  it('T-040b: nghỉ rồi được nhận lại ⇒ thông báo của tư cách CŨ ẩn ở list / unread / markRead (404); mới thì thấy', async () => {
     const h = await seeded();
     const [old] = (await h.queries.list(U.mia, { limit: 20 })).items;
     h.clock.advance(60_000);
-    h.audience.rejoin(W1, U.mia, 'MEMBER', h.clock.now());
+    h.audience.rehire(U.mia, h.clock.now());
 
     expect((await h.queries.list(U.mia, { limit: 20 })).items).toEqual([]);
     expect(await h.queries.unreadCount(U.mia)).toBe(0);
@@ -84,7 +80,6 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
 
     // Thông báo tạo ĐÚNG lúc vào lại (cùng mili giây) thuộc nhiệm kỳ mới.
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_REJECTED',
       refId: REQ,
       actorId: U.hana,
@@ -97,25 +92,18 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     expect(await h.queries.unreadCount(U.mia)).toBe(0);
   });
 
-  it('T-040b: đổi role / grants KHÔNG mở nhiệm kỳ mới — HR bị thu rồi cấp lại vẫn thấy thông báo cũ', async () => {
+  it('T-040b: đổi grants KHÔNG mở tư cách mới — HR bị thu rồi cấp lại vẫn thấy thông báo cũ', async () => {
     const h = await seeded();
-    h.audience.set(W1, U.hana, 'MEMBER', []);
-    h.audience.set(W1, U.hana, 'MEMBER', ['HR_MANAGE']);
+    h.audience.set(U.hana, false);
+    h.audience.set(U.hana, true);
     expect((await h.queries.list(U.hana, { limit: 20 })).items.map((n) => n.type)).toEqual([
       'LEAVE_SUBMITTED',
     ]);
   });
 
-  it('ws đã xóa mềm ⇒ ẩn (audience chỉ trả ws chưa xóa)', async () => {
-    const h = await seeded();
-    h.audience.deleted.add(W1);
-    expect(await h.queries.unreadCount(U.olivia)).toBe(0);
-  });
-
   it('SEC-HR-19: thu grant ⇒ loại dành cho HR biến khỏi chuông NGAY; cấp lại ⇒ hiện lại; loại thường vẫn thấy', async () => {
     const h = await seeded();
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'ATTENDANCE_ADJUSTED',
       refId: REQ,
       actorId: U.olivia,
@@ -123,12 +111,12 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     });
     expect(await h.queries.unreadCount(U.hana)).toBe(2);
 
-    h.audience.set(W1, U.hana, 'MEMBER', []);
+    h.audience.set(U.hana, false);
     const after = await h.queries.list(U.hana, { limit: 20 });
     expect(after.items.map((n) => n.type)).toEqual(['ATTENDANCE_ADJUSTED']);
     expect(await h.queries.unreadCount(U.hana)).toBe(1);
 
-    h.audience.set(W1, U.hana, 'MEMBER', ['HR_MANAGE']);
+    h.audience.set(U.hana, true);
     expect(await h.queries.unreadCount(U.hana)).toBe(2);
   });
 
@@ -148,7 +136,7 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     await h.queries.markRead(U.hana, id); // lần 2: vẫn 2xx, giữ readAt cũ
     expect(h.store.rows().find((r) => r.id === id)?.readAt).toEqual(readAt);
 
-    h.audience.set(W1, U.hana, 'MEMBER', []);
+    h.audience.set(U.hana, false);
     await expect(h.queries.markRead(U.hana, id)).rejects.toBeInstanceOf(ResourceNotFoundError);
     await expect(
       h.queries.markRead(U.hana, '00000000-0000-7000-8000-0000000fffff'),
@@ -167,7 +155,6 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     const h = createNotificationHarness();
     const notify = () =>
       h.notifyInTx({
-        workspaceId: W1,
         type: 'ATTENDANCE_ADJUSTED',
         refId: REQ,
         actorId: U.hana,
@@ -188,7 +175,6 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     const h = createNotificationHarness();
     for (let i = 0; i < 5; i += 1) {
       await h.notifyInTx({
-        workspaceId: W1,
         type: 'ATTENDANCE_ADJUSTED',
         refId: REQ,
         actorId: U.hana,
@@ -210,17 +196,16 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
     expect(p3.nextAfter).toBeNull();
   });
 
-  it('ngữ cảnh đơn tra theo (ws, id): đơn trùng id ở ws khác không bị join; actor không tồn tại ⇒ null', async () => {
+  it('ngữ cảnh đơn tra theo id: id khác không bị join; actor không tồn tại ⇒ null', async () => {
     const h = createNotificationHarness();
-    h.context.leaves.set(`${W2}:${REQ_W2}`, {
+    h.context.leaves.set(OTHER, {
       type: 'SICK',
       startDate: '2026-11-18',
       endDate: '2026-11-18',
     });
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'LEAVE_REJECTED',
-      refId: REQ_W2,
+      refId: REQ,
       actorId: U.hana,
       recipient: { kind: 'user', userId: U.mia },
     });
@@ -231,13 +216,12 @@ describe('NotificationQueries — chỉ của mình, chỉ ws còn là thành vi
 
   it('loại không phải đơn nghỉ ⇒ leave null dù refId trùng id một đơn', async () => {
     const h = createNotificationHarness();
-    h.context.leaves.set(`${W1}:${REQ}`, {
+    h.context.leaves.set(REQ, {
       type: 'ANNUAL',
       startDate: '2026-11-18',
       endDate: '2026-11-18',
     });
     await h.notifyInTx({
-      workspaceId: W1,
       type: 'ATTENDANCE_ADJUSTED',
       refId: REQ,
       actorId: U.hana,

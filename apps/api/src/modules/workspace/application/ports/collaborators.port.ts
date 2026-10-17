@@ -1,5 +1,5 @@
 // Port do module Workspace ĐỊNH NGHĨA; bên khác hiện thực, wire ở composition root (ADR-093).
-import type { MemberGrant, WorkspaceRole } from '../../domain/roles';
+import type { WorkspaceRole } from '../../domain/roles';
 
 export interface UserSummary {
   id: string;
@@ -52,11 +52,6 @@ export interface IWorkspaceRealtimeNotifier {
     input: { userId: string; workspaceId: string; role: WorkspaceRole },
     meta: RealtimeEventMeta,
   ): Promise<void>;
-  /** ADR-119: `member:grants-changed` tới `user:{id}` — chỉ grants (SEC-HR-20). */
-  notifyGrantsChanged(
-    input: { userId: string; workspaceId: string; grants: readonly MemberGrant[] },
-    meta: RealtimeEventMeta,
-  ): Promise<void>;
   closeWorkspace(
     input: { workspaceId: string; projectIds: string[]; memberUserIds: string[] },
     meta: RealtimeEventMeta,
@@ -72,22 +67,32 @@ export interface IWorkspaceRealtimeNotifier {
 }
 
 /**
- * Thông báo bền HR_GRANTED / HR_REVOKED khi grant `HR_MANAGE` của một người được thêm / bị bỏ (ADR-123,
- * GR-04, GR-09) — chỉ gọi khi CHÍNH grant đó đổi (grant khác sau này không kích hoạt). Gọi TRONG
- * `uow.run` — module notifications ghi cùng transaction (rollback ⇒ không còn dòng) và tự phát
- * `notification:new` sau commit. Adapter ở composition root (ADR-093: Workspace không import notifications).
+ * Mốc 3.5 (ADR-135, B HIGH-2): người gọi còn thuộc công ty VÀ chưa quá `offboard_access_until`. `loadMembership`
+ * (HTTP) và `project:join` (socket) đều đi qua `WorkspaceAccess` ⇒ hết quyền đúng giờ ở mọi cửa của workspace.
+ * Composition nối module company (ADR-093: workspace không import company).
  */
-export interface IHrGrantNotifier {
-  grantsChanged(input: {
-    workspaceId: string;
-    /** Người được cấp / bị thu — người nhận thông báo. */
-    userId: string;
-    actorId: string;
-    /** `true` ⇒ HR_MANAGE vừa được thêm (HR_GRANTED), `false` ⇒ vừa bị bỏ (HR_REVOKED). */
-    added: boolean;
-    /** id dòng `workspace_members` — `refId` của thông báo. */
-    membershipId: string;
-  }): Promise<void>;
+export interface ICompanyMembershipGate {
+  isActive(userId: string): Promise<boolean>;
+  /**
+   * Thêm được vào workspace (ADR-134): thuộc công ty (nhân viên hoặc Admin, kể cả chờ kích hoạt) và CHƯA có lịch
+   * nghỉ việc. Sai ⇒ 422 `NOT_ACTIVE_MEMBER`.
+   */
+  canJoinWorkspace(userId: string): Promise<boolean>;
+}
+
+export interface MemberCandidate {
+  id: string;
+  fullName: string;
+  email: string;
+}
+
+/**
+ * Danh bạ người thêm được vào workspace (`member-candidates`, ADR-134, R41) — đúng điều kiện của
+ * `canJoinWorkspace`, chưa là thành viên `workspaceId`; `q` khớp tên hoặc email không phân biệt hoa thường,
+ * `%`/`_`/`\` theo nghĩa đen (security.md 6.7). Sắp theo (tên, id), tối đa `limit`. Chỉ id + tên + email.
+ */
+export interface IMemberCandidateDirectory {
+  search(input: { workspaceId: string; q: string; limit: number }): Promise<MemberCandidate[]>;
 }
 
 /** `ProjectDto` (contracts) dạng truyền qua socket — ngày là chuỗi ISO. */

@@ -1,3 +1,5 @@
+import { SessionRevokedError } from '../errors';
+
 // Port của gateway realtime. core KHÔNG import module nghiệp vụ (dependency-cruiser) — module
 // hiện thực theo cấu trúc, wire ở composition root (ADR-016, ADR-093).
 
@@ -36,6 +38,23 @@ export function socketAuthenticatorFrom(auth: BearerAuthenticator): ISocketAuthe
 }
 
 /**
+ * Mốc 3.5 (B HIGH-2, SEC-HR-62/70): handshake và `auth:renew` từ chối người không còn thuộc công ty / quá
+ * `access_until` (401 SESSION_REVOKED) dù access token còn hạn. `isActive` = cổng công ty (composition nối).
+ */
+export function companyGatedSocketAuthenticator(
+  inner: ISocketAuthenticator,
+  isActive: (userId: string) => Promise<boolean>,
+): ISocketAuthenticator {
+  return {
+    async authenticate(token) {
+      const principal = await inner.authenticate(token);
+      if (!(await isActive(principal.userId))) throw new SessionRevokedError();
+      return principal;
+    },
+  };
+}
+
+/**
  * `project:join` (security.md §5.2) — module Workspace hiện thực (T-015).
  * `true` ⇔ user là thành viên ws (ws chưa xóa mềm) VÀ project ∈ ws. Project archived vẫn `true`.
  */
@@ -55,5 +74,6 @@ export interface RealtimeEventMeta {
 }
 
 export type WorkspaceRole = 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER';
-/** ADR-119 — bản sao kiểu của grant (core không import module). */
-export type MemberGrant = 'HR_MANAGE';
+/** Mốc 3.5 — bản sao kiểu role / grant công ty (core không import module). */
+export type CompanyRole = 'ADMIN' | 'EMPLOYEE';
+export type CompanyGrant = 'HR_MANAGE' | 'PAYROLL_MANAGE';

@@ -1,5 +1,4 @@
 import type { IClock, IIdGenerator, IRandom } from '../../../../core/domain';
-import type { IWorkspaceProvisioner } from '../../../auth';
 import { Project } from '../../domain/project';
 import type { IProjectRepository } from '../ports/repositories.port';
 import { generateSlug } from '../slug-rules';
@@ -14,12 +13,11 @@ function defaultWorkspaceName(ownerFullName: string): string {
 }
 
 /**
- * Hiện thực port `IWorkspaceProvisioner` do module auth định nghĩa (ADR-093) — import TYPE qua
- * public API của auth, wire ở composition root. Chạy BÊN TRONG transaction của Register.
- * Trùng slug ⇒ `ResourceConflictError` field `slug` (từ WorkspaceCreator) — Register thử lại cả
- * transaction với `attempt + 1`.
+ * Workspace + project mặc định cho một người (seed / helper test — Mốc 3.5 bỏ `/auth/register`, ADR-137). Chạy
+ * BÊN TRONG transaction của bên gọi. Trùng slug ⇒ `ResourceConflictError` field `slug` (từ WorkspaceCreator) —
+ * bên gọi thử lại cả transaction với `attempt + 1`.
  */
-export class DefaultWorkspaceProvisioner implements IWorkspaceProvisioner {
+export class DefaultWorkspaceProvisioner {
   constructor(
     private readonly d: {
       creator: WorkspaceCreator;

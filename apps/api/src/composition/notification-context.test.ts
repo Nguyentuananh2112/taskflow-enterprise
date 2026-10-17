@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { notificationContextFrom } from './notification-adapters';
 
-const WS = '11111111-1111-7111-8111-111111111111';
 const REQ = '0000aaaa-0000-7000-8000-00000000aaaa';
 
 describe('notificationContextFrom (T-040b L2): tên qua reader user, đơn qua reader của leave', () => {
@@ -16,11 +15,11 @@ describe('notificationContextFrom (T-040b L2): tên qua reader user, đơn qua r
         },
       },
       leaves: {
-        leaveSummaries: (refs) =>
+        leaveSummaries: (refIds) =>
           Promise.resolve(
             new Map(
-              refs.map((r) => [
-                r.refId,
+              refIds.map((id) => [
+                id,
                 { type: 'SICK', startDate: '2026-11-18', endDate: '2026-11-18' },
               ]),
             ),
@@ -29,7 +28,7 @@ describe('notificationContextFrom (T-040b L2): tên qua reader user, đơn qua r
     });
     expect(await ctx.actorNames(['u1', 'ghost'])).toEqual(new Map([['u1', 'Mia']]));
     expect(asked).toEqual([['u1', 'ghost']]);
-    expect(await ctx.leaveSummaries([{ workspaceId: WS, refId: REQ }])).toEqual(
+    expect(await ctx.leaveSummaries([REQ])).toEqual(
       new Map([[REQ, { type: 'SICK', startDate: '2026-11-18', endDate: '2026-11-18' }]]),
     );
   });

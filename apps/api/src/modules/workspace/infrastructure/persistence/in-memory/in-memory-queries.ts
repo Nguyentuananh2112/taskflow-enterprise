@@ -4,13 +4,14 @@ import type {
   UserSummary,
 } from '../../../application/ports/collaborators.port';
 import type {
+  AdminWorkspaceRow,
   IWorkspaceQueries,
   MemberRow,
   Page,
   PageRequest,
 } from '../../../application/ports/queries.port';
 import type { ProjectSnapshot } from '../../../domain/project';
-import type { MemberGrant, WorkspaceRole } from '../../../domain/roles';
+import type { WorkspaceRole } from '../../../domain/roles';
 import type { WorkspaceSnapshot } from '../../../domain/workspace';
 import type {
   InMemoryMembershipRepository,
@@ -52,11 +53,43 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
     private readonly users: InMemoryUserDirectory,
   ) {}
 
+  listForAdmin(): Promise<AdminWorkspaceRow[]> {
+    return Promise.resolve(
+      this.workspaces
+        .rows()
+        .map((w) => this.#adminRow(w))
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi') || (a.id < b.id ? -1 : 1)),
+    );
+  }
+
+  findForAdmin(id: string): Promise<AdminWorkspaceRow | null> {
+    const w = this.workspaces.rows().find((r) => r.id === id);
+    return Promise.resolve(w ? this.#adminRow(w) : null);
+  }
+
+  #adminRow(w: WorkspaceSnapshot): AdminWorkspaceRow {
+    return {
+      id: w.id,
+      name: w.name,
+      deletedAt: w.deletedAt,
+      archivedAt: w.archivedAt ?? null,
+      members: this.memberships
+        .rows()
+        .filter((m) => m.workspaceId === w.id)
+        .map((m) => ({
+          userId: m.userId,
+          fullName: this.users.users.get(m.userId)?.fullName ?? '',
+          role: m.role,
+        }))
+        .sort(
+          (a, b) => a.fullName.localeCompare(b.fullName, 'vi') || (a.userId < b.userId ? -1 : 1),
+        ),
+    };
+  }
+
   listActiveForUser(
     userId: string,
-  ): Promise<
-    { workspace: WorkspaceSnapshot; role: WorkspaceRole; grants: MemberGrant[]; joinedAt: Date }[]
-  > {
+  ): Promise<{ workspace: WorkspaceSnapshot; role: WorkspaceRole; joinedAt: Date }[]> {
     const result = this.memberships
       .rows()
       .filter((m) => m.userId === userId)
@@ -64,9 +97,7 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
         const ws = this.workspaces
           .rows()
           .find((w) => w.id === m.workspaceId && w.deletedAt === null);
-        return ws
-          ? [{ workspace: ws, role: m.role, grants: [...m.grants], joinedAt: m.joinedAt }]
-          : [];
+        return ws ? [{ workspace: ws, role: m.role, joinedAt: m.joinedAt }] : [];
       });
     return Promise.resolve(result.slice(0, 100));
   }
@@ -84,17 +115,6 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
         .filter(
           (w) => owned.has(w.id) && w.purgeAt !== null && w.purgeAt.getTime() > now.getTime(),
         ),
-    );
-  }
-
-  listMemberAccess(
-    workspaceId: string,
-  ): Promise<{ userId: string; role: WorkspaceRole; grants: MemberGrant[] }[]> {
-    return Promise.resolve(
-      this.memberships
-        .rows()
-        .filter((m) => m.workspaceId === workspaceId)
-        .map((m) => ({ userId: m.userId, role: m.role, grants: [...m.grants] })),
     );
   }
 

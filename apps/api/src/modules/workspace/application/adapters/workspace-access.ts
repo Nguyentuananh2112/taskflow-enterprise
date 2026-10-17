@@ -1,3 +1,4 @@
+import type { ICompanyMembershipGate } from '../ports/collaborators.port';
 import { ResourceNotFoundError } from '../../../../core/errors';
 import type { IMembershipRepository, IWorkspaceRepository } from '../ports/repositories.port';
 import type { Actor } from '../workspace-shared';
@@ -9,17 +10,22 @@ import type { Actor } from '../workspace-shared';
  */
 export class WorkspaceAccess {
   constructor(
-    private readonly d: { workspaces: IWorkspaceRepository; memberships: IMembershipRepository },
+    private readonly d: {
+      workspaces: IWorkspaceRepository;
+      memberships: IMembershipRepository;
+      company: ICompanyMembershipGate;
+    },
   ) {}
 
   async resolveActor(workspaceId: string, userId: string): Promise<Actor> {
-    const [workspace, membership] = await Promise.all([
+    const [workspace, membership, inCompany] = await Promise.all([
       this.d.workspaces.findById(workspaceId),
       this.d.memberships.find(workspaceId, userId),
+      this.d.company.isActive(userId),
     ]);
-    if (!workspace || workspace.isDeleted || !membership)
+    // Người đã nghỉ việc / quá `access_until` ⇒ như người ngoài (404, ADR-020) ngay cả khi job chưa xóa membership.
+    if (!workspace || workspace.isDeleted || !membership || !inCompany)
       throw new ResourceNotFoundError('workspace');
-    // ADR-119 / GR-11: grants đến từ CÙNG dòng membership vừa đọc — không thêm truy vấn, không cache.
-    return { userId, workspaceId, role: membership.role, grants: [...membership.grants] };
+    return { userId, workspaceId, role: membership.role };
   }
 }

@@ -4,7 +4,7 @@ import type {
   IProjectRepository,
   IWorkspaceRepository,
 } from '../ports/repositories.port';
-import type { IProjectAccessChecker } from '../ports/collaborators.port';
+import type { ICompanyMembershipGate, IProjectAccessChecker } from '../ports/collaborators.port';
 import { WorkspaceAccess } from './workspace-access';
 
 /**
@@ -22,6 +22,7 @@ export class WorkspaceProjectAccessChecker implements IProjectAccessChecker {
       workspaces: IWorkspaceRepository;
       memberships: IMembershipRepository;
       projects: IProjectRepository;
+      company: ICompanyMembershipGate;
     },
   ) {
     this.#access = new WorkspaceAccess(d);

@@ -25,8 +25,9 @@ afterEach(() => cleanupApp());
 function open(path: string) {
   const f = seedBoard(mock);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
+  f.setCompanyAccess(f.owner, 'HR'); // trang /hr cần hr:manage cấp công ty; nhân viên HR vẫn chấm công
   f.signInAs(f.owner);
-  openApp(`/w/${f.wsId}${path}`, hub.client(getClientId(), f.owner.id));
+  openApp(path, hub.client(getClientId(), f.owner.id));
   return f;
 }
 
@@ -54,12 +55,10 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
   });
 
   it('chuông: thông báo tạo "bây giờ" theo server ⇒ "phút này", không phải số ngày theo giờ máy', async () => {
-    const f = open('/projects');
+    const f = open('/w');
     mock.notifications.notify(f.owner.id, {
       type: 'LEAVE_APPROVED',
       refId: crypto.randomUUID(),
-      workspaceId: f.wsId,
-      workspaceName: 'Công ty Lan',
       actor: { id: crypto.randomUUID(), fullName: 'Hana HR' },
       leave: { type: 'ANNUAL', startDate: '2031-03-12', endDate: '2031-03-12' },
     });
@@ -67,7 +66,8 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
     await u.click(await screen.findByRole('button', { name: 'Thông báo, 1 chưa đọc' }));
     const panel = await screen.findByRole('dialog', { name: 'Thông báo' });
     const item = await within(panel).findByRole('link', { name: /^Chưa đọc:/ });
-    expect(item.getAttribute('aria-label')).toMatch(/, phút này$/);
+    // Mốc 3.5: thông báo không còn tên workspace ⇒ "…. phút này".
+    expect(item.getAttribute('aria-label')).toMatch(/\. phút này$/);
   });
 
   it('/hr: bảng công tháng 3/2031 + "Tháng sau" khóa; ngày lễ năm 2031; số phép năm 2031', async () => {

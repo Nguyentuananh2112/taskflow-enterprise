@@ -162,7 +162,6 @@ describe('F3 workspace — GAP P2', () => {
         name: ws.name,
         slug: ws.slug,
         myRole: 'MEMBER',
-        myGrants: [],
         createdAt: ws.createdAt,
         updatedAt: ws.updatedAt,
       },

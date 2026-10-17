@@ -18,8 +18,8 @@ export interface LeaveBackend {
   readonly uow: IUnitOfWork & { readonly commits: number; readonly rollbacks: number };
   readonly requests: ILeaveRepository;
   readonly readModel: ILeaveReadModel;
-  /** Dựng sẵn user/workspace của fixture (FK ở bản Prisma); InMemory: không làm gì. */
-  prepare(fixture: { workspaces: readonly string[]; users: readonly string[] }): Promise<void>;
+  /** Dựng sẵn user của fixture (FK ở bản Prisma); InMemory: không làm gì. */
+  prepare(fixture: { users: readonly string[] }): Promise<void>;
   seed(record: LeaveRequestRecord): Promise<void>;
   rows(): Promise<LeaveRequestRecord[]>;
 }
@@ -48,15 +48,18 @@ export class RecordingLeaveRepository implements ILeaveRepository {
 
   constructor(private readonly inner: ILeaveRepository) {}
 
-  lockUser(workspaceId: string, userId: string): Promise<void> {
-    this.locks.push(`taskflow:leave:${workspaceId}:${userId}`);
-    return this.inner.lockUser(workspaceId, userId);
+  lockUser(userId: string): Promise<void> {
+    this.locks.push(`taskflow:leave:${userId}`);
+    return this.inner.lockUser(userId);
   }
-  listHolding(workspaceId: string, userId: string, year: number): Promise<LeaveRequestRecord[]> {
-    return this.inner.listHolding(workspaceId, userId, year);
+  listHolding(userId: string, year: number): Promise<LeaveRequestRecord[]> {
+    return this.inner.listHolding(userId, year);
   }
-  find(workspaceId: string, id: string): Promise<LeaveRequestRecord | null> {
-    return this.inner.find(workspaceId, id);
+  listOpen(userId: string): Promise<LeaveRequestRecord[]> {
+    return this.inner.listOpen(userId);
+  }
+  find(id: string): Promise<LeaveRequestRecord | null> {
+    return this.inner.find(id);
   }
   add(record: LeaveRequestRecord): Promise<void> {
     return this.inner.add(record);
@@ -64,22 +67,10 @@ export class RecordingLeaveRepository implements ILeaveRepository {
   save(record: LeaveRequestRecord, expectedVersion: number): Promise<boolean> {
     return this.inner.save(record, expectedVersion);
   }
-  getOrCreateBalance(
-    workspaceId: string,
-    userId: string,
-    year: number,
-  ): Promise<LeaveBalanceRecord> {
-    return this.inner.getOrCreateBalance(workspaceId, userId, year);
+  getOrCreateBalance(userId: string, year: number): Promise<LeaveBalanceRecord> {
+    return this.inner.getOrCreateBalance(userId, year);
   }
-  setBalanceAdjustment(
-    workspaceId: string,
-    userId: string,
-    year: number,
-    adjustment: HalfDays,
-  ): Promise<void> {
-    return this.inner.setBalanceAdjustment(workspaceId, userId, year, adjustment);
-  }
-  hasHistory(workspaceId: string, userId: string): Promise<boolean> {
-    return this.inner.hasHistory(workspaceId, userId);
+  setBalanceAdjustment(userId: string, year: number, adjustment: HalfDays): Promise<void> {
+    return this.inner.setBalanceAdjustment(userId, year, adjustment);
   }
 }

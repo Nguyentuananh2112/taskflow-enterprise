@@ -1,4 +1,4 @@
 {
-  "extends": "@taskflow/config/tsconfig/node.json",
+  "extends": ["@taskflow/config/tsconfig/node.json", "./tsconfig.exclusions.json"],
   "include": ["src", "test", "prisma", "*.config.ts"]
 }

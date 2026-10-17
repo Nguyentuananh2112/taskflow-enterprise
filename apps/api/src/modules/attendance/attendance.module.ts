@@ -10,11 +10,11 @@ import type { ApprovedLeavePort } from './application/ports/approved-leave.port'
 import type { IAttendanceEventStore } from './application/ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
-  IHrAccess,
+  ICompanyAccess,
+  ICompanyTenurePort,
   IHrAuditRecorder,
   IUserRefReader,
 } from './application/ports/collaborators.port';
-import type { IMembershipTenurePort } from './application/ports/membership-tenure.port';
 import type { IRetentionWindow } from './application/ports/retention-window.port';
 import type { IWorkCalendarStore } from './application/ports/work-calendar-store.port';
 import { AttendanceEventsUseCases } from './application/use-cases/attendance-events.use-cases';
@@ -23,12 +23,13 @@ import { CheckInOutUseCase } from './application/use-cases/check-in-out.use-case
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from './application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
+import { scheduleTimeZoneNow } from './application/schedule-timezone';
 import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
 import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memory/in-memory-work-calendar';
 import type { DbProvider } from './infrastructure/persistence/prisma/db';
 import { PrismaAttendanceEventStore } from './infrastructure/persistence/prisma/prisma-attendance-event.store';
 import { PrismaWorkCalendarStore } from './infrastructure/persistence/prisma/prisma-work-calendar.store';
-import type { AttendanceMembership } from './presentation/attendance-access';
+import type { AttendanceCompanyMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
 
@@ -54,14 +55,15 @@ export interface AttendanceModuleDeps {
    * leave ↔ attendance phụ thuộc vòng, composition dùng tham chiếu trễ.
    */
   leaves: ApprovedLeavePort;
-  tenures: IMembershipTenurePort;
+  tenures: ICompanyTenurePort;
   /** T-047: mốc lưu của job retention (null khi job tắt). */
   retention: IRetentionWindow;
   users: IUserRefReader;
-  hrAccess: IHrAccess;
+  /** `CompanyAccess` của module company (T-061). */
+  company: ICompanyAccess;
   audit: IHrAuditRecorder;
   notifier: AttendanceNotifier;
-  membership: AttendanceMembership;
+  membership: AttendanceCompanyMembership;
   uow: IUnitOfWork;
   clock: IClock;
   ids: IIdGenerator;
@@ -74,6 +76,11 @@ export interface AttendanceModule {
   routes(authenticate: RequestHandler): Router;
   /** Hiện thực `IWorkCalendarPort` của module leave (thiết kế §4). */
   workCalendar: AttendanceWorkCalendar;
+  /**
+   * Múi giờ của lịch công ty có hiệu lực HÔM NAY (ADR-120) — module company dùng cho `start_date` / `access_until`
+   * (CLK-HR-08: lịch múi Berlin ⇒ ngày / 06:00 theo Berlin).
+   */
+  timeZoneNow(): Promise<string>;
 }
 
 /** Composition của module Attendance (ADR-016): wire nội bộ module, port ngoài được tiêm vào. */
@@ -90,12 +97,12 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
   };
   const collaborators = {
     users: d.users,
-    hrAccess: d.hrAccess,
+    company: d.company,
     audit: d.audit,
     notifier: d.notifier,
   };
   const controller = new AttendanceController({
-    checkInOut: new CheckInOutUseCase(deps),
+    checkInOut: new CheckInOutUseCase({ ...deps, company: d.company }),
     mine: new MyAttendanceQueries(deps),
     hr: new HrAttendanceQueries({ ...deps, users: d.users }),
     events: new AttendanceEventsUseCases({ ...deps, ...collaborators }),
@@ -107,5 +114,6 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
     routes: (authenticate) =>
       attendanceRoutes({ controller, membership: d.membership, authenticate, limit: d.limit }),
     workCalendar: new AttendanceWorkCalendar(d.repos.calendar),
+    timeZoneNow: () => scheduleTimeZoneNow(d.repos.calendar, d.clock),
   };
 }

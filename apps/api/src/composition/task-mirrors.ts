@@ -79,6 +79,10 @@ export class TaskMirroredMemberships implements IMembershipRepository {
     return this.inner.listUserIds(workspaceId);
   }
 
+  listWorkspaceIdsOfUser(userId: string) {
+    return this.inner.listWorkspaceIdsOfUser(userId);
+  }
+
   async add(membership: Membership): Promise<void> {
     await this.inner.add(membership);
     this.#upsert(membership);
@@ -112,6 +116,9 @@ export class TaskMirroredWorkspaces implements IWorkspaceRepository {
     return this.inner.findById(id);
   }
 
+  archive(id: string, at: Date) {
+    return this.inner.archive(id, at);
+  }
   listPurgeable(now: Date, limit: number) {
     return this.inner.listPurgeable(now, limit);
   }

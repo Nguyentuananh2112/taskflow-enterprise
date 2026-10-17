@@ -1,31 +1,37 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
 import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
-import { startMockApi } from '@test/mock-api';
+import { COMPANY_SCOPE, startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
 import { getClientId } from '@/shared/lib/client-id';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
 
-// T-041c: /w/:ws/hr (attendance-leave.md §6, §9). Hôm nay theo server: thứ 5 2026-10-15, 10:00 giờ
+// T-041c: /hr (Mốc 3.5 — cấp công ty, ADR-139; attendance-leave.md §6, §9). Lan (f.owner) là HR: nhân viên có
+// HR_MANAGE cấp công ty (vẫn chấm công / xin nghỉ). Hôm nay theo server: thứ 5 2026-10-15, 10:00 giờ
 // Việt Nam. Mock: lịch T2–T7 08:00–17:30, grace 0.
 
+// Mốc 3.5: MỘT công ty ⇒ người / đơn / lượt chấm của ca trước nằm chung danh sách HR của ca sau (trước đây mỗi ca
+// một workspace riêng) ⇒ mỗi ca một mock mới (F — ADR-140 "trạng thái dùng chung").
 let mock: ReturnType<typeof startMockApi>;
-beforeAll(() => {
+beforeEach(() => {
   mock = startMockApi({ now: () => Date.parse('2026-10-15T03:00:00.000Z') });
 });
-afterAll(() => mock.stop());
-afterEach(() => cleanupApp());
+afterEach(() => {
+  cleanupApp();
+  mock.stop();
+});
 
 const user = () => userEvent.setup({ delay: null });
 
 function seed() {
   const f = seedBoard(mock);
+  f.setCompanyAccess(f.owner, 'HR');
   const hub = new FakeRealtimeHub(mock.board, mock.db);
   const an = f.addUser('Nguyễn An', `an-${crypto.randomUUID()}@example.com`, 'MEMBER');
   const open = (url: string, as: { id: string } = f.owner) => {
@@ -37,41 +43,38 @@ function seed() {
     return tab;
   };
   const submitLeave = (by: typeof an, body: Record<string, unknown>) =>
-    f.apiAs(by, 'POST', `/workspaces/${f.wsId}/leave-requests`, body);
-  const grantHr = (to: { id: string }) =>
-    f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/members/${to.id}/grants`, {
-      grants: ['HR_MANAGE'],
-    });
+    f.apiAs(by, 'POST', '/leave/requests', body);
+  const grantHr = (to: { id: string }) => f.setCompanyAccess(to as typeof f.owner, 'HR');
   return { f, an, open, submitLeave, grantHr };
 }
 
 describe('trang Nhân sự — quyền', () => {
-  it('thành viên thường: không có lối vào, /hr báo không có quyền; được cấp ⇒ lối vào hiện ngay (realtime)', async () => {
-    const { f, an, open, grantHr } = seed();
-    open(`/w/${f.wsId}/projects`, an);
-    await screen.findByRole('region', { name: 'Chấm công' });
-    expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull();
-    await act(() => grantHr(an));
-    // Header (mọi route có wsId) + lối tắt dưới thẻ Chấm công (T-045: mở thẳng tab Đơn nghỉ; 0 đơn chờ ⇒ không ghi số).
-    const links = await screen.findAllByRole('link', { name: 'Nhân sự' });
-    expect(links.map((l) => l.getAttribute('href'))).toEqual([
-      `/w/${f.wsId}/hr`,
-      `/w/${f.wsId}/hr?tab=leave`,
-    ]);
-    cleanupApp();
-
-    // E2E-HR-03: đang ở trang khác (không có thẻ) ⇒ header vẫn hiện/ẩn theo quyền ngay.
-    open(`/w/${f.wsId}/leave`, an);
-    expect(await screen.findByRole('link', { name: 'Nhân sự' })).toBeTruthy();
-    await act(() =>
-      f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/members/${an.id}/grants`, { grants: [] }),
-    );
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull());
-    cleanupApp();
-
-    const vy = f.addUser('Khách Vy', `vy-${crypto.randomUUID()}@example.com`, 'VIEWER');
-    open(`/w/${f.wsId}/hr`, vy);
+  it('nhân viên thường: không có lối vào, /hr báo không có quyền + lối về; có HR_MANAGE ⇒ lối vào /hr ở header + lối tắt', async () => {
+    const { an, open, grantHr } = seed();
+    open('/hr', an);
     expect(await screen.findByText('Bạn không có quyền Quản lý nhân sự')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Về trang chính' }).getAttribute('href')).toBe('/w');
+    expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull();
+    cleanupApp();
+
+    grantHr(an);
+    open('/attendance', an);
+    await screen.findByRole('table', { name: /^Bảng công tháng/ });
+    const links = await screen.findAllByRole('link', { name: 'Nhân sự' });
+    expect(links.map((l) => l.getAttribute('href'))).toContain('/hr');
+  });
+
+  it('được cấp / bị thu HR_MANAGE ⇒ lối vào "Nhân sự" hiện / ẩn NGAY qua company:access-changed (không tải lại)', async () => {
+    const { f, an, open } = seed();
+    open('/attendance', an);
+    await screen.findByRole('table', { name: /^Bảng công tháng/ });
+    expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull();
+    f.setCompanyAccess(an, 'HR');
+    f.pushAccessChanged(an);
+    expect(await screen.findByRole('link', { name: 'Nhân sự' })).toBeTruthy();
+    f.setCompanyAccess(an, 'EMPLOYEE');
+    f.pushAccessChanged(an);
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Nhân sự' })).toBeNull());
   });
 });
 
@@ -86,10 +89,10 @@ describe('trang Nhân sự — XSS (E2E-HR-08)', () => {
       dayPart: 'FULL',
       reason: payload,
     });
-    await f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/attendance/holidays/2026-12-24`, {
+    await f.apiAs(f.owner, 'PUT', `/attendance/holidays/2026-12-24`, {
       name: payload,
     });
-    open(`/w/${f.wsId}/hr?tab=leave`);
+    open('/hr?tab=leave');
     const item = await screen.findByRole('listitem', { name: 'Đơn của Nguyễn An' });
     expect(item.textContent).toContain(`Lý do: ${payload}`);
     expect(item.querySelector('img')).toBeNull();
@@ -104,7 +107,7 @@ describe('trang Nhân sự — XSS (E2E-HR-08)', () => {
 describe('trang Nhân sự — realtime', () => {
   it('đang mở tab Đơn nghỉ: notification:new LEAVE_SUBMITTED ⇒ đơn mới hiện ngay (E2E-HR-02)', async () => {
     const { f, an, open, submitLeave } = seed();
-    open(`/w/${f.wsId}/hr?tab=leave`);
+    open('/hr?tab=leave');
     expect(await screen.findByText('Không có đơn nào chờ duyệt.')).toBeTruthy();
     const created = (await submitLeave(an, {
       type: 'PERSONAL_PAID',
@@ -117,8 +120,6 @@ describe('trang Nhân sự — realtime', () => {
       mock.notifications.notify(f.owner.id, {
         type: 'LEAVE_SUBMITTED',
         refId: created.id,
-        workspaceId: f.wsId,
-        workspaceName: 'WS',
         actor: { id: an.id, fullName: an.fullName },
         leave: { type: 'PERSONAL_PAID', startDate: '2026-10-23', endDate: '2026-10-23' },
       });
@@ -137,11 +138,11 @@ describe('nhân viên — realtime', () => {
       endDate: '2026-10-26',
       dayPart: 'FULL',
     })) as unknown as { id: string; version: number };
-    open(`/w/${f.wsId}/leave`, an);
+    open('/leave', an);
     const list = await screen.findByRole('region', { name: 'Đơn của tôi' });
     expect(await within(list).findByText('Chờ duyệt')).toBeTruthy();
     await act(() =>
-      f.apiAs(f.owner, 'POST', `/workspaces/${f.wsId}/leave-requests/${created.id}/approve`, {
+      f.apiAs(f.owner, 'POST', `/leave/requests/${created.id}/approve`, {
         expectedVersion: created.version,
       }),
     );
@@ -150,14 +151,13 @@ describe('nhân viên — realtime', () => {
 });
 
 describe('trang Nhân sự — thu quyền', () => {
-  it('đang mở /hr mà bị thu grant ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
+  it('đang mở /hr mà bị thu HR_MANAGE ⇒ chuyển ngay sang "không có quyền", bảng dữ liệu biến mất', async () => {
     const { f, an, open, grantHr } = seed();
-    await grantHr(an);
-    open(`/w/${f.wsId}/hr`, an);
+    grantHr(an);
+    open('/hr', an);
     await screen.findByRole('table', { name: 'Chấm công từng người hôm nay' });
-    await act(() =>
-      f.apiAs(f.owner, 'PUT', `/workspaces/${f.wsId}/members/${an.id}/grants`, { grants: [] }),
-    );
+    f.setCompanyAccess(an, 'EMPLOYEE');
+    f.pushAccessChanged(an);
     expect(await screen.findByText('Bạn không có quyền Quản lý nhân sự')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
   });
@@ -165,9 +165,14 @@ describe('trang Nhân sự — thu quyền', () => {
 
 describe('trang Nhân sự — các tab', () => {
   it('Hôm nay: tổng + từng người (chữ + biểu tượng), tab bằng bàn phím; a11y', async () => {
-    const { f, an, open } = seed();
-    mock.attendance.punch(f.wsId, { id: an.id, fullName: an.fullName }, 'IN', crypto.randomUUID());
-    open(`/w/${f.wsId}/hr`);
+    const { an, open } = seed();
+    mock.attendance.punch(
+      COMPANY_SCOPE,
+      { id: an.id, fullName: an.fullName },
+      'IN',
+      crypto.randomUUID(),
+    );
+    open('/hr');
     const table = await screen.findByRole('table', { name: 'Chấm công từng người hôm nay' });
     const row = within(table).getByRole('row', { name: /Nguyễn An/ });
     expect(row.textContent).toContain('Có mặt');
@@ -190,7 +195,7 @@ describe('trang Nhân sự — các tab', () => {
   });
 
   it('Đơn nghỉ: thấy lý do; duyệt có ghi chú ⇒ Đã duyệt; thu hồi bắt buộc lý do; a11y', async () => {
-    const { f, an, open, submitLeave } = seed();
+    const { an, open, submitLeave } = seed();
     await submitLeave(an, {
       type: 'ANNUAL',
       startDate: '2026-10-19',
@@ -198,7 +203,7 @@ describe('trang Nhân sự — các tab', () => {
       dayPart: 'FULL',
       reason: 'Về quê',
     });
-    open(`/w/${f.wsId}/hr?tab=leave`);
+    open('/hr?tab=leave');
     const item = await screen.findByRole('listitem', { name: 'Đơn của Nguyễn An' });
     expect(item.textContent).toContain('Lý do: Về quê');
     expect(item.textContent).toContain('2 ngày');
@@ -227,24 +232,24 @@ describe('trang Nhân sự — các tab', () => {
     expect(mock.leave.items.find((l) => l.userId === an.id)?.status).toBe('REVOKED');
   });
 
-  it('HR (không phải OWNER) không thấy nút với đơn của chính mình', async () => {
-    const { f, an, open, submitLeave, grantHr } = seed();
-    await grantHr(an);
+  it('HR (không phải Admin) không thấy nút với đơn của chính mình', async () => {
+    const { an, open, submitLeave, grantHr } = seed();
+    grantHr(an);
     await submitLeave(an, {
       type: 'UNPAID',
       startDate: '2026-10-22',
       endDate: '2026-10-22',
       dayPart: 'AM',
     });
-    open(`/w/${f.wsId}/hr?tab=leave`, an);
+    open('/hr?tab=leave', an);
     const item = await screen.findByRole('listitem', { name: 'Đơn của Nguyễn An' });
     expect(item.textContent).toContain('người khác có quyền Quản lý nhân sự sẽ xử lý');
     expect(within(item).queryByRole('button')).toBeNull();
   });
 
   it('Bảng công: chọn người ⇒ lịch tháng; bấm ngày ⇒ thêm lượt ⇒ ô ngày cập nhật, không tải lại cả bảng', async () => {
-    const { f, open } = seed();
-    open(`/w/${f.wsId}/hr?tab=timesheet`);
+    const { open } = seed();
+    open('/hr?tab=timesheet');
     const u = user();
     await u.click(await screen.findByRole('button', { name: 'Nguyễn An' }));
     const month = await screen.findByRole('region', { name: 'Bảng công của Nguyễn An' });
@@ -267,7 +272,7 @@ describe('trang Nhân sự — các tab', () => {
   });
 
   it('Xuất CSV: tải Blob với tên file từ server', async () => {
-    const { f, open } = seed();
+    const { open } = seed();
     const created: Blob[] = [];
     const createObjectURL = vi.fn((b: Blob) => {
       created.push(b);
@@ -277,7 +282,7 @@ describe('trang Nhân sự — các tab', () => {
     const click = vi
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => undefined);
-    open(`/w/${f.wsId}/hr?tab=timesheet`);
+    open('/hr?tab=timesheet');
     await user().click(await screen.findByRole('button', { name: 'Xuất CSV' }));
     await waitFor(() => expect(click).toHaveBeenCalled());
     const anchor = click.mock.contexts[0] as HTMLAnchorElement;
@@ -288,8 +293,8 @@ describe('trang Nhân sự — các tab', () => {
   });
 
   it('Số phép: chỉnh điều chỉnh ⇒ dòng cập nhật; Lịch & ngày lễ: thêm ngày lễ', async () => {
-    const { f, an, open } = seed();
-    open(`/w/${f.wsId}/hr?tab=balances`);
+    const { an, open } = seed();
+    open('/hr?tab=balances');
     const u = user();
     await u.click(await screen.findByRole('button', { name: 'Chỉnh số phép của Nguyễn An' }));
     const dialog = await screen.findByRole('dialog', { name: /Số phép năm 2026 của Nguyễn An/ });
@@ -300,7 +305,7 @@ describe('trang Nhân sự — các tab', () => {
     expect(await screen.findByText('Đã cập nhật số phép của Nguyễn An')).toBeTruthy();
     const row = screen.getByRole('row', { name: /Nguyễn An/ });
     expect(row.textContent).toContain('13,5 ngày');
-    expect(mock.leave.balance(f.wsId, an.id, 2026).adjustmentDays).toBe(1.5);
+    expect(mock.leave.balance(COMPANY_SCOPE, an.id, 2026).adjustmentDays).toBe(1.5);
 
     await u.click(screen.getByRole('tab', { name: 'Lịch & ngày lễ' }));
     expect(

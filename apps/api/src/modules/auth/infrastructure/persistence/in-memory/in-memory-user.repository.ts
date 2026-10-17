@@ -15,6 +15,13 @@ export class InMemoryUserRepository implements IUserRepository {
     return Promise.resolve(row ? User.reconstitute(row) : null);
   }
 
+  findManyByIds(ids: readonly string[]): Promise<User[]> {
+    const wanted = new Set(ids);
+    return Promise.resolve(
+      [...this.#rows.values()].filter((r) => wanted.has(r.id)).map((r) => User.reconstitute(r)),
+    );
+  }
+
   findByEmail(email: Email): Promise<User | null> {
     const row = [...this.#rows.values()].find((r) => r.email === email.value);
     return Promise.resolve(row ? User.reconstitute(row) : null);
@@ -77,6 +84,18 @@ export class InMemoryUserRepository implements IUserRepository {
       updatedAt: input.at,
     });
     return Promise.resolve(tokenVersion);
+  }
+
+  setInitialPassword(input: { id: string; hash: string; at: Date }): Promise<number | null> {
+    const row = this.#live(input.id);
+    if (!row || row.passwordHash !== null) return Promise.resolve(null);
+    this.#rows.set(input.id, {
+      ...row,
+      passwordHash: input.hash,
+      passwordChangedAt: input.at,
+      updatedAt: input.at,
+    });
+    return Promise.resolve(row.tokenVersion);
   }
 
   bumpTokenVersion(id: string, at: Date): Promise<number | null> {

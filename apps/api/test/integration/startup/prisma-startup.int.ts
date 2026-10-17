@@ -1,6 +1,6 @@
 // T-020 (quyết định Tech Lead): khởi động `src/main.ts` THẬT với Prisma + Valkey thật — chứng minh wiring
 // composition root, không gọi createApp trực tiếp. Và staging/production + module bộ nhớ ⇒ từ chối khởi động.
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 
@@ -65,29 +65,71 @@ afterAll(async () => {
 
 describe('Khởi động main.ts với Prisma + Valkey thật (T-020)', () => {
   it(
-    'PERSISTENCE=prisma: readyz xanh; register → login → me → logout-all qua HTTP; dữ liệu nằm trong Postgres',
+    'PERSISTENCE=prisma: readyz xanh; admin:bootstrap --json → activate → login → me → logout-all qua HTTP; dữ liệu nằm trong Postgres',
     async () => {
       await resetDatabase();
-      const api = startApi(
-        testEnvVars({
-          PORT: String(PORT),
-          DATABASE_URL: testDatabaseUrl(),
-          REDIS_URL: testValkeyUrl(),
-          PERSISTENCE: 'prisma',
-        }),
-      );
+      const env = testEnvVars({
+        PORT: String(PORT),
+        DATABASE_URL: testDatabaseUrl(),
+        REDIS_URL: testValkeyUrl(),
+        PERSISTENCE: 'prisma',
+      });
+      const api = startApi(env);
       children.push(api.child);
       await waitHealthy(api);
       expect((await fetch(`${BASE}/readyz`)).status).toBe(200);
 
+      // Mốc 3.5 (ADR-137): không còn register — Admin đầu tiên qua CLI thật, cùng env với API.
       const email = `startup-${randomUUID()}@example.com`;
       const json = { 'content-type': 'application/json' };
-      const reg = await fetch(`${BASE}/api/v1/auth/register`, {
+      const cli = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', 'src/cli/admin-bootstrap.ts', '--json'],
+        {
+          cwd: API_DIR,
+          env: {
+            ...process.env,
+            ...env,
+            BOOTSTRAP_ADMIN_EMAIL: email,
+            BOOTSTRAP_ADMIN_NAME: 'Startup Admin',
+            COMPANY_NAME: 'Công ty Startup',
+          },
+          encoding: 'utf8',
+          timeout: 60_000,
+        },
+      );
+      expect(cli.status, cli.stderr).toBe(0);
+      const lines = cli.stdout.trim().split(/\r?\n/);
+      expect(lines).toHaveLength(1); // đúng MỘT dòng JSON (log ra stderr)
+      const boot = JSON.parse(lines[0] ?? '') as { activation: { token: string; link: string } };
+      expect(boot.activation.link).toBe(
+        `http://localhost:3001/activate#t=${boot.activation.token}`,
+      );
+      const activated = await fetch(`${BASE}/api/v1/auth/activate`, {
         method: 'POST',
-        headers: json,
-        body: JSON.stringify({ email, password: 'correct-horse-12', fullName: 'Startup Test' }),
+        headers: { ...json, origin: 'http://localhost:3001' },
+        body: JSON.stringify({ token: boot.activation.token, password: 'correct-horse-12' }),
       });
-      expect(reg.status).toBe(201);
+      expect(activated.status).toBe(200);
+      // Lần 2 ⇒ CLI từ chối (đã có Admin), không đổi gì.
+      const again = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', 'src/cli/admin-bootstrap.ts', '--json'],
+        {
+          cwd: API_DIR,
+          env: {
+            ...process.env,
+            ...env,
+            BOOTSTRAP_ADMIN_EMAIL: `other-${email}`,
+            BOOTSTRAP_ADMIN_NAME: 'Other',
+            COMPANY_NAME: 'X',
+          },
+          encoding: 'utf8',
+          timeout: 60_000,
+        },
+      );
+      expect(again.status).toBe(1);
+      expect(again.stdout).toBe('');
       const login = await fetch(`${BASE}/api/v1/auth/login`, {
         method: 'POST',
         headers: json,
@@ -112,7 +154,10 @@ describe('Khởi động main.ts với Prisma + Valkey thật (T-020)', () => {
         select: { tokenVersion: true },
       });
       expect(row.tokenVersion).toBe(1); // ghi thật vào Postgres, không phải bộ nhớ
-      expect(await testPrisma().workspace.count()).toBe(1); // workspace mặc định của register
+      expect(await testPrisma().companyMember.count({ where: { role: 'ADMIN' } })).toBe(1);
+      expect((await testPrisma().company.findUnique({ where: { id: 1 } }))?.name).toBe(
+        'Công ty Startup',
+      );
       expect(api.output()).not.toContain('persistence.in_memory_data_lost_on_restart');
     },
     STARTUP_TIMEOUT_MS + 30_000,

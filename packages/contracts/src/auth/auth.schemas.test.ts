@@ -7,7 +7,6 @@ import {
   LoginBody,
   MeResponse,
   Password,
-  RegisterBody,
   UpdateMeBody,
 } from '../index';
 
@@ -59,11 +58,6 @@ describe('FullName', () => {
 });
 
 describe('body auth', () => {
-  it('RegisterBody đủ trường, từ chối field lạ', () => {
-    const ok = { email: 'a@b.vn', password: 'đủ-mười-hai-ký', fullName: 'An' };
-    expect(RegisterBody.safeParse(ok).success).toBe(true);
-    expect(RegisterBody.safeParse({ ...ok, role: 'OWNER' }).success).toBe(false);
-  });
   it('LoginBody không áp chính sách độ dài tối thiểu nhưng chặn rỗng/quá dài', () => {
     expect(LoginBody.safeParse({ email: 'a@b.vn', password: 'short' }).success).toBe(true);
     expect(LoginBody.safeParse({ email: 'a@b.vn', password: '' }).success).toBe(false);
@@ -87,9 +81,18 @@ describe('MeResponse', () => {
   it('có user và memberships với role hợp lệ', () => {
     const user = { id: ID, email: 'a@b.vn', fullName: 'An', createdAt: '2026-10-15T08:00:00Z' };
     const m = { workspaceId: ID, workspaceName: 'W', slug: 'w-1', role: 'PM' };
-    expect(MeResponse.safeParse({ user, memberships: [m] }).success).toBe(true);
-    expect(MeResponse.safeParse({ user, memberships: [{ ...m, role: 'ADMIN' }] }).success).toBe(
-      false,
-    );
+    const company = {
+      name: 'Công ty Mẫu',
+      role: 'EMPLOYEE',
+      grants: [],
+      permissions: ['attendance:self', 'leave:self', 'workspace:create'],
+      status: 'ACTIVE',
+      offboardLastDay: null,
+    };
+    expect(MeResponse.safeParse({ user, memberships: [m], company }).success).toBe(true);
+    expect(MeResponse.safeParse({ user, memberships: [m] }).success).toBe(false); // Mốc 3.5: company bắt buộc
+    expect(
+      MeResponse.safeParse({ user, memberships: [{ ...m, role: 'ADMIN' }], company }).success,
+    ).toBe(false);
   });
 });
