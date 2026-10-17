@@ -26,25 +26,38 @@ export async function sendXlsx(
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
   });
+  // B M1: client đóng kết nối BẤT KỲ lúc nào (không chỉ lúc chờ drain) ⇒ hủy cả lượt ghi.
+  const abort = new AbortController();
+  const onGone = () => {
+    if (!res.writableFinished) abort.abort();
+  };
+  res.once('close', onGone);
   try {
-    await writer.write(sheets, (chunk) => {
-      if (res.write(chunk)) return;
-      return new Promise<void>((resolve, reject) => {
-        const onDrain = () => {
-          res.off('close', onClose);
-          resolve();
-        };
-        const onClose = () => {
-          res.off('drain', onDrain);
-          reject(new Error('xlsx: client đóng kết nối'));
-        };
-        res.once('drain', onDrain);
-        res.once('close', onClose);
-      });
-    });
+    await writer.write(
+      sheets,
+      (chunk) => {
+        if (abort.signal.aborted || res.destroyed) throw new Error('xlsx: client đóng kết nối');
+        if (res.write(chunk)) return;
+        return new Promise<void>((resolve, reject) => {
+          const onDrain = () => {
+            res.off('close', onClose);
+            resolve();
+          };
+          const onClose = () => {
+            res.off('drain', onDrain);
+            reject(new Error('xlsx: client đóng kết nối'));
+          };
+          res.once('drain', onDrain);
+          res.once('close', onClose);
+        });
+      },
+      { signal: abort.signal },
+    );
     res.end();
   } catch (err) {
     res.socket?.destroy();
     throw err;
+  } finally {
+    res.off('close', onGone);
   }
 }

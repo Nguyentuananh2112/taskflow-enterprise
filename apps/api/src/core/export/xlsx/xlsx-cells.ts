@@ -61,8 +61,8 @@ export function columnName(index: number): string {
   return name;
 }
 
-/** Style id trong styles.xml (xlsx-parts.ts): 0 thường, 1 chữ có quotePrefix, 2 tiêu đề đậm. */
-export const STYLE = { normal: 0, quoted: 1, header: 2 } as const;
+/** Style id trong styles.xml (xlsx-parts.ts): 0 thường, 1 quotePrefix, 2 tiêu đề đậm, 3 tiêu đề đậm + quotePrefix. */
+export const STYLE = { normal: 0, quoted: 1, header: 2, headerQuoted: 3 } as const;
 
 /**
  * XML của một ô tại `ref` (vd `B7`). Chuỗi ⇒ `<c t="inlineStr"><is><t>`; số hữu hạn ⇒ `<v>`; null / chuỗi rỗng sau
@@ -76,9 +76,19 @@ export function cellXml(ref: string, value: CellValue, opts: { header?: boolean 
   }
   const text = stripXmlForbidden(value);
   if (text === '') return '';
-  const style = opts.header ? STYLE.header : needsQuotePrefix(text) ? STYLE.quoted : STYLE.normal;
+  // B L1: tiêu đề cũng có thể đến từ dữ liệu (tên phòng ban…) ⇒ quotePrefix áp cho cả tiêu đề.
+  const quoted = needsQuotePrefix(text);
+  const style = opts.header
+    ? quoted
+      ? STYLE.headerQuoted
+      : STYLE.header
+    : quoted
+      ? STYLE.quoted
+      : STYLE.normal;
   const s = style === STYLE.normal ? '' : ` s="${String(style)}"`;
-  return `<c r="${ref}" t="inlineStr"${s}><is><t xml:space="preserve">${escapeXml(text)}</t></is></c>`;
+  // B L2: CR thô bị parser XML chuẩn hóa thành LF ⇒ ghi tham chiếu ký tự để giữ nguyên.
+  const body = escapeXml(text).replaceAll('\r', '&#13;');
+  return `<c r="${ref}" t="inlineStr"${s}><is><t xml:space="preserve">${body}</t></is></c>`;
 }
 
 /** Một hàng (`rowNumber` 1-based). */

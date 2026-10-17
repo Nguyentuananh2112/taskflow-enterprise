@@ -1,3 +1,6 @@
+import { get, type IncomingMessage } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
 import express from 'express';
 import { strFromU8, unzipSync } from 'fflate';
 import request from 'supertest';
@@ -12,7 +15,7 @@ import {
   stripXmlForbidden,
 } from './xlsx-cells';
 import { XLSX_CONTENT_TYPE, sendXlsx } from './xlsx-response';
-import { FflateXlsxWriter, type SpreadsheetSheet } from './xlsx-writer';
+import { FflateXlsxWriter, XLSX_MAX_ROWS, type SpreadsheetSheet } from './xlsx-writer';
 
 // ADR-130 + luật của B (T-055x): không bao giờ `<f>`, inline string, escape 5 ký tự, bỏ ký tự XML 1.0 cấm + surrogate
 // lẻ, quotePrefix cho = + - @ TAB CR, lỗi giữa chừng ⇒ hủy kết nối. `unzipSync` CHỈ dùng trong test để đọc ngược.
@@ -181,4 +184,64 @@ describe('sendXlsx', () => {
     const res = await request(app([['x']], 'a"b.xlsx')).get('/x');
     expect(res.status).toBe(500);
   });
+
+  it('B M1: client đóng kết nối sau mảnh đầu ⇒ nguồn hàng async NGỪNG bị kéo (không đọc DB / nén vào socket chết)', async () => {
+    const TOTAL = 200_000;
+    let pulled = 0;
+    let finished = false;
+    async function* rows() {
+      for (let i = 0; i < TOTAL; i++) {
+        if (i % 500 === 0) await new Promise((r) => setTimeout(r, 1)); // như đọc DB theo lô
+        pulled += 1;
+        yield [`hàng ${String(i)} ${'x'.repeat(40)}`];
+      }
+      finished = true;
+    }
+    const a = express();
+    const stopped = new Promise<void>((resolve) => {
+      a.get('/x', (_req, res) => {
+        sendXlsx(res, new FflateXlsxWriter(), 'a.xlsx', [
+          { name: 'S', columns: [{ header: 'a' }], rows: rows() },
+        ]).catch(() => resolve()); // writer phải dừng bằng lỗi "đã hủy"
+      });
+    });
+    const server = a.listen(0, () => {
+      const { port } = server.address() as AddressInfo;
+      get(`http://127.0.0.1:${String(port)}/x`, (r: IncomingMessage) => {
+        r.once('data', () => r.destroy()); // đóng ngay sau mảnh đầu
+      }).on('error', () => undefined);
+    });
+    await stopped;
+    server.close();
+    const afterStop = pulled;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(finished).toBe(false);
+    expect(pulled).toBe(afterStop); // không kéo thêm sau khi dừng
+    expect(pulled).toBeLessThan(TOTAL);
+  });
+});
+
+describe('B L1/L2/L3', () => {
+  it('L1 tiêu đề bắt đầu bằng ký tự công thức ⇒ style 3 (đậm + quotePrefix); L2 CR giữ bằng &#13;', async () => {
+    const files = await build([
+      { name: 'S', columns: [{ header: '=HYPERLINK("x")' }, { header: 'ok' }], rows: [['a\rb']] },
+    ]);
+    const sheet = files['xl/worksheets/sheet1.xml']!;
+    expect(sheet).toContain('<c r="A1" t="inlineStr" s="3">');
+    expect(sheet).toContain('<c r="B1" t="inlineStr" s="2">');
+    expect(sheet).toContain('a&#13;b');
+    expect(files['xl/styles.xml']).toContain('<cellXfs count="4">');
+  });
+
+  it(`L3 vượt ${String(XLSX_MAX_ROWS)} hàng (gồm tiêu đề) ⇒ ném lỗi, không xuất file hỏng`, async () => {
+    function* tooMany() {
+      for (let i = 0; i < XLSX_MAX_ROWS; i++) yield [null];
+    }
+    await expect(
+      new FflateXlsxWriter().write(
+        [{ name: 'S', columns: [{ header: 'a' }], rows: tooMany() }],
+        () => {},
+      ),
+    ).rejects.toThrow(/vượt 1048576 hàng/);
+  }, 60_000);
 });

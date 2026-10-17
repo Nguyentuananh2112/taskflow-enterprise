@@ -38,8 +38,12 @@ export interface ISpreadsheetWriter {
   write(
     sheets: readonly SpreadsheetSheet[],
     sink: (chunk: Uint8Array) => void | Promise<void>,
+    opts?: { signal?: AbortSignal },
   ): Promise<void>;
 }
+
+/** Trần hàng của một sheet trong Excel (gồm hàng tiêu đề) — vượt ⇒ ném lỗi, không xuất file hỏng (B L3). */
+export const XLSX_MAX_ROWS = 1_048_576;
 
 /** Gom XML hàng tới ngưỡng này rồi mới nén một mảnh (ít lần gọi fflate, bộ nhớ chặn trên). */
 const BATCH_CHARS = 64 * 1024;
@@ -48,7 +52,11 @@ export class FflateXlsxWriter implements ISpreadsheetWriter {
   async write(
     sheets: readonly SpreadsheetSheet[],
     sink: (chunk: Uint8Array) => void | Promise<void>,
+    opts: { signal?: AbortSignal } = {},
   ): Promise<void> {
+    const stopIfAborted = () => {
+      if (opts.signal?.aborted) throw new Error('xlsx: đã hủy (client đóng kết nối)');
+    };
     if (sheets.length === 0) throw new Error('xlsx: cần ít nhất một sheet');
     const pending: Uint8Array[] = [];
     let failure: Error | null = null;
@@ -87,6 +95,10 @@ export class FflateXlsxWriter implements ISpreadsheetWriter {
         );
       let row = 1;
       for await (const values of sheet.rows) {
+        // B M1: client đã đóng ⇒ ngừng kéo hàng NGAY (không đọc DB / nén tiếp vào socket chết).
+        stopIfAborted();
+        if (row >= XLSX_MAX_ROWS)
+          throw new Error(`xlsx: sheet "${sheet.name}" vượt ${String(XLSX_MAX_ROWS)} hàng`);
         if (values.length > sheet.columns.length) {
           throw new Error(`xlsx: hàng ${String(row + 1)} có ${String(values.length)} ô > số cột`);
         }
