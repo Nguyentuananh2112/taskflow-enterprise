@@ -487,17 +487,27 @@ describe('Thông báo (ADR-123, B-M3)', () => {
 
   secCase(
     'SEC-HR-18',
-    '§6.1 R: người đã nghỉ việc (ngày làm cuối đã qua ⇒ hoàn tất ngay) ⇒ me/notifications 401 SESSION_REVOKED',
+    '§6.1 R: người đã nghỉ việc (ngày làm cuối đã qua ⇒ hoàn tất ngay, LEFT) ⇒ token cũ 401 ở me/notifications, refresh 401',
     AREA,
     async () => {
-      const t = await seedHr(actors);
+      // B (T-062 05b216f): lastDay ≥ startDate (không thì 422 LAST_DAY_OUT_OF_RANGE) ⇒ nhiệm kỳ bắt đầu từ 3 ngày trước.
+      const t = await seedHr(actors, { startDate: addDays(todayVn(), -3) });
       await adjust(actors, t.hana, t.mia.userId, 'OUT', '17:30', 'quên chấm ra');
       expect((await actors.json('GET', HR.notifications, t.mia.accessToken)).status).toBe(200);
       const off = await actors.offboardRaw(t.hana, t.mia.userId, addDays(todayVn(), -1));
       expect(off.status, off.text.slice(0, 200)).toBe(200);
+      expect((off.json as { data: { employee: { status: string } } }).data.employee.status).toBe(
+        'LEFT',
+      );
+      // Hoàn tất ⇒ thu hồi phiên (token_version + 1): route KHÔNG có cổng công ty (me/notifications) từ chối ở
+      // authenticate ⇒ UNAUTHORIZED; SESSION_REVOKED chỉ ở route công ty / auth/me / socket (design ADR-135).
       const after = await actors.json('GET', HR.notifications, t.mia.accessToken);
       expect(after.status).toBe(401);
-      expect(errorEnvelope(after).error.code).toBe('SESSION_REVOKED');
+      expect(errorEnvelope(after).error.code).toBe('UNAUTHORIZED');
+      // Refresh token bị thu hồi (OFFBOARDED) cùng transaction.
+      const refresh = await actors.refresh(t.mia.refreshCookie);
+      expect(refresh.status).toBe(401);
+      expect(errorEnvelope(refresh).error.code).toBe('REFRESH_TOKEN_INVALID');
     },
   );
 

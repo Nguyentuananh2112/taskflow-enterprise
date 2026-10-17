@@ -1,6 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
 
-import { awaiting, test, type E2EUser } from './fixtures';
+import type { E2EUser } from './fixtures';
 import { call } from './http';
 
 /**
@@ -104,10 +104,6 @@ export async function apiCreateUser(
   user: E2EUser,
   opts: { grants?: CompanyGrant[]; admin?: boolean; startDate?: string } = {},
 ): Promise<{ userId: string; accessToken: string }> {
-  test.fixme(
-    Boolean(opts.admin || opts.grants?.length) && awaiting('T-061a'),
-    '[PENDING T-061a] PUT admin/access (cấp HR_MANAGE / Admin) — API A',
-  );
   const hired = await apiHire(request, user, opts.startDate);
   if (!hired.activation)
     throw new Error(`POST /hr/employees ${user.email}: email mới mà activation null`);

@@ -4,7 +4,6 @@ import {
   loginViaUi,
   newUser,
   activateViaUi,
-  awaiting,
   test,
 } from '../support/fixtures';
 import { apiCreatePending, apiCreateUser } from '../support/company';
@@ -16,7 +15,6 @@ test('@main kích hoạt qua UI ⇒ /w; reload vẫn giữ phiên (refresh cooki
   page,
   request,
 }) => {
-  test.fixme(awaiting('T-065b'), '[PENDING T-065b] trang /activate (web E)');
   const user = newUser('signup');
   const { token } = await apiCreatePending(request, user);
   await activateViaUi(page, user, token);

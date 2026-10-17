@@ -10,7 +10,7 @@ import {
   boardPath,
 } from '../support/api';
 import { waitBoardReady } from '../support/board';
-import { awaiting, expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 import { NO_CANDIDATE, addMemberViaUi } from '../support/members';
 import { openAs } from '../support/users';
 
@@ -28,10 +28,6 @@ test('T-034: thêm thành viên bằng combobox nhân viên (+ email lạ ⇒ kh
   page,
   request,
 }) => {
-  test.fixme(
-    awaiting('T-065c') || awaiting('T-061a'),
-    '[PENDING T-065c + T-061a] combobox thêm thành viên (web E) + member-candidates (API A)',
-  );
   const a = newUser('adm-add');
   const b = newUser('adm-add-b');
   const sa = await apiRegister(request, a);

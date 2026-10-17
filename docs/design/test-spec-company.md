@@ -232,7 +232,7 @@ CLK-HR-01…04 (Mốc 3) giữ nội dung, đổi đường dẫn sang công ty.
 | 13 | P | hạn mức theo user (bỏ "+ ws") |
 | 16 | R | audit chỉ **Admin** đọc |
 | 17, 19, 20 | P / R | 20: payload `notification:new` bỏ `workspaceId`; `member:grants-changed` ⇒ `company:access-changed` |
-| 18 | R | "bị xóa khỏi ws ⇒ mất thông báo" bỏ (thông báo HR không theo ws). Mới: người đã nghỉ ⇒ `me/notifications` 401 `SESSION_REVOKED` |
+| 18 | R | "bị xóa khỏi ws ⇒ mất thông báo" bỏ (thông báo HR không theo ws). Mới: người đã nghỉ (hoàn tất ⇒ thu hồi phiên) ⇒ token cũ `me/notifications` 401 `UNAUTHORIZED` (route không có cổng công ty), refresh 401 `REFRESH_TOKEN_INVALID`; `SESSION_REVOKED` chỉ ở route công ty / `auth/me` / socket và khe "quá access_until, job chưa chạy" (SEC-HR-69) — B, T-062 |
 | 25 | R | `userId` W2 ⇒ `userId` chưa từng là nhân viên ⇒ 404 |
 | 27 | R | `GRANT_NOT_ALLOWED` cho OWNER / VIEWER ⇒ grant cho ADMIN ⇒ 422 (Admin ngầm có) |
 | 29 | P | `userId` chưa từng có nhiệm kỳ ⇒ 404 |

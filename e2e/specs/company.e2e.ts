@@ -5,7 +5,7 @@ import { addDays } from '../../apps/api/test/security/harness/clock';
 import { apiLogin } from '../support/api';
 import { adaToken, adaUser, apiCreateUser, apiNewWorkspace } from '../support/company';
 import { API_URL } from '../support/env';
-import { awaiting, expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 import { addMemberViaUi } from '../support/members';
 import { seedHrWorld, vnDate } from '../support/hr';
 import { openAs } from '../support/users';
@@ -146,10 +146,6 @@ test(`E2E-HR-17 [${T065B}]: Hana thêm nhân viên ở 360 px (tên chứa paylo
   browserName,
   request,
 }) => {
-  test.fixme(
-    awaiting(T065B) || awaiting('T-062'),
-    `[PENDING ${T065B} + T-062] /hr/employees (web E) + GET hr/employees (API B)`,
-  );
   const w = await seedHrWorld(request, 'co17', { hanaIsHr: true });
   const dialogsHana = await arm(context);
   const name = '<img src=x onerror=__xss(41)><svg onload=__xss(42)> Nhàn';
@@ -238,10 +234,6 @@ test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox;
   browser,
   request,
 }) => {
-  test.fixme(
-    awaiting(T065B) || awaiting(T065C) || awaiting('T-061a') || awaiting('T-062'),
-    `[PENDING ${T065B} + ${T065C} + T-061a + T-062] /admin/workspaces, /hr/employees, combobox thành viên (web E) + admin/*, member-candidates (API A), offboarding (API B)`,
-  );
   const w = await seedHrWorld(request, 'co19', { hanaIsHr: true });
   const max = newUser('co19-max');
   await apiCreateUser(request, max);
@@ -352,10 +344,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
       browser,
       request,
     }) => {
-      test.fixme(
-        awaiting(T065B) || awaiting('T-061a') || awaiting('T-062'),
-        `[PENDING ${T065B} + T-061a + T-062] trang /activate, /hr/employees, /admin/* (web E + API A/B)`,
-      );
       const w = await seedHrWorld(request, `co15c-${colorScheme}`, { hanaIsHr: true });
       const fresh = await browser.newContext({ colorScheme });
       try {

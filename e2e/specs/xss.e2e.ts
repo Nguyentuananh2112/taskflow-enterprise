@@ -9,7 +9,7 @@ import {
   boardPath,
 } from '../support/api';
 import { card, column, waitBoardReady } from '../support/board';
-import { awaiting, expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 import { addMemberViaUi } from '../support/members';
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
@@ -106,7 +106,6 @@ test('SEC-49: họ tên chứa payload ⇒ toast "Đã thêm …", danh sách th
   context,
   request,
 }) => {
-  test.fixme(awaiting('T-065c'), '[PENDING T-065c] combobox thêm thành viên (web E)');
   const dialogs = await arm(context);
   const a = newUser('xss-admin');
   const evil = { ...newUser('xss-name'), fullName: EVIL_NAME };

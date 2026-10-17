@@ -37,15 +37,6 @@ export function newUser(label: string): E2EUser {
 }
 
 /**
- * Ca phụ thuộc nhánh web/API chưa merge: chạy khi `E2E_RUN_PENDING` (phân cách dấu phẩy, hoặc `all`) chứa vé — như
- * `SEC_RUN_PENDING` của suite bảo mật. Dùng `test.fixme(awaiting('T-065b'), '[PENDING T-065b] …')` ⇒ không xanh giả.
- */
-export function awaiting(ticket: string): boolean {
-  const tags = (process.env.E2E_RUN_PENDING ?? '').split(',').map((t) => t.trim());
-  return !tags.includes('all') && !tags.includes(ticket);
-}
-
-/**
  * Mốc 3.5 thay `registerViaUi` (trang /register bỏ — ADR-137): mở link kích hoạt (token ở fragment) ⇒ đặt mật khẩu
  * ⇒ `/w`. Trang `/activate` thuộc T-065b (E, selector 17/10).
  */
