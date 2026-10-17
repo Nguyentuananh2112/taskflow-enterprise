@@ -150,6 +150,14 @@ describe('decideCorrection — luật gửi ADR-129', () => {
     expect(reason(decide({ events: earlyOut }))).toBe('OK');
     const voidedOut = [ev('IN', '2026-11-16', '08:00'), ev('OUT', '2026-11-16', '17:30', true)];
     expect(reason(decide({ events: voidedOut }))).toBe('OK');
+    // OUT cùng thời điểm với IN không phải "OUT sau firstIn" (so như summarizeDay: ms, chặt).
+    const sameInstant = [ev('IN', '2026-11-16', '08:00'), ev('OUT', '2026-11-16', '08:00')];
+    expect(reason(decide({ events: sameInstant }))).toBe('OK');
+    // Chỉ có OUT mồ côi (chưa IN): xin OUT ⇒ TIME_ORDER (xin IN trước), không phải EVENT_EXISTS.
+    const orphanOut = [ev('OUT', '2026-11-16', '17:30')];
+    expect(reason(decide({ events: orphanOut, a: { minuteOfDay: hm('18:00') } }))).toBe(
+      'CORRECTION_TIME_ORDER',
+    );
   });
 
   it('CR-04 luật 4: OUT phải SAU firstIn (bằng ⇒ lỗi; firstIn = IN sớm nhất); chưa có IN ⇒ không xin OUT', () => {
