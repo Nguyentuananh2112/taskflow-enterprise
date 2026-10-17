@@ -7,8 +7,9 @@ import { getRuntimeConfig } from '@/shared/config';
 import { getClientId } from '@/shared/lib/client-id';
 import {
   RealtimeClientProvider,
+  createLazyRealtimeClient,
   createOfflineRealtimeClient,
-  createSocketIoClient,
+  loadSocketIoClient,
   type RealtimeClient,
 } from '@/shared/socket';
 
@@ -21,7 +22,11 @@ const socketFactory: RealtimeClientFactory = () => {
   // Mock API dev (APP_MOCK_API=1, route Next cùng origin — T-019) không có Socket.io: board vẫn dùng
   // được qua REST, header báo "Mất kết nối thời gian thực" thay vì thử kết nối mãi.
   if (new URL(apiUrl).pathname.startsWith('/mock-api/')) return OFFLINE;
-  return createSocketIoClient({ url: wsUrl, clientId: getClientId(), auth: session.realtimeAuth });
+  const clientId = getClientId();
+  // socket.io-client tải động ở lần connect đầu (sau đăng nhập) — không vào JS khởi động (T-044 S1).
+  return createLazyRealtimeClient(clientId, async () =>
+    (await loadSocketIoClient())({ url: wsUrl, clientId, auth: session.realtimeAuth }),
+  );
 };
 
 /**

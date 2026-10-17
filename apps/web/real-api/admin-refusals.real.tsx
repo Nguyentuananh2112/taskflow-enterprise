@@ -8,7 +8,7 @@ import { afterAll, expect, it, vi } from 'vitest';
 import { openApp } from '@test/app-harness';
 
 import { session } from '@/entities/session';
-import { createOfflineRealtimeClient, createSocketIoClient } from '@/shared/socket';
+import { createOfflineRealtimeClient, loadSocketIoClient } from '@/shared/socket';
 
 import { API, ORIGIN, PASSWORD, api, apiRaw, loginOrRegister } from './real-api-client';
 
@@ -110,6 +110,7 @@ it.skipIf(!PASSWORD)(
     // 5. Bị xóa khỏi workspace khi đang mở board ⇒ Socket.io thật đẩy `workspace:access-revoked`
     //    ⇒ về /w; join lại phòng project ⇒ RESOURCE_NOT_FOUND.
     act(() => session.signIn({ accessToken: pm.accessToken, expiresIn: pm.expiresIn }, pm.user));
+    const createSocketIoClient = await loadSocketIoClient();
     const socket = createSocketIoClient({
       url: WS,
       clientId: crypto.randomUUID(),
