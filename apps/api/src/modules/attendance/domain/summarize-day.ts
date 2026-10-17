@@ -47,7 +47,17 @@ export interface DaySummary {
   workedMin: number;
   lateMin: number;
   earlyMin: number;
-  flags: { late: boolean; early: boolean; absentHalf: boolean; inProgress: boolean };
+  flags: {
+    late: boolean;
+    early: boolean;
+    absentHalf: boolean;
+    inProgress: boolean;
+    /**
+     * PENDING vì CHƯA IN dù đã tới giờ vào ca hiệu lực (`now ≥ start`; nghỉ AM ⇒ breakEnd) — web hiện "Chưa chấm
+     * công" thay vì "Chưa tới giờ" (TL d9). Chỉ là cờ: luật ABSENT (sau giờ kết ca) không đổi.
+     */
+    notCheckedInYet: boolean;
+  };
 }
 
 const overlap = (a0: number, a1: number, b0: number, b1: number) =>
@@ -81,7 +91,13 @@ export function summarizeDay(input: DayInput): DaySummary {
     workedMin: 0,
     lateMin: 0,
     earlyMin: 0,
-    flags: { late: false, early: false, absentHalf: false, inProgress: false },
+    flags: {
+      late: false,
+      early: false,
+      absentHalf: false,
+      inProgress: false,
+      notCheckedInYet: false,
+    },
   };
 
   // Trước khi gia nhập / sau khi rời: không phải ngày công, 0 ở mọi tổng (bảng HR, CSV) — trừ khi có dữ liệu.
@@ -97,7 +113,12 @@ export function summarizeDay(input: DayInput): DaySummary {
   const shiftOver = now > end;
 
   if (!firstIn) {
-    if (!shiftOver) return { ...base, status: 'PENDING' };
+    if (!shiftOver)
+      return {
+        ...base,
+        status: 'PENDING',
+        flags: { ...base.flags, notCheckedInYet: now >= start },
+      };
     return { ...base, status: 'ABSENT', flags: { ...base.flags, absentHalf: leave !== null } };
   }
 

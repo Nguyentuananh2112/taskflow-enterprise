@@ -306,9 +306,21 @@ describe('MyAttendanceQueries', () => {
       isWorkday: true,
       isHoliday: false,
       status: 'PENDING',
+      notCheckedInYet: false,
       firstIn: null,
       leave: null,
       schedule: { startMin: 480, endMin: 1050, breakStartMin: 720, breakEndMin: 810, graceMin: 0 },
+    });
+  });
+
+  it('AT-21b me/today đã qua giờ vào ca (08:00), chưa chấm ⇒ PENDING + notCheckedInYet; check-in xong ⇒ hết cờ', async () => {
+    const t = await setup('2026-11-17 08:00');
+    const card = await t.queries.today({ workspaceId: W1, userId: MIA });
+    expect(AttendanceTodayDto.parse(card)).toEqual(card);
+    expect(card).toMatchObject({ status: 'PENDING', notCheckedInYet: true });
+    expect(await t.punch('IN', key(1))).toMatchObject({
+      status: 'PRESENT',
+      notCheckedInYet: false,
     });
   });
 
