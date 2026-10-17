@@ -7,6 +7,19 @@ import { API_DIR, API_ORIGIN, API_URL, E2E_DIR, WEB_ORIGIN, WEB_PORT } from './s
 // Chromium + Firefox. Trace/video chỉ giữ khi fail. Không waitForTimeout cố định — chờ theo điều kiện.
 const CI = !!process.env.CI;
 
+/**
+ * Mốc 3.5 (ADR-140, test-spec-company §0.4): một công ty ⇒ ca HR / công ty dùng chung lịch, ngày lễ, người nhận thông
+ * báo HR ⇒ chạy TUẦN TỰ (workers: 1, cả CI) trong project "<trình duyệt>-hr"; các spec khác giữ song song. Giữa hai
+ * trình duyệt vẫn có thể chạy cùng lúc — ca đã khẳng định theo thông báo của chính ca, ngày lễ theo dải reserveDate().
+ */
+const HR_SPECS = /(hr|company)\.e2e\.ts$/;
+function withHrLane<P extends { name: string }>(project: P) {
+  return [
+    { ...project, testIgnore: HR_SPECS },
+    { ...project, name: `${project.name}-hr`, testMatch: HR_SPECS, workers: 1 },
+  ];
+}
+
 export default defineConfig({
   testDir: './specs',
   testMatch: '**/*.e2e.ts',
@@ -25,19 +38,17 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    ...withHrLane({ name: 'chromium', use: { ...devices['Desktop Chrome'] } }),
     // F2: Firefox + viewport mobile. CI chạy đủ; local chỉ luồng chính (@main) để nhẹ máy.
     ...(CI || process.env.E2E_FIREFOX === '1'
-      ? [
-          {
-            name: 'firefox',
-            use: { ...devices['Desktop Firefox'] },
-            ...(CI ? {} : { grep: /@main/ }),
-          },
-        ]
+      ? withHrLane({
+          name: 'firefox',
+          use: { ...devices['Desktop Firefox'] },
+          ...(CI ? {} : { grep: /@main/ }),
+        })
       : []),
     ...(CI || process.env.E2E_MOBILE === '1'
-      ? [{ name: 'mobile', use: { ...devices['Pixel 7'] }, grep: /@main/ }]
+      ? withHrLane({ name: 'mobile', use: { ...devices['Pixel 7'] }, grep: /@main/ })
       : []),
   ],
   webServer: [
