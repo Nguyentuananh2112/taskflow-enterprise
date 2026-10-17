@@ -49,7 +49,7 @@ Mỗi ca ghi tiền dùng một **số đánh dấu** duy nhất (vd `7 031 117`
 
 - `useCompanyApi`, `CompanyActors.createUser(label, { grants: ['PAYROLL_MANAGE'] })`, `setAccess`, `offboardRaw`, `api.restart` (mốc tiến), `secCase` + pending theo vé.
 - `nextVnDateAnchor` (`'*-01'` đầu tháng, `'*-05'`, `'*-10'`, `'*-L'` cuối tháng), `localToIso`, `daysInMonth` — `harness/clock.ts`.
-- `download`, `readXlsx`, `expectSafeWorkbook`, `expectXlsxHeaders` — `harness/xlsx.ts` (nếu export payroll là .xlsx — §11 câu 1).
+- `download`, `readXlsx`, `expectSafeWorkbook`, `expectXlsxHeaders` — `harness/xlsx.ts` — export bảng lương là **.xlsx** (TL chốt 18/10).
 - Dựng công: HR `adjust` IN/OUT qua API (không chờ đồng hồ), đơn nghỉ qua `submitLeave` + approve, `PUT hr/employee-profiles/:userId` cho `hireDate` (T-054 đã có trên `feat/m5-hr`).
 
 ### 1.2 Thêm (viết cùng ca, `harness/payroll.ts`)
@@ -160,7 +160,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | RD-09 | S | sau phát hành, HR `adjust` công tháng đó ⇒ cờ "công đã thay đổi sau phát hành", phiếu không đổi | đúng |
 | RD-10 | S | thông báo `PAYSLIP_PUBLISHED` đúng 1 / nhân viên có phiếu, link `/payslips/YYYY-MM`, **không số tiền** (§0.5); gửi sau commit (phát hành lỗi ⇒ không thông báo) | đúng |
 | RD-11 | I | bảng payroll + audit `PAYROLL_*` ngoài mọi bước retention hiện có (chạy retention ⇒ không xóa dòng nào) | đúng |
-| RD-12 | S | export bảng (CSV hoặc .xlsx — §11 câu 1): chỉ bản hiệu lực + cột revision; cột tiền số nguyên thuần (không `'`, không ₫); nhãn `=…` không thành công thức; no-store; audit EXPORT; hạn mức | đúng |
+| RD-12 | S | export bảng lương **.xlsx** qua `ISpreadsheetWriter` (TL chốt 18/10 — không CSV): `expectXlsxHeaders` + `readXlsx` + `expectSafeWorkbook` (luật ADR-130: không `<f>`, `quotePrefix` cho nhãn `= + - @ TAB CR`, không metadata thừa); chỉ bản hiệu lực + cột revision; cột tiền là **ô số** nguyên (không chuỗi, không ₫, không `'`), tổng khớp `computePayslip`; no-store; audit `EXPORT` chỉ khi stream bắt đầu; hạn mức chung với export HR; kiểm thủ công 1 lần trên Excel vi-VN + LibreOffice cùng D (như XL-08) | đúng |
 
 ## 8. SEC — hộp đen bảo mật (`SEC-PAY-*`, tầng S)
 
@@ -243,7 +243,7 @@ Selector theo E (T-050) — chờ E gửi.
 
 ### 11.3 Câu hỏi mở (hỏi thẳng tác giả — chỉ báo TL nếu bất đồng thiết kế)
 
-1. **A (T-049):** export bảng lương là **CSV** (§6: "BOM") hay **.xlsx** qua `ISpreadsheetWriter` (§5.2: "dùng lại … đóng rủi ro `;`")? RD-12 + kiểm Excel vi-VN cùng D theo câu trả lời.
+1. ~~A: CSV hay .xlsx~~ — **chốt (TL 18/10):** .xlsx qua `ISpreadsheetWriter` (bộ ghi `fflate` dùng chung, luật ADR-130), không CSV. Đã sửa §1.1, RD-12.
 2. **A (T-049):** job nhắc `PAYROLL_REMINDER` chạy thế nào (interval maintenance như `leave-carryover`?) và có cờ test-only `…_ON_START` / `…_INTERVAL_MS` không (CLK-PAY-02…04)?
 3. **A (T-049):** mã lỗi khi tạo nháp kỳ chưa kết thúc (RD-02) và kỳ không có ngày làm việc (SD-03); mã cờ chặn phát hành (PE-07, RD-04).
 4. **B (T-048):** route + DTO (contracts) để dựng `PAYROLL` ở harness; sửa công đi qua route payroll (override trên phiếu) hay route attendance?
