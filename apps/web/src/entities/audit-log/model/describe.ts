@@ -1,5 +1,7 @@
 import type { AuditLogDto } from '@taskflow/contracts/audit';
 
+import { serverClock } from '@/shared/lib/server-clock';
+
 // Câu mô tả một dòng lịch sử theo hình dạng oldValue/newValue (data-and-api §1.5).
 
 const STATUS: Readonly<Record<string, string>> = {
@@ -46,7 +48,7 @@ const UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
 ];
 
 /** "2 phút trước" (Intl.RelativeTimeFormat 'vi' — frontend.md §6.2). */
-export function relativeTime(iso: string, now: number = Date.now()): string {
+export function relativeTime(iso: string, now: number = serverClock.now()): string {
   const diff = Date.parse(iso) - now;
   const format = new Intl.RelativeTimeFormat('vi', { numeric: 'auto' });
   for (const [unit, ms] of UNITS) {

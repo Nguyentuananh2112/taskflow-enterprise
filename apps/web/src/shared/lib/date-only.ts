@@ -2,15 +2,20 @@
 // hiểu là UTC nửa đêm ⇒ lệch một ngày ở múi giờ âm. So quá hạn bằng so sánh chuỗi với "hôm nay"
 // theo giờ địa phương của người dùng (frontend.md §6.2).
 
+import { serverClock } from './server-clock';
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Hôm nay theo giờ địa phương, dạng `YYYY-MM-DD`. */
-export function todayDateOnly(now: Date = new Date()): string {
+export function todayDateOnly(now: Date = new Date(serverClock.now())): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 /** Quá hạn = hạn chót trước hôm nay (ngày hôm nay chưa tính là quá hạn). */
-export function isOverdue(dueDate: string | null, now: Date = new Date()): boolean {
+export function isOverdue(
+  dueDate: string | null,
+  now: Date = new Date(serverClock.now()),
+): boolean {
   return dueDate !== null && dueDate < todayDateOnly(now);
 }
 

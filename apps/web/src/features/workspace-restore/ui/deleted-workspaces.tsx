@@ -5,6 +5,7 @@ import type { DeletedWorkspaceDto } from '@taskflow/contracts/workspace';
 import { useDeletedWorkspaces } from '@/entities/workspace';
 import { isApiError } from '@/shared/api';
 import { serverErrorMessage } from '@/shared/lib/form-errors';
+import { serverClock } from '@/shared/lib/server-clock';
 import { Button } from '@/shared/ui/button';
 import { toast } from '@/shared/ui/toast';
 
@@ -12,7 +13,7 @@ import { useRestoreWorkspace } from '../model/use-restore-workspace';
 
 const DAY = 86_400_000;
 const daysLeft = (purgeAt: string) =>
-  Math.max(0, Math.ceil((Date.parse(purgeAt) - Date.now()) / DAY));
+  Math.max(0, Math.ceil((Date.parse(purgeAt) - serverClock.now()) / DAY));
 
 /** Khu "Đã xóa — khôi phục được" ở /w (frontend.md §1.1): chỉ có dữ liệu khi tôi là OWNER; rỗng ⇒ ẩn. */
 export function DeletedWorkspaces() {

@@ -4,6 +4,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 
 import { session } from '@/entities/session';
+import { serverClock } from '@/shared/lib/server-clock';
 import { createQueryClient } from '@/shared/query';
 import { Toaster, resetToastsForTest } from '@/shared/ui/toast';
 
@@ -27,5 +28,6 @@ export function cleanupApp(): void {
   act(() => {
     resetToastsForTest();
     session.resetForTest();
+    serverClock.resetForTest();
   });
 }

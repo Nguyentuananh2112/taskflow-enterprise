@@ -7,6 +7,8 @@ import {
 } from '@taskflow/contracts/common';
 import * as z from 'zod';
 
+import { serverClock } from '@/shared/lib/server-clock';
+
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from './api-error';
 import { createSingleFlight } from './single-flight';
 
@@ -150,6 +152,7 @@ export function createHttpClient(deps: HttpDeps) {
       if (!failure.success) throw bad(failure.error);
       const { code, message, details } = failure.data.error;
       const requestId = failure.data.meta.requestId;
+      serverClock.observe(failure.data.meta.timestamp);
       const known = ErrorCode.safeParse(code);
       throw new ApiError({
         status: response.status,
@@ -165,6 +168,7 @@ export function createHttpClient(deps: HttpDeps) {
     // Với S generic, TS không suy được khóa `data` của z.object({ data: S }) ⇒ ép về output của S
     // (giá trị đã được chính `schema` parse ở trên).
     const { data, meta } = success.data as { data: z.output<S>; meta: typeof success.data.meta };
+    serverClock.observe(meta.timestamp);
     return { data, page: meta.page, requestId: meta.requestId };
   }
 

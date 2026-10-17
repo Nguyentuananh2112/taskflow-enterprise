@@ -100,6 +100,7 @@ export function AttendancePage() {
           month={data.data}
           caption={`Bảng công ${monthTitle(month)}`}
           onSelectDay={setDay}
+          today={today.data?.date}
         />
       )}
       <Dialog
