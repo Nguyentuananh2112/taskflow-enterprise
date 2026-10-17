@@ -241,8 +241,8 @@ Selector chat: chờ H gửi (T-072). Thiết kế §7 E13: `link "Trò chuyện
 | `chat-people.sec.ts` | F | SEC-CH-18 | chưa |
 | `chat-realtime.sec.ts` | F | SEC-CH-19 | chưa |
 | `chat-logs.sec.ts` | F | SEC-CH-20 (API) | chưa |
-| `chat-media.sec.ts` | F | SEC-CH-10, 11, 31, 35 (B); 22 (F) | chưa |
-| `chat-media-rotate.sec.ts` | F | SEC-CH-35 (xoay khóa) | chưa |
+| `chat-media.sec.ts` | F | SEC-CH-10, 11, 20 (vế /media), 31 (vế IP), 35 (đổi tuple / purpose) — **5/5 xanh** trên `feat/T-067` f8ae89e7; vế cần tệp thật (header ảnh, `deleteBlob`, SEC-CH-22) chờ T-068 / T-069 | một phần |
+| `chat-media-rotate.sec.ts` | F | SEC-CH-35r (xoay khóa `_PREVIOUS`) — **1/1 xanh** | xong |
 | `chat-upload-types.sec.ts` | F | SEC-CH-06, 07, 21, 23, 32, 33, 36 | chưa |
 | `chat-upload-limits.sec.ts` (NẶNG) | F | SEC-CH-08, 09, 12, 24, 26, 27, 34 (đã viết, pending `T-067`, chưa chạy); SEC-CH-37, CC-CH-09 chưa | một phần |
 | `chat-races.sec.ts` | F | CC-CH-01, 02, 03, 05, 06 (F); 04, 07, 08 (B) | chưa |
