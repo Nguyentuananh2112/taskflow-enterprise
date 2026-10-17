@@ -23,7 +23,7 @@ Như `test-spec-company.md` §0.1: **U** hàm thuần · **A** use case + fake �
 |---|---|---|
 | U / A / I / H | tác giả vé (B T-054/T-055, A T-056, D T-057) | F kiểm phủ theo bảng mã ca + Stryker |
 | S / C / K | **F** (không là tác giả module nào của Mốc 5) | người không viết module đó — cột "Duyệt" ở §9 |
-| E | **F** | E (selector), TL |
+| E | **H** (TL 18/10 — giảm tải F) | **F soát cuối**, E (selector), TL |
 | M | F, chỉ khi TL báo "máy rảnh" | — |
 
 ### 0.2 Bối cảnh chuẩn
@@ -258,7 +258,7 @@ E2E-HR-14…19 (Mốc 3.5) vẫn xanh; menu nhân viên có thêm "Hồ sơ củ
 | `test/security/hr-extended-clock-nextday.sec.ts` | CLK-HR-11 | T-056 | D |
 | `test/security/hr-extended-clock-expiry.sec.ts` | CLK-HR-12 · LP-06b, 07, 08 (vế K) | T-057 | A |
 | `test/security/hr-extended-clock-newyear.sec.ts` | CLK-HR-13 | T-057 | A |
-| `e2e/specs/hr-extended.e2e.ts` | E2E-HR-20…25 | T-058a / b / c | E (selector) |
+| `e2e/specs/hr-extended.e2e.ts` | E2E-HR-20…25 | T-058a / b / c | H viết · F soát cuối · E (selector) |
 | `docs/reviews/T-059-xlsx-manual.md` | XL-08 | T-055…T-057 | TL |
 | (tác giả) `*.test.ts`, `test/integration/**`, `test/http/**` | U/A/I/H của EP, CR, XL-06, LP | vé tương ứng | F |
 
