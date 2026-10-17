@@ -9,7 +9,6 @@ import { Textarea } from '@/shared/ui/textarea';
 import { usePunchChange } from '../model/use-punch-change';
 
 type Props = Readonly<{
-  wsId: string;
   userId: string;
   date: string;
   eventId: string;
@@ -21,14 +20,13 @@ type Props = Readonly<{
  * Hủy một lượt (log bất biến — ADR-121: lượt vẫn còn, gạch ngang, không tính công). Lý do bắt buộc;
  * mở ô lý do ngay tại chỗ thay vì dialog lồng dialog.
  */
-export function VoidPunchButton({ wsId, userId, date, eventId, label }: Props) {
+export function VoidPunchButton({ userId, date, eventId, label }: Props) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const run = usePunchChange(
-    wsId,
     userId,
     date,
-    () => hrAttendanceApi.void(wsId, eventId, reason.trim()),
+    () => hrAttendanceApi.void(eventId, reason.trim()),
     `Đã hủy lượt ${label}`,
   );
   if (!open) {

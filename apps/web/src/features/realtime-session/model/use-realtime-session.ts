@@ -1,5 +1,5 @@
 import {
-  MemberGrantsChangedEvent,
+  CompanyAccessChangedEventEnvelope,
   MemberRoleChangedEvent,
   NotificationNewEvent,
   WorkspaceAccessRevokedEvent,
@@ -80,39 +80,36 @@ export function useRealtimeSession(): void {
         }
       }
     });
-    // ADR-119: quyền cấp thêm đổi ⇒ `usePermission` đổi tức thì (mục HR hiện/ẩn, không reload — E2E-HR-03).
-    const offGrants = client.on('member:grants-changed', (raw) => {
-      const event = MemberGrantsChangedEvent.safeParse(raw);
+    // ADR-135: vai trò / quyền CÔNG TY đổi ⇒ tải lại `/auth/me` (menu, trang chính đổi ngay — E2E-HR-18). Mất quyền ⇒
+    // xóa NGAY dữ liệu đã cache của quyền đó (IP/UA, lý do nghỉ, lương — §9, R27), ở mọi trang.
+    const offAccess = client.on('company:access-changed', (raw) => {
+      const event = CompanyAccessChangedEventEnvelope.safeParse(raw);
       if (!event.success) return;
-      const { workspaceId, grants } = event.data.data;
-      queryClient.setQueryData<WorkspaceDto>(
-        workspaceKeys.detail(workspaceId),
-        (old) => old && { ...old, myGrants: grants },
-      );
-      void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
-      // T-041c: mất quyền ⇒ xóa ngay dữ liệu HR đã cache (IP/UA, lý do nghỉ — §9, R27), ở mọi trang.
-      if (!grants.includes('HR_MANAGE'))
-        queryClient.removeQueries({ queryKey: hrKeys.all(workspaceId) });
-      toast({
-        title: grants.includes('HR_MANAGE')
-          ? 'Bạn được cấp quyền Quản lý nhân sự'
-          : 'Quyền Quản lý nhân sự của bạn đã được thu hồi',
-      });
+      const { role, grants } = event.data.data;
+      const admin = role === 'ADMIN';
+      const hr = admin || grants.includes('HR_MANAGE');
+      if (!hr) queryClient.removeQueries({ queryKey: hrKeys.all() });
+      if (!admin) queryClient.removeQueries({ queryKey: ['company', 'admin'] });
+      if (!admin && !grants.includes('PAYROLL_MANAGE')) {
+        queryClient.removeQueries({ queryKey: ['company', 'payroll'] });
+      }
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.me });
+      toast({ title: 'Quyền của bạn trong công ty vừa thay đổi' });
     });
     // ADR-123: thông báo bền đã ghi ở server ⇒ chỉ cần tải lại chuông (số + danh sách).
     const offNotification = client.on('notification:new', (raw) => {
       const event = NotificationNewEvent.safeParse(raw);
       if (!event.success) return;
       void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
-      // T-041c: dữ liệu liên quan đổi theo thông báo, không cần tải lại trang (E2E-HR-02). Các key nằm
-      // dưới ['ws', ws] ⇒ chỉ query đang mở mới refetch.
-      const { type, workspaceId } = event.data.data;
+      // T-041c: dữ liệu liên quan đổi theo thông báo, không cần tải lại trang (E2E-HR-02). Mốc 3.5: dữ liệu HR
+      // thuộc công ty (key ['company', …]) ⇒ chỉ query đang mở mới refetch.
+      const { type } = event.data.data;
       if (HR_SIDE.has(type)) {
-        void queryClient.invalidateQueries({ queryKey: hrKeys.all(workspaceId) });
+        void queryClient.invalidateQueries({ queryKey: hrKeys.all() });
       }
       if (EMPLOYEE_SIDE.has(type)) {
-        void queryClient.invalidateQueries({ queryKey: leaveKeys.all(workspaceId) });
-        void queryClient.invalidateQueries({ queryKey: attendanceKeys.all(workspaceId) });
+        void queryClient.invalidateQueries({ queryKey: leaveKeys.all() });
+        void queryClient.invalidateQueries({ queryKey: attendanceKeys.all() });
       }
     });
     // Rớt socket thì có thể lỡ `notification:new` ⇒ kết nối lại thì tải lại chuông.
@@ -122,7 +119,7 @@ export function useRealtimeSession(): void {
     return () => {
       offRole();
       offRevoked();
-      offGrants();
+      offAccess();
       offNotification();
       offReconnect();
     };

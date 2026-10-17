@@ -12,7 +12,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 
 import { PersonMonth } from './person-month';
 
-type Props = Readonly<{ wsId: string; today: string; isOwner: boolean; viewerId: string | null }>;
+type Props = Readonly<{ today: string; isAdmin: boolean; viewerId: string | null }>;
 
 const COLUMNS = [
   'Ngày đi làm',
@@ -30,10 +30,10 @@ const monthTitle = (m: string) => `tháng ${Number(m.slice(5))}/${m.slice(0, 4)}
  * Tab "Bảng công tháng" (§5–§6): dòng tổng mỗi người (50 người/trang, cursor) + xuất CSV; chọn một người
  * ⇒ lịch tháng của người đó (bấm ngày ⇒ lượt thô, thêm/hủy lượt). Người đã rời có dữ liệu vẫn hiện (R30).
  */
-export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
+export function HrTimesheet({ today, isAdmin, viewerId }: Props) {
   const [month, setMonth] = useState(today.slice(0, 7));
   const [selected, setSelected] = useState<string | null>(null);
-  const sheet = useTimesheet(wsId, month);
+  const sheet = useTimesheet(month);
   const rows = sheet.data?.pages.flatMap((p) => p.data) ?? [];
   const person = rows.find((r) => r.user.id === selected);
   return (
@@ -54,7 +54,7 @@ export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
           >
             Tháng sau ›
           </Button>
-          <ExportCsvButton wsId={wsId} month={month} />
+          <ExportCsvButton month={month} />
         </div>
       </div>
       {sheet.isError ? (
@@ -129,11 +129,10 @@ export function HrTimesheet({ wsId, today, isOwner, viewerId }: Props) {
       )}
       {person && (
         <PersonMonth
-          wsId={wsId}
           month={month}
           row={person}
           today={today}
-          canEdit={isOwner || person.user.id !== viewerId}
+          canEdit={isAdmin || person.user.id !== viewerId}
         />
       )}
     </section>

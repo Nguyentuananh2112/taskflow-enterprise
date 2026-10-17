@@ -1,8 +1,7 @@
 'use client';
 
-import { Uuid } from '@taskflow/contracts/common';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
 import {
@@ -13,8 +12,7 @@ import {
   useAttendanceMonth,
   useAttendanceToday,
 } from '@/entities/attendance';
-import { usePermission } from '@/entities/workspace';
-import { isApiError } from '@/shared/api';
+import { useCompanyPermission } from '@/entities/session';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { PageMain } from '@/shared/ui/page';
@@ -28,33 +26,34 @@ import { ViewToggle } from './view-toggle';
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const monthTitle = (m: string) => `tháng ${Number(m.slice(5))}/${m.slice(0, 4)}`;
 
-/** `/w/[wsId]/attendance?month=YYYY-MM` — bảng công tháng của tôi (attendance-leave.md §6). */
+/**
+ * `/attendance?month=YYYY-MM` — bảng công tháng của tôi (attendance-leave.md §6), cấp CÔNG TY (ADR-139): thẻ chấm công
+ * đầy đủ nằm ở đây, trang chính chỉ có thẻ gọn. Admin không phải nhân viên ⇒ không có bảng công.
+ */
 export function AttendancePage() {
-  const { wsId = '' } = useParams<{ wsId: string }>();
-  const valid = Uuid.safeParse(wsId).success;
-  const { role, can } = usePermission(wsId);
-  const allowed = valid && can('attendance:self');
-  const today = useAttendanceToday(wsId, allowed);
+  const { company, can } = useCompanyPermission();
+  const allowed = can('attendance:self');
+  const today = useAttendanceToday(allowed);
   const asked = useSearchParams().get('month');
   // Tháng mặc định = tháng của "hôm nay" THEO SERVER (múi giờ của lịch), không theo máy.
   const month = asked && MONTH.test(asked) ? asked : today.data?.date.slice(0, 7);
-  const data = useAttendanceMonth(wsId, month ?? '', allowed && month !== undefined);
+  const data = useAttendanceMonth(month ?? '', allowed && month !== undefined);
   const [day, setDay] = useState<string | null>(null);
   const [mode, setMode] = useViewMode();
   const t = today.data;
   const serverToday = t?.date ?? '';
 
-  if (!valid || isApiError(data.error, 'RESOURCE_NOT_FOUND')) {
+  if (company !== null && !allowed) {
     return (
       <main className="mx-auto max-w-md px-4 py-16">
-        <EmptyState title="Không tìm thấy hoặc bạn không có quyền truy cập" />
-      </main>
-    );
-  }
-  if (role !== null && !allowed) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-16">
-        <EmptyState title="Vai trò Người xem không chấm công trong workspace này" />
+        <EmptyState
+          title="Tài khoản Quản trị không chấm công"
+          action={
+            <Link href="/w" className="text-sm underline">
+              Về trang chính
+            </Link>
+          }
+        />
       </main>
     );
   }
@@ -102,7 +101,7 @@ export function AttendancePage() {
         </div>
       ) : (
         <>
-          {t && month === serverToday.slice(0, 7) && <TodayBox wsId={wsId} today={t} />}
+          {t && month === serverToday.slice(0, 7) && <TodayBox today={t} />}
           <MonthSummary totals={data.data.totals} title={`Tổng kết ${monthTitle(month)}`} />
           <ViewToggle mode={mode} onChange={setMode} />
           {mode === 'calendar' ? (
@@ -123,7 +122,6 @@ export function AttendancePage() {
         </>
       )}
       <DayDetail
-        wsId={wsId}
         day={data.data?.days.find((d) => d.date === day) ?? null}
         days={data.data?.days ?? []}
         today={serverToday}

@@ -9,6 +9,9 @@ import { resetRuntimeConfigForTest, setRuntimeConfig } from '@/shared/config';
 
 export const API_BASE = 'http://localhost:4000/api/v1';
 
+/** Mốc 3.5: khóa phạm vi dữ liệu CÔNG TY trong store mock (thay `wsId` khi test ghi thẳng vào store). */
+export { COMPANY_SCOPE } from '@/app/mock-api/mock-guard';
+
 type Cookie = { value: string; path: string };
 
 /* eslint-disable no-restricted-properties -- hạ tầng test: bọc fetch để mô phỏng cookie jar của trình

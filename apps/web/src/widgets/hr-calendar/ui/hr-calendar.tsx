@@ -9,7 +9,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 
 import { HolidayList } from './holiday-list';
 
-type Props = Readonly<{ wsId: string; today: string; isOwner: boolean; viewerId: string | null }>;
+type Props = Readonly<{ today: string; isAdmin: boolean; viewerId: string | null }>;
 
 /** Lịch mặc định khi chưa có phiên bản nào (A — DEFAULT_SCHEDULE; attendance-leave.md §0). */
 const DEFAULT = {
@@ -27,8 +27,8 @@ const vn = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
  * Tab "Lịch & ngày lễ" (ADR-121): các phiên bản lịch (đổi lịch chỉ hiệu lực từ hôm nay — tháng cũ giữ
  * nguyên) + form phiên bản mới, và ngày lễ theo năm.
  */
-export function HrCalendar({ wsId, today, isOwner }: Props) {
-  const schedules = useSchedules(wsId, true);
+export function HrCalendar({ today, isAdmin }: Props) {
+  const schedules = useSchedules(true);
   const list = schedules.data ?? [];
   const current = list.filter((s) => s.effectiveFrom <= today).at(-1) ?? null;
   return (
@@ -59,14 +59,14 @@ export function HrCalendar({ wsId, today, isOwner }: Props) {
             </ul>
             <ScheduleForm
               key={current?.effectiveFrom ?? 'default'}
-              wsId={wsId}
+
               today={today}
               current={current ?? DEFAULT}
             />
           </>
         )}
       </section>
-      <HolidayList wsId={wsId} today={today} isOwner={isOwner} />
+      <HolidayList today={today} isAdmin={isAdmin} />
     </div>
   );
 }

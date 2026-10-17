@@ -15,18 +15,18 @@ import { Dialog } from '@/shared/ui/dialog';
 
 import { useCheckInPrompt } from '../model/use-check-in-prompt';
 
-type Props = Readonly<{ wsId: string; enabled: boolean }>;
+type Props = Readonly<{ enabled: boolean }>;
 
 /**
- * Dialog nhắc chấm công khi vào trang dự án (T-045): chỉ khi `me/today` của server cho thấy hôm nay phải chấm mà chưa
+ * Dialog nhắc chấm công ở trang chính (T-045, ADR-139): chỉ khi `me/today` của server cho thấy hôm nay phải chấm mà chưa
  * chấm; tối đa 1 lần / ngày. "Để sau" / Esc / bấm nền ⇒ đóng. KHÔNG tự chấm.
  */
-export function CheckInPrompt({ wsId, enabled }: Props) {
+export function CheckInPrompt({ enabled }: Props) {
   const { user } = useSession();
-  const today = useAttendanceToday(wsId, enabled);
+  const today = useAttendanceToday(enabled);
   const t = today.data;
-  const { open, close } = useCheckInPrompt(wsId, user?.id ?? null, t, today.dataUpdatedAt);
-  const check = useAttendanceCheck(wsId, {
+  const { open, close } = useCheckInPrompt(user?.id ?? null, t, today.dataUpdatedAt);
+  const check = useAttendanceCheck({
     successTitle: (d) =>
       d.firstIn ? `Đã chấm vào lúc ${timeOfDay(d.firstIn, d.timezone)}` : 'Đã chấm vào',
   });

@@ -7,7 +7,6 @@ import { DayPunchesDialog } from '@/features/hr-attendance-adjust';
 import type { AttendanceMemberMonthDto } from '@taskflow/contracts/attendance';
 
 type Props = Readonly<{
-  wsId: string;
   month: string;
   row: AttendanceMemberMonthDto;
   /** Ngày theo lịch (server). */
@@ -19,7 +18,7 @@ type Props = Readonly<{
  * Lịch tháng của MỘT nhân viên — CÙNG ngôn ngữ với "Bảng công của tôi" (T-046): tổng kết từ server + lưới lịch T2→CN
  * (màu + biểu tượng + chữ ngắn). Múi giờ: mỗi ngày mang `timezone` riêng. Bấm ngày ⇒ lượt thô + sửa.
  */
-export function PersonMonth({ wsId, month, row, today, canEdit }: Props) {
+export function PersonMonth({ month, row, today, canEdit }: Props) {
   const [date, setDate] = useState<string | null>(null);
   const timezone = row.days[0]?.timezone ?? 'Asia/Ho_Chi_Minh';
   return (
@@ -37,7 +36,6 @@ export function PersonMonth({ wsId, month, row, today, canEdit }: Props) {
         />
       </div>
       <DayPunchesDialog
-        wsId={wsId}
         user={row.user}
         date={date}
         onClose={() => setDate(null)}

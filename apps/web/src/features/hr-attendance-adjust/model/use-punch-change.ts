@@ -30,7 +30,6 @@ export function punchErrorMessage(error: unknown): string {
  * refetch cả bảng, không tự cộng), tải lại danh sách lượt của ngày đó và "Hôm nay".
  */
 export function usePunchChange<V>(
-  wsId: string,
   userId: string,
   date: string,
   run: (vars: V) => Promise<AttendanceEventChangeDto>,
@@ -39,9 +38,9 @@ export function usePunchChange<V>(
   return useMutation({
     mutationFn: run,
     onSuccess: (change, _v, _r, context) => {
-      replaceTimesheetDay(context.client, wsId, userId, change);
-      void context.client.invalidateQueries({ queryKey: hrKeys.events(wsId, userId, date) });
-      void context.client.invalidateQueries({ queryKey: hrKeys.today(wsId) });
+      replaceTimesheetDay(context.client, userId, change);
+      void context.client.invalidateQueries({ queryKey: hrKeys.events(userId, date) });
+      void context.client.invalidateQueries({ queryKey: hrKeys.today() });
       toast({ title: done, tone: 'success' });
     },
     onError: (error) => toast({ title: punchErrorMessage(error), tone: 'error' }),

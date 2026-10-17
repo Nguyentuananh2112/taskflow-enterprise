@@ -24,14 +24,14 @@ const FIELDS = ['type', 'startDate', 'endDate', 'dayPart', 'reason'] as const;
 const TYPES = LeaveType.options.map((v) => ({ value: v, label: LEAVE_TYPE_NAME[v] }));
 const PARTS = LeaveDayPart.options.map((v) => ({ value: v, label: DAY_PART_NAME[v] }));
 
-type Props = Readonly<{ wsId: string; today: string }>;
+type Props = Readonly<{ today: string }>;
 
 /** Gửi đơn nghỉ (attendance-leave.md §6). Số ngày do SERVER tính theo lịch + ngày lễ. */
-export function LeaveRequestForm({ wsId, today }: Props) {
+export function LeaveRequestForm({ today }: Props) {
   const create = useMutation({
-    mutationFn: (body: SubmitLeaveBody) => leaveApi.create(wsId, body),
+    mutationFn: (body: SubmitLeaveBody) => leaveApi.create(body),
     onSuccess: (_r, _b, _x, context) =>
-      void context.client.invalidateQueries({ queryKey: leaveKeys.all(wsId) }),
+      void context.client.invalidateQueries({ queryKey: leaveKeys.all() }),
   });
   const { register, handleSubmit, setError, reset, control, setValue, formState } = useForm({
     resolver: zodResolver(SubmitLeaveBody),
@@ -110,7 +110,7 @@ export function LeaveRequestForm({ wsId, today }: Props) {
           {...register('dayPart')}
         />
       </div>
-      <LeavePreview wsId={wsId} draft={draft} />
+      <LeavePreview draft={draft} />
       <Textarea
         label="Lý do (không bắt buộc)"
         rows={3}

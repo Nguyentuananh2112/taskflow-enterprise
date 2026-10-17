@@ -57,7 +57,7 @@ describe('replaceTimesheetDay', () => {
     const client = new QueryClient();
     const a = row('a', [day('2026-10-01'), day('2026-10-02')]);
     const b = row('b', [day('2026-10-01')]);
-    const key = hrKeys.month('ws', '2026-10');
+    const key = hrKeys.month('2026-10');
     client.setQueryData(key, {
       pages: [{ data: [a, b], page: undefined, requestId: undefined }],
       pageParams: [undefined],
@@ -69,7 +69,7 @@ describe('replaceTimesheetDay', () => {
       lastOut: '2026-10-02T10:30:00.000Z',
     });
     const serverTotals = totals({ presentDays: 1, workedMin: 480, absentDays: 1 });
-    replaceTimesheetDay(client, 'ws', 'a', { day: fresh, totals: serverTotals });
+    replaceTimesheetDay(client, 'a', { day: fresh, totals: serverTotals });
     const pages = client.getQueryData<{ pages: Array<{ data: AttendanceMemberMonthDto[] }> }>(key);
     const [nextA, nextB] = pages?.pages[0]?.data ?? [];
     expect(nextA?.days[1]).toMatchObject({ status: 'PRESENT', timezone: 'Asia/Ho_Chi_Minh' });
@@ -80,7 +80,7 @@ describe('replaceTimesheetDay', () => {
 
   it('tháng khác chưa cache ⇒ không tạo dữ liệu', () => {
     const client = new QueryClient();
-    replaceTimesheetDay(client, 'ws', 'a', { day: day('2026-09-30'), totals: totals() });
-    expect(client.getQueryData(hrKeys.month('ws', '2026-09'))).toBeUndefined();
+    replaceTimesheetDay(client, 'a', { day: day('2026-09-30'), totals: totals() });
+    expect(client.getQueryData(hrKeys.month('2026-09'))).toBeUndefined();
   });
 });

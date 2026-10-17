@@ -1,6 +1,8 @@
 import type { MembershipDto } from '@taskflow/contracts/auth';
 import { Uuid } from '@taskflow/contracts/common';
-import { hasPermission, roleHasPermission, type Permission } from '@taskflow/contracts/rbac';
+import { roleHasPermission, type Permission } from '@taskflow/contracts/rbac';
+
+import type { CompanyPermission, MeCompanyDto } from '@taskflow/contracts/company';
 
 import type { MockDb } from './mock-db';
 import { fail } from './respond';
@@ -59,16 +61,28 @@ export function originClientId(request: Request): string | null {
 }
 
 /**
- * 403 khi quyền HIỆU LỰC (role ∪ grants — ADR-119) thiếu `permission`; đọc grants mới nhất mỗi request
- * (thu quyền có hiệu lực ngay — B-H3).
+ * Mốc 3.5: khóa phạm vi của dữ liệu CÔNG TY trong các store mock (store vẫn nhận "scope" như trước). Là UUID vì DTO
+ * Mốc 3 (đơn nghỉ, thông báo) còn trường `workspaceId` tới khi T-063/T-064 bỏ.
  */
-export function forbiddenUnlessGranted(
-  ctx: MemberContext,
+export const COMPANY_SCOPE = '00000000-0000-4000-8000-00000000c0de';
+
+export type CompanyContext = Readonly<{ user: MockUser; company: MeCompanyDto }>;
+
+/**
+ * Route công ty (ADR-135): 401 → không thuộc công ty ⇒ 401 SESSION_REVOKED → thiếu quyền 403 (kiểm TRƯỚC validate,
+ * body sai vẫn 403). Đọc quyền mới mỗi request (thu quyền có hiệu lực ngay — B-H3).
+ */
+export function requireCompany(
+  request: Request,
   db: MockDb,
-  permission: Permission,
-): Response | null {
-  const grants = db.workspaces.member(ctx.membership.workspaceId, ctx.user.id)?.grants ?? [];
-  return hasPermission(ctx.membership.role, grants, permission)
-    ? null
-    : fail(403, 'FORBIDDEN_ACCESS', { required: permission });
+  permission?: CompanyPermission,
+): Guarded<CompanyContext> {
+  const auth = authenticate(request, db);
+  if (auth.response) return auth;
+  const company = db.company.of(auth.ok.id);
+  if (!company) return { response: fail(401, 'SESSION_REVOKED') };
+  if (permission && !company.permissions.includes(permission)) {
+    return { response: fail(403, 'FORBIDDEN_ACCESS', { required: permission }) };
+  }
+  return { ok: { user: auth.ok, company } };
 }

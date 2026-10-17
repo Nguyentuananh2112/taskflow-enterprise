@@ -3,10 +3,10 @@ import { CancelLeaveButton } from '@/features/leave-cancel';
 import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 import { cn } from '@/shared/lib/cn';
 
-type Props = Readonly<{ wsId: string; requests: readonly LeaveRequestDto[]; today: string }>;
+type Props = Readonly<{ requests: readonly LeaveRequestDto[]; today: string }>;
 
 /** Đơn của tôi, mới nhất trước. Trạng thái bằng chữ + biểu tượng; lý do / ghi chú HR là TEXT. */
-export function MyLeaveList({ wsId, requests, today }: Props) {
+export function MyLeaveList({ requests, today }: Props) {
   if (requests.length === 0) {
     return <p className="text-sm text-text-muted">Bạn chưa gửi đơn nghỉ nào.</p>;
   }
@@ -33,7 +33,7 @@ export function MyLeaveList({ wsId, requests, today }: Props) {
                 <p className="break-words text-text-muted">Ghi chú của HR: {r.decisionNote}</p>
               )}
             </div>
-            {canCancel(r, today) && <CancelLeaveButton wsId={wsId} request={r} />}
+            {canCancel(r, today) && <CancelLeaveButton request={r} />}
           </li>
         );
       })}

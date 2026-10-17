@@ -28,7 +28,7 @@ describe('bảng công: chọn ngày đúng khi có ngày gộp + đang refetch'
     now = Date.parse('2026-10-17T13:52:00+07:00');
     f.signInAs(f.owner);
     openApp(
-      `/w/${f.wsId}/attendance`,
+      '/attendance',
       new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
     );
     const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });

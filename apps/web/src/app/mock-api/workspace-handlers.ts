@@ -20,16 +20,11 @@ import { accessRevoked } from './workspace-events';
 
 // Workspace (data-and-api §2.5, ADR-047/050/094). Thứ tự lỗi như API: 401 → 400 uuid → 404 → 403 → 400 body.
 
-const toDto = (
-  w: WorkspaceRow,
-  myRole: WorkspaceDto['myRole'],
-  myGrants: WorkspaceDto['myGrants'] = [],
-): WorkspaceDto => ({
+const toDto = (w: WorkspaceRow, myRole: WorkspaceDto['myRole']): WorkspaceDto => ({
   id: w.id,
   name: w.name,
   slug: w.slug,
   myRole,
-  myGrants, // ADR-119
   createdAt: w.createdAt,
   updatedAt: w.updatedAt,
 });
@@ -66,9 +61,7 @@ export function createWorkspaceHandlers(
       }
       return ok(
         z.array(WorkspaceDto),
-        ws
-          .activeOf(auth.ok.id)
-          .map(({ workspace, member }) => toDto(workspace, member.role, member.grants)),
+        ws.activeOf(auth.ok.id).map(({ workspace, member }) => toDto(workspace, member.role)),
       );
     }),
 
@@ -89,11 +82,7 @@ export function createWorkspaceHandlers(
       if (ctx.response) return ctx.response;
       return ok(
         WorkspaceDto,
-        toDto(
-          ws.active(String(params.wsId)) as WorkspaceRow,
-          ctx.ok.membership.role,
-          ws.member(String(params.wsId), ctx.ok.user.id)?.grants,
-        ),
+        toDto(ws.active(String(params.wsId)) as WorkspaceRow, ctx.ok.membership.role),
       );
     }),
 
@@ -111,10 +100,7 @@ export function createWorkspaceHandlers(
         ...(body.data.name !== undefined ? { name: body.data.name } : {}),
         ...(body.data.slug !== undefined ? { slug: body.data.slug } : {}),
       });
-      return ok(
-        WorkspaceDto,
-        toDto(row, ctx.ok.membership.role, ws.member(id, ctx.ok.user.id)?.grants),
-      );
+      return ok(WorkspaceDto, toDto(row, ctx.ok.membership.role));
     }),
 
     http.delete(url('/workspaces/:wsId'), async ({ request, params }) => {

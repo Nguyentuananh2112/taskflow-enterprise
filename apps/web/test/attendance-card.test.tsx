@@ -25,15 +25,13 @@ beforeAll(() => {
 afterAll(() => mock.stop());
 afterEach(() => cleanupApp());
 
-function open(role: 'OWNER' | 'VIEWER' = 'OWNER') {
+// Mốc 3.5 (ADR-139): thẻ GỌN ở trang chính /w (bỏ khỏi trang dự án); Admin không phải nhân viên ⇒ không có thẻ.
+function open(access: 'EMPLOYEE' | 'ADMIN' = 'EMPLOYEE') {
   const f = seedBoard(mock);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
-  const user =
-    role === 'OWNER'
-      ? f.owner
-      : f.addUser('Khách Vy', `vy-${crypto.randomUUID()}@example.com`, 'VIEWER');
-  f.signInAs(user);
-  openApp(`/w/${f.wsId}/projects`, hub.client(getClientId(), user.id));
+  f.setCompanyAccess(f.owner, access);
+  f.signInAs(f.owner);
+  openApp('/w', hub.client(getClientId(), f.owner.id));
   return f;
 }
 
@@ -65,9 +63,9 @@ describe('thẻ Chấm công', () => {
     expect(within(card).getByRole('button', { name: 'Chấm ra' })).toBeTruthy();
   });
 
-  it('VIEWER: không có thẻ Chấm công (server vẫn 403)', async () => {
-    open('VIEWER');
-    expect(await screen.findByRole('heading', { name: /Dự án/ })).toBeTruthy();
+  it('Admin: không có thẻ Chấm công, không nút Vào/Ra (server vẫn 403); có "Việc quản lý"', async () => {
+    open('ADMIN');
+    expect(await screen.findByRole('heading', { name: 'Việc quản lý' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Chấm công' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Chấm vào' })).toBeNull();
   });
@@ -79,13 +77,10 @@ describe('thẻ Chấm công', () => {
         { status: 500 },
       );
     const f = seedBoard(mock);
-    const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    const url = `${API_BASE}/attendance/me/today`;
     mock.server.use(...[1, 2, 3].map(() => http.get(url, boom, { once: true })));
     f.signInAs(f.owner);
-    openApp(
-      `/w/${f.wsId}/projects`,
-      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
-    );
+    openApp('/w', new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id));
     expect(
       await screen.findByText('Không tải được chấm công.', {}, { timeout: 10_000 }),
     ).toBeTruthy();
@@ -95,7 +90,7 @@ describe('thẻ Chấm công', () => {
 
   it('không layout-shift (demo TL d9): skeleton CÙNG khung min-h với thẻ; ô thông báo luôn có, chấm xong chỉ đổi CHỮ (cùng phần tử)', async () => {
     const f = seedBoard(mock);
-    const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    const url = `${API_BASE}/attendance/me/today`;
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     mock.server.use(
@@ -109,15 +104,12 @@ describe('thẻ Chấm công', () => {
       ),
     );
     f.signInAs(f.owner);
-    openApp(
-      `/w/${f.wsId}/projects`,
-      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
-    );
+    openApp('/w', new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id));
     const skeleton = await screen.findByRole('status', { name: 'Đang tải chấm công' });
-    expect(skeleton.className).toContain('md:min-h-60');
+    expect(skeleton.className).toContain('md:min-h-44');
     release();
     const card = await screen.findByRole('region', { name: 'Chấm công' });
-    expect(card.className).toContain('md:min-h-60');
+    expect(card.className).toContain('md:min-h-44');
     const note = within(card).getByText('Bạn chưa chấm vào hôm nay.');
     expect(note.className).toContain('min-h-10');
     await userEvent

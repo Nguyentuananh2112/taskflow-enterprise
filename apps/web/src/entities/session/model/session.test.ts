@@ -1,3 +1,4 @@
+import type { MeCompanyDto } from '@taskflow/contracts/company';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError, type AuthHooks } from '@/shared/api';
@@ -17,6 +18,15 @@ const TOKEN = { accessToken: 'at-secret-1', expiresIn: 900 };
 const invalid = () => new ApiError({ status: 401, code: 'REFRESH_TOKEN_INVALID', message: '' });
 const offline = () => new ApiError({ status: 0, code: 'NETWORK_ERROR', message: '' });
 
+const COMPANY = {
+  name: 'Công ty Mẫu',
+  role: 'EMPLOYEE',
+  grants: [],
+  permissions: ['attendance:self', 'leave:self', 'workspace:create'],
+  status: 'ACTIVE',
+  offboardLastDay: null,
+} as const satisfies MeCompanyDto;
+
 function setup(api: Partial<SessionDeps['api']> = {}) {
   let hooks!: AuthHooks;
   let deliver!: (message: AuthMessage) => void;
@@ -24,7 +34,7 @@ function setup(api: Partial<SessionDeps['api']> = {}) {
   const channel: AuthChannel = { post: (m) => posted.push(m), close: () => undefined };
   const deps = {
     refresh: vi.fn(() => Promise.resolve(TOKEN)),
-    me: vi.fn(() => Promise.resolve({ user: USER, memberships: [] })),
+    me: vi.fn(() => Promise.resolve({ user: USER, memberships: [], company: COMPANY })),
     logout: vi.fn(() => Promise.resolve(undefined)),
     logoutAll: vi.fn(() => Promise.resolve(undefined)),
     ...api,

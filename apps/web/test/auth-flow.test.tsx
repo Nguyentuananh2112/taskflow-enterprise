@@ -13,23 +13,17 @@ import { AppProviders } from '@/app/providers';
 import { createOfflineRealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
 import { LoginPage } from '@/views/login';
-import { RegisterPage } from '@/views/register';
 import { WorkspacePickerPage } from '@/views/workspace-picker';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
 
-// Luồng tích hợp bắt buộc của T-019 trên mock API (MSW): đăng ký → dashboard → reload giữ phiên →
-// đăng xuất. Ghép đúng các route của app/ (route group (auth) + (app)).
+// Luồng tích hợp bắt buộc của T-019 trên mock API (MSW): đăng nhập → trang chính → reload giữ phiên →
+// đăng xuất. Mốc 3.5 (ADR-137): không còn tự đăng ký — tài khoản có sẵn (HR tạo + kích hoạt — xem activate-page). Ghép đúng các route của app/ (route group (auth) + (app)).
 
 const ROUTES: Record<string, () => ReactNode> = {
   '/login': () => (
     <GuestGate>
       <LoginPage />
-    </GuestGate>
-  ),
-  '/register': () => (
-    <GuestGate>
-      <RegisterPage />
     </GuestGate>
   ),
   '/w': () => (
@@ -80,11 +74,17 @@ function reload() {
 }
 
 const BINH_PASSWORD = 'song-hong-mua-lu';
+const AN_PASSWORD = 'cay-tre-xanh-ven-song';
 let mock: ReturnType<typeof startMockApi>;
 let now = Date.now();
 beforeAll(() => {
   mock = startMockApi({ accessTtlSec: 60, now: () => now });
   mock.db.createUser({ email: 'binh@example.com', password: BINH_PASSWORD, fullName: 'Lê Bình' });
+  mock.db.createUser({
+    email: 'an.nguyen@example.com',
+    password: AN_PASSWORD,
+    fullName: 'Nguyễn Văn An',
+  });
 });
 afterAll(() => mock.stop());
 afterEach(() => {
@@ -96,24 +96,20 @@ configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 30_000 });
 
 describe('luồng xác thực trên mock API', () => {
-  it('đăng ký → dashboard → reload giữ phiên → token hết hạn được làm mới trong suốt → đăng xuất', async () => {
+  it('đăng nhập → trang chính → reload giữ phiên → token hết hạn được làm mới trong suốt → đăng xuất', async () => {
     const user = userEvent.setup({ delay: null });
 
-    // 1. Khách vào /w ⇒ bị chuyển về /login?next=/w, rồi đi tới /register.
+    // 1. Khách vào /w ⇒ bị chuyển về /login?next=/w; không có lối "Đăng ký" (ADR-137).
     openPage('/w');
     expect(await screen.findByRole('heading', { level: 1, name: 'Đăng nhập' })).toBeDefined();
     expect(window.location.search).toBe('?next=%2Fw');
-    expect(screen.getByRole('link', { name: 'Đăng ký' }).getAttribute('href')).toBe('/register');
-    act(() => testRouter.push('/register'));
+    expect(screen.queryByRole('link', { name: 'Đăng ký' })).toBeNull();
 
-    // 2. Đăng ký ⇒ vào dashboard /w với workspace mặc định.
-    await user.type(await screen.findByLabelText(/Họ tên/), 'Nguyễn Văn An');
-    await user.type(screen.getByLabelText(/Email/), 'an.nguyen@example.com');
-    await user.type(screen.getByLabelText(/Mật khẩu/), 'cay-tre-xanh-ven-song');
-    await user.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Workspace của bạn' }),
-    ).toBeDefined();
+    // 2. Đăng nhập ⇒ vào trang chính /w với workspace của mình.
+    await user.type(await screen.findByLabelText(/Email/), 'an.nguyen@example.com');
+    await user.type(screen.getByLabelText(/Mật khẩu/), AN_PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Trang chính' })).toBeDefined();
     expect(window.location.pathname).toBe('/w');
     expect(await screen.findByText('Workspace của Nguyễn Văn An')).toBeDefined();
     expect(screen.getByText('Chủ sở hữu')).toBeDefined();
@@ -177,9 +173,7 @@ describe('luồng xác thực trên mock API', () => {
     await user.type(await screen.findByLabelText(/Email/), 'binh@example.com');
     await user.type(screen.getByLabelText(/Mật khẩu/), BINH_PASSWORD);
     await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Workspace của bạn' }),
-    ).toBeDefined();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Trang chính' })).toBeDefined();
     expect(window.location.pathname).toBe('/w');
   });
 });

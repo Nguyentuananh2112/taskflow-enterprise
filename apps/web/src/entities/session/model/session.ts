@@ -155,7 +155,7 @@ export function createSessionController(deps: SessionDeps) {
       else set(result.kind, null);
     },
 
-    /** Sau login/register thành công. */
+    /** Sau đăng nhập / kích hoạt tài khoản thành công. */
     signIn(token: AuthTokenDto, user: UserDto): void {
       controller.start();
       restoring = null; // kết quả khôi phục (nếu còn) thuộc trạng thái trước đăng nhập

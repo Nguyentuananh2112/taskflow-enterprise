@@ -10,6 +10,7 @@ export const memberKeys = {
   all: (wsId: string) => ['ws', wsId, 'members'] as const,
   list: (wsId: string, q: string) => ['ws', wsId, 'members', 'list', { q }] as const,
   assignable: (wsId: string, q: string) => ['ws', wsId, 'members', 'assignable', { q }] as const,
+  candidates: (wsId: string, q: string) => ['ws', wsId, 'members', 'candidates', { q }] as const,
 };
 
 /**

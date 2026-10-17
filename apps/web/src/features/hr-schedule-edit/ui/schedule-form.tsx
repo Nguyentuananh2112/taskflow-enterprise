@@ -21,7 +21,7 @@ type Shift = Readonly<{
   breakEndMin: number;
   graceMin: number;
 }>;
-type Props = Readonly<{ wsId: string; today: string; current: Shift }>;
+type Props = Readonly<{ today: string; current: Shift }>;
 
 const toMin = (hhmm: string) => {
   const [h = NaN, m = NaN] = hhmm.split(':').map(Number);
@@ -38,14 +38,14 @@ const TIMES = [
  * Lưu phiên bản lịch mới (ADR-121): chỉ hiệu lực từ hôm nay trở đi — tháng cũ không đổi. Trùng ngày hiệu
  * lực với phiên bản đã có ⇒ thay phiên bản đó (A). Kiểm hình dạng bằng chính schema của contracts.
  */
-export function ScheduleForm({ wsId, today, current }: Props) {
+export function ScheduleForm({ today, current }: Props) {
   const [form, setForm] = useState({ ...current, effectiveFrom: today });
   const parsed = CreateWorkScheduleBody.safeParse(form);
   const issue = parsed.success ? undefined : parsed.error.issues[0];
   const save = useMutation({
-    mutationFn: () => hrAttendanceApi.createSchedule(wsId, CreateWorkScheduleBody.parse(form)),
+    mutationFn: () => hrAttendanceApi.createSchedule(CreateWorkScheduleBody.parse(form)),
     onSuccess: (_d, _v, _r, context) => {
-      void context.client.invalidateQueries({ queryKey: hrKeys.all(wsId) });
+      void context.client.invalidateQueries({ queryKey: hrKeys.all() });
       toast({ title: 'Đã lưu lịch làm việc', tone: 'success' });
     },
     onError: (error) => toast({ title: calendarErrorMessage(error), tone: 'error' }),

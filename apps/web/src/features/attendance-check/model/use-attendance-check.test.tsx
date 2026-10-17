@@ -11,7 +11,6 @@ import { newCheckKey, useAttendanceCheck } from './use-attendance-check';
 
 // Review H (T-041a #3): chấm xong phải làm mới CẢ lượt chấm hôm nay, không chỉ bảng tháng.
 
-const WS = '3f1b6c1e-8a51-4c84-9a6e-0d9f1d1b2c3d';
 afterEach(() => vi.restoreAllMocks());
 
 describe('useAttendanceCheck', () => {
@@ -19,16 +18,16 @@ describe('useAttendanceCheck', () => {
     const today = { date: '2026-10-15', status: 'PRESENT' } as AttendanceTodayDto;
     vi.spyOn(attendanceApi, 'checkIn').mockResolvedValue(today);
     const client = createQueryClient();
-    const events = attendanceKeys.myEvents(WS, '2026-10-15');
-    const month = attendanceKeys.month(WS, '2026-10');
+    const events = attendanceKeys.myEvents('2026-10-15');
+    const month = attendanceKeys.month('2026-10');
     client.setQueryData(events, []);
     client.setQueryData(month, { days: [] });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(() => useAttendanceCheck(WS), { wrapper });
+    const { result } = renderHook(() => useAttendanceCheck(), { wrapper });
     await act(() => result.current.mutateAsync({ kind: 'IN', key: newCheckKey() }));
-    expect(client.getQueryData(attendanceKeys.today(WS))).toBe(today);
+    expect(client.getQueryData(attendanceKeys.today())).toBe(today);
     expect(client.getQueryState(events)?.isInvalidated).toBe(true);
     expect(client.getQueryState(month)?.isInvalidated).toBe(true);
   });

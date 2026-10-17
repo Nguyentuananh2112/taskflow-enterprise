@@ -25,16 +25,16 @@ function cancelError(error: unknown): string {
   return serverErrorMessage(error);
 }
 
-type Props = Readonly<{ wsId: string; request: LeaveRequestDto }>;
+type Props = Readonly<{ request: LeaveRequestDto }>;
 
 /** Hủy đơn của chính mình (PENDING, hoặc APPROVED chưa tới ngày — §5), có xác nhận, gửi `expectedVersion`. */
-export function CancelLeaveButton({ wsId, request }: Props) {
+export function CancelLeaveButton({ request }: Props) {
   const cancel = useMutation({
-    mutationFn: () => leaveApi.cancel(wsId, request.id, request.version),
+    mutationFn: () => leaveApi.cancel(request.id, request.version),
     onSuccess: () => toast({ title: 'Đã hủy đơn', tone: 'success' }),
     onError: (error) => toast({ title: cancelError(error), tone: 'error' }),
     onSettled: (_d, _e, _v, _r, context) =>
-      void context.client.invalidateQueries({ queryKey: leaveKeys.all(wsId) }),
+      void context.client.invalidateQueries({ queryKey: leaveKeys.all() }),
   });
   return (
     <Dialog

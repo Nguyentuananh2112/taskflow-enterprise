@@ -145,34 +145,57 @@ describe('workspace', () => {
 });
 
 describe('thành viên', () => {
-  it('PM cấp PM ⇒ 403 (trước khi tra email); email lạ ⇒ 404; đã là thành viên ⇒ 409', async () => {
-    const { send, owner, wsId, user, join } = setup();
+  it('Mốc 3.5 thêm theo userId: PM cấp PM ⇒ 403 (trước khi tra người); userId lạ ⇒ 404; đã là thành viên ⇒ 409; có lịch nghỉ việc ⇒ 422 NOT_ACTIVE_MEMBER', async () => {
+    const { api, send, owner, wsId, user, join } = setup();
     const pm = user('Quản Lý', 'pm@example.com');
     join(pm, 'PM');
     const base = `/workspaces/${wsId}/members`;
+    const stranger = crypto.randomUUID();
+    expect((await send(pm.token, 'POST', base, { userId: stranger, role: 'PM' })).status).toBe(403);
+    expect((await send(pm.token, 'POST', base, { userId: stranger, role: 'MEMBER' })).status).toBe(
+      404,
+    );
     expect(
-      (await send(pm.token, 'POST', base, { email: 'khong-ton-tai@example.com', role: 'PM' }))
-        .status,
-    ).toBe(403);
-    expect(
-      (await send(pm.token, 'POST', base, { email: 'khong-ton-tai@example.com', role: 'MEMBER' }))
-        .status,
-    ).toBe(404);
-    expect(
-      (await send(owner.token, 'POST', base, { email: 'pm@example.com', role: 'MEMBER' })).status,
+      (await send(owner.token, 'POST', base, { userId: pm.user.id, role: 'MEMBER' })).status,
     ).toBe(409);
+    const quinn = user('Quinn', 'quinn@example.com');
+    api.db.company.setOffboarding(quinn.user.id, '2026-10-31');
+    const leaving = await send(owner.token, 'POST', base, {
+      userId: quinn.user.id,
+      role: 'MEMBER',
+    });
+    expect(leaving.body.error.details).toEqual({ rule: 'NOT_ACTIVE_MEMBER' });
+    expect(
+      (await send(owner.token, 'POST', base, { email: 'x@example.com', role: 'MEMBER' })).status,
+    ).toBe(400);
+  });
+
+  it('member-candidates: nhân viên chưa ở ws, khớp tên/email; MEMBER ⇒ 403; q < 2 ký tự ⇒ 400; người có lịch nghỉ không có', async () => {
+    const { api, send, owner, wsId, user, join } = setup();
+    const hoa = user('Mai Hoa', 'hoa@example.com');
+    const an = user('Mai An', 'an@example.com');
+    join(an, 'MEMBER');
+    const quinn = user('Mai Quinn', 'quinn@example.com');
+    api.db.company.setOffboarding(quinn.user.id, '2026-10-31');
+    const path = `/workspaces/${wsId}/member-candidates`;
+    const res = await send(owner.token, 'GET', `${path}?q=mai`);
+    expect(res.body.data).toEqual([
+      { id: hoa.user.id, fullName: 'Mai Hoa', email: 'hoa@example.com' },
+    ]);
+    expect((await send(an.token, 'GET', `${path}?q=mai`)).status).toBe(403);
+    expect((await send(owner.token, 'GET', `${path}?q=m`)).status).toBe(400);
   });
 
   it('thêm thành viên quá 30 lần/giờ ⇒ 429 có retryAfterSec (L3)', async () => {
     const { send, owner, wsId } = setup();
     for (let i = 0; i < 30; i++) {
       await send(owner.token, 'POST', `/workspaces/${wsId}/members`, {
-        email: `x${i}@example.com`,
+        userId: crypto.randomUUID(),
         role: 'MEMBER',
       });
     }
     const limited = await send(owner.token, 'POST', `/workspaces/${wsId}/members`, {
-      email: 'y@example.com',
+      userId: crypto.randomUUID(),
       role: 'MEMBER',
     });
     expect(limited.status).toBe(429);

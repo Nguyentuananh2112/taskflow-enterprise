@@ -5,14 +5,15 @@ import { Alert } from '@/shared/ui/alert';
 import { Skeleton } from '@/shared/ui/skeleton';
 
 /**
- * Khung của thẻ Chấm công (demo TL d9 — F đo layout-shift ở /projects: thẻ tải xong đẩy danh sách xuống, banner nhắc
- * biến mất sau khi chấm kéo lên). Hai quy tắc: khung CHUNG cho skeleton và thẻ thật (cùng min-h); ô thông báo LUÔN
- * có, một dòng, chỉ đổi NỘI DUNG (không chèn / xóa khối).
+ * Khung của thẻ Chấm công (demo TL d9 — F đo layout-shift: thẻ tải xong đẩy nội dung xuống, banner nhắc biến mất sau
+ * khi chấm kéo lên). Hai quy tắc: khung CHUNG cho skeleton và thẻ thật (cùng min-h); ô thông báo LUÔN có, một dòng,
+ * chỉ đổi NỘI DUNG (không chèn / xóa khối).
  */
-// Chiều cao tối thiểu theo bề rộng ≥ chiều cao THẬT của thẻ (F đo E2E-HR-14): 360 ⇒ 457 px (3 lối tắt), người có
-// hr:manage thêm lối tắt thứ 4 ⇒ ~500 px ⇒ 32rem = 512 px; từ md (768) ⇒ 240 px. 640–767 chưa đo ⇒ khung cao (thừa chỗ còn hơn dịch).
+// Mốc 3.5 (ADR-139, E A2): thẻ GỌN ở trang chính — lối tắt tách ra ngoài thẻ, thẻ đầy đủ ở /attendance. Chiều cao ước
+// theo bố cục (chưa đo lại — E2E-HR-14 chuyển sang /w, F đo): 360 xếp dọc ≈ 296 px ⇒ 19rem; từ md một hàng ≈ 168 px
+// ⇒ 11rem. Thừa chỗ còn hơn dịch.
 export const CARD_FRAME =
-  'flex min-h-[32rem] md:min-h-60 flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-card';
+  'flex min-h-[19rem] md:min-h-44 flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-card';
 
 /** Ô thông báo một dòng — giữ chiều cao cố định. */
 export const NOTE_SLOT = 'flex min-h-10 items-center';
@@ -42,7 +43,7 @@ export function CardNote({ today }: Readonly<{ today: AttendanceTodayDto }>) {
   );
 }
 
-/** Skeleton CÙNG khung với thẻ thật: ô thông báo, cột đồng hồ, bảng ca/trạng thái, nút, hàng lối tắt. */
+/** Skeleton CÙNG khung với thẻ thật: ô thông báo, cột đồng hồ, bảng ca/trạng thái, nút. */
 export function CardSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Đang tải chấm công" className={CARD_FRAME}>
@@ -59,11 +60,6 @@ export function CardSkeleton() {
           <Skeleton className="h-4 w-40" />
         </div>
         <Skeleton className="h-10 w-28 sm:ml-auto" />
-      </div>
-      <div className="grid grid-cols-2 gap-2 border-t border-border pt-3 md:flex md:flex-wrap">
-        <Skeleton className="h-12 md:h-9 md:w-36" />
-        <Skeleton className="h-12 md:h-9 md:w-40" />
-        <Skeleton className="h-12 md:h-9 md:w-40" />
       </div>
     </div>
   );

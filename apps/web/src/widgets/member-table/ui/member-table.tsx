@@ -61,11 +61,6 @@ export function MemberTable({ wsId, permission, onLeft }: Props) {
                 <th scope="col" className="py-2 pr-3 font-medium">
                   Vai trò
                 </th>
-                {permission.can('hr:grant') && (
-                  <th scope="col" className="py-2 pr-3 font-medium">
-                    Quản lý nhân sự
-                  </th>
-                )}
                 <th scope="col" className="hidden py-2 pr-3 font-medium sm:table-cell">
                   Tham gia
                 </th>

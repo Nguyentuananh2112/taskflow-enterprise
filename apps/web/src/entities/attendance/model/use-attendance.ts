@@ -7,10 +7,10 @@ import { attendanceKeys } from './query-keys';
  * Hôm nay của tôi. Trạng thái đổi theo GIỜ (PENDING → ABSENT, MISSING_OUT) dù không ai thao tác ⇒
  * làm mới mỗi 5 phút và khi quay lại tab. `enabled=false` cho VIEWER (không có `attendance:self`).
  */
-export function useAttendanceToday(wsId: string, enabled: boolean) {
+export function useAttendanceToday(enabled: boolean) {
   return useQuery({
-    queryKey: attendanceKeys.today(wsId),
-    queryFn: () => attendanceApi.today(wsId),
+    queryKey: attendanceKeys.today(),
+    queryFn: () => attendanceApi.today(),
     enabled,
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
@@ -18,20 +18,20 @@ export function useAttendanceToday(wsId: string, enabled: boolean) {
   });
 }
 
-export function useAttendanceMonth(wsId: string, month: string, enabled: boolean) {
+export function useAttendanceMonth(month: string, enabled: boolean) {
   return useQuery({
-    queryKey: attendanceKeys.month(wsId, month),
-    queryFn: () => attendanceApi.month(wsId, month),
+    queryKey: attendanceKeys.month(month),
+    queryFn: () => attendanceApi.month(month),
     enabled,
     staleTime: 60_000,
   });
 }
 
 /** Lượt chấm của tôi trong `date` — chỉ tải khi mở chi tiết ngày. */
-export function useMyAttendanceEvents(wsId: string, date: string | null) {
+export function useMyAttendanceEvents(date: string | null) {
   return useQuery({
-    queryKey: attendanceKeys.myEvents(wsId, date ?? ''),
-    queryFn: () => attendanceApi.myEvents(wsId, date ?? ''),
+    queryKey: attendanceKeys.myEvents(date ?? ''),
+    queryFn: () => attendanceApi.myEvents(date ?? ''),
     enabled: date !== null,
     staleTime: 30_000,
   });
