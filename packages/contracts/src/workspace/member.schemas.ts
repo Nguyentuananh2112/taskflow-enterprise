@@ -1,5 +1,6 @@
 import * as z from 'zod';
 
+import { AvatarUrl } from '../auth/auth.schemas';
 import { Cursor, IsoDateTime, Uuid, limitQuery, searchQuery } from '../common/primitives';
 import { WorkspaceRole } from '../rbac/permissions';
 
@@ -27,6 +28,8 @@ export const MemberDto = z.object({
   fullName: z.string(),
   role: WorkspaceRole,
   joinedAt: IsoDateTime,
+  /** Mốc 6 (ADR-142): variant 64; tùy chọn — thiếu / null ⇒ chữ cái. */
+  avatarUrl: AvatarUrl.optional(),
 });
 export type MemberDto = z.infer<typeof MemberDto>;
 

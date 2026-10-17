@@ -173,7 +173,13 @@ export const MemberCandidatesQuery = z.strictObject({
 });
 export type MemberCandidatesQuery = z.infer<typeof MemberCandidatesQuery>;
 
-export const MemberCandidateDto = z.object({ id: Uuid, fullName: z.string(), email: z.string() });
+export const MemberCandidateDto = z.object({
+  id: Uuid,
+  fullName: z.string(),
+  email: z.string(),
+  /** Mốc 6 (ADR-142): variant 64; tùy chọn. */
+  avatarUrl: AvatarUrl.optional(),
+});
 export type MemberCandidateDto = z.infer<typeof MemberCandidateDto>;
 
 /** = `AddMemberBody` (workspace) — giữ tên cũ cho web đã dựng theo 1bb5f42. */

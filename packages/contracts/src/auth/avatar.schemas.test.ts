@@ -6,6 +6,8 @@ import {
   CHAT_FILE_MAX_BYTES,
   CHAT_MAX_ATTACHMENTS,
   EmployeeDto,
+  MemberCandidateDto,
+  MemberDto,
   REALTIME_EVENTS,
   UPLOAD_NAME_HEADER,
   UserAvatarChangedEventDto,
@@ -63,6 +65,22 @@ describe('avatar trong DTO người dùng', () => {
     };
     expect(EmployeeDto.safeParse(employee).success).toBe(true);
     expect(EmployeeDto.parse({ ...employee, avatarUrl: URL64 }).avatarUrl).toBe(URL64);
+  });
+
+  it('MemberDto (thành viên ws) + MemberCandidateDto: avatarUrl tùy chọn (ADR-142)', () => {
+    const member = {
+      userId: ID,
+      email: 'mia@example.test',
+      fullName: 'Mia',
+      role: 'MEMBER',
+      joinedAt: '2026-10-17T08:00:00.000Z',
+    };
+    expect(MemberDto.safeParse(member).success).toBe(true);
+    expect(MemberDto.parse({ ...member, avatarUrl: URL64 }).avatarUrl).toBe(URL64);
+    expect(MemberDto.safeParse({ ...member, avatarUrl: 'javascript:x' }).success).toBe(false);
+    const candidate = { id: ID, fullName: 'Mia', email: 'mia@example.test' };
+    expect(MemberCandidateDto.safeParse(candidate).success).toBe(true);
+    expect(MemberCandidateDto.parse({ ...candidate, avatarUrl: null }).avatarUrl).toBeNull();
   });
 
   it('AvatarUploadResponseDto: cả hai URL bắt buộc', () => {
