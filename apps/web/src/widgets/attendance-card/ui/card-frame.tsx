@@ -9,8 +9,10 @@ import { Skeleton } from '@/shared/ui/skeleton';
  * biến mất sau khi chấm kéo lên). Hai quy tắc: khung CHUNG cho skeleton và thẻ thật (cùng min-h); ô thông báo LUÔN
  * có, một dòng, chỉ đổi NỘI DUNG (không chèn / xóa khối).
  */
+// Chiều cao tối thiểu theo bề rộng ≥ chiều cao THẬT của thẻ (F đo E2E-HR-14): 360 ⇒ 457 px (3 lối tắt), người có
+// hr:manage thêm lối tắt thứ 4 ⇒ ~500 px ⇒ 32rem = 512 px; từ md (768) ⇒ 240 px. 640–767 chưa đo ⇒ khung cao (thừa chỗ còn hơn dịch).
 export const CARD_FRAME =
-  'flex min-h-60 flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-card';
+  'flex min-h-[32rem] md:min-h-60 flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-card';
 
 /** Ô thông báo một dòng — giữ chiều cao cố định. */
 export const NOTE_SLOT = 'flex min-h-10 items-center';

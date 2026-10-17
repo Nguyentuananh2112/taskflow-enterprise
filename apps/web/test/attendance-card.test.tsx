@@ -114,10 +114,10 @@ describe('thẻ Chấm công', () => {
       new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
     );
     const skeleton = await screen.findByRole('status', { name: 'Đang tải chấm công' });
-    expect(skeleton.className).toContain('min-h-60');
+    expect(skeleton.className).toContain('md:min-h-60');
     release();
     const card = await screen.findByRole('region', { name: 'Chấm công' });
-    expect(card.className).toContain('min-h-60');
+    expect(card.className).toContain('md:min-h-60');
     const note = within(card).getByText('Bạn chưa chấm vào hôm nay.');
     expect(note.className).toContain('min-h-10');
     await userEvent
