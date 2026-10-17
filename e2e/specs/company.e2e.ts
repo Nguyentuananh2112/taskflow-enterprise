@@ -95,7 +95,7 @@ test(`@main E2E-HR-16 [${T065A}]: Mia chấm Vào ở /w ⇒ nút header ở tra
   request,
   isMobile,
 }) => {
-  const w = await seedHrWorld(request, 'co16');
+  const w = await seedHrWorld(request, 'co16', { hanaIsHr: true });
   await loginViaUi(page, w.mia.user);
   await page.goto(HOME);
   const card = attendanceCard(page);
@@ -150,7 +150,7 @@ test(`E2E-HR-17 [${T065B}]: Hana thêm nhân viên ở 360 px (tên chứa paylo
     awaiting(T065B) || awaiting('T-062'),
     `[PENDING ${T065B} + T-062] /hr/employees (web E) + GET hr/employees (API B)`,
   );
-  const w = await seedHrWorld(request, 'co17');
+  const w = await seedHrWorld(request, 'co17', { hanaIsHr: true });
   const dialogsHana = await arm(context);
   const name = '<img src=x onerror=__xss(41)><svg onload=__xss(42)> Nhàn';
   const email = `co17-${w.hana.userId.slice(0, 8)}@e2e.example`;
@@ -242,7 +242,7 @@ test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox;
     awaiting(T065B) || awaiting(T065C) || awaiting('T-061a') || awaiting('T-062'),
     `[PENDING ${T065B} + ${T065C} + T-061a + T-062] /admin/workspaces, /hr/employees, combobox thành viên (web E) + admin/*, member-candidates (API A), offboarding (API B)`,
   );
-  const w = await seedHrWorld(request, 'co19');
+  const w = await seedHrWorld(request, 'co19', { hanaIsHr: true });
   const max = newUser('co19-max');
   await apiCreateUser(request, max);
   const w3Name = `W3 co19 ${w.mia.userId.slice(0, 8)}`;
@@ -356,7 +356,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         awaiting(T065B) || awaiting('T-061a') || awaiting('T-062'),
         `[PENDING ${T065B} + T-061a + T-062] trang /activate, /hr/employees, /admin/* (web E + API A/B)`,
       );
-      const w = await seedHrWorld(request, `co15c-${colorScheme}`);
+      const w = await seedHrWorld(request, `co15c-${colorScheme}`, { hanaIsHr: true });
       const fresh = await browser.newContext({ colorScheme });
       try {
         const p = await fresh.newPage();
