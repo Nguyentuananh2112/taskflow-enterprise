@@ -20,6 +20,7 @@ import {
   ScheduleOffboardingUseCase,
 } from './application/use-cases/offboarding.use-cases';
 import { ReissueActivationUseCase } from './application/use-cases/reissue-activation.use-case';
+import { RemoveEmployeeAvatarUseCase } from './application/use-cases/employee-avatar.use-case';
 import type { CompanyPermission } from './domain/roles';
 
 /**
@@ -51,6 +52,7 @@ export function createEmployment(d: {
     cancel: new CancelOffboardingUseCase(d),
     completer,
     reissue: new ReissueActivationUseCase(d),
+    removeAvatar: new RemoveEmployeeAvatarUseCase(d),
   };
 }
 
@@ -70,5 +72,6 @@ export function lateAccounts(ref: { current: ICompanyAccounts | null }): ICompan
     revokeActivations: (userId) => of().revokeActivations(userId),
     createPending: (input) => of().createPending(input),
     issueActivation: (input) => of().issueActivation(input),
+    removeAvatar: (input) => of().removeAvatar(input),
   };
 }

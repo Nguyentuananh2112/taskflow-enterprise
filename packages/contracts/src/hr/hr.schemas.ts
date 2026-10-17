@@ -96,6 +96,8 @@ export const HrAuditAction = z.enum([
   'WORKSPACE_OWNER_ASSIGNED',
   'WORKSPACE_ARCHIVED',
   'COMPANY_RENAMED',
+  // Mốc 6 (ADR-142): HR / Admin gỡ ảnh đại diện không phù hợp của nhân viên.
+  'AVATAR_REMOVED',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

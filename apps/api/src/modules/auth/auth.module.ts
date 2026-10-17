@@ -205,6 +205,7 @@ export function createAuthModule(d: AuthModuleDeps): AuthModule {
     limit: d.limit,
   });
   const accounts = createAuthAccounts({
+    ...(avatar ? { removeAvatar: (i) => avatar.removeAvatar.execute(i) } : {}),
     users,
     refreshTokens,
     store,
