@@ -107,6 +107,10 @@ export const ConversationDto = z.object({
   unread: z.int().min(0).max(CHAT_UNREAD_CAP),
   muted: z.boolean(),
   canSend: z.boolean(),
+  /** Con trỏ đọc của mình — vạch "Tin chưa đọc" sau khi tải lại trang (E8). */
+  lastReadMessageId: Uuid.nullable(),
+  /** DIRECT: con trỏ đọc của `peer` ("Đã xem" — H 18/10); GROUP / WORKSPACE: null (v1 không hiện ai đã xem). */
+  peerLastReadMessageId: Uuid.nullable(),
   /** GROUP: vai trò của mình; khác: null. */
   myRole: ChatParticipantRole.nullable(),
 });

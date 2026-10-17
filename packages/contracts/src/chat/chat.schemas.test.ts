@@ -138,10 +138,15 @@ describe('DTO', () => {
       unread: 99,
       muted: false,
       canSend: true,
+      lastReadMessageId: null,
+      peerLastReadMessageId: ID2,
       myRole: null,
     };
     expect(ConversationDto.safeParse(conv).success).toBe(true);
     expect(ConversationDto.safeParse({ ...conv, unread: 100 }).success).toBe(false);
+    // con trỏ đọc bắt buộc có mặt (null được) — "Đã xem" / vạch chưa đọc sau khi tải lại trang
+    const { peerLastReadMessageId: _p, ...withoutPeer } = conv;
+    expect(ConversationDto.safeParse(withoutPeer).success).toBe(false);
   });
 
   it('MessageDto + tin đã xóa (body null)', () => {
