@@ -73,6 +73,13 @@ function offboardingDeps() {
     },
     notifier: { notify: () => Promise.resolve() },
     realtime: { notifyCompanyAccessChanged: () => Promise.resolve() },
+    hireProfile: {
+      wantsProfile: () => false,
+      lockBeforeHire: () => Promise.resolve(),
+      validate: () => undefined,
+      applyOnHire: () => Promise.resolve(),
+    },
+    profileColumns: { columnsOf: () => Promise.resolve(new Map()) },
   };
   const accounts = {
     revokeActivations: () => Promise.resolve(0),

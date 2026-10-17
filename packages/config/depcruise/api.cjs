@@ -42,6 +42,14 @@ const forbidden = [
     to: { path: '(^|/)axios(/|$)' },
   },
   {
+    name: 'xlsx-only-fflate',
+    comment:
+      'fflate chỉ được import trong core/export/xlsx (ADR-130, B duyệt chuỗi cung ứng T-055x): một adapter duy nhất, chỉ nén.',
+    severity: 'error',
+    from: { pathNot: '^src/core/export/xlsx/' },
+    to: { path: 'node_modules/fflate/' },
+  },
+  {
     name: 'no-web-from-api',
     comment: 'API không import code của apps/web.',
     severity: 'error',

@@ -62,6 +62,8 @@ export const BusinessRule = z.enum([
   'START_DATE_OUT_OF_RANGE',
   'LAST_DAY_OUT_OF_RANGE',
   'ALREADY_ACTIVATED',
+  // Mốc 5 (T-054, ADR-128): `hireDate` sau "hôm nay" của giờ nghiệp vụ — cùng kiểu START_DATE_OUT_OF_RANGE.
+  'HIRE_DATE_IN_FUTURE',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 

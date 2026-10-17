@@ -214,7 +214,13 @@ describe('cổng công ty ở login / refresh / me (Mốc 3.5, B HIGH-2)', () =>
       name: null,
       role: 'EMPLOYEE',
       grants: ['HR_MANAGE'],
-      permissions: ['attendance:self', 'hr:manage', 'leave:self', 'workspace:create'],
+      permissions: [
+        'attendance:self',
+        'hr:manage',
+        'leave:self',
+        'profile:self',
+        'workspace:create',
+      ],
       status: 'ACTIVE',
       offboardLastDay: null,
     });
