@@ -9,7 +9,6 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { RealtimeGateway } from '../../src/core/realtime/gateway';
-import { socketAuthenticatorFrom } from '../../src/core/realtime/ports';
 import { createHttpServer, listen } from '../../src/server';
 import { envelopeOf } from '../support/http';
 import { createTestApp, WEB, type TestApp, type TestUser } from '../support/http-app';
@@ -28,7 +27,7 @@ beforeEach(async () => {
   const gateway = new RealtimeGateway(server, {
     corsOrigins: [WEB],
     trustProxyHops: 0,
-    authenticator: socketAuthenticatorFrom(t.container.auth.authenticator),
+    authenticator: t.container.socketAuth,
     accessChecker: t.container.workspace.accessChecker,
     logger: new SpyLogger(),
     clock: t.clock,

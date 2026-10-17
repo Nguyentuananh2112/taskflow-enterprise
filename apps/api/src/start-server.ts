@@ -24,7 +24,6 @@ import { createGracefulShutdown, type GracefulShutdown } from './core/lifecycle/
 import { createPgPool, createPrismaClient } from './core/persistence/database';
 import { RealtimeGateway } from './core/realtime/gateway';
 import { PrismaClient } from './generated/prisma/client';
-import { socketAuthenticatorFrom } from './core/realtime/ports';
 import { createValkeyAdapter } from './core/realtime/redis-adapter';
 import { PasswordPolicy } from './modules/auth/domain/password-policy';
 import { Argon2idPasswordHasher } from './modules/auth/infrastructure/security/argon2id-password-hasher';
@@ -104,7 +103,7 @@ export async function startServer(
   const gateway = new RealtimeGateway(server, {
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
-    authenticator: socketAuthenticatorFrom(container.auth.authenticator),
+    authenticator: container.socketAuth,
     accessChecker: container.workspace.accessChecker,
     handshakeLimiter: createHitLimiter(RATE_LIMIT_RULES.socketHandshake[0], {
       storeFor: rateLimitStore,

@@ -1,3 +1,5 @@
+import { SessionRevokedError } from '../errors';
+
 // Port của gateway realtime. core KHÔNG import module nghiệp vụ (dependency-cruiser) — module
 // hiện thực theo cấu trúc, wire ở composition root (ADR-016, ADR-093).
 
@@ -31,6 +33,23 @@ export function socketAuthenticatorFrom(auth: BearerAuthenticator): ISocketAuthe
     async authenticate(token) {
       const user = await auth.authenticate(`Bearer ${token}`);
       return { userId: user.id, sid: user.sid, expiresAt: new Date(user.exp * 1000) };
+    },
+  };
+}
+
+/**
+ * Mốc 3.5 (B HIGH-2, SEC-HR-62/70): handshake và `auth:renew` từ chối người không còn thuộc công ty / quá
+ * `access_until` (401 SESSION_REVOKED) dù access token còn hạn. `isActive` = cổng công ty (composition nối).
+ */
+export function companyGatedSocketAuthenticator(
+  inner: ISocketAuthenticator,
+  isActive: (userId: string) => Promise<boolean>,
+): ISocketAuthenticator {
+  return {
+    async authenticate(token) {
+      const principal = await inner.authenticate(token);
+      if (!(await isActive(principal.userId))) throw new SessionRevokedError();
+      return principal;
     },
   };
 }

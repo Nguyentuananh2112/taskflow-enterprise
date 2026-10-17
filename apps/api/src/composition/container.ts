@@ -33,6 +33,11 @@ import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
 import type { IErrorReporter } from '../core/observability/sentry';
+import {
+  companyGatedSocketAuthenticator,
+  socketAuthenticatorFrom,
+  type ISocketAuthenticator,
+} from '../core/realtime/ports';
 import { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
 import { AuthUserDirectory } from './users';
@@ -84,6 +89,8 @@ export interface Container {
   notifications: NotificationsModule;
   /** Mốc 3.5: công ty — quyền / nhiệm kỳ / HrAuditLog cho attendance, leave, payroll (nối khi gỡ loại tạm). */
   company: CompanyModule;
+  /** Authenticator của gateway Socket.io: access token (auth) + cổng công ty (HIGH-2). */
+  socketAuth: ISocketAuthenticator;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
   /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
@@ -162,7 +169,7 @@ export function createContainer(d: ContainerDeps): Container {
     users: new AuthUserDirectory(persistence.auth.users),
     notifier: realtime,
     // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`.
-    company: { isActive: async (userId) => (await company.permissionsOf(userId)) !== null },
+    company: company.sessionGate,
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
@@ -224,5 +231,9 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
     routers,
   });
-  return { app, auth, workspace, task, notifications, company, realtime, routers };
+  const socketAuth = companyGatedSocketAuthenticator(
+    socketAuthenticatorFrom(auth.authenticator),
+    (userId) => company.sessionGate.isActive(userId),
+  );
+  return { app, auth, workspace, task, notifications, company, socketAuth, realtime, routers };
 }
