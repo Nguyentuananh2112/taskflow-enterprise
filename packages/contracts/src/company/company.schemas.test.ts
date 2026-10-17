@@ -20,6 +20,7 @@ describe('ma trận quyền công ty (ADR-134/135)', () => {
     expect(COMPANY_ROLE_PERMISSIONS.EMPLOYEE).toEqual([
       'attendance:self',
       'leave:self',
+      'profile:self',
       'workspace:create',
     ]);
   });
@@ -36,7 +37,7 @@ describe('ma trận quyền công ty (ADR-134/135)', () => {
 
   it('quyền hiệu lực = role ∪ grants', () => {
     expect([...effectiveCompanyPermissions('EMPLOYEE', ['HR_MANAGE'])].sort()).toEqual(
-      ['attendance:self', 'hr:manage', 'leave:self', 'workspace:create'].sort(),
+      ['attendance:self', 'hr:manage', 'leave:self', 'profile:self', 'workspace:create'].sort(),
     );
   });
 });

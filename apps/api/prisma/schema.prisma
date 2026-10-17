@@ -113,6 +113,7 @@ enum NotificationType {
   ACCESS_CHANGED // Mốc 3.5: đổi role / grant công ty (thay HR_GRANTED / HR_REVOKED)
   OFFBOARD_SCHEDULED
   OFFBOARD_CLEANUP
+  PROFILE_UPDATED // Mốc 5 (ADR-128): HR sửa hồ sơ của bạn
 }
 
 model User {

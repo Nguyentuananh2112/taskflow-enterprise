@@ -39,6 +39,9 @@ export function notificationText(n: NotificationDto): string {
       return `${who} đã lên lịch nghỉ việc — xem chi tiết`;
     case 'OFFBOARD_CLEANUP':
       return 'Đã dọn đơn nghỉ của người vừa nghỉ việc';
+    // Mốc 5 (ADR-128): không mang giá trị hồ sơ — chi tiết ở trang Hồ sơ của tôi.
+    case 'PROFILE_UPDATED':
+      return 'Hồ sơ nhân sự của bạn đã được cập nhật';
   }
 }
 
@@ -59,5 +62,7 @@ export function notificationHref(n: NotificationDto): string {
       return '/w';
     case 'OFFBOARD_CLEANUP':
       return '/hr?tab=leave';
+    case 'PROFILE_UPDATED':
+      return '/my-profile';
   }
 }
