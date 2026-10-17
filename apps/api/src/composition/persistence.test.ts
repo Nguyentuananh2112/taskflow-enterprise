@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { SpyLogger } from '../../test/support';
-import {
-  assertPersistenceAllowed,
-  createMemoryPersistence,
-  createPrismaPersistence,
-} from './persistence';
+import { assertPersistenceAllowed, createMemoryPersistence } from './persistence';
+import { createPrismaPersistence } from './prisma-persistence';
 
 describe('assertPersistenceAllowed (quyết định Tech Lead — T-020)', () => {
   it.each(['staging', 'production'] as const)(
@@ -30,7 +27,7 @@ describe('assertPersistenceAllowed (quyết định Tech Lead — T-020)', () =>
     ).toEqual(['task']);
     expect(
       assertPersistenceAllowed('test', createMemoryPersistence(new SpyLogger()).modules),
-    ).toEqual(['attendance', 'auth', 'company', 'notifications', 'task', 'workspace']);
+    ).toEqual(['attendance', 'auth', 'company', 'leave', 'notifications', 'task', 'workspace']);
   });
 });
 
@@ -49,6 +46,7 @@ describe('createPrismaPersistence (T-023)', () => {
       notifications: 'prisma',
       company: 'prisma',
       attendance: 'prisma',
+      leave: 'prisma',
     });
     expect(Object.keys(p.company).sort()).toEqual(['company', 'hrAudit', 'members', 'tenures']);
     expect(Object.keys(p.task ?? {}).sort()).toEqual([

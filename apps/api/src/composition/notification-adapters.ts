@@ -21,14 +21,6 @@ export function notificationContextFrom(d: {
   };
 }
 
-/**
- * TẠM (T-061, `tsconfig.exclusions.json`): module leave đang loại khỏi build tới khi T-064 rebase — DTO thông báo
- * chưa có tóm tắt đơn (`leave: null`). D thay bằng `leave.readModel` khi gỡ dòng leave khỏi danh sách loại tạm.
- */
-export const noLeaveSummaries: ILeaveSummaryReader = {
-  leaveSummaries: () => Promise.resolve(new Map()),
-};
-
 // ---------------------------------------------------------------- port của module dùng (ADR-093)
 // Chữ ký sao THEO CẤU TRÚC từ port của leave (D, T-064 — `ILeaveNotifier`) và attendance (A, T-063 —
 // `AttendanceNotifier`), cấp công ty: KHÔNG còn workspaceId (ADR-136).

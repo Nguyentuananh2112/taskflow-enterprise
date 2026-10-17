@@ -15,6 +15,7 @@ import {
   LeaveKit,
   PERMISSION_HR_MANAGE,
   PERMISSION_LEAVE_SELF,
+  countingTenure,
   summarizeStored,
   type LeaveCommandDeps,
   type LeaveScope,
@@ -67,29 +68,31 @@ export class LeaveQueries {
 
   /** `GET leave-requests?mine=1` — chỉ đơn của CHÍNH người gọi (route không nhận `userId` — SEC-HR-03). */
   async listMine(scope: LeaveScope, query: LeaveListQuery): Promise<LeavePage> {
-    await this.#kit.requireActor(scope.workspaceId, scope.actorId, PERMISSION_LEAVE_SELF);
-    return this.#list(scope.workspaceId, { userId: scope.actorId }, query, MINE_CURSOR);
+    await this.#kit.requireActor(scope.actorId, PERMISSION_LEAVE_SELF);
+    return this.#list({ userId: scope.actorId }, query, MINE_CURSOR);
   }
 
-  /** `GET leave-requests?status=` — HR xem cả workspace (có `reason`: `hr:manage` được đọc — B-H2). */
+  /** `GET leave/requests?status=` — HR xem cả công ty (có `reason`: `hr:manage` được đọc — B-H2). */
   async listForHr(scope: LeaveScope, query: LeaveListQuery): Promise<LeavePage> {
-    await this.#kit.requireActor(scope.workspaceId, scope.actorId, PERMISSION_HR_MANAGE);
-    return this.#list(scope.workspaceId, {}, query, HR_CURSOR);
+    await this.#kit.requireActor(scope.actorId, PERMISSION_HR_MANAGE);
+    return this.#list({}, query, HR_CURSOR);
   }
 
   /** `GET leave-balances/me?year=` */
   async myBalance(scope: LeaveScope, year: number): Promise<LeaveBalanceDto> {
-    await this.#kit.requireActor(scope.workspaceId, scope.actorId, PERMISSION_LEAVE_SELF);
-    const { workspaceId, actorId } = scope;
-    const [stored, holding, calendar] = await Promise.all([
-      this.d.readModel.findBalance(workspaceId, actorId, year),
-      this.d.requests.listHolding(workspaceId, actorId, year),
-      this.#kit.yearCalendar(workspaceId, year),
+    await this.#kit.requireActor(scope.actorId, PERMISSION_LEAVE_SELF);
+    const { actorId } = scope;
+    const [stored, holding, calendar, employment] = await Promise.all([
+      this.d.readModel.findBalance(actorId, year),
+      this.d.requests.listHolding(actorId, year),
+      this.#kit.yearCalendar(year),
+      this.d.company.employmentOf(actorId),
     ]);
     const balance = summarizeStored(
       stored ?? { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 },
       holding,
       calendar,
+      { tenure: countingTenure(employment) },
     );
     return toBalanceDto(year, balance);
   }
@@ -109,7 +112,6 @@ export class LeaveQueries {
    * đơn APPROVED trong [from, to]; attendance tự áp lịch / ngày lễ.
    */
   async approvedLeaves(q: {
-    workspaceId: string;
     userIds?: readonly string[];
     from: CalendarDate;
     to: CalendarDate;
@@ -122,7 +124,6 @@ export class LeaveQueries {
   }
 
   async #list(
-    workspaceId: string,
     filter: { userId?: string },
     query: LeaveListQuery,
     kind: string,
@@ -131,7 +132,6 @@ export class LeaveQueries {
       ? decodeCursor(query.cursor, kind, KeySchema)
       : null;
     const rows = await this.d.readModel.listRequests(
-      workspaceId,
       { ...filter, ...(query.status === undefined ? {} : { status: query.status }) },
       after,
       query.limit + 1,
@@ -140,7 +140,7 @@ export class LeaveQueries {
     const records = hasMore ? rows.slice(0, query.limit) : rows;
     const last = records.at(-1);
     return {
-      items: await this.#dtos(workspaceId, records),
+      items: await this.#dtos(records),
       page: {
         nextCursor:
           hasMore && last
@@ -153,7 +153,7 @@ export class LeaveQueries {
   }
 
   /** Một lần gọi lịch (phủ mọi đơn của trang) + một lần gọi tên hiển thị — không N+1. */
-  async #dtos(workspaceId: string, records: LeaveRequestRecord[]): Promise<LeaveRequestDto[]> {
+  async #dtos(records: LeaveRequestRecord[]): Promise<LeaveRequestDto[]> {
     const [first] = records;
     if (!first) return [];
     const from = records.reduce((m, r) => (r.startDate < m ? r.startDate : m), first.startDate);
@@ -162,7 +162,7 @@ export class LeaveQueries {
       records.flatMap((r) => (r.decidedBy ? [r.userId, r.decidedBy] : [r.userId])),
     );
     const [calendar, refs] = await Promise.all([
-      this.d.calendar.workingDays({ workspaceId, from, to }),
+      this.d.calendar.workingDays({ from, to }),
       this.d.users.findRefs([...userIds]),
     ]);
     return records.map((r) =>

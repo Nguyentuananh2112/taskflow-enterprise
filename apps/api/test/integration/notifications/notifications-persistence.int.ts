@@ -1,15 +1,10 @@
 // T-040 tầng I (ADR-123; Mốc 3.5 ADR-136): store + audience + context Prisma trên Postgres thật — ghi trong
 // transaction của bên gọi (rollback ⇒ 0 dòng), WHERE luôn có recipient_id, loại dành cho HR lọc theo quyền
 // công ty HIỆN TẠI đọc từ company_members (audience của module company), ngữ cảnh không bao giờ chứa lý do.
-import { randomUUID } from 'node:crypto';
-
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { UuidV7Generator } from '../../../src/core/infrastructure/system';
-import {
-  noLeaveSummaries,
-  notificationContextFrom,
-} from '../../../src/composition/notification-adapters';
+import { notificationContextFrom } from '../../../src/composition/notification-adapters';
 import { PrismaUserRefReader } from '../../../src/modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { createCompanyModule } from '../../../src/modules/company/company.module';
 import {
@@ -18,6 +13,7 @@ import {
   PrismaCompanyTenureReader,
 } from '../../../src/modules/company/infrastructure/prisma/prisma-company';
 import { PrismaHrAuditLog } from '../../../src/modules/company/infrastructure/prisma/prisma-hr-audit-log';
+import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
 import {
   NotifyOutsideTransactionError,
   NotificationPublisher,
@@ -41,6 +37,7 @@ let queries: NotificationQueries;
 let ids: Record<'olivia' | 'hana' | 'mia' | 'max' | 'otto' | 'leave', string>;
 
 const START = new Date('2026-10-01T00:00:00.000Z');
+const REASON = 'Sốt cao — lý do sức khỏe nhạy cảm';
 
 async function seed() {
   const prisma = testPrisma();
@@ -68,13 +65,22 @@ async function seed() {
       employee(otto!.id),
     ],
   });
+  const leave = await prisma.leaveRequest.create({
+    data: {
+      userId: mia!.id,
+      type: 'SICK',
+      startDate: new Date('2026-11-18'),
+      endDate: new Date('2026-11-19'),
+      reason: REASON,
+    },
+  });
   return {
     olivia: olivia!.id,
     hana: hana!.id,
     mia: mia!.id,
     max: max!.id,
     otto: otto!.id,
-    leave: randomUUID(),
+    leave: leave.id,
   };
 }
 
@@ -113,10 +119,9 @@ beforeEach(async () => {
   queries = new NotificationQueries({
     store,
     audience,
-    // TẠM (tsconfig.exclusions.json): leave loại khỏi build ⇒ chưa có tóm tắt đơn — D nối lại ở T-064.
     context: notificationContextFrom({
       users: new PrismaUserRefReader(db),
-      leaves: noLeaveSummaries,
+      leaves: new PrismaLeaveReadModel(db), // = `leave.readModel` nối ở persistence.ts (production)
     }),
     clock,
   });
@@ -196,7 +201,7 @@ describe('ghi (ADR-123)', () => {
 });
 
 describe('đọc — recipient_id = me, còn thuộc công ty, loại HR theo quyền hiện tại', () => {
-  it('DTO join actor (leave: null tới khi T-064 nối readModel); không còn trường workspace', async () => {
+  it('DTO join actor + loại / khoảng ngày đơn; KHÔNG có lý do ở bất kỳ đâu (B-H2); không còn trường workspace', async () => {
     await miaSubmits();
     const { items } = await queries.list(ids.hana, { limit: 20 });
     expect(items).toEqual([
@@ -204,11 +209,12 @@ describe('đọc — recipient_id = me, còn thuộc công ty, loại HR theo qu
         type: 'LEAVE_SUBMITTED',
         refId: ids.leave,
         actor: { id: ids.mia, fullName: 'Mia' },
-        leave: null,
+        leave: { type: 'SICK', startDate: '2026-11-18', endDate: '2026-11-19' },
         readAt: null,
       }),
     ]);
     expect(items[0]).not.toHaveProperty('workspaceId');
+    expect(JSON.stringify(items)).not.toContain(REASON);
   });
 
   it('SEC-HR-19: thu grant (UPDATE company_members) ⇒ request kế tiếp ẩn loại HR + không đánh dấu được', async () => {

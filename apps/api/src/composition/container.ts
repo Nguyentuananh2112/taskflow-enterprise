@@ -1,13 +1,7 @@
 import { ROLE_PERMISSIONS } from '@taskflow/contracts';
-import type { Store } from 'express-rate-limit';
-import type { Express, Router } from 'express';
-import type { Logger } from 'pino';
-
-import { createApp, type AppConfig } from '../app';
-import type { IClock, IIdGenerator, IRandom } from '../core/domain';
+import { createApp } from '../app';
 import { InProcessEventBus } from '../core/events/event-bus';
 import { HttpResponder } from '../core/http/envelope';
-import type { ReadinessProbe } from '../core/http/health';
 import { requireAllowedOrigin } from '../core/http/middleware';
 import {
   createGlobalRateLimit,
@@ -15,85 +9,27 @@ import {
   type RateLimitDeps,
 } from '../core/http/rate-limit/rate-limit';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
-import { createAuthModule, type AuthModule } from '../modules/auth/auth.module';
-import type { IAccessTokenService } from '../modules/auth/application/ports/access-token-service.port';
-import type { IPasswordHasher } from '../modules/auth/application/ports/password-hasher.port';
-import type { PasswordPolicy } from '../modules/auth/domain/password-policy';
+import { createAuthModule } from '../modules/auth/auth.module';
 import type { IRolePermissions } from '../modules/task/application/task-actor';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import {
   NOTIFICATIONS_PATH,
   createNotificationsModule,
-  type NotificationsModule,
 } from '../modules/notifications/notifications.module';
-import { createCompanyModule, type CompanyModule } from '../modules/company/company.module';
+import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { HR_PATH } from '../modules/company/presentation/hr.routes';
-import type { AttendanceModule } from '../modules/attendance/attendance.module';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
-import { createTaskModule, type TaskModule } from '../modules/task/task.module';
+import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
+import { wireLeave } from './leave-wiring';
+import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
-import type { AppMetrics } from '../core/observability/metrics';
-import type { IErrorReporter } from '../core/observability/sentry';
 import { LateBoundRealtime } from './late-realtime';
-import type { Persistence } from './persistence';
 import { AuthUserDirectory } from './users';
+import type { Container, ContainerDeps } from './container-types';
 
-export interface ContainerConfig extends AppConfig {
-  cookieSecure: boolean;
-  jwtSecret: string;
-  jwtPreviousSecret?: string | undefined;
-  /** Chỉ APP_ENV=test (env.ts chặn nơi khác); thiếu ⇒ 900 giây. */
-  jwtAccessTtlSeconds?: number | undefined;
-}
-
-export interface ContainerDeps {
-  config: ContainerConfig;
-  logger: Logger;
-  clock: IClock;
-  /**
-   * Giờ NGHIỆP VỤ (attendance, leave, notifications, workspace — workDate, "hôm nay", serverNow, createdAt, joinedAt /
-   * leftAt của nhiệm kỳ). Thiếu ⇒ `clock`. Chỉ E2E đặt khác (TEST_CLOCK_ANCHOR, APP_ENV=test — anchored-clock.ts);
-   * auth/JWT, task, rate limit, meta.timestamp, socket luôn theo `clock` (giờ thật).
-   */
-  businessClock?: IClock;
-  /**
-   * T-047: mốc lưu dữ liệu chấm công (`YYYY-MM-DD`) — `retentionCutoffFor` của maintenance-setup, CHỈ khác null khi job
-   * retention thật sự bật. Thiếu ⇒ không áp (test HTTP, chế độ bộ nhớ).
-   */
-  retentionCutoff?: () => string | null;
-  ids: IIdGenerator;
-  random: IRandom;
-  hasher: IPasswordHasher;
-  policy: PasswordPolicy;
-  persistence: Persistence;
-  /** Store rate limit cho từng rule (Valkey ở production — ADR-063; bộ nhớ trong test). */
-  rateLimitStore: (rule: RateLimitRule) => Store;
-  probes: readonly ReadinessProbe[];
-  isShuttingDown: () => boolean;
-  accessTokens?: IAccessTokenService;
-  /** Observability (T-035) — thiếu ⇒ không đo / không báo Sentry (test). */
-  metrics?: AppMetrics;
-  errorReporter?: IErrorReporter;
-}
-
-export interface Container {
-  app: Express;
-  auth: AuthModule;
-  workspace: WorkspaceModule;
-  task: TaskModule;
-  /** Thông báo bền (ADR-123): `publisher` nối vào port của leave / attendance / workspace. */
-  notifications: NotificationsModule;
-  /** Mốc 3.5: công ty — quyền / nhiệm kỳ / HrAuditLog cho attendance, leave, payroll (nối khi gỡ loại tạm). */
-  company: CompanyModule;
-  /** Chấm công cấp công ty (T-063). */
-  attendance: AttendanceModule;
-  /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
-  realtime: LateBoundRealtime;
-  /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
-  routers: readonly { path: string; router: Router }[];
-}
+export type { Container, ContainerConfig, ContainerDeps } from './container-types';
 
 /** Ma trận quyền dùng chung (contracts) — nguồn của `IRolePermissions` cho module Task. */
 const rolePermissions: IRolePermissions = {
@@ -178,7 +114,7 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
   });
   workspaceRef.current = workspace;
-  // Chấm công (T-063). Đơn nghỉ gắn trễ (leave cần lịch của attendance) — TẠM: leave (D, T-064) chưa dựng, D `bind`.
+  // Chấm công (T-063). Đơn nghỉ gắn trễ: leave cần lịch của attendance + `authenticate` của auth ⇒ dựng sau, `bind`.
   const approvedLeaves = new LateApprovedLeavePort();
   const attendance = wireAttendance(
     { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
@@ -212,6 +148,19 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
   accountsRef.current = auth.accounts;
+  // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
+  const leave = wireLeave(
+    { persistence, clock: business, ids },
+    {
+      company: () => ({ ...company, clock: business }),
+      hrAudit: () => company.hrAudit,
+      attendance,
+      notifications,
+      auth,
+    },
+    { responder, limit },
+  );
+  approvedLeaves.bind(leave.approvedLeaves);
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
@@ -222,6 +171,7 @@ export function createContainer(d: ContainerDeps): Container {
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
     // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
     { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
+    { path: LEAVE_PATH, router: leave.router },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
   ];
@@ -237,5 +187,16 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
     routers,
   });
-  return { app, auth, workspace, task, notifications, company, attendance, realtime, routers };
+  return {
+    app,
+    auth,
+    workspace,
+    task,
+    notifications,
+    company,
+    attendance,
+    leave,
+    realtime,
+    routers,
+  };
 }

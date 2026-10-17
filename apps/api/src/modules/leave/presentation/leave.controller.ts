@@ -26,7 +26,6 @@ export interface LeaveControllerDeps {
 }
 
 const scopeOf = (req: Request): LeaveScope => ({
-  workspaceId: (req.params as { wsId: string }).wsId,
   actorId: requireUser(req).id,
 });
 const requestIdOf = (req: Request) => (req.params as { requestId: string }).requestId;

@@ -1,13 +1,6 @@
 {
   "temporaryNote": "T-061 TẠM (nhánh tích hợp feat/company-level, TL chốt (a)): attendance — A gỡ ở T-063; leave — D gỡ ở T-064; test bảo mật HR — F gỡ ở T-066. Danh sách PHẢI rỗng trước khi gộp vào main (.github/scripts/check-temp-exclusions.mjs).",
   "exclude": [
-    "src/modules/leave",
-    "src/composition/leave-adapters.ts",
-    "src/composition/leave-wiring.ts",
-    "test/contract/leave-dto-parity.test.ts",
-    "test/contract/leave-parity.test.ts",
-    "test/integration/leave",
-    "test/http/leave.http.test.ts",
     "test/integration/hr",
     "test/integration/hr-constraints.int.ts",
     "test/security/hr.sec.ts",

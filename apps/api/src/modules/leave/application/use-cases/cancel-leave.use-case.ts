@@ -22,21 +22,22 @@ export class CancelLeaveUseCase {
     scope: LeaveScope,
     input: { requestId: string; expectedVersion: number },
   ): Promise<LeaveRequestDto> {
-    const { workspaceId, actorId } = scope;
+    const { actorId } = scope;
     const d = this.kit.d;
     // Kiểm chủ đơn ngoài transaction — cùng giả định `userId` của đơn bất biến như decide (B review LOW-2).
-    const found = await d.requests.find(workspaceId, input.requestId);
+    const found = await d.requests.find(input.requestId);
     if (!found || found.userId !== actorId) throw new ResourceNotFoundError('leave_request');
 
     return d.uow.run(async () => {
-      await d.requests.lockUser(workspaceId, actorId);
-      await this.kit.requireActor(workspaceId, actorId, PERMISSION_LEAVE_SELF);
-      const record = await this.kit.reload(workspaceId, input.requestId, input.expectedVersion);
-      const today = await this.kit.today(workspaceId);
+      await d.requests.lockUser(actorId);
+      await this.kit.requireActor(actorId, PERMISSION_LEAVE_SELF);
+      await d.company.assertActiveEmployee(actorId);
+      const record = await this.kit.reload(input.requestId, input.expectedVersion);
+      const today = await this.kit.today();
       const to = nextLeaveStatus(record.status, 'cancel', { startDate: record.startDate, today });
       const halfDays = countLeaveHalfDays(
         record,
-        await this.kit.yearCalendar(workspaceId, yearOf(record.startDate)),
+        await this.kit.yearCalendar(yearOf(record.startDate)),
       );
 
       const next: LeaveRequestRecord = {
@@ -47,7 +48,6 @@ export class CancelLeaveUseCase {
       };
       await this.kit.save(next, record, halfDays);
       await d.audit.record({
-        workspaceId,
         actorId,
         action: 'LEAVE_CANCEL',
         targetUserId: actorId,
@@ -56,7 +56,6 @@ export class CancelLeaveUseCase {
         after: auditView(next),
       });
       await d.notifier.notify({
-        workspaceId,
         type: 'LEAVE_CANCELLED',
         requestId: record.id,
         actorId,

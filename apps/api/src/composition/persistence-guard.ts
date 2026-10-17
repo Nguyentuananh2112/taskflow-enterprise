@@ -1,5 +1,17 @@
 export type StorageKind = 'memory' | 'prisma';
 
+/** Mọi module cùng một loại lưu trữ (T-020: không chạy lai). */
+export const allModules = (kind: StorageKind) =>
+  ({
+    auth: kind,
+    workspace: kind,
+    task: kind,
+    notifications: kind,
+    company: kind,
+    attendance: kind,
+    leave: kind,
+  }) as const;
+
 /**
  * Quyết định Tech Lead (T-020): staging/production từ chối khởi động nếu BẤT KỲ module nào chạy
  * bộ nhớ (kể cả trạng thái "lai"). Local/test: trả danh sách module đang chạy bộ nhớ để cảnh báo.
