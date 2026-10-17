@@ -43,6 +43,9 @@ volume + runbook backup tệp · 9 ca SEC-CH của G.
 - **M-b** `STALE_TEMP_AGE_MS` = 1 giờ (≥ 2 × (180 s + 10 s), có test); bản tạm mất trước commit ⇒ 503
   `SERVICE_UNAVAILABLE` có kiểm soát.
 - **L-a** `forbiddenParents` so sau `realpath` (test junction).
+- **L-d** `create` thử hard link trong `tmp/`; FS không hỗ trợ (FAT/exFAT, một số mount mạng, bind mount Docker
+  Desktop: EPERM/ENOTSUP/EXDEV) ⇒ từ chối khởi động. EXDEV/ENOTSUP lúc commit không thử lại. **Ghi vào
+  `devops.md`** (B, T-074): volume kho phải là ext4/xfs/NTFS.
 - **L-c** bản tạm giữ một file handle đọc tới commit/discard. Chưa fsync thư mục sau khi đặt tệp ⇒ **rủi ro
   ghi vào `devops.md`** (B, T-074): mất điện ngay sau upload có thể mất tệp vừa nhận trên máy văn phòng.
 - Bảng khóa phải bị từ chối (UUID hoa, `/01/`, 10 chữ số, `\`, `%2e`, `/` cuối / đầu, ổ đĩa, `ab/cd/<khóa>`, `\n` cuối).

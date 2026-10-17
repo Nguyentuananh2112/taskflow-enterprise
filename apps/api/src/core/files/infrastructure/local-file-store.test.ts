@@ -68,6 +68,35 @@ describe('LocalFileStore.create — kiểm lúc khởi động', () => {
     );
   });
 
+  it.each(['ENOTSUP', 'EXDEV', 'EPERM'])(
+    'FS không hỗ trợ hard link (%s) ⇒ từ chối khởi động, không sót tệp thử (B L-d)',
+    async (code) => {
+      await expect(make({ fs: { link: () => Promise.reject(errno(code)) } })).rejects.toThrow(
+        /hard link/,
+      );
+      expect(await tmpEntries()).toEqual([]);
+    },
+  );
+
+  it('EXDEV / ENOTSUP lúc commit không được thử lại', async () => {
+    let calls = 0;
+    let probed = false;
+    const store = await make({
+      sleep: () => Promise.resolve(),
+      fs: {
+        link: (from, to) => {
+          if (!probed) return ((probed = true), fsp.link(from, to)); // probe lúc khởi động
+          calls += 1;
+          return Promise.reject(errno('EXDEV'));
+        },
+      },
+    });
+    await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
+      code: 'EXDEV',
+    });
+    expect(calls).toBe(1);
+  });
+
   it('hợp lệ ⇒ tạo tmp/, không để lại tệp thử', async () => {
     await make({ forbiddenParents: [path.join(root, 'other')] });
     expect(await tmpEntries()).toEqual([]);
@@ -198,6 +227,12 @@ describe('LocalFileStore — ghi', () => {
 
 describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () => {
   const realLink = (from: string, to: string) => fsp.link(from, to);
+  /** Lần gọi đầu là bước kiểm hard link của `create` (B L-d) ⇒ dùng link thật; sau đó mới là `fake`. */
+  const afterProbe = (fake: (from: string, to: string) => Promise<void>) => {
+    let probed = false;
+    return (from: string, to: string) =>
+      probed ? fake(from, to) : ((probed = true), realLink(from, to));
+  };
 
   it('EPERM 4 lần rồi được ⇒ thành công, chờ 4 × 50 ms', async () => {
     let calls = 0;
@@ -205,7 +240,9 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
     const store = await make({
       sleep,
       fs: {
-        link: (from, to) => (++calls <= 4 ? Promise.reject(errno('EPERM')) : realLink(from, to)),
+        link: afterProbe((from, to) =>
+          ++calls <= 4 ? Promise.reject(errno('EPERM')) : realLink(from, to),
+        ),
       },
     });
     const stored = await store.put(Buffer.from('x'), { maxBytes: 10 });
@@ -219,7 +256,9 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
     let calls = 0;
     const store = await make({
       sleep: () => Promise.resolve(),
-      fs: { link: (f, t) => (++calls === 1 ? Promise.reject(errno(code)) : realLink(f, t)) },
+      fs: {
+        link: afterProbe((f, t) => (++calls === 1 ? Promise.reject(errno(code)) : realLink(f, t))),
+      },
     });
     await store.put(Buffer.from('x'), { maxBytes: 10 });
     expect(calls).toBe(2);
@@ -229,7 +268,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
     let calls = 0;
     const store = await make({
       sleep: () => Promise.resolve(),
-      fs: { link: () => (++calls, Promise.reject(errno('EPERM'))) },
+      fs: { link: afterProbe(() => (++calls, Promise.reject(errno('EPERM')))) },
     });
     await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
       code: 'EPERM',
@@ -242,7 +281,7 @@ describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () =>
     let calls = 0;
     const store = await make({
       sleep: () => Promise.resolve(),
-      fs: { link: () => (++calls, Promise.reject(errno('ENOSPC'))) },
+      fs: { link: afterProbe(() => (++calls, Promise.reject(errno('ENOSPC')))) },
     });
     await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
       code: 'ENOSPC',
