@@ -8,7 +8,6 @@ import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
 import { startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
-import { DAY_STATUS } from '@/entities/attendance';
 import { getClientId } from '@/shared/lib/client-id';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
@@ -248,12 +247,12 @@ describe('trang Nhân sự — các tab', () => {
     const u = user();
     await u.click(await screen.findByRole('button', { name: 'Nguyễn An' }));
     const month = await screen.findByRole('region', { name: 'Bảng công của Nguyễn An' });
-    const day = within(month).getByRole('button', { name: /14\/10/ });
-    // Dialog mở ⇒ Radix ẩn phần ngoài khỏi cây a11y: giữ tham chiếu hàng (key theo ngày, không đổi).
-    const dayRow = day.closest('tr');
-    // Gia nhập hôm nay ⇒ 14/10 trung tính (NOT_EMPLOYED), không phải "Vắng".
-    expect(dayRow?.textContent).toContain(DAY_STATUS.NOT_EMPLOYED.label);
-    expect(dayRow?.textContent).not.toContain(DAY_STATUS.ABSENT.label);
+    const day = within(month).getByRole('button', { name: /^Ngày 14\/10/ });
+    // Dialog mở ⇒ Radix ẩn phần ngoài khỏi cây a11y: giữ tham chiếu ô (key theo ngày, không đổi).
+    const dayCell = day.closest('td');
+    // Gia nhập hôm nay ⇒ 14/10 ngoài nhiệm kỳ: ô trống, không "Vắng"; cả khối gộp thành một câu (T-046).
+    expect(month.textContent).toContain('Bạn bắt đầu làm từ 15/10');
+    expect(dayCell?.textContent).toBe('14');
     await u.click(day);
     const dialog = await screen.findByRole('dialog', { name: /Nguyễn An — / });
     expect(await within(dialog).findByText('Không có lượt chấm nào trong ngày này.')).toBeTruthy();
@@ -262,7 +261,7 @@ describe('trang Nhân sự — các tab', () => {
     await u.type(within(form).getByLabelText(/^Lý do/), 'Quên chấm');
     await u.click(within(form).getByRole('button', { name: 'Thêm lượt' }));
     expect(await screen.findByText('Đã thêm lượt chấm')).toBeTruthy();
-    await waitFor(() => expect(dayRow?.textContent).toContain('Chưa chấm ra'));
+    await waitFor(() => expect(dayCell?.textContent).toContain('Quên chấm ra'));
     expect(await within(dialog).findByText(/HR điều chỉnh/)).toBeTruthy();
   });
 

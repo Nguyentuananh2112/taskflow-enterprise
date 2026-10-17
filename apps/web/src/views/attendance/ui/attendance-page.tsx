@@ -6,10 +6,9 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
 import {
-  EventsList,
+  MonthCalendar,
+  MonthSummary,
   MonthTable,
-  dayLabel,
-  useMyAttendanceEvents,
   shiftMonth,
   useAttendanceMonth,
   useAttendanceToday,
@@ -17,10 +16,14 @@ import {
 import { usePermission } from '@/entities/workspace';
 import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
-import { Dialog } from '@/shared/ui/dialog';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { PageMain } from '@/shared/ui/page';
 import { Skeleton } from '@/shared/ui/skeleton';
+
+import { useViewMode } from '../model/use-view-mode';
+import { DayDetail } from './day-detail';
+import { TodayBox } from './today-box';
+import { ViewToggle } from './view-toggle';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const monthTitle = (m: string) => `tháng ${Number(m.slice(5))}/${m.slice(0, 4)}`;
@@ -37,7 +40,9 @@ export function AttendancePage() {
   const month = asked && MONTH.test(asked) ? asked : today.data?.date.slice(0, 7);
   const data = useAttendanceMonth(wsId, month ?? '', allowed && month !== undefined);
   const [day, setDay] = useState<string | null>(null);
-  const events = useMyAttendanceEvents(wsId, day);
+  const [mode, setMode] = useViewMode();
+  const t = today.data;
+  const serverToday = t?.date ?? '';
 
   if (!valid || isApiError(data.error, 'RESOURCE_NOT_FOUND')) {
     return (
@@ -96,28 +101,33 @@ export function AttendancePage() {
           <Skeleton className="h-64" />
         </div>
       ) : (
-        <MonthTable
-          month={data.data}
-          caption={`Bảng công ${monthTitle(month)}`}
-          onSelectDay={setDay}
-          today={today.data?.date}
-        />
+        <>
+          {t && month === serverToday.slice(0, 7) && <TodayBox wsId={wsId} today={t} />}
+          <MonthSummary totals={data.data.totals} title={`Tổng kết ${monthTitle(month)}`} />
+          <ViewToggle mode={mode} onChange={setMode} />
+          {mode === 'calendar' ? (
+            <MonthCalendar
+              month={data.data}
+              caption={`Bảng công ${monthTitle(month)}`}
+              today={serverToday}
+              onSelectDay={setDay}
+            />
+          ) : (
+            <MonthTable
+              month={data.data}
+              caption={`Bảng công ${monthTitle(month)}`}
+              onSelectDay={setDay}
+              today={serverToday}
+            />
+          )}
+        </>
       )}
-      <Dialog
-        open={day !== null}
-        onOpenChange={(open) => !open && setDay(null)}
-        title={day ? `Lượt chấm ${dayLabel(day)}` : 'Lượt chấm'}
-      >
-        {events.data && day ? (
-          <EventsList data={events.data} date={day} />
-        ) : events.isError ? (
-          <p className="text-sm text-danger">Không tải được lượt chấm.</p>
-        ) : (
-          <p role="status" className="text-sm text-text-muted">
-            Đang tải…
-          </p>
-        )}
-      </Dialog>
+      <DayDetail
+        wsId={wsId}
+        day={data.data?.days.find((d) => d.date === day) ?? null}
+        today={serverToday}
+        onClose={() => setDay(null)}
+      />
     </PageMain>
   );
 }

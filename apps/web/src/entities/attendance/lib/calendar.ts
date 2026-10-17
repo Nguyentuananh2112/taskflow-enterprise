@@ -55,13 +55,12 @@ export function dayText(d: AttendanceDayDto, today: string): DayText {
     case 'PRESENT':
     case 'MISSING_OUT': {
       const forgot = d.status === 'MISSING_OUT' ? 'Quên chấm ra' : null;
-      if (d.lateMin > 0)
-        return {
-          label: `Đi muộn ${minutesText(d.lateMin)}`,
-          detail: forgot ?? span,
-          icon: '!',
-          tone: 'late',
-        };
+      if (d.lateMin > 0) {
+        // Vừa muộn vừa sớm: nhãn là "Đi muộn", phần "Về sớm" sang dòng phụ (ô lịch hẹp).
+        const also = d.earlyMin > 0 ? `Về sớm ${minutesText(d.earlyMin)}` : null;
+        const detail = [also, forgot ?? span].filter(Boolean).join(' · ') || null;
+        return { label: `Đi muộn ${minutesText(d.lateMin)}`, detail, icon: '!', tone: 'late' };
+      }
       if (d.earlyMin > 0)
         return {
           label: `Về sớm ${minutesText(d.earlyMin)}`,

@@ -11,5 +11,6 @@ export {
 } from './model/use-attendance';
 export { useServerClock } from './model/use-server-clock';
 export { MonthCalendar } from './ui/month-calendar';
+export { MonthSummary } from './ui/month-summary';
 export { MonthTable } from './ui/month-table';
 export { EventsList } from './ui/events-list';
