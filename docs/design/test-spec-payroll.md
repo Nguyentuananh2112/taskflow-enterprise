@@ -199,9 +199,9 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Mốc | Ca | Mong đợi |
 |---|---|---|---|
 | CLK-PAY-01 | `'*-L'` 23:59:30 | tạo nháp kỳ tháng hiện tại ⇒ 422; sau 00:00 cùng lệnh ⇒ 201 | đúng |
-| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | bảng kỳ trước còn NHÁP ⇒ nhắc `PAYROLL_REMINDER` (actor null, `refId` = UUID cố định theo ngày `0000YYYY-MMDD-7000-8000-000000000001`) tới Kay, Kim, Ada (mọi người đang có `payroll:manage`; không Hana, không Mia); thu `PAYROLL_MANAGE` của Kim ⇒ hôm sau Kim không nhận; chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
+| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | kỳ tháng trước **chưa có bảng** hoặc còn NHÁP ⇒ (A 18/10: chỉ dừng khi PUBLISHED; chỉ nhắc kỳ tháng trước của hôm nay, không quét kỳ cũ hơn; "ngày" theo lịch công ty +07; người nhận = có `payroll:manage` lúc job chạy — người được cấp sau đó không nhận nhắc của ngày đó) nhắc `PAYROLL_REMINDER` (actor null, `refId` = UUID cố định theo ngày `0000YYYY-MMDD-7000-8000-000000000001`) tới Kay, Kim, Ada (mọi người đang có `payroll:manage`; không Hana, không Mia); thu `PAYROLL_MANAGE` của Kim ⇒ hôm sau Kim không nhận; chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
 | CLK-PAY-03 | `'*-04'` 23:59:30 | trước 00:00 không nhắc; sau ⇒ nhắc | đúng |
-| CLK-PAY-04 | restart mốc `'*-11'` 10:00 | quá ngày 10 vẫn nhắc mỗi ngày; phát hành ⇒ hết nhắc | đúng |
+| CLK-PAY-04 | restart mốc `'*-11'` 10:00 | quá ngày 10 vẫn nhắc mỗi ngày, đúng 1 thông báo / người / ngày (delta `refId` theo ngày — `notifyOnce` + khóa `taskflow:payroll:reminder:<kỳ>`); kỳ cũ hơn chưa phát hành không có nhắc riêng; phát hành ⇒ hết nhắc | đúng |
 
 | Mã | Ca (tầng E, `workers: 1`, `@main` cho 02) |
 |---|---|
