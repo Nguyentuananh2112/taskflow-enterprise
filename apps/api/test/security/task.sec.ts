@@ -2,16 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect } from 'vitest';
 
-import { Actors, seedTasks, seedTenants, type Actor, type Role } from './harness/actors';
+import { seedTasks, seedTenants, type Actor, type Role } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { outOfScope, secCase, useApi } from './harness/suite';
+import { outOfScope, secCase } from './harness/suite';
 
 // Task: IDOR, RBAC/Policy, archived, VERSION_CONFLICT, bỏ gán khi hạ VIEWER (security.md §8,
 // data-and-api §2.7). Case CÓ ghi dữ liệu tự tạo task/project/member riêng — không làm bẩn fixture
 // dùng chung (pamTask/miaTask) mà các case chỉ-đọc dựa vào.
 
-const api = useApi();
-const actors = new Actors(api);
+const { actors } = useCompanyApi();
 const TASK = 'task routes (Phase 3)';
 
 let seeded: ReturnType<typeof seedTasks> | undefined;

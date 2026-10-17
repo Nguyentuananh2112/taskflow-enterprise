@@ -1,11 +1,11 @@
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { addDays, nextVnAnchor, vnDateOf } from './harness/clock';
 import { HR, eventsOf, hrClockEnv, withKey } from './harness/hr';
 import { expectBefore, seedTrio, waitToday, vnClock } from './harness/hr-clock';
 import { errorEnvelope } from './harness/http-client';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // CLK-HR-03 (test-spec-hr §5b, SD-12b/12c ở tầng HTTP): GIỜ CHỐT 06:00. IN thứ Ba còn mở; ra lúc 05:59 thứ Tư ⇒
 // gắn thứ Ba; ra sau 06:00 ⇒ IN hôm qua không còn mở cho OUT ⇒ 422 NOT_CHECKED_IN. Mốc thứ Tư 05:59:00 VN.
@@ -14,8 +14,7 @@ import { secCase, useApi } from './harness/suite';
 const ANCHOR = nextVnAnchor(3, '05:59:00');
 const WED = vnDateOf(ANCHOR);
 const TUE = addDays(WED, -1);
-const api = useApi(hrClockEnv(ANCHOR));
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(hrClockEnv(ANCHOR));
 const AREA = 'Mốc 3 HR — biên giờ';
 
 describe('Giờ chốt 06:00', () => {

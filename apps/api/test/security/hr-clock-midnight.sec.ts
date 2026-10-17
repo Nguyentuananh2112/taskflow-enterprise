@@ -1,18 +1,17 @@
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { addDays, nextVnAnchor, vnDateOf } from './harness/clock';
 import { HR, eventsOf, hrClockEnv, withKey } from './harness/hr';
 import { expectBefore, seedTrio, today, waitToday } from './harness/hr-clock';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // CLK-HR-02 (test-spec-hr §5b, SD-11 ở tầng HTTP): ra SAU NỬA ĐÊM, trước giờ chốt 06:00 ⇒ lượt ra thuộc ngày
 // của lượt vào còn mở. Mốc thứ Ba 23:59:00 VN — process API riêng.
 const ANCHOR = nextVnAnchor(2, '23:59:00');
 const TUE = vnDateOf(ANCHOR);
 const WED = addDays(TUE, 1);
-const api = useApi(hrClockEnv(ANCHOR));
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(hrClockEnv(ANCHOR));
 const AREA = 'Mốc 3 HR — biên giờ';
 
 describe('Biên nửa đêm', () => {

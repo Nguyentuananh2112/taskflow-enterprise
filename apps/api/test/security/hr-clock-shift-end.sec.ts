@@ -1,17 +1,16 @@
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { nextVnAnchor } from './harness/clock';
 import { HR, hrClockEnv, withKey } from './harness/hr';
 import { expectBefore, seedTrio, today, waitToday } from './harness/hr-clock';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // CLK-HR-01 (test-spec-hr §5b): biên KẾT THÚC CA 17:30 (S0). Mốc thứ Ba 17:29:30 VN — process API riêng.
 // summarizeDay so `now > end` theo PHÚT ⇒ cả phút 17:30 vẫn là trong ca; trạng thái đổi lúc 17:31:00 (cổng gộp
 // 2026-10-17: mốc 17:29:00 làm ca chạy 120 s, sát giới hạn chờ) ⇒ mốc 17:29:30, chờ tối đa 150 s.
 const ANCHOR = nextVnAnchor(2, '17:29:30');
-const api = useApi(hrClockEnv(ANCHOR));
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(hrClockEnv(ANCHOR));
 const AREA = 'Mốc 3 HR — biên giờ';
 
 describe('Biên 17:30', () => {

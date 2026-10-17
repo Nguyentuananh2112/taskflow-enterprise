@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
-import { checkinPrompt, expect, loginViaUi, test } from '../support/fixtures';
+import { adaToken, adaUser } from '../support/company';
+import { awaiting, checkinPrompt, expect, loginViaUi, test } from '../support/fixtures';
 import {
   apiAdjust,
   apiCheckIn,
@@ -14,6 +15,7 @@ import {
   ddMm,
   hrCall,
   refreshed,
+  reserveDate,
   seedHrWorld,
   vnDate,
   vnHm,
@@ -23,26 +25,30 @@ import {
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
-// E2E-HR-* (docs/design/test-spec-hr.md §9, T-042). Thân viết theo UI THẬT của nhánh web (T-041a/b/c @ feat/T-041c-hr-web
-// 6733a06; E soát a/b trên 268c7d4/7817d42, H soát c trên f26425c — nhãn/vai trò tiếng Việt, không có data-testid) và contract thật (attendance T-038 0fb023f, leave T-039,
-// grants T-037). Đã bỏ fixme mọi ca: T-041a (01, 04, 05, 07, 08, 09), T-041b (02b, 04b, 07b, 08b, 09b), T-041c (02, 03, 06, 07c, 08c). Hậu tố b/c = phần cần /leave (T-041b) hoặc /hr (T-041c); nhãn vé
-// trong tên ca giữ lại để biết ca thuộc màn nào.
-//   T-041a: thẻ Chấm công ở /projects, /attendance, chuông thông báo, nút gọn trên header
+// E2E-HR-* (test-spec-hr §9, T-042) chuyển sang Mốc 3.5 "cấp công ty" (test-spec-company §6.3, T-066): chấm công /
+// nghỉ phép / HR thuộc công ty — route gốc /attendance, /leave, /hr; trang chính /w có thẻ chấm công GỌN + dialog nhắc
+// (E T-065a @e8b36b2: /w/:ws/projects không còn thẻ); quyền HR cấp ở /admin/access (T-065b). Selector theo E (17/10,
+// role + tên tiếng Việt, không data-testid). Nhãn vé trong tên ca giữ để biết ca thuộc màn nào:
+//   T-041a: thẻ Chấm công (nay ở /w), /attendance, chuông thông báo, nút gọn trên header
 //   T-041b: /leave (số dư, form gửi đơn, đơn của tôi)
-//   T-041c: /hr (Hôm nay, Bảng công tháng + Xuất CSV, Đơn nghỉ, Lịch & ngày lễ, Số phép), công tắc grant ở Thành viên
-// Dữ liệu dựng qua API công khai (support/hr.ts). Lịch mặc định S0: T2–T7 08:00–17:30, Asia/Ho_Chi_Minh.
+//   T-041c: /hr (Hôm nay, Bảng công tháng + Xuất CSV, Đơn nghỉ, Lịch & ngày lễ, Số phép)
+//   T-065b: /admin/access (chưa merge ⇒ fixme tới khi E2E_RUN_PENDING chứa vé)
+// Một công ty (ADR-140): HR thấy mọi ca ⇒ không khẳng định số chưa đọc / số dòng tuyệt đối của HR; ngày lễ chỉ qua
+// reserveDate(); không đổi lịch công ty. Dữ liệu dựng qua API công khai (support/hr.ts, support/company.ts).
 // Server luôn METRICS_PORT=0 (playwright.config.ts) — không đụng dev/prod của người dùng ở 3001/4000.
 
 const T041A = 'T-041a';
 const T041B = 'T-041b';
 const T041C = 'T-041c';
 const T045 = 'T-045';
+const T065A = 'T-065a';
+const T065B = 'T-065b';
 
-/** Realtime (notification:new, member:grants-changed) — spec: < 2 s; nới cho máy CI bận như REALTIME của collaboration. */
+/** Realtime (notification:new, company:access-changed) — spec: < 2 s; nới cho máy CI bận như REALTIME của collaboration. */
 const REALTIME = { timeout: 5_000 };
 
-const projectsPath = (w: HrWorld) => `/w/${w.olivia.workspaceId}/projects`;
-const wsPath = (w: HrWorld, sub: string) => `/w/${w.olivia.workspaceId}/${sub}`;
+/** Trang chính công ty — thẻ chấm công gọn, dialog nhắc T-045, "Việc quản lý", "Workspace của bạn". */
+const HOME = '/w';
 
 /** Thẻ "Chấm công" — `<section aria-labelledby>` ⇒ role region. */
 const attendanceCard = (page: Page) => page.getByRole('region', { name: 'Chấm công', exact: true });
@@ -106,14 +112,14 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
   // Giờ trên thẻ theo serverNow + múi giờ LỊCH (Asia/Ho_Chi_Minh), không theo máy người dùng.
   test.use({ timezoneId: 'America/New_York' });
 
-  test(`@main E2E-HR-01 [${T041A}]: thẻ Chấm công ở /projects ⇒ Chấm vào ⇒ Chấm ra; giờ theo serverNow + múi giờ lịch; tab cũ bấm vào lần 2 ⇒ 409 already_checked_in`, async ({
+  test(`@main E2E-HR-01 [${T041A}]: thẻ Chấm công ở /w ⇒ Chấm vào ⇒ Chấm ra; giờ theo serverNow + múi giờ lịch; tab cũ bấm vào lần 2 ⇒ 409 already_checked_in`, async ({
     page,
     context,
     request,
   }) => {
     const w = await seedHrWorld(request, 'hr01');
     await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     const card = attendanceCard(page);
     await expect(card.getByRole('heading', { name: 'Chấm công' })).toBeVisible();
 
@@ -123,7 +129,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     const shown = ((await clock.textContent()) ?? '').slice(-8);
     // So với giờ NGHIỆP VỤ của server (mốc thứ Ba 10:00 VN + thời gian trôi), không với giờ máy test.
     const serverHm = async () =>
-      vnHm((await apiMyToday(request, w.olivia, await refreshed(request, w.mia))).serverNow);
+      vnHm((await apiMyToday(request, await refreshed(request, w.mia))).serverNow);
     const atLoad = await serverHm();
     expect(
       withinAMinute(shown, atLoad),
@@ -133,7 +139,7 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     // Tab thứ hai mở TRƯỚC khi chấm ⇒ vẫn hiện "Chấm vào" (dữ liệu cũ) — dùng để bấm vào lần 2 qua UI. Phải bấm trong
     // 60 s kể từ lúc tab này tải (staleTime của useAttendanceToday, E) và KHÔNG bringToFront ⇒ không refetch.
     const stale = await context.newPage();
-    await stale.goto(projectsPath(w));
+    await stale.goto(HOME);
     await expect(attendanceCard(stale).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
 
     const punched = page.waitForResponse(
@@ -179,12 +185,12 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     expect(outs, 'một lần bấm ⇒ đúng một request check-out').toEqual([201]);
 
     const mia = await refreshed(request, w.mia);
-    const today = await apiMyToday(request, w.olivia, mia);
+    const today = await apiMyToday(request, mia);
     expect(today.timezone).toBe('Asia/Ho_Chi_Minh');
     const { events } = await hrCall<{ events: { kind: string; voidedAt: string | null }[] }>(
       request,
       'GET',
-      `/workspaces/${w.olivia.workspaceId}/attendance/me/events?date=${vnDate()}`,
+      `/attendance/me/events?date=${vnDate()}`,
       { token: mia.accessToken, expected: 200 },
     );
     expect(events.filter((e) => e.kind === 'IN')).toHaveLength(1);
@@ -203,20 +209,18 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
   const day = vnWorkday(3);
   await loginViaUi(page, w.mia.user);
   const hana = await openAs(browser, w.hana.user);
-  await hana.page.goto(wsPath(w, 'hr?tab=leave'));
+  await hana.page.goto('/hr?tab=leave');
   await expect(hana.page.getByRole('tab', { name: 'Đơn nghỉ', selected: true })).toBeVisible();
-  // Mốc: seed cấp HR_MANAGE cho Hana ⇒ đã có 1 thông báo HR_GRANTED chưa đọc (cổng T-041c).
-  await expect(bell(hana.page)).toHaveAccessibleName('Thông báo, 1 chưa đọc');
 
   // Mia gửi đơn qua form thật (Nghỉ ốm — không phụ thuộc số dư phép năm).
-  await page.goto(wsPath(w, 'leave'));
+  await page.goto('/leave');
   const form = page.getByRole('form', { name: 'Gửi đơn nghỉ' });
   await form.getByLabel('Loại nghỉ').selectOption({ label: 'Nghỉ ốm' });
   await form.getByLabel('Từ ngày').fill(day);
   await form.getByLabel('Đến ngày').fill(day);
   await expect(page.getByText(/^Đơn này: 1 ngày làm việc/)).toBeVisible();
   const submitted = page.waitForResponse(
-    (r) => r.request().method() === 'POST' && r.url().endsWith('/leave-requests'),
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/leave/requests'),
   );
   await form.getByRole('button', { name: 'Gửi đơn' }).click();
   expect((await submitted).status()).toBe(201);
@@ -224,8 +228,9 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
   const mine = page.getByRole('region', { name: 'Đơn của tôi' });
   await expect(mine.getByText('Chờ duyệt')).toBeVisible();
 
-  // HR: chuông +1 qua notification:new, hàng đợi tự tải lại — không reload.
-  await expect(bell(hana.page)).toHaveAccessibleName('Thông báo, 2 chưa đọc', REALTIME);
+  // HR: chuông có chưa đọc qua notification:new, hàng đợi tự tải lại — không reload. Một công ty ⇒ không đếm tuyệt
+  // đối; khẳng định đúng thông báo của ca (tên Mia + ngày) ở popover.
+  await expect(bell(hana.page)).toHaveAccessibleName(/^Thông báo, \d+ chưa đọc$/, REALTIME);
   const miaName = w.mia.user.fullName;
   await expect(hana.page.getByRole('listitem', { name: `Đơn của ${miaName}` })).toBeVisible(
     REALTIME,
@@ -257,7 +262,7 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
   await expect(page).toHaveURL(/\/leave$/);
   await expect(bell(page)).toHaveAccessibleName('Thông báo');
 
-  await page.goto(wsPath(w, `attendance?month=${day.slice(0, 7)}`));
+  await page.goto(`/attendance?month=${day.slice(0, 7)}`);
   const table = page.getByRole('table', { name: /^Bảng công tháng/ });
   // T-046: ngày tương lai vẫn hiện phép đã duyệt — "Ngày d/M, Nghỉ phép, cả ngày".
   await expect(dayCell(table, day)).toHaveAccessibleName(`Ngày ${dM(day)}, Nghỉ phép, cả ngày`);
@@ -270,7 +275,7 @@ test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online 
 }) => {
   const w = await seedHrWorld(request, 'hr02b');
   const day = vnWorkday(4);
-  const leave = await apiSubmitLeave(request, w.olivia, w.mia, {
+  const leave = await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
     startDate: day,
     endDate: day,
@@ -285,7 +290,7 @@ test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online 
     sockets.push(ws);
   });
   await loginViaUi(page, w.mia.user);
-  await page.goto(wsPath(w, 'leave'));
+  await page.goto('/leave');
   // Khoanh trong 'Đơn của tôi': dòng số dư cũng có 'đang chờ duyệt' (getByText không phân biệt hoa thường).
   const mine = page.getByRole('region', { name: 'Đơn của tôi' });
   await expect(mine.getByText('Chờ duyệt')).toBeVisible();
@@ -294,14 +299,7 @@ test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online 
   offline = true;
   await page.context().setOffline(true);
   for (const ws of sockets.splice(0)) await ws.close({ code: 1006, reason: 'e2e offline' });
-  await apiDecideLeave(
-    request,
-    w.olivia,
-    await refreshed(request, w.hana),
-    leave,
-    'reject',
-    'Thiếu giấy tờ',
-  );
+  await apiDecideLeave(request, await refreshed(request, w.hana), leave, 'reject', 'Thiếu giấy tờ');
   await expect(bell(page)).toHaveAccessibleName('Thông báo');
 
   offline = false;
@@ -320,91 +318,92 @@ test(`E2E-HR-02b [${T041B}]: nhân viên offline lúc HR từ chối ⇒ online 
   await expect(mine.getByText('Ghi chú của HR: Thiếu giấy tờ')).toBeVisible();
 });
 
-// ---------------------------------------------------------------- E2E-HR-03
+// ---------------------------------------------------------------- E2E-HR-03 (+ E2E-HR-18)
 
-test(`E2E-HR-03 [${T041C}]: OWNER bật "Quản lý nhân sự" cho Mia ⇒ tab của Mia hiện mục "Nhân sự" ngay (member:grants-changed); tắt ⇒ mất ngay`, async ({
+test(`E2E-HR-03 / E2E-HR-18 [${T065B}]: Ada cấp "Quản lý nhân sự" cho Mia ở /admin/access ⇒ /w của Mia hiện ô "Nhân sự" không tải lại (company:access-changed); thu lại ⇒ /hr của Mia báo không có quyền ngay`, async ({
   page,
   browser,
   request,
 }) => {
+  test.fixme(awaiting(T065B), `[PENDING ${T065B}] trang /admin/access (web E)`);
   const w = await seedHrWorld(request, 'hr03', { hanaIsHr: false });
   const miaName = w.mia.user.fullName;
   const mia = await openAs(browser, w.mia.user);
-  await mia.page.goto(projectsPath(w));
-  const miaCard = attendanceCard(mia.page);
-  await expect(miaCard.getByRole('link', { name: 'Bảng công của tôi' })).toBeVisible();
-  await expect(miaCard.getByRole('link', { name: 'Nhân sự' })).toHaveCount(0);
+  await mia.page.goto(HOME);
+  const manage = mia.page.getByRole('region', { name: 'Việc quản lý' });
+  await expect(attendanceCard(mia.page).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
+  await expect(manage).toHaveCount(0);
 
-  await loginViaUi(page, w.olivia.user);
-  await page.goto(wsPath(w, 'settings/members'));
-  const toggle = page.getByRole('switch', { name: `Quản lý nhân sự: ${miaName}` });
-  await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  // Hàng OWNER / VIEWER bị khóa.
-  await expect(
-    page.getByRole('switch', { name: `Quản lý nhân sự: ${w.vic.user.fullName}` }),
-  ).toHaveAttribute('aria-disabled', 'true');
+  await loginViaUi(page, adaUser());
+  await page.goto('/admin/access');
+  const row = page
+    .getByRole('list', { name: 'Phân quyền' })
+    .getByRole('listitem', { name: miaName, exact: true });
+  const hr = row.getByRole('checkbox', { name: `Quản lý nhân sự — ${miaName}` });
+  const save = async () => {
+    const saved = page.waitForResponse(
+      (r) => r.request().method() === 'PUT' && r.url().endsWith(`/admin/access/${w.mia.userId}`),
+    );
+    await row.getByRole('button', { name: `Lưu quyền của ${miaName}` }).click();
+    expect((await saved).status()).toBe(200);
+  };
+  await expect(hr).not.toBeChecked();
+  await hr.check();
+  await save();
 
-  await toggle.click();
-  const confirm = page.getByRole('dialog', { name: `Cấp quyền Quản lý nhân sự cho ${miaName}?` });
-  await confirm.getByRole('button', { name: 'Cấp quyền' }).click();
-  await expect(
-    page.getByText(`${miaName} đã có quyền Quản lý nhân sự`, { exact: true }),
-  ).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
-
-  await expect(miaCard.getByRole('link', { name: 'Nhân sự' })).toBeVisible(REALTIME);
-  await expect(mia.page.getByText('Bạn được cấp quyền Quản lý nhân sự').first()).toBeVisible();
-  await miaCard.getByRole('link', { name: 'Nhân sự' }).click();
+  await expect(manage.getByRole('link', { name: /^Nhân sự/ })).toBeVisible(REALTIME);
+  await manage.getByRole('link', { name: /^Nhân sự/ }).click();
   await expect(mia.page.getByRole('heading', { level: 1, name: 'Nhân sự' })).toBeVisible();
   await expect(mia.page.getByRole('tablist', { name: 'Quản lý nhân sự' })).toBeVisible();
 
-  // Thu quyền (tắt ngay, không hỏi) ⇒ trang /hr của Mia đổi sang "không có quyền" không reload.
-  await toggle.click();
-  await expect(
-    page.getByText(`Đã thu quyền Quản lý nhân sự của ${miaName}`, { exact: true }),
-  ).toBeVisible();
+  // Thu quyền ⇒ trang /hr đang mở của Mia đổi sang "không có quyền" không reload (cache ['company','hr',…] bị xóa).
+  await hr.uncheck();
+  await save();
   await expect(mia.page.getByText('Bạn không có quyền Quản lý nhân sự')).toBeVisible(REALTIME);
+  await expect(mia.page.getByRole('tablist', { name: 'Quản lý nhân sự' })).toHaveCount(0);
   await mia.close();
 });
 
 // ---------------------------------------------------------------- E2E-HR-04
 
-test(`E2E-HR-04 [${T041A}]: VIEWER không thấy UI chấm công (thẻ, nút header, link); /attendance báo vai trò; gọi API check-in ⇒ 403`, async ({
+test(`E2E-HR-04 [${T065A}]: VIEWER dự án vẫn là nhân viên ⇒ có thẻ chấm công ở /w; Admin (Ada) không có thẻ / nút header / lối tắt self, /attendance báo "Tài khoản Quản trị", API check-in ⇒ 403`, async ({
   page,
+  browser,
   request,
 }) => {
   const w = await seedHrWorld(request, 'hr04');
-  await loginViaUi(page, w.vic.user);
-  await page.goto(projectsPath(w));
-  await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeVisible();
-  // Cả trang (E): thẻ không render với VIEWER, nút gọn header cũng ẩn ở mọi độ rộng.
+  const vic = await openAs(browser, w.vic.user);
+  await vic.page.goto(HOME);
+  await expect(attendanceCard(vic.page).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
+  await vic.close();
+
+  await loginViaUi(page, adaUser());
+  await page.goto(HOME);
+  await expect(page.getByRole('region', { name: 'Việc quản lý' })).toBeVisible();
   await expect(attendanceCard(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Chấm (vào|ra)/ })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Bảng công của tôi' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Nghỉ phép' })).toHaveCount(0);
-
-  await page.goto(wsPath(w, 'attendance'));
   await expect(
-    page.getByText('Vai trò Người xem không chấm công trong workspace này'),
-  ).toBeVisible();
+    page.getByRole('navigation', { name: 'Lối tắt chấm công và nghỉ phép' }),
+  ).toHaveCount(0);
+
+  await page.goto('/attendance');
+  await expect(page.getByText('Tài khoản Quản trị không chấm công')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Về trang chính' })).toBeVisible();
   await expect(page.getByRole('table', { name: /^Bảng công tháng/ })).toHaveCount(0);
 
-  await apiCheckIn(request, w.olivia, (await refreshed(request, w.vic)).accessToken, 403);
+  await apiCheckIn(request, await adaToken(request), 403);
 });
 
-test(`E2E-HR-04b [${T041B}]: VIEWER mở /leave ⇒ báo vai trò, không có form; gửi đơn qua API ⇒ 403`, async ({
+test(`E2E-HR-04b [${T065A}]: Admin mở /leave ⇒ "không xin nghỉ phép", không có form; gửi đơn qua API ⇒ 403`, async ({
   page,
   request,
 }) => {
-  const w = await seedHrWorld(request, 'hr04b');
-  await loginViaUi(page, w.vic.user);
-  await page.goto(wsPath(w, 'leave'));
-  await expect(
-    page.getByText('Vai trò Người xem không xin nghỉ trong workspace này'),
-  ).toBeVisible();
+  await loginViaUi(page, adaUser());
+  await page.goto('/leave');
+  await expect(page.getByText('Tài khoản Quản trị không xin nghỉ phép')).toBeVisible();
   await expect(page.getByRole('form', { name: 'Gửi đơn nghỉ' })).toHaveCount(0);
-  await hrCall(request, 'POST', `/workspaces/${w.olivia.workspaceId}/leave-requests`, {
-    token: (await refreshed(request, w.vic)).accessToken,
+  await hrCall(request, 'POST', '/leave/requests', {
+    token: await adaToken(request),
     body: { type: 'SICK', startDate: vnWorkday(3), endDate: vnWorkday(3), dayPart: 'FULL' },
     expected: 403,
   });
@@ -422,7 +421,7 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
   // Mốc thứ Ba 10:00 VN: ngày làm việc, không lễ, trong ca, chưa vào ⇒ banner PHẢI hiện. Biên khác (sau 17:30
   // ⇒ ABSENT, Chủ nhật ⇒ OFF) kiểm ở hộp đen CLK-HR-01/04 với process API riêng.
   await loginViaUi(page, w.mia.user);
-  await page.goto(projectsPath(w));
+  await page.goto(HOME);
   const card = attendanceCard(page);
   await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
   await expect(
@@ -432,11 +431,11 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
   await page.reload();
   await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
   const again = await openAs(browser, w.mia.user); // đăng nhập lại ở context mới
-  await again.page.goto(projectsPath(w));
+  await again.page.goto(HOME);
   await expect(attendanceCard(again.page).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
   await again.close();
 
-  const after = await apiMyToday(request, w.olivia, await refreshed(request, w.mia));
+  const after = await apiMyToday(request, await refreshed(request, w.mia));
   expect(after.firstIn, 'đăng nhập / reload không được tự tạo lượt IN').toBeNull();
 });
 
@@ -447,9 +446,9 @@ test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên
   request,
 }) => {
   const w = await seedHrWorld(request, 'hr06');
-  await apiCheckIn(request, w.olivia, w.mia.accessToken);
+  await apiCheckIn(request, w.mia.accessToken);
   await loginViaUi(page, w.hana.user);
-  await page.goto(wsPath(w, 'hr?tab=timesheet'));
+  await page.goto('/hr?tab=timesheet');
   const month = vnDate().slice(0, 7);
   await expect(
     page.getByRole('heading', {
@@ -484,15 +483,15 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`E2E-HR-07 a11y (${colorScheme})`, () => {
     test.use({ colorScheme });
 
-    test(`E2E-HR-07 [${T041A}]: /attendance dạng LỊCH (T-046, mặc định) và DANH SÁCH: <table> có caption, cột T2…CN / Ngày…, hôm nay theo server, nhãn chữ; axe 0 serious/critical ở cả hai dạng, hộp ngày, /projects, chuông (${colorScheme})`, async ({
+    test(`E2E-HR-07 [${T041A}]: /attendance dạng LỊCH (T-046, mặc định) và DANH SÁCH: <table> có caption, cột T2…CN / Ngày…, hôm nay theo server, nhãn chữ; axe 0 serious/critical ở cả hai dạng, hộp ngày, /w, chuông (${colorScheme})`, async ({
       page,
       request,
     }) => {
       const w = await seedHrWorld(request, `hr07-${colorScheme}`);
-      const punched = await apiCheckIn(request, w.olivia, w.mia.accessToken);
+      const punched = await apiCheckIn(request, w.mia.accessToken);
       await loginViaUi(page, w.mia.user);
 
-      await page.goto(wsPath(w, 'attendance'));
+      await page.goto('/attendance');
       const month = vnDate().slice(0, 7);
       const table = page.getByRole('table', {
         name: `Bảng công tháng ${String(Number(month.slice(5)))}/${month.slice(0, 4)}`,
@@ -542,9 +541,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       );
       await views.getByRole('button', { name: 'Lịch', exact: true }).click();
 
-      await page.goto(projectsPath(w));
+      await page.goto(HOME);
       await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
-      expect(await seriousViolations(page), `/projects thẻ chấm công (${colorScheme})`).toEqual([]);
+      expect(await seriousViolations(page), `/w thẻ chấm công (${colorScheme})`).toEqual([]);
       await bell(page).click();
       await expect(page.getByRole('dialog', { name: 'Thông báo' })).toBeVisible();
       expect(await seriousViolations(page), `chuông thông báo (${colorScheme})`).toEqual([]);
@@ -556,7 +555,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     }) => {
       const w = await seedHrWorld(request, `hr07b-${colorScheme}`);
       await loginViaUi(page, w.mia.user);
-      await page.goto(wsPath(w, 'leave'));
+      await page.goto('/leave');
       await expect(page.getByRole('form', { name: 'Gửi đơn nghỉ' })).toBeVisible();
       expect(await seriousViolations(page), `/leave (${colorScheme})`).toEqual([]);
     });
@@ -566,11 +565,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
       request,
     }) => {
       const w = await seedHrWorld(request, `hr07c-${colorScheme}`);
-      await apiCheckIn(request, w.olivia, w.mia.accessToken);
+      await apiCheckIn(request, w.mia.accessToken);
       const hana = await openAs(browser, w.hana.user);
       await hana.page.emulateMedia({ colorScheme });
       for (const tab of ['today', 'timesheet', 'leave', 'calendar', 'balances']) {
-        await hana.page.goto(wsPath(w, `hr?tab=${tab}`));
+        await hana.page.goto(`/hr?tab=${tab}`);
         await expect(hana.page.getByRole('tabpanel')).toBeVisible();
         // Không exact: chờ CẢ status của trang ("Đang tải") lẫn của tab ("Đang tải đơn"…) xong rồi mới chạy axe (H).
         await expect(hana.page.getByRole('status', { name: 'Đang tải' })).toHaveCount(0);
@@ -594,14 +593,14 @@ const P = {
 
 /** ADJUSTMENT (lý do) cho Mia hôm nay + ngày lễ tương lai — dữ liệu XSS của phần chấm công (T-038). */
 async function seedXssAttendance(request: APIRequestContext, w: HrWorld): Promise<string> {
-  await apiAdjust(request, w.olivia, w.hana, w.mia.userId, {
+  await apiAdjust(request, w.hana, w.mia.userId, {
     kind: 'IN',
     date: vnDate(),
     time: '08:00',
     reason: P.adjust,
   });
-  const holiday = vnWorkday(10);
-  await apiPutHoliday(request, w.olivia, w.hana, holiday, P.holiday);
+  const holiday = reserveDate();
+  await apiPutHoliday(request, w.hana, holiday, P.holiday);
   return holiday;
 }
 
@@ -615,7 +614,7 @@ test(`E2E-HR-08 [${T041A}]: XSS (mở rộng SEC-49) — lý do ADJUSTMENT, tên
   const holiday = await seedXssAttendance(request, w);
 
   await loginViaUi(page, w.mia.user);
-  await page.goto(projectsPath(w));
+  await page.goto(HOME);
   // ATTENDANCE_ADJUSTED ⇒ Mia có 1 thông báo (text không chứa lý do, nhưng vẫn kiểm cả popover).
   await expect(bell(page)).toHaveAccessibleName('Thông báo, 1 chưa đọc');
   await bell(page).click();
@@ -625,14 +624,14 @@ test(`E2E-HR-08 [${T041A}]: XSS (mở rộng SEC-49) — lý do ADJUSTMENT, tên
   await assertInert(page, dialogsMia, 'Mia chuông');
   await page.keyboard.press('Escape');
 
-  await page.goto(wsPath(w, 'attendance'));
+  await page.goto('/attendance');
   const table = page.getByRole('table', { name: /^Bảng công tháng/ });
   await dayCell(table, vnDate()).click();
   const punches = page.getByRole('dialog', { name: /^Ngày / }); // T-046: "Ngày Th x, dd/MM"
   await expect(punches.getByText(P.adjust)).toBeVisible();
   await assertInert(page, dialogsMia, 'Mia lượt chấm (ADJUSTMENT)');
   await page.keyboard.press('Escape');
-  await page.goto(wsPath(w, `attendance?month=${holiday.slice(0, 7)}`));
+  await page.goto(`/attendance?month=${holiday.slice(0, 7)}`);
   // Tên lễ nằm ở aria-label (thuộc tính) VÀ chữ hiển thị của ô — cả hai chỉ là text.
   const holidayCell = dayCell(page.getByRole('table', { name: /^Bảng công tháng/ }), holiday);
   await expect(holidayCell).toHaveAccessibleName(`Ngày ${dM(holiday)}, Ngày lễ, ${P.holiday}`);
@@ -647,21 +646,21 @@ test(`E2E-HR-08b [${T041B}]: XSS — lý do đơn, ghi chú HR chứa payload �
 }) => {
   const dialogsMia = await arm(context);
   const w = await seedHrWorld(request, 'hr08b');
-  const rejected = await apiSubmitLeave(request, w.olivia, w.mia, {
+  const rejected = await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
     startDate: vnWorkday(3),
     endDate: vnWorkday(3),
     reason: P.reason,
   });
-  await apiDecideLeave(request, w.olivia, w.hana, rejected, 'reject', P.note);
-  await apiSubmitLeave(request, w.olivia, w.mia, {
+  await apiDecideLeave(request, w.hana, rejected, 'reject', P.note);
+  await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
     startDate: vnWorkday(5),
     endDate: vnWorkday(5),
     reason: P.pending,
   });
   await loginViaUi(page, w.mia.user);
-  await page.goto(wsPath(w, 'leave'));
+  await page.goto('/leave');
   await expect(page.getByText(P.reason)).toBeVisible();
   await expect(page.getByText(`Ghi chú của HR: ${P.note}`)).toBeVisible();
   await expect(page.getByText(P.pending)).toBeVisible();
@@ -679,14 +678,14 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
 }) => {
   const w = await seedHrWorld(request, 'hr08c');
   const holiday = await seedXssAttendance(request, w);
-  const rejected = await apiSubmitLeave(request, w.olivia, w.mia, {
+  const rejected = await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
     startDate: vnWorkday(3),
     endDate: vnWorkday(3),
     reason: P.reason,
   });
-  await apiDecideLeave(request, w.olivia, w.hana, rejected, 'reject', P.note);
-  await apiSubmitLeave(request, w.olivia, w.mia, {
+  await apiDecideLeave(request, w.hana, rejected, 'reject', P.note);
+  await apiSubmitLeave(request, w.mia, {
     type: 'SICK',
     startDate: vnWorkday(5),
     endDate: vnWorkday(5),
@@ -695,18 +694,18 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
 
   const hana = await openAs(browser, w.hana.user);
   const dialogsHana = await arm(hana.context);
-  await hana.page.goto(wsPath(w, 'hr?tab=leave'));
+  await hana.page.goto('/hr?tab=leave');
   await expect(hana.page.getByText(P.pending)).toBeVisible();
   await hana.page.getByLabel('Trạng thái').selectOption({ label: 'Tất cả' });
   await expect(hana.page.getByText(P.reason)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana /hr Đơn nghỉ');
-  await hana.page.goto(wsPath(w, `hr?tab=calendar`));
+  await hana.page.goto(`/hr?tab=calendar`);
   if (holiday.slice(0, 4) !== vnDate().slice(0, 4)) {
     await hana.page.getByRole('button', { name: `${holiday.slice(0, 4)} ›` }).click();
   }
   await expect(hana.page.getByText(P.holiday)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana /hr Lịch & ngày lễ');
-  await hana.page.goto(wsPath(w, 'hr?tab=timesheet'));
+  await hana.page.goto('/hr?tab=timesheet');
   await hana.page.getByRole('button', { name: w.mia.user.fullName }).click();
   const sheet = hana.page.getByRole('region', { name: `Bảng công của ${w.mia.user.fullName}` });
   // T-046: lịch T2…CN như /attendance — đúng một ô hôm nay (theo server), là ô của ngày mốc.
@@ -730,7 +729,7 @@ test(`@main E2E-HR-09 [${T041A}]: responsive 360 → 1440 — thẻ chấm công
   await loginViaUi(page, w.mia.user);
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     const card = attendanceCard(page);
     await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeInViewport();
@@ -740,9 +739,9 @@ test(`@main E2E-HR-09 [${T041A}]: responsive 360 → 1440 — thẻ chấm công
       .getByRole('button', { name: 'Chấm vào' });
     if (width < 640) await expect(headerBtn).toBeHidden();
     else await expect(headerBtn).toBeVisible();
-    await noHorizontalScroll(page, `/projects @${String(width)}`);
+    await noHorizontalScroll(page, `/w @${String(width)}`);
 
-    await page.goto(wsPath(w, 'attendance'));
+    await page.goto('/attendance');
     await expect(page.getByRole('table', { name: /^Bảng công tháng/ })).toBeVisible();
     await noHorizontalScroll(page, `/attendance @${String(width)}`);
   }
@@ -756,7 +755,7 @@ test(`@main E2E-HR-09b [${T041B}]: responsive 360 → 1440 — /leave không cu�
   await loginViaUi(page, w.mia.user);
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(wsPath(w, 'leave'));
+    await page.goto('/leave');
     const send = page.getByRole('button', { name: 'Gửi đơn' });
     await send.scrollIntoViewIfNeeded();
     await expect(send).toBeInViewport();
@@ -776,7 +775,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr10');
     await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     // 10:00 < 11:00 ⇒ "buổi sáng"; tên = từ cuối của họ tên.
@@ -814,7 +813,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr11');
     await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
@@ -829,34 +828,35 @@ test.describe('T-045 dialog nhắc chấm công', () => {
     await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
     await expect(dialog).toHaveCount(0);
     const tab = await context.newPage();
-    await tab.goto(projectsPath(w));
+    await tab.goto(HOME);
     await expect(attendanceCard(tab).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
     await expect(checkinPrompt(tab)).toHaveCount(0);
 
-    const today = await apiMyToday(request, w.olivia, await refreshed(request, w.mia));
+    const today = await apiMyToday(request, await refreshed(request, w.mia));
     expect(today.firstIn, 'dialog không được tự chấm').toBeNull();
   });
 
-  test(`E2E-HR-12 [${T045}]: không hiện cho VIEWER, cũng không hiện cho người đã chấm vào`, async ({
+  test(`E2E-HR-12 [${T045}]: không hiện cho Admin (không chấm công), cũng không hiện cho người đã chấm vào`, async ({
     page,
     browser,
     request,
   }) => {
     const w = await seedHrWorld(request, 'hr12');
-    await apiCheckIn(request, w.olivia, w.mia.accessToken);
+    await apiCheckIn(request, w.mia.accessToken);
 
     await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     // Thẻ đã tải dữ liệu hôm nay (nút "Chấm ra") ⇒ dialog nếu có thì đã phải hiện.
     await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
     await expect(checkinPrompt(page)).toHaveCount(0);
 
-    const vic = await openAs(browser, w.vic.user, { checkinPrompt: 'keep' });
-    await vic.page.goto(projectsPath(w));
-    await expect(vic.page.getByRole('navigation', { name: 'Workspace' })).toBeVisible();
-    await expect(attendanceCard(vic.page)).toHaveCount(0);
-    await expect(checkinPrompt(vic.page)).toHaveCount(0);
-    await vic.close();
+    const ada = await openAs(browser, adaUser(), { checkinPrompt: 'keep' });
+    await ada.page.goto(HOME);
+    // /w dựng cả trang sau một lần /auth/me (E) ⇒ thấy "Việc quản lý" là trang đã xong.
+    await expect(ada.page.getByRole('region', { name: 'Việc quản lý' })).toBeVisible();
+    await expect(attendanceCard(ada.page)).toHaveCount(0);
+    await expect(checkinPrompt(ada.page)).toHaveCount(0);
+    await ada.close();
   });
 
   test(`E2E-HR-13 [${T045}]: đăng xuất rồi đăng nhập lại trong ngày ⇒ dialog hiện lại (45d8b36 xóa khóa "đã hiện" khi đăng xuất — hành vi chấp nhận)`, async ({
@@ -865,7 +865,7 @@ test.describe('T-045 dialog nhắc chấm công', () => {
   }) => {
     const w = await seedHrWorld(request, 'hr13');
     await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     const dialog = checkinPrompt(page);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
@@ -877,15 +877,15 @@ test.describe('T-045 dialog nhắc chấm công', () => {
       .click();
     await expect(page).toHaveURL(/\/login/);
     await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
+    await page.goto(HOME);
     await expect(dialog).toBeVisible();
     // Vẫn không tự chấm.
-    const today = await apiMyToday(request, w.olivia, await refreshed(request, w.mia));
+    const today = await apiMyToday(request, await refreshed(request, w.mia));
     expect(today.firstIn).toBeNull();
   });
 });
 
-// ---------------------------------------------------------------- E2E-HR-14 (ổn định bố cục /projects)
+// ---------------------------------------------------------------- E2E-HR-14 (ổn định bố cục trang chính /w)
 
 declare global {
   interface Window {
@@ -900,12 +900,12 @@ declare global {
 /** Độ dịch DỌC lớn nhất cho phép của một phần tử trong <main> (TL d9 chốt: 8 px, tính cả entry có hadRecentInput). */
 const MAX_SHIFT_PX = 8;
 
-test.describe('Ổn định bố cục /projects', () => {
+test.describe('Ổn định bố cục /w', () => {
   // Đi trọn luồng thật: dialog nhắc ⇒ "Chấm công vào" ⇒ banner nhắc biến mất (chính chỗ từng kéo danh sách lên 49 px).
   test.use({ checkinPrompt: 'keep' });
 
   // Ba bề rộng: thẻ Chấm công đổi bố cục theo breakpoint (360: xếp dọc, cao ~457 px) ⇒ chỗ giữ phải đúng ở từng cỡ.
-  // Mia (MEMBER, 3 lối tắt) ở 3 bề rộng + Hana (hr:manage, thêm lối tắt "Nhân sự" ⇒ thẻ cao hơn) ở 360.
+  // Mia (nhân viên: thẻ gọn + lối tắt + Workspace) ở 3 bề rộng + Hana (hr:manage ⇒ thêm khối "Việc quản lý") ở 360.
   const cases = [
     { width: 360, who: 'mia' },
     { width: 768, who: 'mia' },
@@ -913,7 +913,7 @@ test.describe('Ổn định bố cục /projects', () => {
     { width: 360, who: 'hana' },
   ] as const;
   for (const { width, who } of cases) {
-    test(`E2E-HR-14 [${T045}] @${String(width)}px ${who}: /projects — thẻ Chấm công tải, dialog nhắc, chấm vào: không phần tử nào trong <main> dịch dọc > ${String(MAX_SHIFT_PX)} px`, async ({
+    test(`E2E-HR-14 [${T065A}] @${String(width)}px ${who}: /w — thẻ Chấm công tải, dialog nhắc, chấm vào: không phần tử nào trong <main> dịch dọc > ${String(MAX_SHIFT_PX)} px`, async ({
       page,
       request,
     }) => {
@@ -960,7 +960,7 @@ test.describe('Ổn định bố cục /projects', () => {
 
       const w = await seedHrWorld(request, `hr14-${String(width)}-${who}`);
       await loginViaUi(page, w[who].user);
-      await page.goto(projectsPath(w));
+      await page.goto(HOME);
       const card = attendanceCard(page);
       const prompt = checkinPrompt(page);
       await expect(prompt).toBeVisible();

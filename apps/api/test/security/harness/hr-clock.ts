@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 
 import type { Actor, Actors } from './actors';
+import type { CompanyActors } from './company';
 import { HR } from './hr';
 
 // Ca biên giờ (CLK-HR-*, test-spec-hr §5b): mỗi file một process API với mốc `TEST_CLOCK_ANCHOR` ngay TRƯỚC biên
@@ -59,7 +60,7 @@ export async function waitToday(
 }
 
 /** Bối cảnh tối thiểu: Olivia (OWNER, có hr:manage) + Mia, Max (MEMBER). Ít request ⇒ nhanh, kịp trước biên. */
-export async function seedTrio(actors: Actors, label: string) {
+export async function seedTrio(actors: CompanyActors, label: string) {
   const [olivia, mia, max] = await Promise.all([
     actors.register(`${label}-olivia`),
     actors.register(`${label}-mia`),

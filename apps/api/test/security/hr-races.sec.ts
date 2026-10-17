@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect } from 'vitest';
 
-import { Actors, type Actor } from './harness/actors';
+import { type Actor } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { SEC_CLOCK_ANCHOR, vnDateOf } from './harness/clock';
 import {
   HR,
@@ -15,7 +16,7 @@ import {
   workday,
 } from './harness/hr';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
 
 // CC-HR-* (test-spec-hr §8, T-042) — đua HỘP ĐEN qua HTTP + Postgres thật, ×20 mỗi ca. Đặt ở suite bảo
@@ -23,8 +24,7 @@ import { flushRateLimitCounters } from './harness/valkey';
 // đúng một bên thắng, bên thua nhận mã đúng, DB không ở trạng thái nửa vời. Pending theo vé (pending.ts).
 
 // Giờ nghiệp vụ neo thứ Ba 10:00 VN (harness/clock.ts) — cùng mốc với workday()/todayVn().
-const api = useApi(hrClockEnv());
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi(hrClockEnv());
 /**
  * Số vòng mỗi ca (mặc định 20). SEC_HR_RACE_RUNS=200 để xác nhận race hiếm (vd CC-HR-02 ~1/20 trước d6ac8f7) —
  * kèm `-t "CC-HR-02"` để chỉ chạy một ca. Timeout ca giãn theo số vòng.

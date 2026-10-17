@@ -1,8 +1,8 @@
 import { describe, expect } from 'vitest';
 
-import { Actors } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { errorEnvelope } from './harness/http-client';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
 
 // Cổng nghiệm thu T-032 (đọc chéo T-028 của F: X2, X5, X8; ADR-110). Chỉ kiểm TRẠNG THÁI CUỐI — không phụ
@@ -11,8 +11,7 @@ import { flushRateLimitCounters } from './harness/valkey';
 
 const T032 = 'T-032 lost update workspace/project (ADR-110)';
 const ROUNDS = 40;
-const api = useApi();
-const actors = new Actors(api);
+const { actors } = useCompanyApi();
 const ok = (status: number) => status >= 200 && status < 300;
 
 describe('Lost update workspace / project', () => {

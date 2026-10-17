@@ -2,7 +2,8 @@ import type { Page } from '@playwright/test';
 
 import { apiCreateTask, apiRegister, boardPath } from '../support/api';
 import { column, dragByMouse, waitBoardReady } from '../support/board';
-import { expect, loginViaUi, newUser, registerViaUi, test } from '../support/fixtures';
+import { apiCreateUser } from '../support/company';
+import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 
 // SEC-48..50 (security.md): không vi phạm CSP, access token không nằm trong storage, cookie refresh HttpOnly.
 
@@ -27,17 +28,20 @@ async function cspViolations(page: Page): Promise<string[]> {
   return page.evaluate(() => window.__cspViolations ?? []);
 }
 
-test('SEC-48: login / register / w / account không có vi phạm CSP', async ({ page }) => {
+test('SEC-48: login / activate / w / account không có vi phạm CSP', async ({ page, request }) => {
   const consoleCsp: string[] = [];
   page.on('console', (msg) => {
     if (/Content Security Policy/i.test(msg.text())) consoleCsp.push(msg.text());
   });
-  for (const path of ['/login', '/register']) {
+  // Mốc 3.5: /register bỏ ⇒ trang công khai thứ hai là /activate (không token ⇒ câu hướng dẫn).
+  for (const path of ['/login', '/activate']) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     expect(await cspViolations(page), path).toEqual([]);
   }
-  await registerViaUi(page, newUser('csp'));
+  const user = newUser('csp');
+  await apiCreateUser(request, user);
+  await loginViaUi(page, user);
   for (const path of ['/w', '/account']) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
@@ -49,8 +53,11 @@ test('SEC-48: login / register / w / account không có vi phạm CSP', async ({
 test('SEC-50: access token không nằm trong storage; cookie refresh HttpOnly, SameSite=Strict, không đọc được từ JS', async ({
   page,
   context,
+  request,
 }) => {
-  await registerViaUi(page, newUser('storage'));
+  const user = newUser('storage');
+  await apiCreateUser(request, user);
+  await loginViaUi(page, user);
   await page.reload();
   await expect(page).toHaveURL(/\/w(\/|$)/);
 

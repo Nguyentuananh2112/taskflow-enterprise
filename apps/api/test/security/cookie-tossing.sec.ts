@@ -1,9 +1,10 @@
 import { decodeJwt } from 'jose';
 import { describe, expect } from 'vitest';
 
-import { Actors, refreshCookieOf, type Actor } from './harness/actors';
+import { refreshCookieOf, type Actor } from './harness/actors';
+import { useCompanyApi } from './harness/company';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
-import { secCase, useApi } from './harness/suite';
+import { secCase } from './harness/suite';
 
 // Cookie tossing / login CSRF (T-028 X1, ADR-109). Subdomain anh em đặt được cookie `Domain=<cha>` với
 // tên `tf_rt` / `__Secure-tf_rt` nhưng KHÔNG đặt được `__Host-` (trình duyệt cấm Domain + bắt Path=/).
@@ -12,8 +13,7 @@ import { secCase, useApi } from './harness/suite';
 
 const ADR109 = 'ADR-109 __Host- refresh cookie (T-028)';
 const HOST = '__Host-tf_rt';
-const api = useApi({ COOKIE_SECURE: 'true' });
-const actors = new Actors(api);
+const { api, actors } = useCompanyApi({ COOKIE_SECURE: 'true' });
 
 /** Giá trị token (không kèm tên) của cookie refresh mà API đặt khi đăng ký. */
 const tokenOf = (actor: Actor) => actor.refreshCookie.slice(actor.refreshCookie.indexOf('=') + 1);
