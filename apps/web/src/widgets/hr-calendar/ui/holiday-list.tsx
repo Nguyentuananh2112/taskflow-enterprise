@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { dayLabel } from '@/entities/attendance';
-import { useHolidays } from '@/entities/hr';
+import { isWorkdayOn, useHolidays, useSchedules } from '@/entities/hr';
 import { DeleteHolidayButton, HolidayForm } from '@/features/hr-holiday-edit';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
@@ -11,10 +11,11 @@ import { Skeleton } from '@/shared/ui/skeleton';
 
 type Props = Readonly<{ today: string; isAdmin: boolean }>;
 
-/** Ngày lễ theo năm (HR nhập — §1). Ngày đã qua: chỉ Admin sửa/xóa (ADR-121). */
+/** Ngày lễ theo năm (HR nhập — §1). Ngày đã qua: chỉ Admin sửa/xóa (ADR-121). Lễ rơi ngày nghỉ ⇒ nhắc ngày bù. */
 export function HolidayList({ today, isAdmin }: Props) {
   const [year, setYear] = useState(Number(today.slice(0, 4)));
   const holidays = useHolidays(year);
+  const schedules = useSchedules(true).data ?? [];
   return (
     <section aria-labelledby="hr-holidays" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -50,6 +51,13 @@ export function HolidayList({ today, isAdmin }: Props) {
                     {dayLabel(h.date)}/{h.date.slice(0, 4)}
                   </span>{' '}
                   · {h.name}
+                  {/* payroll.md N2: hệ thống KHÔNG tự bù lễ rơi vào ngày nghỉ. */}
+                  {!isWorkdayOn(schedules, h.date) && (
+                    <span className="block text-xs text-text-muted">
+                      Ngày {dayLabel(h.date)} rơi vào ngày nghỉ — nếu có nghỉ bù, thêm ngày bù vào
+                      lịch lễ.
+                    </span>
+                  )}
                 </span>
                 {(!past || isAdmin) && <DeleteHolidayButton holiday={h} past={past} />}
               </li>
