@@ -8,11 +8,15 @@ import { toast } from '@/shared/ui/toast';
 
 const Details = z.object({ rule: z.string().optional(), reason: z.string().optional() });
 
+const RETENTION_MESSAGE = 'Ngày này đã quá thời hạn lưu dữ liệu, không thể chỉnh.';
+
 /** Câu báo lỗi khi thêm / hủy lượt (A chốt: 403 tự sửa của mình, 409 already_voided, 404). */
 export function punchErrorMessage(error: unknown): string {
   const d = isApiError(error) ? Details.safeParse(error.details).data : undefined;
   if (d?.reason === 'already_voided') return 'Lượt này đã bị hủy trước đó.';
   if (d?.rule === 'REASON_REQUIRED') return 'Cần ghi lý do.';
+  // T-043b (R27): ngày công quá thời hạn lưu (mốc do server tính) — dữ liệu đã/ sẽ bị xóa, không sửa được.
+  if (d?.rule === 'OUTSIDE_RETENTION') return RETENTION_MESSAGE;
   if (isApiError(error, 'FORBIDDEN_ACCESS')) {
     return 'Bạn không có quyền sửa chấm công này (không tự sửa chấm công của mình).';
   }
