@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
+import { useHrPendingCorrectionCount } from '@/entities/correction';
 import { useCompanyToday, useForgetHrWhenRevoked } from '@/entities/hr';
 import { useCompanyPermission, useSession } from '@/entities/session';
 import { isApiError } from '@/shared/api';
@@ -12,6 +13,7 @@ import { PageMain } from '@/shared/ui/page';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { HrBalances } from '@/widgets/hr-balances';
 import { HrCalendar } from '@/widgets/hr-calendar';
+import { HrCorrections } from '@/widgets/hr-corrections';
 import { HrLeaveQueue } from '@/widgets/hr-leave-queue';
 import { HrTimesheet } from '@/widgets/hr-timesheet';
 import { HrToday } from '@/widgets/hr-today';
@@ -19,7 +21,7 @@ import { HrToday } from '@/widgets/hr-today';
 import { HrTabs, type HrTab } from './hr-tabs';
 
 /**
- * `/hr` — cấp CÔNG TY (ADR-139; attendance-leave.md §6): Hôm nay · Bảng công tháng · Đơn nghỉ · Lịch & ngày lễ · Số
+ * `/hr` — cấp CÔNG TY (ADR-139; attendance-leave.md §6): Hôm nay · Bảng công tháng · Đơn nghỉ · Bổ sung giờ (Mốc 5) · Lịch & ngày lễ · Số
  * phép. Ẩn khi thiếu `hr:manage` (Admin ngầm có; HR do Admin cấp ở Quản trị — `/auth/me`); server vẫn
  * kiểm mọi request. Tab theo `?tab=` để chuông "đơn mới" mở thẳng tab Đơn nghỉ. "Hôm nay" (ngày, tháng,
  * năm mặc định) lấy theo server + múi giờ của lịch, không theo máy.
@@ -30,6 +32,7 @@ export function HrPage() {
   const allowed = can('hr:manage');
   const today = useCompanyToday(allowed);
   useForgetHrWhenRevoked(company !== null && !allowed);
+  const pending = useHrPendingCorrectionCount(allowed).data;
   const router = useRouter();
   const pathname = usePathname();
   const tab = useSearchParams().get('tab') ?? 'today';
@@ -56,6 +59,13 @@ export function HrPage() {
     { key: 'today', label: 'Hôm nay', render: () => data && <HrToday data={data} /> },
     { key: 'timesheet', label: 'Bảng công tháng', render: () => <HrTimesheet {...ctx} /> },
     { key: 'leave', label: 'Đơn nghỉ', render: () => <HrLeaveQueue {...ctx} /> },
+    {
+      key: 'corrections',
+      label: pending?.count
+        ? `Bổ sung giờ (${pending.count}${pending.more ? '+' : ''})`
+        : 'Bổ sung giờ',
+      render: () => <HrCorrections viewerId={viewerId} />,
+    },
     { key: 'calendar', label: 'Lịch & ngày lễ', render: () => <HrCalendar {...ctx} /> },
     { key: 'balances', label: 'Số phép', render: () => <HrBalances {...ctx} /> },
   ];
