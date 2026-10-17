@@ -30,9 +30,26 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | 2 | cccdbe8 | `ports.ts` + `LocalFileStore` / `LocalStagedFile`; 6 ErrorCode mới + lớp lỗi |
 | — | 50b3200 | CH-03 đối chiếu fixtures của F (48 ca) |
 | — | 6c70353 | rule `IMAGE_UNREADABLE` + parity |
+| — | 913812e, be78af2 | soát B: commit không ghi đè, tmp 1 giờ, realpath, probe hard link |
+| — | 346716f | rule `IMAGE_TOO_COMPLEX` |
+| — | 7bed90e7 | contract avatar sớm (phần contract của T-068) + `PENDING_SERVER_EMIT` |
+| — | b37ff159 | `X-Upload-Name` trong CORS + test preflight |
+| 3 | (commit này) | `rawUpload` + ngoại lệ content-type đúng cặp method + path + `UploadSlots` |
+
+## Quyết định tự đưa ra ở bước 3
+
+- **Trần đồng thời 3 upload / người** đếm trong bộ nhớ tiến trình (`UploadSlots`), vì v1 chạy một instance
+  (R47). Lên ≥ 2 instance ⇒ chuyển sang Valkey cùng lúc với volume chung. Hạn mức theo thời gian (30 lượt /
+  10 phút, 200 MB / ngày, fail-closed khi Valkey lỗi) là việc của route upload chat ở T-069.
+- **Im lặng 15 s / tổng 180 s / client hủy** ⇒ hủy kết nối, không trả response (không có ai nhận); tmp
+  xóa ngay, lượt được nhả khi socket đóng.
+- **Mọi lỗi sau khi đã nhận request mà body chưa đọc** (400 tên, 413, 429, 507, lỗi đĩa) ⇒
+  `Connection: close` + xả có trần (5 s VÀ 2 MB, chạm trần ⇒ `destroy`), để client đang gửi vẫn đọc được
+  response. Riêng 415 ở `rawUpload` không xả (Content-Type sai — body không phải upload).
+- Ngoại lệ content-type so path sau khi bỏ `/` cuối + chữ thường (cùng cách Express định tuyến).
 
 ## Còn lại
-3 `rawUpload` + ngoại lệ content-type · 4 worker sharp · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+4 worker sharp · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý
