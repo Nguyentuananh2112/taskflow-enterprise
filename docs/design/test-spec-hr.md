@@ -327,7 +327,7 @@ UI (E2E) chạy MỘT mốc (thứ Ba 10:00). Các biên trên kiểm ở tầng
 | E2E-HR-11 | T-045: "Để sau" | đóng, KHÔNG tự chấm (`firstIn` null), banner vẫn nhắc; tải lại và tab mới cùng phiên không hiện lại trong ngày |
 | E2E-HR-12 | T-045: VIEWER; người đã chấm vào | không có dialog |
 | E2E-HR-13 | T-045: "Để sau" ⇒ đăng xuất ⇒ đăng nhập lại cùng ngày | dialog HIỆN LẠI (45d8b36 xóa khóa daily-once khi đăng xuất — TL chấp nhận); vẫn không tự chấm |
-| E2E-HR-14 | /projects: thẻ Chấm công tải, dialog nhắc, "Chấm công vào" (banner nhắc biến mất) | không phần tử nào trong `<main>` dịch dọc > 8 px (PerformanceObserver `layout-shift`, TÍNH CẢ entry `hadRecentInput` — TL d9; CLS 0,1 không bắt được lỗi 122 + 133 + 49 px, vì CLS chỉ ≈ 0,05). Chỉ Chromium |
+| E2E-HR-14 | /projects: thẻ Chấm công tải, dialog nhắc, "Chấm công vào" (banner nhắc biến mất) | không phần tử nào trong `<main>` dịch dọc > 8 px (PerformanceObserver `layout-shift`, TÍNH CẢ entry `hadRecentInput` — TL d9; CLS 0,1 không bắt được lỗi 122 + 133 + 49 px, vì CLS chỉ ≈ 0,05). Chỉ Chromium; chạy ở 360 / 768 / 1280 px (thẻ đổi bố cục theo breakpoint) |
 
 Mọi ca khác chạy với fixture tự bấm "Để sau" (`checkinPrompt: 'dismiss'`, `e2e/support/fixtures.ts`); E2E-HR-10..12 dùng `test.use({ checkinPrompt: 'keep' })`. Tách theo vé web (cổng T-041a): phần chỉ cần T-041a (thẻ chấm công, `/attendance`, chuông) giữ id gốc; phần cần `/leave` (T-041b) hoặc `/hr` (T-041c) tách thành id hậu tố — **E2E-HR-04b** (VIEWER ở `/leave`), **07b** (axe `/leave`), **07c** (axe mọi tab `/hr`), **08b** (XSS lý do đơn + ghi chú HR ở `/leave`), **08c** (XSS ở `/hr`), **09b** (responsive `/leave`).
 

@@ -904,75 +904,83 @@ test.describe('Ổn định bố cục /projects', () => {
   // Đi trọn luồng thật: dialog nhắc ⇒ "Chấm công vào" ⇒ banner nhắc biến mất (chính chỗ từng kéo danh sách lên 49 px).
   test.use({ checkinPrompt: 'keep' });
 
-  test(`E2E-HR-14 [${T045}]: /projects — thẻ Chấm công tải, dialog nhắc, chấm vào: không phần tử nào trong <main> dịch dọc > ${String(MAX_SHIFT_PX)} px`, async ({
-    page,
-    request,
-  }) => {
-    // Gắn TRƯỚC khi tải trang (buffered) ⇒ bắt cả lúc thẻ xuất hiện và lúc dữ liệu thẻ về.
-    await page.addInitScript(() => {
-      const describe = (n: Node | null | undefined): string => {
-        if (!(n instanceof Element)) return String(n?.nodeName ?? 'null');
-        const label = n.getAttribute('aria-label');
-        const cls =
-          typeof n.className === 'string' ? n.className.split(/\s+/).slice(0, 3).join('.') : '';
-        return `${n.tagName.toLowerCase()}${cls ? `.${cls}` : ''}${label ? `[${label}]` : ''}`;
-      };
-      window.__layoutShifts = [];
-      try {
-        new PerformanceObserver((list) => {
-          for (const e of list.getEntries() as unknown as {
-            value: number;
-            hadRecentInput: boolean;
-            sources?: {
-              node?: Node;
-              previousRect: DOMRectReadOnly;
-              currentRect: DOMRectReadOnly;
-            }[];
-          }[]) {
-            const moves = (e.sources ?? [])
-              // Chỉ nội dung trang: dialog, toast, header nằm ngoài <main>.
-              .filter((src) => src.node instanceof Element && src.node.closest('main') !== null)
-              .map((src) => ({
-                node: describe(src.node),
-                dy: Math.round(src.currentRect.y - src.previousRect.y),
-              }));
-            window.__layoutShifts?.push({
-              value: e.value,
-              hadRecentInput: e.hadRecentInput,
-              moves,
-            });
-          }
-        }).observe({ type: 'layout-shift', buffered: true });
-      } catch {
-        // Trình duyệt không có Layout Instability API (Firefox) ⇒ mảng rỗng; ca chỉ có ý nghĩa ở Chromium.
-      }
+  // Ba bề rộng: thẻ Chấm công đổi bố cục theo breakpoint (360: xếp dọc, cao ~457 px) ⇒ chỗ giữ phải đúng ở từng cỡ.
+  for (const width of [360, 768, 1280]) {
+    test(`E2E-HR-14 [${T045}] @${String(width)}px: /projects — thẻ Chấm công tải, dialog nhắc, chấm vào: không phần tử nào trong <main> dịch dọc > ${String(MAX_SHIFT_PX)} px`, async ({
+      page,
+      request,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      // Gắn TRƯỚC khi tải trang (buffered) ⇒ bắt cả lúc thẻ xuất hiện và lúc dữ liệu thẻ về.
+      await page.addInitScript(() => {
+        const describe = (n: Node | null | undefined): string => {
+          if (!(n instanceof Element)) return String(n?.nodeName ?? 'null');
+          const label = n.getAttribute('aria-label');
+          const cls =
+            typeof n.className === 'string' ? n.className.split(/\s+/).slice(0, 3).join('.') : '';
+          return `${n.tagName.toLowerCase()}${cls ? `.${cls}` : ''}${label ? `[${label}]` : ''}`;
+        };
+        window.__layoutShifts = [];
+        try {
+          new PerformanceObserver((list) => {
+            for (const e of list.getEntries() as unknown as {
+              value: number;
+              hadRecentInput: boolean;
+              sources?: {
+                node?: Node;
+                previousRect: DOMRectReadOnly;
+                currentRect: DOMRectReadOnly;
+              }[];
+            }[]) {
+              const moves = (e.sources ?? [])
+                // Chỉ nội dung trang: dialog, toast, header nằm ngoài <main>.
+                .filter((src) => src.node instanceof Element && src.node.closest('main') !== null)
+                .map((src) => ({
+                  node: describe(src.node),
+                  dy: Math.round(src.currentRect.y - src.previousRect.y),
+                }));
+              window.__layoutShifts?.push({
+                value: e.value,
+                hadRecentInput: e.hadRecentInput,
+                moves,
+              });
+            }
+          }).observe({ type: 'layout-shift', buffered: true });
+        } catch {
+          // Trình duyệt không có Layout Instability API (Firefox) ⇒ mảng rỗng; ca chỉ có ý nghĩa ở Chromium.
+        }
+      });
+
+      const w = await seedHrWorld(request, `hr14-${String(width)}`);
+      await loginViaUi(page, w.mia.user);
+      await page.goto(projectsPath(w));
+      const card = attendanceCard(page);
+      const prompt = checkinPrompt(page);
+      await expect(prompt).toBeVisible();
+      await prompt.getByRole('button', { name: 'Chấm công vào', exact: true }).click();
+      await expect(prompt).toHaveCount(0);
+      await expect(card.getByRole('button', { name: 'Chấm ra' })).toBeVisible();
+      await expect(
+        card.getByRole('status').filter({ hasText: 'Bạn chưa chấm vào hôm nay.' }),
+      ).toHaveCount(0);
+      // 8ef85ed (E): ô nhắc không biến mất mà đổi chữ ⇒ không còn cú kéo lên khi chấm.
+      await expect(
+        card.getByRole('status').filter({ hasText: /^Đã chấm vào lúc \d{1,2}:\d{2}\.$/ }),
+      ).toBeVisible();
+      // Chờ khung hình sau thay đổi cuối (banner biến mất) để observer kịp ghi.
+      await page.evaluate(
+        () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))),
+      );
+
+      const shifts = (await page.evaluate(() => window.__layoutShifts)) ?? [];
+      const moves = shifts.flatMap((e) =>
+        e.moves.map((m) => ({ ...m, hadRecentInput: e.hadRecentInput })),
+      );
+      const big = moves.filter((m) => Math.abs(m.dy) > MAX_SHIFT_PX);
+      expect(
+        big,
+        `@${String(width)}px — phần tử trong <main> dịch > ${String(MAX_SHIFT_PX)} px: ${JSON.stringify(big)}`,
+      ).toEqual([]);
     });
-
-    const w = await seedHrWorld(request, 'hr14');
-    await loginViaUi(page, w.mia.user);
-    await page.goto(projectsPath(w));
-    const card = attendanceCard(page);
-    const prompt = checkinPrompt(page);
-    await expect(prompt).toBeVisible();
-    await prompt.getByRole('button', { name: 'Chấm công vào', exact: true }).click();
-    await expect(prompt).toHaveCount(0);
-    await expect(card.getByRole('button', { name: 'Chấm ra' })).toBeVisible();
-    await expect(
-      card.getByRole('status').filter({ hasText: 'Bạn chưa chấm vào hôm nay.' }),
-    ).toHaveCount(0);
-    // Chờ khung hình sau thay đổi cuối (banner biến mất) để observer kịp ghi.
-    await page.evaluate(
-      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))),
-    );
-
-    const shifts = (await page.evaluate(() => window.__layoutShifts)) ?? [];
-    const moves = shifts.flatMap((e) =>
-      e.moves.map((m) => ({ ...m, hadRecentInput: e.hadRecentInput })),
-    );
-    const big = moves.filter((m) => Math.abs(m.dy) > MAX_SHIFT_PX);
-    expect(
-      big,
-      `phần tử trong <main> dịch > ${String(MAX_SHIFT_PX)} px: ${JSON.stringify(big)}`,
-    ).toEqual([]);
-  });
+  }
 });
