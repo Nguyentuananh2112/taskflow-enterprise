@@ -30,6 +30,7 @@ const WS = {
   version: true,
   createdAt: true,
   updatedAt: true,
+  archivedAt: true,
 } as const;
 
 export class PrismaWorkspaceRepository implements IWorkspaceRepository {
@@ -67,6 +68,13 @@ export class PrismaWorkspaceRepository implements IWorkspaceRepository {
     return count === 1;
   }
   /** Loại trừ với purge: chỉ khôi phục khi `deleted_at IS NOT NULL AND purge_at > now` (WSR-05). */
+  async archive(id: string, at: Date): Promise<boolean> {
+    const { count } = await this.db().workspace.updateMany({
+      where: { id, deletedAt: null, archivedAt: null },
+      data: { archivedAt: at, updatedAt: at, version: { increment: 1 } },
+    });
+    return count === 1;
+  }
   async restoreIfWithinGrace(id: string, now: Date): Promise<boolean> {
     const { count } = await this.db().workspace.updateMany({
       where: { id, deletedAt: { not: null }, purgeAt: { gt: now } },

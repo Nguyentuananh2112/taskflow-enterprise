@@ -1,5 +1,6 @@
 import type { IUserDirectory, UserSummary } from '../../../application/ports/collaborators.port';
 import type {
+  AdminWorkspaceRow,
   IWorkspaceQueries,
   MemberRow,
   Page,
@@ -22,6 +23,31 @@ const WS = {
   createdAt: true,
   updatedAt: true,
 } as const;
+/** Màn Quản trị (T-061a): KHÔNG chọn dự án / task. */
+const ADMIN_WS = {
+  id: true,
+  name: true,
+  deletedAt: true,
+  archivedAt: true,
+  members: { select: { userId: true, role: true, user: { select: { fullName: true } } } },
+} as const;
+const byNameThenId = (a: { name: string; id: string }, b: { name: string; id: string }) =>
+  a.name.localeCompare(b.name, 'vi') || (a.id < b.id ? -1 : 1);
+const adminRow = (r: {
+  id: string;
+  name: string;
+  deletedAt: Date | null;
+  archivedAt: Date | null;
+  members: { userId: string; role: WorkspaceRole; user: { fullName: string } }[];
+}): AdminWorkspaceRow => ({
+  id: r.id,
+  name: r.name,
+  deletedAt: r.deletedAt,
+  archivedAt: r.archivedAt,
+  members: r.members
+    .map((m) => ({ userId: m.userId, fullName: m.user.fullName, role: m.role }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, 'vi') || (a.userId < b.userId ? -1 : 1)),
+});
 const PROJECT = {
   id: true,
   workspaceId: true,
@@ -49,6 +75,19 @@ export function escapeLike(q: string): string {
 /** Phía đọc (ADR-015): `select` thẳng, mọi truy vấn có phạm vi tenant và loại ws đã xóa mềm. */
 export class PrismaWorkspaceQueries implements IWorkspaceQueries {
   constructor(private readonly db: DbProvider) {}
+
+  async listForAdmin(): Promise<AdminWorkspaceRow[]> {
+    const rows = await this.db().workspace.findMany({
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      select: ADMIN_WS,
+    });
+    return rows.map(adminRow).sort(byNameThenId);
+  }
+
+  async findForAdmin(id: string): Promise<AdminWorkspaceRow | null> {
+    const row = await this.db().workspace.findUnique({ where: { id }, select: ADMIN_WS });
+    return row ? adminRow(row) : null;
+  }
 
   async listActiveForUser(
     userId: string,
