@@ -35,6 +35,7 @@ function fakeStores(remaining: Record<string, number> = {}, locked = true) {
     workspace: {
       deleteDepartures: take('deleteDepartures'),
       deleteHrAuditLogs: take('deleteHrAuditLogs'),
+      scrubHrAuditNotes: take('scrubHrAuditNotes'),
     },
     notifications: { deleteNotifications: take('deleteNotifications') },
     tryLock: () => Promise.resolve(locked),
@@ -50,7 +51,7 @@ describe('retentionSteps — mốc tính theo phương án B (NOW = 2026-12-01)'
     const { stores, calls } = fakeStores();
     for (const step of retentionSteps(stores, B, NOW)) await step.run(10);
     expect(calls.map((c) => [c.name, c.arg])).toEqual([
-      ['deleteEvents', new Date('2024-12-01T00:00:00.000Z')],
+      ['deleteEvents', '2024-12-01'],
       ['deleteRequestsBeforeYear', 2024],
       ['deleteBalancesBeforeYear', 2024],
       ['deleteDepartures', new Date('2024-12-01T00:00:00.000Z')],
@@ -58,6 +59,7 @@ describe('retentionSteps — mốc tính theo phương án B (NOW = 2026-12-01)'
       ['deleteHrAuditLogs', new Date('2021-12-01T00:00:00.000Z')],
       ['scrubClientInfo', new Date('2025-11-01T00:00:00.000Z')],
       ['scrubReasons', '2025-11-01'],
+      ['scrubHrAuditNotes', new Date('2025-11-01T00:00:00.000Z')],
     ]);
   });
 });

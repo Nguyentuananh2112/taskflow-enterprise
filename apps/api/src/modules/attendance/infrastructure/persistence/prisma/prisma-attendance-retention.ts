@@ -20,13 +20,17 @@ export class PrismaAttendanceRetention {
       )`;
   }
 
-  /** D2: xóa lượt chấm có `occurred_at < cutoff`. */
-  deleteEvents(cutoff: Date, limit: number): Promise<number> {
+  /**
+   * D2: xóa lượt chấm theo NGÀY CÔNG `work_date < cutoffDate` (`YYYY-MM-DD`) — luôn xóa trọn một ngày:
+   * OUT sau nửa đêm (trước giờ chốt) thuộc ngày công hôm trước; cắt theo `occurred_at` sẽ để lại OUT mồ
+   * côi làm ngày đó hiện sai (review A).
+   */
+  deleteEvents(cutoffDate: string, limit: number): Promise<number> {
     return this.db().$executeRaw`
       DELETE FROM attendance_events WHERE id IN (
         SELECT id FROM attendance_events
-         WHERE occurred_at < ${cutoff}
-         ORDER BY occurred_at
+         WHERE work_date < ${cutoffDate}::date
+         ORDER BY work_date
          LIMIT ${limit}
          FOR UPDATE SKIP LOCKED
       )`;

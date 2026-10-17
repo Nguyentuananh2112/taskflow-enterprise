@@ -58,15 +58,15 @@ function instance(policy: RetentionPolicy = B) {
   return { uow, stores, job: new RetentionJob({ stores, policy, uow, clock: new FakeClock(NOW) }) };
 }
 
-const event = (occurredAt: Date) =>
+const event = (occurredAt: Date, workDate = occurredAt, kind: 'IN' | 'OUT' = 'OUT') =>
   testPrisma().attendanceEvent.create({
     data: {
       workspaceId: ws,
       userId: user,
-      kind: 'OUT',
+      kind,
       source: 'WEB',
       occurredAt,
-      workDate: occurredAt,
+      workDate,
       ip: '203.0.113.7',
       userAgent: 'UA',
       createdById: user,
@@ -107,6 +107,15 @@ describe('job retention (T-043, phương án B)', () => {
     expect(byId.get(scrub.id)).toMatchObject({ ip: null, userAgent: null });
     expect(byId.get(keepInfo.id)?.userAgent).toBe('UA');
     expect(byId.get(keepInfo.id)?.ip).not.toBeNull();
+  });
+
+  it('D2 theo NGÀY CÔNG: OUT sau nửa đêm của ngày công 2024-11-30 bị xóa cùng IN (mốc 2024-12-01)', async () => {
+    const day = new Date('2024-11-30T00:00:00.000Z');
+    await event(new Date('2024-11-30T01:00:00.000Z'), day, 'IN');
+    await event(new Date('2024-12-01T00:30:00.000Z'), day, 'OUT'); // occurred_at SAU mốc, ngày công TRƯỚC
+    const kept = await event(new Date('2024-12-01T01:00:00.000Z'), new Date('2024-12-01'), 'IN');
+    await instance().job.execute();
+    expect((await testPrisma().attendanceEvent.findMany()).map((r) => r.id)).toEqual([kept.id]);
   });
 
   it('D3: lý do NULL khi end_date quá 395 ngày (đơn đã quyết); đơn PENDING giữ lý do; CHECK not-blank vẫn thỏa', async () => {
@@ -185,6 +194,35 @@ describe('job retention (T-043, phương án B)', () => {
     ]);
     expect((await prisma.notification.findMany()).map((r) => r.id)).toEqual([noteNew.id]);
     expect((await prisma.hrAuditLog.findMany()).map((r) => r.id)).toEqual([auditNew.id]);
+  });
+
+  it("D7': note quản trị bị bỏ khỏi before/after của audit quá 395 ngày; phần còn lại của dòng giữ nguyên", async () => {
+    const prisma = testPrisma();
+    const audit = (createdAt: Date) =>
+      prisma.hrAuditLog.create({
+        data: {
+          id: randomUUID(),
+          workspaceId: ws,
+          actorId: user,
+          action: 'LEAVE_REVOKE',
+          before: { status: 'APPROVED', note: 'cũ' },
+          after: { status: 'REVOKED', note: 'đã xem giấy khám' },
+          createdAt,
+        },
+      });
+    const old = await audit(ago(396));
+    const recent = await audit(ago(394));
+    await instance().job.execute();
+    const rows = new Map((await prisma.hrAuditLog.findMany()).map((r) => [r.id, r]));
+    expect(rows.get(old.id)).toMatchObject({
+      action: 'LEAVE_REVOKE',
+      before: { status: 'APPROVED' },
+      after: { status: 'REVOKED' },
+    });
+    expect(JSON.stringify([rows.get(old.id)?.before, rows.get(old.id)?.after])).not.toContain(
+      'note',
+    );
+    expect(rows.get(recent.id)?.after).toEqual({ status: 'REVOKED', note: 'đã xem giấy khám' });
   });
 
   it('theo lô: 5 dòng, lô 2 ⇒ đủ qua nhiều lô; chạy lại ⇒ 0 thay đổi (idempotent)', async () => {

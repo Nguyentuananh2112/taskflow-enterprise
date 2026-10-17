@@ -54,9 +54,10 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
   const before = (days: number) => new Date(now.getTime() - days * DAY_MS);
   const records = before(p.recordsDays);
   const recordsYear = records.getUTCFullYear(); // năm Y xóa khi 31/12/Y < mốc ⇔ Y < năm của mốc
-  const reasonDate = before(p.leaveReasonDays).toISOString().slice(0, 10);
+  const dateOf = (d: Date) => d.toISOString().slice(0, 10);
+  const reasonDate = dateOf(before(p.leaveReasonDays));
   return [
-    { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(records, n) },
+    { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(dateOf(records), n) },
     { name: 'leave_requests', run: (n) => s.leave.deleteRequestsBeforeYear(recordsYear, n) },
     { name: 'leave_balances', run: (n) => s.leave.deleteBalancesBeforeYear(recordsYear, n) },
     { name: 'member_departures', run: (n) => s.workspace.deleteDepartures(records, n) },
@@ -70,6 +71,10 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
       run: (n) => s.attendance.scrubClientInfo(before(p.clientInfoDays), n),
     },
     { name: 'leave_reasons', run: (n) => s.leave.scrubReasons(reasonDate, n) },
+    {
+      name: 'hr_audit_notes',
+      run: (n) => s.workspace.scrubHrAuditNotes(before(p.leaveReasonDays), n),
+    },
   ];
 }
 

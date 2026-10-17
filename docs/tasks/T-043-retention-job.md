@@ -20,7 +20,7 @@
 2. **Ranh giới module** (quyết định L2 của T-040b: không module nào đọc/ghi bảng của module khác): mỗi module cung cấp **bước dọn** của bảng mình — một câu SQL theo lô (`… WHERE id IN (SELECT id … LIMIT n FOR UPDATE SKIP LOCKED)`), gọi TRONG transaction của lô:
    - attendance: scrub IP/UA (D1), xóa lượt chấm (D2);
    - leave: scrub lý do (D3, trừ PENDING), xóa đơn + số dư theo **cả năm** (D4): năm Y bị xóa khi 31/12/Y < mốc (`start_date < <năm của mốc>-01-01`, số dư `year < <năm của mốc>`). Không xóa giữa năm vì số ngày đã dùng được tính lại từ đơn (D-H3a) — xóa một phần làm sai số dư năm đó; đơn không kéo qua hai năm (`LEAVE_SPANS_YEARS`);
-   - workspace: xóa departures (D5), xóa HrAuditLog (D7);
+   - workspace: xóa departures (D5), xóa HrAuditLog (D7); bỏ khóa `note` (chữ tự do của người quản trị) khỏi `before` / `after` của HrAuditLog theo mốc `RETENTION_LEAVE_REASON_DAYS` (TL chốt — audit giữ 5 năm hành động / ai / khi nào / trước–sau, không giữ chữ tự do);
    - notifications: xóa thông báo (D6).
 3. **Job `retention`** (composition, theo mẫu `purgeRefreshTokensJob`): 1 lượt/ngày + jitter, lượt đầu sau khởi động lệch khỏi các job khác. Mỗi lô một transaction, câu ĐẦU là `pg_try_advisory_xact_lock(hashtextextended('taskflow:retention', 0))` — không lấy được ⇒ `busy`, bỏ lượt. Các bước chạy lần lượt, mỗi bước tới khi lô < `batchSize` hoặc chạm trần lô của lượt. Idempotent; `signal` hủy (graceful shutdown) ⇒ dừng trước lô kế tiếp.
 4. **Log / metrics:** chỉ số dòng mỗi bước, số lô, `busy`, `complete`, `aborted`, thời gian (`maintenance.run_done` sẵn có). KHÔNG log id, nội dung, ngưỡng dạng ngày cụ thể của người dùng nào.

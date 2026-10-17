@@ -11,7 +11,7 @@ import { PrismaWorkspaceRetention } from '../modules/workspace/infrastructure/pe
 export interface RetentionStores {
   attendance: {
     scrubClientInfo(cutoff: Date, limit: number): Promise<number>;
-    deleteEvents(cutoff: Date, limit: number): Promise<number>;
+    deleteEvents(cutoffDate: string, limit: number): Promise<number>;
   };
   leave: {
     scrubReasons(cutoffDate: string, limit: number): Promise<number>;
@@ -21,6 +21,7 @@ export interface RetentionStores {
   workspace: {
     deleteDepartures(cutoff: Date, limit: number): Promise<number>;
     deleteHrAuditLogs(cutoff: Date, limit: number): Promise<number>;
+    scrubHrAuditNotes(cutoff: Date, limit: number): Promise<number>;
   };
   notifications: { deleteNotifications(cutoff: Date, limit: number): Promise<number> };
   /** Câu ĐẦU của mỗi transaction lô; `false` ⇒ instance khác đang chạy. */

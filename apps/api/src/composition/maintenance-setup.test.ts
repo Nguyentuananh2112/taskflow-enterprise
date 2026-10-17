@@ -27,7 +27,7 @@ const prismaLike = {
       deleteRequestsBeforeYear: noop,
       deleteBalancesBeforeYear: noop,
     },
-    workspace: { deleteDepartures: noop, deleteHrAuditLogs: noop },
+    workspace: { deleteDepartures: noop, deleteHrAuditLogs: noop, scrubHrAuditNotes: noop },
     notifications: { deleteNotifications: noop },
     tryLock: () => Promise.resolve(true),
   },
