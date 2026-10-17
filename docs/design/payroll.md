@@ -31,7 +31,7 @@ TL chốt (người dùng xem lại): phụ cấp thâm niên **trả đủ, kh�
 
 ## 1. Phạm vi v1
 
-**Có:** hồ sơ lương theo phiên bản (level, lương cơ bản); phụ cấp thâm niên tự tính theo `EmployeeProfile.hireDate`; bảng lương tháng (nháp tự điền công từ chấm công → kế toán gõ dòng thưởng/giảm trừ → phát hành → phiếu bất biến); bản điều chỉnh có lịch sử; "Phiếu lương của tôi" xem/in/lưu PDF; thông báo; nhắc kế toán từ ngày 5; xuất CSV; nhập liệu trên điện thoại.
+**Có:** hồ sơ lương theo phiên bản (level, lương cơ bản); phụ cấp thâm niên tự tính theo `EmployeeProfile.hireDate`; bảng lương tháng (nháp tự điền công từ chấm công → kế toán gõ dòng thưởng/giảm trừ → phát hành → phiếu bất biến); bản điều chỉnh có lịch sử; "Phiếu lương của tôi" xem/in/lưu PDF; thông báo; nhắc kế toán từ ngày 5; xuất Excel (.xlsx); nhập liệu trên điện thoại.
 
 **Không:** tự tính BH/thuế; giảm trừ gia cảnh; tăng ca; file ngân hàng; ký số; nhân viên đã nghỉ tự tra phiếu; mẫu dòng / copy dòng tháng trước; autosave; phiếu lương cho Admin.
 
@@ -136,7 +136,7 @@ Tiền `7.000.000 ₫` (NBSP), `white-space: nowrap` + `font-variant-numeric: ta
 - Dòng của chính kế toán: chỉ đọc, "Phiếu của bạn — Kế toán khác hoặc Admin sửa".
 - Tạo bản điều chỉnh: form điền sẵn từ bản hiện hành, lý do bắt buộc, **xem khác biệt** trước khi gửi.
 - Tháng chưa kết thúc: nút tạo bảng mờ "tạo được từ 01/11".
-- CSV: dùng lại `ISpreadsheetWriter` (T-055 — `hr-extended.md` §8) ⇒ đóng rủi ro Excel locale vi-VN dùng ";" làm phân cách; D/F kiểm chứng trên Excel thật.
+- **Xuất Excel (.xlsx)** — TL chốt 18/10, thay CSV: dùng `ISpreadsheetWriter` / `sendXlsx` (bộ ghi tự viết trên `fflate`, T-055 — `hr-extended.md` ADR-130) ⇒ đóng rủi ro Excel locale vi-VN dùng ";" làm phân cách và BOM; D/F kiểm chứng trên Excel thật.
 
 ### 5.3 Điều hướng, cache, riêng tư
 
@@ -147,7 +147,7 @@ Tiền `7.000.000 ₫` (NBSP), `white-space: nowrap` + `font-variant-numeric: ta
 
 - Phiếu người khác ⇒ 404; chỉ `hr:manage` ⇒ 403 mọi route lương; Admin gọi route self (`/payslips…`) ⇒ 403; người không thuộc công ty / hết `access_until` ⇒ 401 `SESSION_REVOKED` (`loadCompanyMember`); route lương `Cache-Control: no-store` (cả trang Next, không ISR).
 - Không số tiền trong thông báo, log, URL, Sentry (redact body route `/payroll`, `/payslips`, `/salary-profiles`, `/payroll-settings`; SEC test ném lỗi giữa chừng ⇒ không lộ). Audit before/after số tiền (mức thâm niên/năm, hồ sơ lương), **chỉ Admin đọc** (`GET hr/audit-logs`, `company:admin`); audit VIEW/EXPORT. Đổi `hireDate` là `PROFILE_SET` (ADR-128).
-- CSV: cột tiền là số nguyên thuần (không `'`, không ₫); nhãn/ghi chú chống injection (nhãn gõ tay ⇒ bắt buộc); chỉ bản hiệu lực + cột revision; BOM, no-store, audit, hạn mức.
+- Xuất .xlsx (ADR-130): ô tiền là ô SỐ nguyên (không `'`, không ₫ — tổng khớp `computePayslip`); nhãn/ghi chú là chuỗi nguyên văn + `quotePrefix` khi bắt đầu bằng `= + - @` TAB CR (nhãn gõ tay ⇒ bắt buộc); không công thức, không hyperlink; chỉ bản hiệu lực + cột revision; no-store, audit `EXPORT` khi stream bắt đầu, hạn mức chung.
 - Phiếu giữ tên khi ẩn danh tài khoản (nghĩa vụ chứng từ) — ghi vào data-retention. Backup chứa lương ⇒ xác nhận mã hóa + giới hạn truy cập (threat-model; R37: Admin toàn quyền lương — nhiều Admin, audit).
 
 ## 7. Test bắt buộc (F)
@@ -166,10 +166,10 @@ Tiền `7.000.000 ₫` (NBSP), `white-space: nowrap` + `font-variant-numeric: ta
 | Vé | Ai | Nội dung | Phụ thuộc |
 |---|---|---|---|
 | T-048 | B | Migration 7 (`payroll_settings` một dòng, `SalaryProfile` không `hireDate`, `PayrollRun`/`Payslip`/`PayslipLine`, ảnh chụp thâm niên + tên công ty, CHECK, partial unique, trigger) + luật self tuyệt đối của Kế toán qua `authorizeCompanyWrite` + audit `PAYROLL_*` (chỉ Admin đọc) + loại khỏi retention + redact route mới | Mốc 3.5 (T-061…T-064) đã vào `main`; T-054 (migration 6) |
-| T-049 | A | `payrollDaysOf` nửa ngày (phép thắng lượt chấm; **một lần đọc phép typed** cho cả ô ngày và các nửa) + port phép `{date, part, type}` + công chuẩn theo `effectiveSchedule` từng ngày + nhiệm kỳ ngày từ `ICompanyTenurePort` + `ATTENDANCE_RETENTION_EXPIRED`; package thuần `computePayslip` (thâm niên chuỗi ngày thuần, assert `isSafeInteger`, ≤ 50 dòng ở contract); module payroll: port `hire-date` (đọc `EmployeeProfile`), hồ sơ lương/phiên bản, `payroll_settings` (cảnh báo nháp cần tính lại), nháp/tính lại (+ endpoint preview)/thêm người (người trong kỳ = đoạn EMPLOYEE giao kỳ), phát hành, điều chỉnh (copy công khi quá retention), cờ "hồ sơ đã thay đổi sau phát hành", nhắc, CSV (`ISpreadsheetWriter`) | T-048; T-063 (tenure ngày); T-054 (port `hireDate`) |
+| T-049 | A | `payrollDaysOf` nửa ngày (phép thắng lượt chấm; **một lần đọc phép typed** cho cả ô ngày và các nửa) + port phép `{date, part, type}` + công chuẩn theo `effectiveSchedule` từng ngày + nhiệm kỳ ngày từ `ICompanyTenurePort` + `ATTENDANCE_RETENTION_EXPIRED`; package thuần `computePayslip` (thâm niên chuỗi ngày thuần, assert `isSafeInteger`, ≤ 50 dòng ở contract); module payroll: port `hire-date` (đọc `EmployeeProfile`), hồ sơ lương/phiên bản, `payroll_settings` (cảnh báo nháp cần tính lại), nháp/tính lại (+ endpoint preview)/thêm người (người trong kỳ = đoạn EMPLOYEE giao kỳ), phát hành, điều chỉnh (copy công khi quá retention), cờ "hồ sơ đã thay đổi sau phát hành", nhắc, xuất .xlsx (`ISpreadsheetWriter`) | T-048; T-063 (tenure ngày); T-054 (port `hireDate`) |
 | T-050 | E | Web theo §5: `/payslips` (mở mới nhất, ‹ ›, in, a11y, tên công ty), `/payroll/…` desktop + thẻ/form 360 px, danh sách việc còn lại, modal phát hành, điều chỉnh có diff, hồ sơ lương + lịch sử (`hireDate` chỉ đọc), menu header + "Việc quản lý", cache `['company', …]`; cảnh báo MISSING_OUT trên thẻ/trang chấm công; cảnh báo lễ rơi CN/OFF ở lịch lễ; dòng hướng dẫn HR "đã chấm công nhưng có đơn nghỉ không lương — thu hồi đơn" | T-048 contracts; Mốc 3.5 web (T-065) |
-| T-051 | F | test-spec-payroll theo §7 (PD/SD/PE/SN/PR/RD/SP/SEC/CC/CLK/E2E), harness ADR-140 (Admin bootstrap, `Actors.createUser` có grant Kế toán), Stryker domain payroll + `payrollDaysOf` ≥ 90 %; kiểm chứng CSV trên Excel vi-VN cùng D | song song |
-| — | D | Review tiền/khóa (bậc khóa `payroll:<period>` trong bảng thứ tự khóa toàn cục) + CI; cùng F chốt định dạng CSV | — |
+| T-051 | F | test-spec-payroll theo §7 (PD/SD/PE/SN/PR/RD/SP/SEC/CC/CLK/E2E), harness ADR-140 (Admin bootstrap, `Actors.createUser` có grant Kế toán), Stryker domain payroll + `payrollDaysOf` ≥ 90 %; kiểm chứng .xlsx trên Excel vi-VN cùng D | song song |
+| — | D | Review tiền/khóa (bậc khóa `payroll:<period>` trong bảng thứ tự khóa toàn cục) + CI; cùng F kiểm .xlsx | — |
 
 Thứ tự: Mốc 3.5 → Mốc 5 (ít nhất T-054 hồ sơ) → T-048 → T-049 ‖ T-050 → T-051 E2E. Migration: 5 `company_level` · 6 hồ sơ · **7 payroll** · 8 đơn bổ sung · 9 chính sách phép (`company-level.md` §8, timestamp đặt lúc merge).
 
