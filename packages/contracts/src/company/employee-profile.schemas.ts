@@ -87,18 +87,18 @@ export const PutEmployeeProfileBody = z.strictObject({
 export type PutEmployeeProfileBody = z.infer<typeof PutEmployeeProfileBody>;
 
 /**
- * Phép năm bị âm do đổi `hireDate` (T-057 nối; rỗng tới khi đó). Cùng tên/đơn vị với `negativeBalances` của
+ * Phép năm bị âm của MỘT người (nhiều năm) do đổi `hireDate` — tên khác `NegativeBalanceDto` của leave/policy (TL chốt) (T-057 nối; rỗng tới khi đó). Cùng tên/đơn vị với `negativeBalances` của
  * PUT leave/policy (`remainingDays`).
  */
-export const NegativeBalanceDto = z.object({ year: z.int(), remainingDays: z.number() });
-export type NegativeBalanceDto = z.infer<typeof NegativeBalanceDto>;
+export const ProfileNegativeBalanceDto = z.object({ year: z.int(), remainingDays: z.number() });
+export type ProfileNegativeBalanceDto = z.infer<typeof ProfileNegativeBalanceDto>;
 
 export const ProfileWarning = z.enum(['ADJUSTMENT_DAYS_REVIEW']);
 export type ProfileWarning = z.infer<typeof ProfileWarning>;
 
 export const PutEmployeeProfileResponse = z.object({
   profile: EmployeeProfileDto,
-  negativeBalances: z.array(NegativeBalanceDto),
+  negativeBalances: z.array(ProfileNegativeBalanceDto),
   warnings: z.array(ProfileWarning),
 });
 export type PutEmployeeProfileResponse = z.infer<typeof PutEmployeeProfileResponse>;
