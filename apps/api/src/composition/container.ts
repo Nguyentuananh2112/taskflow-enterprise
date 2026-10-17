@@ -28,6 +28,7 @@ import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../cor
 import { LateBoundRealtime } from './late-realtime';
 import type { Container, ContainerDeps } from './container-types';
 import { avatarAuthDeps, ME_PATH, withAvatarRefs } from './avatar-refs';
+import { chatRouters } from './chat-wiring';
 
 export type { Container, ContainerConfig, ContainerDeps } from './container-types';
 
@@ -187,6 +188,7 @@ export function createContainer(d: ContainerDeps): Container {
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
     ...(auth.avatar ? [{ path: ME_PATH, router: auth.avatar.meRouter }] : []),
+    ...chatRouters(d, { persistence, auth, company, responder, limit, business }),
   ];
   const app = createApp({
     config,

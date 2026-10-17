@@ -121,6 +121,15 @@ CREATE INDEX "chat_attachments_orphan_created_at_idx" ON "chat_attachments"("cre
 -- CreateIndex
 CREATE INDEX "chat_attachments_uploader_id_created_at_idx" ON "chat_attachments"("uploader_id", "created_at");
 
+-- CreateIndex (B M3: files-sweep `existingBlobKeys` tra theo khóa — một blob chỉ thuộc một dòng ⇒ file_key UNIQUE)
+CREATE UNIQUE INDEX "chat_attachments_file_key_key" ON "chat_attachments"("file_key");
+
+-- CreateIndex
+CREATE INDEX "chat_attachments_preview_key_idx" ON "chat_attachments"("preview_key");
+
+-- CreateIndex
+CREATE INDEX "chat_attachments_thumb_key_idx" ON "chat_attachments"("thumb_key");
+
 -- AddForeignKey
 ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "workspaces"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -164,8 +173,14 @@ ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_kind_chk" CH
 );
 ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_title_chk"
   CHECK ("title" IS NULL OR char_length(btrim("title")) BETWEEN 1 AND 80);
-ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_direct_key_chk"
-  CHECK ("direct_key" IS NULL OR "direct_key" ~ '^[0-9a-f-]{36}:[0-9a-f-]{36}$');
+-- B M2: hai uuid đầy đủ (chữ thường) VÀ đúng thứ tự nhỏ:lớn — app lỡ tạo "B:A" sẽ bị chặn thay vì sinh DM thứ hai cho
+-- cùng một cặp (UNIQUE không thấy). COLLATE "C" = so byte như `directKey()` của domain.
+ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_direct_key_chk" CHECK (
+  "direct_key" IS NULL OR (
+    "direct_key" ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    AND split_part("direct_key", ':', 1) COLLATE "C" < split_part("direct_key", ':', 2) COLLATE "C"
+  )
+);
 ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_last_message_chk"
   CHECK (("last_message_at" IS NULL) = ("last_message_id" IS NULL));
 
@@ -181,7 +196,16 @@ ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_deleted_body_chk"
 ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_request_hash_chk"
   CHECK ("request_hash" ~ '^[0-9a-f]{64}$');
 
-ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_size_chk" CHECK ("size_bytes" >= 0);
+-- B L2: trần 20 MiB = trần tệp của ADR-141 (ảnh đã mã hóa lại còn nhỏ hơn).
+ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_size_chk"
+  CHECK ("size_bytes" >= 0 AND "size_bytes" <= 20 * 1024 * 1024);
+-- B L1 (lớp 2 — app đã kiểm `isFileKey` trước mọi thao tác đĩa): khóa ĐẦY ĐỦ có tiền tố module `chat/` + 128 bit base32
+-- (TL/G 18/10; thư mục ab/cd là việc riêng của LocalFileStore, DB không thấy).
+ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_keys_chk" CHECK (
+  "file_key" ~ '^chat/[a-z2-7]{26}$'
+  AND ("preview_key" IS NULL OR "preview_key" ~ '^chat/[a-z2-7]{26}$')
+  AND ("thumb_key" IS NULL OR "thumb_key" ~ '^chat/[a-z2-7]{26}$')
+);
 ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_dims_chk" CHECK (
   ("width" IS NULL) = ("height" IS NULL) AND ("width" IS NULL OR ("width" > 0 AND "height" > 0))
 );

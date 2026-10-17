@@ -10,6 +10,8 @@ import type { CompanyRepositories } from '../modules/company/company.module';
 import type { IAvatarDirectory } from '../modules/auth/application/ports/avatar-directory.port';
 import { SystemClock } from '../core/infrastructure/system';
 import { memoryAvatarDirectory } from './avatar-sweep';
+import { memoryChatDirectory, memoryChatRepositories } from './chat-persistence';
+import type { ChatRepositories } from '../modules/chat/chat.module';
 import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
@@ -69,6 +71,8 @@ export interface Persistence {
   retention?: RetentionStores;
   /** Mốc 6 (T-068): avatar theo lô — hiển thị, `/media`, sweep. */
   avatarDirectory: IAvatarDirectory;
+  /** Mốc 6 (T-069): trò chuyện — store của D (T-069a). */
+  chat: ChatRepositories;
   uow: IUnitOfWork;
 }
 
@@ -100,6 +104,14 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const attendance = createInMemoryAttendanceRepositories();
   const leaveStore = new InMemoryLeaveRepository();
   const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
+  const chat = memoryChatRepositories(
+    memoryChatDirectory({
+      members: companyStore,
+      users,
+      workspaces: ws.workspaces,
+      memberships: ws.memberships,
+    }),
+  );
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -115,6 +127,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       attendance.events,
       attendance.calendar,
       leaveStore,
+      chat.state,
     ],
     logger,
   );
@@ -144,6 +157,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     attendance,
     leave,
     avatarDirectory: memoryAvatarDirectory(users, companyStore, new SystemClock()),
+    chat: chat.repos,
     uow,
   };
 }

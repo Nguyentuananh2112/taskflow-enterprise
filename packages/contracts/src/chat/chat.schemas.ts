@@ -209,7 +209,13 @@ export const SendMessageBody = z
     clientMsgId: Uuid,
     body: ChatBody.optional(),
     replyToId: Uuid.optional(),
-    attachmentIds: z.array(Uuid).max(50).default([]),
+    attachmentIds: z
+      .array(Uuid)
+      .max(50)
+      .refine((ids) => new Set(ids.map((id) => id.toLowerCase())).size === ids.length, {
+        message: 'Trùng tệp đính kèm.',
+      })
+      .default([]),
   })
   .refine((b) => (b.body ?? '').length > 0 || b.attachmentIds.length > 0, {
     message: 'Tin nhắn trống.',

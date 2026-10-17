@@ -82,7 +82,7 @@ function build(over: Partial<RawUploadOptions> = {}) {
     const { staged } = requireUpload(req);
     const head = await staged.read(0, 4); // đọc qua wrapper (quota) — phải gọi được trên instance thật
     const all = await staged.readAll();
-    const stored = await staged.commit();
+    const stored = await staged.commit('chat');
     res.status(201).json({ key: stored.key, head: head.length, size: all.length });
   });
   app.post('/api/v1/other', (_req, res) => res.json({ ok: true }));

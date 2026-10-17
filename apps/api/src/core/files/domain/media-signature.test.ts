@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { avatarFileKey, isFileKey, randomFileKey, relativePathOf, type FileKey } from './file-key';
+import {
+  avatarFileKey,
+  base32Token,
+  isFileKey,
+  randomFileKey,
+  relativePathOf,
+  type FileKey,
+} from './file-key';
 import {
   bucketExpiry,
   canonicalTuple,
@@ -113,21 +120,23 @@ describe('bucketExpiry — khung URL (AV-03)', () => {
 
 describe('file-key — khóa do server sinh', () => {
   it('16 byte ⇒ 26 ký tự base32 chữ thường', () => {
-    const zero = randomFileKey(new Uint8Array(16));
+    const zero = base32Token(new Uint8Array(16));
     expect(zero).toBe('a'.repeat(26));
-    const ff = randomFileKey(new Uint8Array(16).fill(0xff));
+    const ff = base32Token(new Uint8Array(16).fill(0xff));
     expect(ff).toBe(`${'7'.repeat(25)}4`); // 3 bit cuối 111 đệm 0 ⇒ 11100 = '4'
-    expect(isFileKey(ff)).toBe(true);
+    expect(isFileKey(ff)).toBe(false); // khóa trần không namespace ⇒ không hợp lệ (B M1)
+    expect(randomFileKey('chat', new Uint8Array(16).fill(0xff))).toBe(`chat/${ff}`);
+    expect(isFileKey(`chat/${ff}`)).toBe(true);
   });
 
   it('RFC 4648: "foobar" ⇒ mzxw6ytboi (kiểm bộ mã hóa)', () => {
     const b = new Uint8Array(16);
     b.set(Buffer.from('foobar'));
-    expect(randomFileKey(b).startsWith('mzxw6ytboi')).toBe(true);
+    expect(base32Token(b).startsWith('mzxw6ytboi')).toBe(true);
   });
 
   it('độ dài khác 16 ⇒ ném', () => {
-    expect(() => randomFileKey(new Uint8Array(15))).toThrow(RangeError);
+    expect(() => base32Token(new Uint8Array(15))).toThrow(RangeError);
   });
 
   it.each([
@@ -151,7 +160,10 @@ describe('file-key — khóa do server sinh', () => {
     `/avatars/${USER}/1/256`,
     `C:/avatars/${USER}/1/256`,
     `ab/cd/${'a'.repeat(26)}`,
-    `${'a'.repeat(26)}\n`, // JS: `$` không khớp trước \n cuối (khác PCRE)
+    'a'.repeat(26), // khóa trần không namespace (B M1)
+    `other/${'a'.repeat(26)}`, // namespace chưa đăng ký
+    `chat/ab/cd/${'a'.repeat(26)}`,
+    `chat/${'a'.repeat(26)}\n`, // JS: `$` không khớp trước \n cuối (khác PCRE)
   ])('khóa sai %j bị từ chối', (key) => {
     expect(isFileKey(key)).toBe(false);
   });
@@ -164,8 +176,8 @@ describe('file-key — khóa do server sinh', () => {
     expect(() => avatarFileKey('x', 1, '64')).toThrow(RangeError);
   });
 
-  it('đường dẫn khóa ngẫu nhiên ab/cd/<key>', () => {
-    const key = 'abcdefghijklmnopqrstuvwxyz' as FileKey;
-    expect(relativePathOf(key)).toBe('ab/cd/abcdefghijklmnopqrstuvwxyz');
+  it('đường dẫn khóa ngẫu nhiên <ns>/ab/cd/<26>', () => {
+    const key = 'chat/abcdefghijklmnopqrstuvwxyz' as FileKey;
+    expect(relativePathOf(key)).toBe('chat/ab/cd/abcdefghijklmnopqrstuvwxyz');
   });
 });

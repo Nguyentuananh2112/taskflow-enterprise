@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import { prismaChatRepositories } from './chat-persistence';
 import { PrismaUnitOfWork, type TransactionCapable } from '../core/persistence/prisma-unit-of-work';
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import {
@@ -103,6 +104,7 @@ export function createPrismaPersistence(d: {
     attendance: createPrismaAttendanceRepositories(db),
     leave,
     avatarDirectory: new PrismaAvatarDirectory(db),
+    chat: prismaChatRepositories(db),
     ...prismaMaintenance(db),
     uow,
   };
