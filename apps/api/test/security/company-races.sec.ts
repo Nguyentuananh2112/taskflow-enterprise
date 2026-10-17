@@ -222,10 +222,14 @@ describe('Nghỉ việc song song', () => {
           no5xx(rs) &&
           final.length === 1 &&
           (done ? final[0] === 'LEFT' : final[0] === 'ACTIVE' || final[0] === 'OFFBOARDING');
-        if (!ok)
+        if (!ok) {
+          const putBody = (rs[0]?.json as { data?: { employee?: { status?: string } } } | undefined)
+            ?.data?.employee?.status;
+          const delBody = rs[1]?.text.slice(0, 160);
           red.push(
-            `#${String(i)}: [${rs.map((r) => r.status).join(',')}] cuối ${JSON.stringify(final)}`,
+            `#${String(i)}: [${rs.map((r) => r.status).join(',')}] PUT→${String(putBody)} DELETE→${String(delBody)} cuối ${JSON.stringify(final)}`,
           );
+        }
       }
       expect(red, `${String(red.length)}/${String(RUNS)} vòng đỏ`).toEqual([]);
     },
