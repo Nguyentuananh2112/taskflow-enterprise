@@ -299,8 +299,8 @@ describe('standardDaysOf — SD', () => {
     );
   });
 
-  it('kỳ không có ngày làm việc ⇒ RangeError (S ≥ 1)', () => {
-    expect(() => standardDaysOf({ from: SUN, to: SUN, schedules: [] })).toThrow(RangeError);
+  it('kỳ không có ngày làm việc ⇒ 0 (payroll trả 422 NO_WORKING_DAYS — B L3: không ném RangeError)', () => {
+    expect(standardDaysOf({ from: SUN, to: SUN, schedules: [] })).toBe(0);
     expect(standardDaysOf({ from: MON, to: MON, schedules: [] })).toBe(1);
   });
 });

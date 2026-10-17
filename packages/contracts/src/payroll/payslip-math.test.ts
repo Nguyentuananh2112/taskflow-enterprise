@@ -177,3 +177,51 @@ describe('ngày & thâm niên (chuỗi thuần)', () => {
     expect(() => seniorityAllowanceOf(-1, 2)).toThrow(RangeError);
   });
 });
+
+describe('B review T-049', () => {
+  it('HIGH-1: message lỗi KHÔNG chứa giá trị tiền (error handler / Sentry ghi message — SEC-PAY-09)', () => {
+    const cases: (() => unknown)[] = [
+      () => salaryByDays(9_876_543.5, 1, 1),
+      () => salaryByDays(-9_876_543, 1, 1),
+      () =>
+        computePayslip({
+          baseSalary: 1,
+          paidHalfDays: 1,
+          standardDays: 1,
+          seniorityAllowance: -9_876_543,
+          lines: [],
+        }),
+      () =>
+        computePayslip({
+          baseSalary: 1,
+          paidHalfDays: 1,
+          standardDays: 1,
+          seniorityAllowance: 0,
+          lines: [{ section: 'BONUS', amount: 9_876_543.5 }],
+        }),
+      () => seniorityAllowanceOf(9_876_543_000_000, 2),
+    ];
+    for (const run of cases) {
+      let caught: unknown;
+      try {
+        run();
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(RangeError);
+      expect(String(caught)).not.toMatch(/9876543|9\.876\.543|9,876,543/);
+    }
+  });
+
+  it('L1: số năm thâm niên ≤ 80 (= CHECK DB); 81 ⇒ RangeError', () => {
+    expect(seniorityAllowanceOf(1, 80)).toBe(80);
+    expect(() => seniorityAllowanceOf(1, 81)).toThrow(RangeError);
+  });
+
+  it('L2: ngày không tồn tại (tháng 13, 30/02, 29/02 năm không nhuận) ⇒ RangeError; 29/02 năm nhuận được', () => {
+    for (const bad of ['2026-13-01', '2026-02-30', '2026-02-29', '2026-04-31', '2026-00-10']) {
+      expect(() => completedYears(bad, '2027-01-01'), bad).toThrow(RangeError);
+    }
+    expect(completedYears('2028-02-29', '2029-03-01')).toBe(1);
+  });
+});

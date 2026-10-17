@@ -18,17 +18,14 @@ export async function draftRun(d: PayrollDeps, period: string): Promise<PayrollR
 
 /** Nguồn dựng phiếu; lịch không có ngày làm nào trong kỳ ⇒ 422 `NO_WORKING_DAYS`. */
 export async function sourcesOf(d: PayrollDeps, period: string, userIds: readonly string[]) {
-  try {
-    return await loadSources(d, period, userIds);
-  } catch (err) {
-    if (err instanceof RangeError) {
-      throw new BusinessRuleViolationError(
-        'NO_WORKING_DAYS',
-        'Kỳ này không có ngày làm việc nào theo lịch.',
-      );
-    }
-    throw err;
+  const src = await loadSources(d, period, userIds);
+  if (src.standardDays < 1) {
+    throw new BusinessRuleViolationError(
+      'NO_WORKING_DAYS',
+      'Kỳ này không có ngày làm việc nào theo lịch.',
+    );
   }
+  return src;
 }
 
 /** Phần kế toán đã gõ — "Tính lại công" giữ nguyên (dòng, ghi chú, sửa công có lý do). */

@@ -76,7 +76,8 @@ export function payrollDaysOf(q: {
 
 /**
  * Công chuẩn `S` của kỳ: đếm TỪNG ngày theo lịch hiệu lực của ngày đó (đổi lịch giữa tháng ⇒ tổng hai đoạn), gồm ngày lễ
- * rơi vào ngày làm. Cùng `S` cho mọi người của kỳ. `S < 1` ⇒ `RangeError` (lịch không có ngày làm nào).
+ * rơi vào ngày làm. Cùng `S` cho mọi người của kỳ. Lịch không có ngày làm nào ⇒ 0 — bên gọi (payroll) trả 422
+ * `NO_WORKING_DAYS` (B L3: không ném RangeError để khỏi bị lẫn với lỗi miền số).
  */
 export function standardDaysOf(q: {
   from: LocalDate;
@@ -88,6 +89,5 @@ export function standardDaysOf(q: {
     const date = addDays(q.from, i);
     if (isWorkday(effectiveSchedule(q.schedules, date), date)) days++;
   }
-  if (days < 1) throw new RangeError(`Kỳ ${q.from}..${q.to} không có ngày làm việc nào theo lịch`);
   return days;
 }

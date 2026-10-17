@@ -56,9 +56,8 @@ export function createPayrollHarness(now = NOW) {
     },
     attendance: {
       payrollDaysFor: ({ userIds }) => {
-        if (att.noWorkdays) return Promise.reject(new RangeError('không có ngày làm'));
         return Promise.resolve({
-          standardDays: att.standardDays,
+          standardDays: att.noWorkdays ? 0 : att.standardDays,
           byUser: new Map(
             userIds.map((u) => [
               u,

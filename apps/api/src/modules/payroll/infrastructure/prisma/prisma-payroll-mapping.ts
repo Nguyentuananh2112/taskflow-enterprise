@@ -6,8 +6,7 @@ export type PayslipRow = Payslip & { lines: PayslipLine[] };
 /** `BigInt` (cột tiền) ⇒ number — ngoài vùng an toàn là lỗi dữ liệu, không trả số sai (ADR-125). */
 export function fromBig(v: bigint): number {
   const n = Number(v);
-  if (!Number.isSafeInteger(n))
-    throw new RangeError(`Tiền vượt số nguyên an toàn: ${v.toString()}`);
+  if (!Number.isSafeInteger(n)) throw new RangeError('Tiền vượt số nguyên an toàn'); // KHÔNG nêu giá trị (B HIGH-1)
   return n;
 }
 

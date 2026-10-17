@@ -1,8 +1,15 @@
 // Mốc 4 (payroll.md ADR-125, T-049): phép tính phiếu lương — hàm THUẦN dùng chung web (xem trước tổng khi gõ) và API (tính
 // lại, là chuẩn). Tiền là số nguyên VND; công là số nguyên NỬA NGÀY; ngày là chuỗi `YYYY-MM-DD` (không `Date`, không múi
-// giờ ⇒ cùng kết quả ở mọi máy). Đầu vào sai ⇒ ném `RangeError` (không bao giờ trả số sai).
+// giờ ⇒ cùng kết quả ở mọi máy). Đầu vào sai ⇒ ném `RangeError` (không bao giờ trả số sai). Message CHỈ nêu tên trường +
+// miền, KHÔNG BAO GIỜ giá trị (B HIGH-1, SEC-PAY-09: error handler / Sentry ghi `message` — số tiền không được vào log).
 
-import { MAX_HALF_DAYS, MAX_MONEY_VND, MAX_PAYSLIP_LINES, type PAYSLIP_SECTIONS } from './limits';
+import {
+  MAX_HALF_DAYS,
+  MAX_MONEY_VND,
+  MAX_PAYSLIP_LINES,
+  MAX_SENIORITY_YEARS,
+  type PAYSLIP_SECTIONS,
+} from './limits';
 
 type PayslipSection = (typeof PAYSLIP_SECTIONS)[number];
 
@@ -39,9 +46,7 @@ export interface PayslipTotals {
 
 function assertInt(name: string, value: number, min: number, max: number): void {
   if (!Number.isSafeInteger(value) || value < min || value > max) {
-    throw new RangeError(
-      `${name} phải là số nguyên trong [${String(min)}, ${String(max)}]: ${String(value)}`,
-    );
+    throw new RangeError(`${name} phải là số nguyên trong [${String(min)}, ${String(max)}]`);
   }
 }
 
@@ -64,9 +69,7 @@ export function salaryByDays(
 /** Tổng phiếu — DUY NHẤT nơi sinh tổng (ADR-125); server ghi cùng transaction với dòng, web dùng để xem trước. */
 export function computePayslip(input: PayslipInput): PayslipTotals {
   if (input.lines.length > MAX_PAYSLIP_LINES) {
-    throw new RangeError(
-      `Tối đa ${String(MAX_PAYSLIP_LINES)} dòng / phiếu: ${String(input.lines.length)}`,
-    );
+    throw new RangeError(`Tối đa ${String(MAX_PAYSLIP_LINES)} dòng / phiếu`);
   }
   assertInt('seniorityAllowance', input.seniorityAllowance, 0, MAX_MONEY_VND);
   const sums: Record<PayslipSection, number> = { INCOME: 0, BONUS: 0, DEDUCTION: 0 };
@@ -85,8 +88,7 @@ export function computePayslip(input: PayslipInput): PayslipTotals {
     netPay: incomeTotal + sums.BONUS - sums.DEDUCTION,
   };
   for (const [name, value] of Object.entries(totals)) {
-    if (!Number.isSafeInteger(value))
-      throw new RangeError(`${name} vượt số nguyên an toàn: ${String(value)}`);
+    if (!Number.isSafeInteger(value)) throw new RangeError(`${name} vượt số nguyên an toàn`);
   }
   return totals;
 }
@@ -99,7 +101,12 @@ const PERIOD = /^(\d{4})-(0[1-9]|1[0-2])$/;
 function parts(date: string): [number, number, number] {
   const m = DATE.exec(date);
   if (!m) throw new RangeError(`Ngày phải có dạng YYYY-MM-DD: ${date}`);
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  // B L2: hàm dùng chung web ⇒ kiểm tháng / ngày có thật (không tin dữ liệu chỉ đến từ cột DATE).
+  if (mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo)) {
+    throw new RangeError(`Ngày không tồn tại: ${date}`);
+  }
+  return [y, mo, d];
 }
 
 const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
@@ -133,10 +140,11 @@ export function completedYears(hireDate: string, asOf: string): number | null {
 /** Phụ cấp thâm niên = mức/năm × số năm tròn (0 nếu < 1 năm) — không chia theo công (payroll §0, TL chốt). */
 export function seniorityAllowanceOf(perYear: number, years: number): number {
   assertInt('seniorityPerYear', perYear, 0, MAX_MONEY_VND);
-  assertInt('seniorityYears', years, 0, 200);
+  // B L1: = CHECK seniority_years 0..80 của migration 7 — lỗi bắt ở hàm thuần, không thành 500 ở DB.
+  assertInt('seniorityYears', years, 0, MAX_SENIORITY_YEARS);
   const value = perYear * years;
   if (!Number.isSafeInteger(value) || value > MAX_MONEY_VND) {
-    throw new RangeError(`seniorityAllowance vượt trần: ${String(value)}`);
+    throw new RangeError('seniorityAllowance vượt trần');
   }
   return value;
 }
