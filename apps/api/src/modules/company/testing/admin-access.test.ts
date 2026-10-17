@@ -270,6 +270,28 @@ describe('AdminAccessUseCases.set — role', () => {
     expect(revoked).toEqual([]);
   });
 
+  it('hạ Admin khi Admin còn lại duy nhất ĐANG có lịch nghỉ ⇒ 409 last_admin (cùng luật với T-062); Admin khác không lịch ⇒ được', async () => {
+    store.upsertMember(
+      member({
+        userId: OLIVIA,
+        role: 'ADMIN',
+        startDate: null,
+        offboardLastDay: '2026-11-30',
+        offboardAccessUntil: new Date('2026-11-30T23:00:00.000Z'),
+        offboardScheduledById: ADA,
+      }),
+    );
+    await expect(set({ userId: ADA, role: 'EMPLOYEE' })).rejects.toMatchObject({
+      statusCode: 409,
+      details: { reason: 'last_admin' },
+    });
+    expect((await store.find(ADA))!.role).toBe('ADMIN');
+    store.upsertMember(member({ userId: id(9), role: 'ADMIN', startDate: null }));
+    await expect(set({ userId: ADA, role: 'EMPLOYEE' })).resolves.toMatchObject({
+      role: 'EMPLOYEE',
+    });
+  });
+
   it('rollback khi bước sau lỗi (thu hồi phiên ⇒ 503): không departure, role giữ nguyên, không realtime', async () => {
     revoked = [];
     const failing = build({

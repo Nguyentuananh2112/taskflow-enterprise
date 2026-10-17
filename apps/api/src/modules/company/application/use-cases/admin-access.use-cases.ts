@@ -38,7 +38,8 @@ const sameGrants = (a: readonly CompanyGrant[], b: readonly CompanyGrant[]) =>
  * (bậc 5: actor FOR SHARE trong `authorizeWrite`, rồi người bị đổi).
  * - Nâng EMPLOYEE→ADMIN: đóng nhiệm kỳ `ROLE_CHANGED` tới HÔM NAY (ngày đổi vẫn tính công), dọn đơn sau ngày đó
  *   (`offboardCleanup`) TRƯỚC khi UPDATE dòng, thu hồi phiên (ADR-105 — phiên cũ mang quyền cũ).
- * - Hạ ADMIN→EMPLOYEE: nhiệm kỳ mới từ NGÀY MAI (CO-09), thu hồi phiên; còn đúng một Admin ⇒ 409 `last_admin`.
+ * - Hạ ADMIN→EMPLOYEE: nhiệm kỳ mới từ NGÀY MAI (CO-09), thu hồi phiên; không còn Admin nào khác ở lại (Admin đang có
+ *   lịch nghỉ không tính — như guard lên lịch của T-062) ⇒ 409 `last_admin`.
  * - Chỉ đổi grants của EMPLOYEE: không thu hồi phiên (quyền đọc DB mỗi request).
  * Luật self tuyệt đối (403). Admin + grants ⇒ 422 `GRANT_NOT_ALLOWED`. Lệch version ⇒ 409.
  */
@@ -152,8 +153,11 @@ export class AdminAccessUseCases {
       next = await d.members.promoteToAdmin(userId, now);
     } else {
       // ADMIN → EMPLOYEE.
-      const admins = await d.members.listAdmins();
-      if (admins.length <= 1) {
+      // Admin ĐANG có lịch nghỉ coi như sắp hết — cùng luật với guard lúc lên lịch nghỉ (T-062): luôn còn một Admin ở lại.
+      const staying = (await d.members.listAdmins()).filter(
+        (a) => a.userId !== userId && a.offboardLastDay === null,
+      );
+      if (staying.length === 0) {
         throw new ResourceConflictError(
           { reason: 'last_admin' },
           'Công ty phải luôn còn ít nhất một Admin.',
