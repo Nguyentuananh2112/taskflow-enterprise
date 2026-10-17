@@ -87,10 +87,11 @@ Lịch, ngày lễ, danh sách nhân viên và người nhận thông báo HR l�
 ### 1.2 Tạo người và workspace
 
 ```ts
-// Ada: POST /hr/employees {email, fullName, startDate?} ⇒ {userId, version, activation: {token, expiresAt} | null}
-//   (activation = null khi NHẬN LẠI người đã có mật khẩu — TL đề xuất, B chốt contracts)
+// Ada: POST /hr/employees {email, fullName, startDate?}
+//   ⇒ 201 {employee: {userId, status, version, startDate}, accountCreated, activation: {token, link, expiresAt} | null}
+//   (activation = null khi NHẬN LẠI người đã có mật khẩu; harness dùng thẳng activation.token — contracts B 1bb5f42)
 //   ⇒ POST /auth/activate {token, password} ⇒ access token (không login lại)
-//   ⇒ (tuỳ chọn) PUT /admin/access/:userId {role, grants, expectedVersion: version}
+//   ⇒ (tuỳ chọn) PUT /admin/access/:userId {role, grants, expectedVersion: employee.version}
 actors.createUser(label, { grants?: CompanyGrant[], admin?: boolean, pending?: boolean, startDate?: string })
 // pending: dừng trước activate, trả { userId, token } để ca kích hoạt tự làm.
 actors.newWorkspace(owner, name?)                    // POST /workspaces bởi owner
@@ -294,5 +295,5 @@ CLK-HR-01…04 (Mốc 3) giữ nội dung, đổi đường dẫn sang công ty.
 ## 10. Đã chốt (TL 1f, 2026-10-17)
 
 1. **E2E-HR-19:** phương án (b). Biên 06:00 ở CLK-HR-05 (hộp đen); E2E dùng `lastDay` quá khứ, hoàn tất ngay trong request.
-2. **Response `POST hr/employees`:** `{ userId, version, activation: { token, expiresAt } | null }`, `null` khi nhận lại người đã có mật khẩu. TL đề xuất, B sở hữu contracts và chốt. Harness đọc theo contracts khi B commit.
+2. **Response `POST hr/employees`** (B chốt, contracts 1bb5f42): `201 { employee: { userId, status, version, startDate }, accountCreated, activation: { token, link, expiresAt } | null }`, `null` khi nhận lại người đã có mật khẩu. `activation-link` ⇒ `{ activation }`; `ActivateBody { token, password }` ⇒ `ActivateResponse { accessToken, expiresIn, user }`; `SetAccessBody { role, grants, expectedVersion }` strict, version lấy từ `employee.version`. Mã lỗi: `SESSION_REVOKED` 401, `ACTIVATION_INVALID` 400 (cùng body cho mọi token sai), `ACTIVATION_GONE` 410.
 3. **SEC-HR-66:** không dừng container Valkey (hạ tầng dùng chung). Ca ở tầng integration với store token-version giả ném lỗi (§3, §1.5).
