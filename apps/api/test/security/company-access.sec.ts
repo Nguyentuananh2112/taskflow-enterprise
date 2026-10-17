@@ -321,9 +321,13 @@ describe('Leo quyền / tách quyền (ADR-134/135)', () => {
         ['PUT', HR.accessOf(max.userId), bad],
         ['GET', '/admin/workspaces', undefined],
       ];
+      // Gom mọi route sai rồi assert một lần ⇒ một lượt chạy thấy đủ danh sách (không dừng ở route đỏ đầu tiên).
+      const red: string[] = [];
       for (const [method, path, body] of routes) {
-        expectStatus(await call(mia, method, path, body), 403, `Mia ${method} ${path}`);
+        const res = await call(mia, method, path, body);
+        if (res.status !== 403) red.push(`${method} ${path} ⇒ ${res.status}`);
       }
+      expect(red).toEqual([]);
       expectStatus(await call(hana, 'GET', HR.auditLogs), 403, 'HR đọc audit');
       expectStatus(
         await withKey(api, 'POST', HR.checkIn, actors.ada.accessToken),
