@@ -52,14 +52,17 @@ export function useApi(
   let db: SuiteDatabase | undefined;
   let api: RunningApi | undefined;
   let skipReason: string | undefined;
-  let overrides = { ...envOverrides };
+  // `envOverrides` đọc LƯỜI (lúc khởi động API, không lúc đăng ký): file như valkey-outage gán REDIS_URL của
+  // container tạm trong beforeAll riêng, sau khi gọi useApi. Override của `restart` cộng dồn riêng.
+  let restartOverrides: Record<string, string> = {};
+  const overridesNow = () => ({ ...envOverrides, ...restartOverrides });
 
   beforeAll(async () => {
     db = await prepareSuiteDatabase(config, API_DIR);
     // Mọi file dùng chung Valkey db riêng của suite ⇒ xóa bộ đếm rate limit/cache phiên của file trước.
     // Chỉ SAU khi giữ khóa (prepareSuiteDatabase) — trước đó sẽ xóa giữa chừng của lần chạy khác.
     await flushRateLimitCounters();
-    const env = baseEnv(db.appUrl, overrides);
+    const env = baseEnv(db.appUrl, overridesNow());
     // Lỗi bootstrap là đỏ thật — không thuộc `pending` (chỉ áp cho lỗi khởi động API).
     await setup.beforeStart?.({ dbUrl: db.appUrl, env });
     try {
@@ -100,8 +103,8 @@ export function useApi(
       if (!db) throw new Error('restart() chỉ dùng sau beforeAll của useApi()');
       await running().stop();
       api = undefined;
-      overrides = { ...overrides, ...extra };
-      api = await startApi(baseEnv(db.appUrl, overrides));
+      restartOverrides = { ...restartOverrides, ...extra };
+      api = await startApi(baseEnv(db.appUrl, overridesNow()));
     },
   };
 }

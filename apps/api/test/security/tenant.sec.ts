@@ -191,14 +191,21 @@ describe('Toàn vẹn & race', () => {
         expect(error.code).toBe('RESOURCE_CONFLICT');
         expect(error.details).toMatchObject({ reason: 'already_employee', field: 'email' });
       }
-      const list = await actors.json(
-        'GET',
-        `/hr/employees?q=${encodeURIComponent(email)}`,
-        actors.ada.accessToken,
-      );
-      expect((list.json as { data: { email: string }[] }).data.map((e) => e.email)).toEqual([
-        email,
-      ]);
+      // Bên thắng dùng được trọn vẹn (không mồ côi): token của nó kích hoạt ⇒ đăng nhập bằng email đó. Danh sách
+      // `GET hr/employees?q=` (đúng 1 dòng) là T-062 — khẳng định thêm ở SEC-HR khi route có.
+      const winner = sameEmail.find((r) => r.status === 201);
+      const token = (winner?.json as { data: { activation: { token: string } } }).data.activation
+        .token;
+      const password = 'correct-horse-battery-staple-9';
+      expect(
+        (await actors.json('POST', '/auth/activate', undefined, { token, password })).status,
+      ).toBe(200);
+      expect(
+        (await actors.json('POST', '/auth/login', undefined, { email, password })).status,
+      ).toBe(200);
+      // Thêm lại sau đua vẫn 409 cùng lý do.
+      const again = await actors.hire(actors.ada, { email, fullName: 'Same Email' });
+      expect(again.status).toBe(409);
     },
   );
   secCase(
