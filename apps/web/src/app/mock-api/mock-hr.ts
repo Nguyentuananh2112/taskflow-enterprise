@@ -102,6 +102,7 @@ export class MockHr {
 
 /** Nhãn trạng thái trong CSV (server sinh chữ — như API thật). */
 export const CSV_STATUS: Readonly<Record<DayStatus, string>> = {
+  RETENTION_EXPIRED: 'Quá thời hạn lưu',
   PRESENT: 'Có mặt',
   MISSING_OUT: 'Chưa chấm ra',
   ABSENT: 'Vắng',
@@ -125,7 +126,10 @@ export function totalsOf(
 ): AttendanceMemberMonthDto['totals'] {
   // Ngày công (không NOT_EMPLOYED / HOLIDAY / OFF); chỉ đếm `date ≤ today`, phép sau đó ⇒ upcomingLeaveDays.
   const workday = (d: AttendanceDayDto) =>
-    d.status !== 'NOT_EMPLOYED' && d.status !== 'HOLIDAY' && d.status !== 'OFF';
+    d.status !== 'RETENTION_EXPIRED' &&
+    d.status !== 'NOT_EMPLOYED' &&
+    d.status !== 'HOLIDAY' &&
+    d.status !== 'OFF';
   const counted = days.filter((d) => workday(d) && d.date <= today);
   const sum = (f: (d: AttendanceDayDto) => number) => counted.reduce((n, d) => n + f(d), 0);
   const leave = (d: AttendanceDayDto) => (d.leave === 'FULL' ? 1 : d.leave ? 0.5 : 0);

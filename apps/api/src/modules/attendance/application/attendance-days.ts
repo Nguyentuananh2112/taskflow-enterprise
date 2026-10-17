@@ -14,6 +14,7 @@ import {
 import type { ApprovedLeavePort } from './ports/approved-leave.port';
 import type { IAttendanceEventStore } from './ports/attendance-event-store.port';
 import type { IMembershipTenurePort } from './ports/membership-tenure.port';
+import type { IRetentionWindow } from './ports/retention-window.port';
 import type { IWorkCalendarStore } from './ports/work-calendar-store.port';
 
 export interface AttendanceDeps {
@@ -21,6 +22,7 @@ export interface AttendanceDeps {
   calendar: IWorkCalendarStore;
   leaves: ApprovedLeavePort;
   tenures: IMembershipTenurePort;
+  retention: IRetentionWindow;
   clock: IClock;
   ids: IIdGenerator;
   uow: IUnitOfWork;
@@ -54,6 +56,25 @@ export function localToday(
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
+/** Ô ngày ngoài thời hạn lưu (T-047): không giờ, không phép, không phút — chỉ lịch của ngày. */
+const expiredDay = (date: LocalDate, schedule: WorkSchedule): AttendanceDayDto => ({
+  date,
+  timezone: schedule.timezone,
+  isWorkday: isWorkday(schedule, date),
+  holidayName: null,
+  workedMin: 0,
+  lateMin: 0,
+  earlyMin: 0,
+  status: 'RETENTION_EXPIRED',
+  late: false,
+  early: false,
+  absentHalf: false,
+  inProgress: false,
+  firstIn: null,
+  lastOut: null,
+  leave: null,
+});
+
 const DAY_MS = 86_400_000;
 /**
  * Cửa sổ instant phủ mọi ngày địa phương `[from, to]` ở MỌI múi giờ (lệch ≤ ±14 h): 00:00Z(from) − 1 ngày tới
@@ -84,6 +105,8 @@ export async function summarizeUsers(
   const now = d.clock.now();
   const dates = Array.from({ length: daysBetween(from, to) + 1 }, (_, i) => addDays(from, i));
   const schedules = new Map(dates.map((date) => [date, effectiveSchedule(versions, date)]));
+  // T-047: job retention đang bật ⇒ ngày công < mốc đã / sẽ bị xóa — KHÔNG giả "Vắng" từ dữ liệu đã mất.
+  const cutoff = d.retention.recordsCutoffDate();
   const result = new Map<string, AttendanceDayDto[]>();
   for (const userId of userIds) {
     const leaveOf = new Map<LocalDate, LeavePart>(
@@ -95,6 +118,7 @@ export async function summarizeUsers(
       userId,
       dates.map((date) => {
         const schedule = schedules.get(date)!;
+        if (cutoff !== null && date < cutoff) return expiredDay(date, schedule);
         const holidayName = holidayOf.get(date) ?? null;
         const leave = leaveOf.get(date) ?? null;
         const s = summarizeDay({

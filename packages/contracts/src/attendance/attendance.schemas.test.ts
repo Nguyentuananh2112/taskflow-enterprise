@@ -176,8 +176,8 @@ describe('attendance contracts', () => {
     ).toBe(false);
   });
 
-  it('DayStatus có NOT_EMPLOYED (TL: ngoài nhiệm kỳ, không lượt)', () => {
-    expect(DayStatus.options[0]).toBe('NOT_EMPLOYED');
+  it('DayStatus: RETENTION_EXPIRED (T-047) rồi NOT_EMPLOYED đứng đầu thứ tự ưu tiên', () => {
+    expect(DayStatus.options.slice(0, 2)).toEqual(['RETENTION_EXPIRED', 'NOT_EMPLOYED']);
   });
 
   it('CreateWorkScheduleBody: AT-19 múi giờ lạ ⇒ từ chối; ca / giờ nghỉ / workdays / grace trong miền', () => {

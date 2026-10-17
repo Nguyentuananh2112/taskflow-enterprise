@@ -10,6 +10,7 @@ import type { LocalDate } from '../../domain/local-time';
 import type { WorkSchedule } from '../../domain/work-schedule';
 import { localToday, type AttendanceDeps } from '../attendance-days';
 import { UNKNOWN_USER } from '../attendance-event-dto';
+import { assertInsideRetention } from '../retention-guard';
 import type { IHrAccess, IHrAuditRecorder, IUserRefReader } from '../ports/collaborators.port';
 import type { ScheduleVersionRecord } from '../ports/work-calendar-store.port';
 
@@ -136,6 +137,7 @@ export class WorkCalendarUseCases {
     reason: string | undefined,
   ): Promise<{ note?: string }> {
     const { role } = await this.d.hrAccess.authorizeWrite({ workspaceId, actorId });
+    assertInsideRetention(this.d.retention, date);
     const versions = await this.d.calendar.scheduleVersions(workspaceId);
     if (date >= this.#today(versions)) return {};
     if (role !== 'OWNER') {

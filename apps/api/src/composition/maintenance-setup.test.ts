@@ -10,7 +10,7 @@ import {
   testEnvVars,
 } from '../../test/support';
 import { loadEnv } from '../config/env';
-import { maintenanceJobs } from './maintenance-setup';
+import { isRetentionActive, maintenanceJobs, retentionCutoffFor } from './maintenance-setup';
 import { recordsRetentionCutoff } from './retention-job';
 import type { Persistence } from './persistence';
 
@@ -122,5 +122,36 @@ describe('maintenanceJobs — đồng hồ của từng job (R31)', () => {
       cutoffDate: '2024-12-01',
       cutoffYear: 2024,
     });
+  });
+});
+
+describe('isRetentionActive / retentionCutoffFor (T-047 — mốc OUTSIDE_RETENTION của API)', () => {
+  const local = (extra: NodeJS.ProcessEnv = {}) =>
+    loadEnv(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'development', ...extra }));
+  const memoryLike: Pick<Persistence, 'retention'> = {};
+
+  it('CÙNG điều kiện với job: job tắt (cờ local mặc định / không có bước dọn) ⇒ không áp (null)', () => {
+    expect(isRetentionActive(local(), prismaLike)).toBe(false);
+    expect(isRetentionActive(local({ RETENTION_JOB_ENABLED: 'true' }), memoryLike)).toBe(false);
+    expect(isRetentionActive(local({ RETENTION_JOB_ENABLED: 'true' }), prismaLike)).toBe(true);
+    expect(names(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'development' }))).not.toContain(
+      'retention',
+    );
+    const off = retentionCutoffFor({
+      env: local(),
+      persistence: prismaLike,
+      businessClock: new FakeClock(),
+    });
+    expect(off()).toBeNull();
+  });
+
+  it('job bật ⇒ mốc = recordsRetentionCutoff(policy, GIỜ NGHIỆP VỤ) — trôi theo đồng hồ, đúng số ngày của policy', () => {
+    const business = new FakeClock('2026-11-17T03:00:00.000Z');
+    const env = local({ RETENTION_JOB_ENABLED: 'true', RETENTION_RECORDS_DAYS: '400' });
+    const cutoff = retentionCutoffFor({ env, persistence: prismaLike, businessClock: business });
+    expect(cutoff()).toBe('2025-10-13');
+    expect(cutoff()).toBe(recordsRetentionCutoff({ recordsDays: 400 }, business.now()).cutoffDate);
+    business.advance(24 * 3600_000);
+    expect(cutoff()).toBe('2025-10-14');
   });
 });

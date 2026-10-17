@@ -18,7 +18,10 @@ export function totalsOf(
   const today = through ?? '';
   // Ngày công (không NOT_EMPLOYED / HOLIDAY / OFF); chỉ đếm `date ≤ today`, phép sau đó ⇒ upcomingLeaveDays.
   const workday = (d: AttendanceDayDto) =>
-    d.status !== 'NOT_EMPLOYED' && d.status !== 'HOLIDAY' && d.status !== 'OFF';
+    d.status !== 'RETENTION_EXPIRED' &&
+    d.status !== 'NOT_EMPLOYED' &&
+    d.status !== 'HOLIDAY' &&
+    d.status !== 'OFF';
   const counted = days.filter((d) => workday(d) && d.date <= today);
   const sum = (f: (d: AttendanceDayDto) => number) => counted.reduce((n, d) => n + f(d), 0);
   const leave = (d: AttendanceDayDto) => (d.leave === 'FULL' ? 1 : d.leave ? 0.5 : 0);

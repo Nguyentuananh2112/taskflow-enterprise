@@ -11,6 +11,7 @@ import { effectiveSchedule } from '../../domain/work-schedule';
 import { toEventDtos } from '../attendance-event-dto';
 import type { AttendanceDeps } from '../attendance-days';
 import { monthTotalsOf } from '../attendance-totals';
+import { assertInsideRetention } from '../retention-guard';
 import type { AttendanceEventRecord } from '../ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
@@ -68,6 +69,7 @@ export class AttendanceEventsUseCases {
         targetUserId: body.userId,
         reason: body.reason,
       });
+      assertInsideRetention(d.retention, body.date);
       // Chỉ nhân viên HIỆN TẠI (VIEWER là khách, người đã rời không chấm thêm) ⇒ còn lại 404 user.
       if (!(await d.hrAccess.isEmployee({ workspaceId, userId: body.userId }))) {
         throw new ResourceNotFoundError('user');
@@ -134,6 +136,7 @@ export class AttendanceEventsUseCases {
         targetUserId: event.userId,
         reason: q.reason,
       });
+      assertInsideRetention(d.retention, event.workDate);
       const ok = await d.events.void({
         workspaceId,
         id: q.id,

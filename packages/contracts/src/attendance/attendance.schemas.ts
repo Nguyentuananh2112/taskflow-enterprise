@@ -8,11 +8,13 @@ import { AttendanceKind, AttendanceSource } from '../hr/hr.schemas';
 // Giờ trả về là ISO UTC; web hiển thị theo `timezone` của LỊCH hiệu lực (ADR-120), không theo máy.
 
 /**
- * Trạng thái ngày — thứ tự ưu tiên NOT_EMPLOYED > HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT >
+ * Trạng thái ngày — thứ tự ưu tiên RETENTION_EXPIRED > NOT_EMPLOYED > HOLIDAY > OFF > ON_LEAVE > PRESENT/MISSING_OUT > ABSENT >
  * PENDING. `NOT_EMPLOYED`: ngày trước khi gia nhập / sau khi rời mà không có lượt chấm — không phải ngày
  * công, 0 ở mọi tổng và CSV (TL chốt).
  */
 export const DayStatus = z.enum([
+  /** Ngày công cũ hơn thời hạn lưu (job retention ĐANG BẬT đã / sẽ xóa — T-047, R27): không có số liệu. */
+  'RETENTION_EXPIRED',
   'NOT_EMPLOYED',
   'HOLIDAY',
   'OFF',

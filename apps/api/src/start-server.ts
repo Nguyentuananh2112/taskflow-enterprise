@@ -11,7 +11,7 @@ import {
   createPrismaPersistence,
 } from './composition/persistence';
 import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
-import { maintenanceJobs } from './composition/maintenance-setup';
+import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
@@ -78,6 +78,7 @@ export async function startServer(
     logger,
     clock,
     businessClock,
+    retentionCutoff: retentionCutoffFor({ env, persistence, businessClock }), // T-047: null khi job tắt
     ids,
     random: new CryptoRandom(),
     hasher: await Argon2idPasswordHasher.forEnv(env.APP_ENV, logger),

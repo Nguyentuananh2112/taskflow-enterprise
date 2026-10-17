@@ -15,6 +15,7 @@ import type {
   IUserRefReader,
 } from './application/ports/collaborators.port';
 import type { IMembershipTenurePort } from './application/ports/membership-tenure.port';
+import type { IRetentionWindow } from './application/ports/retention-window.port';
 import type { IWorkCalendarStore } from './application/ports/work-calendar-store.port';
 import { AttendanceEventsUseCases } from './application/use-cases/attendance-events.use-cases';
 import { AttendanceExportUseCase } from './application/use-cases/attendance-export.use-case';
@@ -54,6 +55,8 @@ export interface AttendanceModuleDeps {
    */
   leaves: ApprovedLeavePort;
   tenures: IMembershipTenurePort;
+  /** T-047: mốc lưu của job retention (null khi job tắt). */
+  retention: IRetentionWindow;
   users: IUserRefReader;
   hrAccess: IHrAccess;
   audit: IHrAuditRecorder;
@@ -80,6 +83,7 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
     calendar: d.repos.calendar,
     leaves: d.leaves,
     tenures: d.tenures,
+    retention: d.retention,
     clock: d.clock,
     ids: d.ids,
     uow: d.uow,

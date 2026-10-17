@@ -67,11 +67,14 @@ export async function createAttendanceHarness(
       tenures.rows.push({ workspaceId: W1, userId, from: vnTime('2020-01-01 09:00'), until: null });
     }
   }
+  // Như composition: job retention tắt (local/test mặc định) ⇒ null. Test bật bằng `retention.cutoff = 'YYYY-MM-DD'`.
+  const retention = { cutoff: null as string | null, recordsCutoffDate: () => retention.cutoff };
   const deps: AttendanceDeps = {
     events,
     calendar,
     leaves,
     tenures,
+    retention,
     clock,
     ids: new SequentialIdGenerator(),
     uow: backend.uow,
@@ -145,6 +148,7 @@ export async function createAttendanceHarness(
     clock,
     leaves,
     tenures,
+    retention,
     checkInOut,
     queries: new MyAttendanceQueries(deps),
     eventUseCases,

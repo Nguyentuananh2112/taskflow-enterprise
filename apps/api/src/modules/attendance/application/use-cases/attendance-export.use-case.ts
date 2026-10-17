@@ -14,6 +14,7 @@ export interface AttendanceExportDeps extends AttendanceDeps {
 }
 
 const STATUS_LABEL: Record<DayStatus, string> = {
+  RETENTION_EXPIRED: 'Quá thời hạn lưu',
   NOT_EMPLOYED: 'Chưa/không còn làm',
   HOLIDAY: 'Nghỉ lễ',
   OFF: 'Ngày nghỉ',
