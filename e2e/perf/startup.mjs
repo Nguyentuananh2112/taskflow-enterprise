@@ -2,8 +2,13 @@
 // Gốc: perf-mount.mjs của E (perf-board-mount-result.md) + mốc pha (refresh → me → query) + byte JS.
 // CHẠY RIÊNG, KHÔNG vào CI (ms phụ thuộc máy). Là việc NẶNG: xin lượt máy của Tech Lead.
 //
-//   node e2e/perf/startup.mjs compare <dirA> <dirB> [--sig "chuỗi chỉ có ở B"] [--rounds 3] [--tasks 10]
+//   node e2e/perf/startup.mjs compare <dirA> <dirB> [--sig "chuỗi chỉ có ở B"] [--rounds 5] [--tasks 10]
 //   node e2e/perf/startup.mjs once <dir> [--tasks 10]
+//   node e2e/perf/startup.mjs bytes <dir>   — First Load JS theo route (TẤT ĐỊNH: không cần máy yên / xen kẽ)
+//
+// Số đo thời gian: thẻ đầu (ms từ điều hướng), long task, `script` = ScriptDuration CDP từ lúc điều hướng tới thẻ
+// cuối + 1,5 s chờ (cùng cửa sổ cho hai bản). Byte trong lượt đo thời gian: `jsDecodedKB` là số chính (chunk chung đã
+// vào HTTP cache từ trang /login nên `jsTransferKB` = 0 với chúng — chỉ để tham khảo); byte chuẩn ⇒ chế độ `bytes`.
 //
 // <dir> = GỐC một bản checkout đã `pnpm --filter @taskflow/web build` (apps/web/.next/standalone có sẵn). Mỗi bản ở
 // thư mục RIÊNG, build thẳng tại chỗ (standalone có liên kết tuyệt đối — không mv). Mỗi lượt: kiểm dấu hiệu bản build
@@ -12,6 +17,7 @@
 /* global window, document, MutationObserver -- callback của page.evaluate / addInitScript chạy TRONG trình duyệt */
 import { spawn, execFileSync } from 'node:child_process';
 import { cpSync, existsSync, readdirSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { join, resolve } from 'node:path';
 
 import { chromium } from '@playwright/test';
@@ -249,12 +255,16 @@ async function lap(label, root, sig, expectSig) {
       throw new Error(`BUILD_ID ${buildId} của ${root} không có trong HTML đang phục vụ — dừng`);
     }
     const m = await measureOnce(browser);
+    // Máy bận lên TRONG lượt (vd app khác bắt đầu render) ⇒ ghi lại và loại khỏi trung vị (E).
+    const cpuAfter = cpuLoad();
     const row = {
       at: new Date().toISOString(),
       label,
       buildId,
       sig: sigCount,
       cpu,
+      cpuAfter,
+      noisy: cpuAfter >= 25,
       tasks: TASKS,
       ...m,
     };
@@ -269,22 +279,97 @@ async function lap(label, root, sig, expectSig) {
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
+/** `<script src>` của HTML một route (First Load: chunk nạp ngay khi mở trang, không tính chunk `import()` về sau). */
+async function scriptsOf(path) {
+  const html = await (await fetch(`${BASE}${path}`)).text();
+  return [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) =>
+    m[1].replaceAll('&amp;', '&'),
+  );
+}
+
+/** Chế độ `bytes`: First Load JS (raw + gzip tự tính, tất định) theo route; cột "chung" = có ở MỌI route. */
+async function routeBytes(root) {
+  const buildId = readFileSync(join(webOf(root), '.next', 'BUILD_ID'), 'utf8').trim();
+  const server = await startServer(root);
+  try {
+    const reg = await api('POST', '/auth/register', null, {
+      email: `bytes-${Date.now().toString(36)}@e2e.example`,
+      password: 'do-byte-khoi-dong',
+      fullName: 'Bytes Check',
+    });
+    const ws = reg.defaultWorkspaceId;
+    const list = await api('GET', `/workspaces/${ws}/projects`, reg.accessToken);
+    const pid = (Array.isArray(list) ? list : list.items)[0].id;
+    const routes = {
+      '/login': '/login',
+      '/w/:ws/projects': `/w/${ws}/projects`,
+      board: `/w/${ws}/p/${pid}`,
+    };
+    const sizes = new Map();
+    const perRoute = {};
+    for (const [name, path] of Object.entries(routes)) {
+      perRoute[name] = await scriptsOf(path);
+      for (const src of perRoute[name]) {
+        if (sizes.has(src)) continue;
+        const buf = Buffer.from(await (await fetch(new URL(src, BASE))).arrayBuffer());
+        sizes.set(src, { raw: buf.length, gzip: gzipSync(buf, { level: 9 }).length });
+      }
+    }
+    const all = Object.values(perRoute);
+    const shared = new Set(all[0].filter((src) => all.every((list) => list.includes(src))));
+    const kb = (n) => Math.round(n / 102.4) / 10;
+    const sum = (list, k) => list.reduce((t, src) => t + sizes.get(src)[k], 0);
+    const table = Object.fromEntries(
+      Object.entries(perRoute).map(([name, list]) => [
+        name,
+        { files: list.length, rawKB: kb(sum(list, 'raw')), gzipKB: kb(sum(list, 'gzip')) },
+      ]),
+    );
+    const sharedList = [...shared];
+    const row = {
+      at: new Date().toISOString(),
+      mode: 'bytes',
+      root: resolve(root),
+      buildId,
+      routes: table,
+      shared: {
+        files: sharedList.length,
+        rawKB: kb(sum(sharedList, 'raw')),
+        gzipKB: kb(sum(sharedList, 'gzip')),
+      },
+    };
+    appendFileSync(OUT, `${JSON.stringify(row)}\n`);
+    console.log(JSON.stringify(row, null, 1));
+  } finally {
+    await stopServer(server);
+  }
+}
+
 const [mode, a, b] = args;
-if (mode === 'once') {
+if (mode === 'bytes') {
+  await routeBytes(a);
+} else if (mode === 'once') {
   await lap('once', a, null, null);
 } else if (mode === 'compare') {
   const sig = opt('sig', null);
-  const rounds = Number(opt('rounds', '3'));
+  // 5 vòng (10 lượt): S1/S5 kỳ vọng lợi vài % — 3 vòng chưa chắc tách khỏi nhiễu (E).
+  const rounds = Number(opt('rounds', '5'));
   const order = [];
   for (let i = 0; i < rounds; i += 1) order.push(...(i % 2 === 0 ? ['A', 'B'] : ['B', 'A']));
   const rows = { A: [], B: [] };
   for (const v of order) rows[v].push(await lap(v, v === 'A' ? a : b, sig, v === 'A' ? 0 : 1));
-  for (const k of ['firstCard', 'longMax', 'script', 'jsTransferKB']) {
+  const clean = (v) => rows[v].filter((x) => !x.noisy);
+  console.log(
+    `lượt bị loại vì CPU ≥ 25 % sau lượt: A ${rows.A.length - clean('A').length} / B ${rows.B.length - clean('B').length}`,
+  );
+  for (const k of ['firstCard', 'longMax', 'script', 'jsDecodedKB']) {
     console.log(
-      `${k}: A ${median(rows.A.map((x) => x[k]))} / B ${median(rows.B.map((x) => x[k]))} (trung vị)`,
+      `${k}: A ${median(clean('A').map((x) => x[k]))} / B ${median(clean('B').map((x) => x[k]))} (trung vị, lượt sạch)`,
     );
   }
 } else {
-  console.error('dùng: compare <dirA> <dirB> [--sig s] [--rounds n] [--tasks n] | once <dir>');
+  console.error(
+    'dùng: compare <dirA> <dirB> [--sig s] [--rounds n] [--tasks n] | once <dir> | bytes <dir>',
+  );
   process.exit(2);
 }

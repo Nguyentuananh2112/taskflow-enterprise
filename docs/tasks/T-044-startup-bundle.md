@@ -17,7 +17,7 @@ thêm `HeaderAttendance`, `HeaderHr`, `NotificationBell` (Popover), `AttendanceC
 | First Load JS `/login` / board (gzip) | đo ở bước 0 | chốt sau bước 0 (≈ 10–20 % dưới nền) |
 
 ## Việc cần làm (mỗi bước một commit; đo xen kẽ sau mỗi bước; chỉ leo khi chưa đạt)
-0. **Đo nền** (việc nặng — xin lượt TL): First Load JS theo route + phân tích chunk; thác pha (responseStart → hydrate →
+0. **Đo nền** — byte First Load theo route bằng `startup.mjs bytes <dir>` (tất định, chỉ cần bản build); thời gian (việc nặng — xin lượt TL, `--rounds 5`, lượt CPU ≥ 25 % sau lượt bị loại): First Load JS theo route + phân tích chunk; thác pha (responseStart → hydrate →
    `/auth/refresh` → `/auth/me` → query đầu của route → thẻ đầu); coverage JS không chạy; long task theo chunk.
    Script đo đưa vào repo (`e2e/perf/startup.mjs`, chạy riêng, KHÔNG vào CI) — gốc là `perf-mount.mjs` của E, thêm mốc pha.
 1. **S1** — `socket.io-client` nạp động (`import()`) chỉ khi phiên `authenticated`; giữ client offline cho mock API.
@@ -37,5 +37,5 @@ thêm `HeaderAttendance`, `HeaderHr`, `NotificationBell` (Popover), `AttendanceC
 - Không đổi hành vi: realtime vẫn nối sau đăng nhập (kiểm `notification:new` ngay sau đăng nhập), nhiều tab / hết hạn phiên.
 
 ## Done
-Thẻ đầu board 10 task ≤ 500 ms @4× (trung vị, xen kẽ với main), verify exit 0, E2E liên quan xanh (F), báo cáo
+Thẻ đầu board 10 task ≤ 500 ms @4× (trung vị, xen kẽ với main), verify exit 0 (gồm `pnpm -r lint:deps`), E2E liên quan xanh (F), báo cáo
 `docs/reviews/T-044-report.md` có bảng đo từng bước. `DONE T-044`.
