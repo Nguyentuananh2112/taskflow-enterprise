@@ -216,3 +216,34 @@ describe('nhận lại + tạo lại link (ADR-137)', () => {
     expect((await as(admin).post(`/${quinn}/activation-link`)).status).toBe(200);
   });
 });
+
+describe('ADR-135 thứ tự lỗi trên /hr (A SEC-HR-35): 401 SESSION_REVOKED → 403 → 400', () => {
+  it('nhân viên không hr:manage gửi body / query sai ⇒ 403 (không lộ luật validate); người đã rời ⇒ 401 SESSION_REVOKED', async () => {
+    const mia = await t.register('Mia', undefined, { workspace: false });
+    const ghost = '00000000-0000-7000-8000-0000000fffff';
+    const calls = (by: TestUser) =>
+      Promise.all(
+        (
+          [
+            ['POST /employees', as(by).post('', { nonsense: true })],
+            ['GET /employees', as(by).get('?status=bogus&limit=999')],
+            [
+              'PUT offboarding',
+              as(by).put(`/${ghost}/offboarding`, { lastDay: 'không phải ngày' }),
+            ],
+            ['POST activation-link', as(by).post(`/not-a-uuid/activation-link`)],
+            ['DELETE offboarding', as(by).del(`/not-a-uuid/offboarding`)],
+          ] as const
+        ).map(async ([label, call]) => [label, await call] as const),
+      );
+    for (const [label, res] of await calls(mia)) {
+      expect([res.status, errorOf(res).code], label).toEqual([403, 'FORBIDDEN_ACCESS']);
+    }
+    t.companyStore.removeMember(mia.id);
+    for (const [label, res] of await calls(mia)) {
+      expect([res.status, errorOf(res).code], label).toEqual([401, 'SESSION_REVOKED']);
+    }
+    // Có quyền ⇒ tới validate như thường.
+    expect((await as(hana).post('', { nonsense: true })).status).toBe(400);
+  });
+});

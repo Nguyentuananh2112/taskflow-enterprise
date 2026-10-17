@@ -173,6 +173,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
           }),
           authenticate,
           limit: d.limit,
+          permissionsOf,
         }),
       },
       ...companyProfileRouters(

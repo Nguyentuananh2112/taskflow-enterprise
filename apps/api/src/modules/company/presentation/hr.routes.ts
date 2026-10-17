@@ -13,7 +13,9 @@ import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-li
 import { requireUser } from '../../../core/http/request-user';
 import { validate } from '../../../core/http/validate';
 import type { HireEmployeeUseCase } from '../application/use-cases/hire-employee.use-case';
+import type { CompanyPermission } from '../domain/roles';
 import type { Employment } from '../employment.wiring';
+import { permitCompany } from './admin.routes';
 
 /** Mount dưới `/api/v1` (container). */
 export const HR_PATH = '/hr';
@@ -107,10 +109,17 @@ export function hrRoutes(d: {
   controller: HrController;
   authenticate: RequestHandler;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
+  permissionsOf: (userId: string) => Promise<ReadonlySet<CompanyPermission> | null>;
 }): Router {
   const router = Router();
   const c = d.controller;
-  const authed = [d.authenticate, ...d.limit(RATE_LIMIT_RULES.authenticated)];
+  // ADR-135 (A SEC-HR-35): 401 → 401 SESSION_REVOKED → 403 `hr:manage` TRƯỚC validate (body / query sai của người
+  // không có quyền ⇒ 403, không lộ luật validate). Use case vẫn kiểm lại dưới khóa FOR SHARE.
+  const authed = [
+    d.authenticate,
+    ...d.limit(RATE_LIMIT_RULES.authenticated),
+    permitCompany(d.permissionsOf, 'hr:manage'),
+  ];
   const one = validate({ params: EmployeeParams });
   router.use(noStore);
   router.get('/employees', ...authed, validate({ query: ListEmployeesQuery }), c.list);
