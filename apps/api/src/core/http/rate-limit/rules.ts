@@ -158,6 +158,16 @@ export const RATE_LIMIT_RULES = {
       failMode: 'open',
     }),
   ],
+  /** Gửi đơn bổ sung giờ (hr-extended ADR-129, SEC-HR-51): 20/giờ/user. */
+  correctionSubmit: [
+    rule({
+      id: 'attendance-correction-user',
+      windowMs: HOUR,
+      limit: 20,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
   /** Mặc định cho API đã xác thực / chưa xác thực (gắn toàn cục). */
   authenticated: [
     rule({ id: 'api-user', windowMs: MINUTE, limit: 300, key: 'user', failMode: 'open' }),

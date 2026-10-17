@@ -114,6 +114,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       hrAudit,
       attendance.events,
       attendance.calendar,
+      attendance.corrections,
       leaveStore,
       profiles,
     ],

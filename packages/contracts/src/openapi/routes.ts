@@ -23,6 +23,15 @@ import {
   VoidAttendanceBody,
   WorkScheduleDto,
 } from '../attendance/attendance.schemas';
+import {
+  CancelCorrectionBody,
+  CorrectionApprovedDto,
+  CorrectionDto,
+  CorrectionParams,
+  DecideCorrectionBody,
+  ListCorrectionsQuery,
+  SubmitCorrectionBody,
+} from '../attendance/correction.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
   HrAuditLogDto,
@@ -148,13 +157,14 @@ export interface ApiRoute {
   headers?: z.ZodObject;
   /**
    * 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`; `csv` ⇒ thân `text/csv` (không
-   * envelope); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
+   * envelope); `xlsx` ⇒ thân .xlsx (không envelope — ADR-130); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
    */
   response: {
     status: 200 | 201 | 204;
     data?: z.ZodType;
     paged?: boolean;
     csv?: boolean;
+    xlsx?: boolean;
     alsoOk?: boolean;
   };
   /** Mã lỗi đặc thù của route (ngoài lỗi chung 400/401/403/404/429). */
@@ -711,6 +721,62 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     query: AttendanceMonthQuery,
     response: { status: 200, csv: true },
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections`,
+    summary:
+      'Gửi đơn bổ sung giờ (attendance:self, ADR-129) — lặp cùng Idempotency-Key ⇒ 200 đơn cũ; 422 luật gửi; 409 correction_pending_exists; 20/giờ',
+    tag: 'hr',
+    security: 'bearer',
+    headers: IdempotencyKeyHeaders,
+    body: SubmitCorrectionBody,
+    response: { status: 201, data: CorrectionDto, alsoOk: true },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT', 'RATE_LIMITED'],
+  },
+  {
+    method: 'get',
+    path: `/attendance/corrections`,
+    summary:
+      'Đơn bổ sung giờ — mine=1: của mình (attendance:self); không mine: cả công ty (hr:manage), mới nhất trước',
+    tag: 'hr',
+    security: 'bearer',
+    query: ListCorrectionsQuery,
+    response: { status: 200, data: z.array(CorrectionDto), paged: true },
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections/{requestId}/cancel`,
+    summary: 'Người gửi hủy đơn PENDING (đơn người khác ⇒ 404)',
+    tag: 'hr',
+    security: 'bearer',
+    params: CorrectionParams,
+    body: CancelCorrectionBody,
+    response: { status: 200, data: CorrectionDto },
+    errors: ['RESOURCE_CONFLICT', 'VERSION_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections/{requestId}/approve`,
+    summary:
+      'Duyệt đơn bổ sung giờ (hr:manage, khác người gửi) ⇒ một lượt ADJUSTMENT; 422 luật gửi / REQUESTER_NOT_EMPLOYEE',
+    tag: 'hr',
+    security: 'bearer',
+    params: CorrectionParams,
+    body: DecideCorrectionBody,
+    response: { status: 200, data: CorrectionApprovedDto },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT', 'VERSION_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections/{requestId}/reject`,
+    summary: 'Từ chối đơn bổ sung giờ (hr:manage, khác người gửi; ghi chú tùy chọn)',
+    tag: 'hr',
+    security: 'bearer',
+    params: CorrectionParams,
+    body: DecideCorrectionBody,
+    response: { status: 200, data: CorrectionDto },
+    errors: ['RESOURCE_CONFLICT', 'VERSION_CONFLICT'],
   },
   {
     method: 'get',

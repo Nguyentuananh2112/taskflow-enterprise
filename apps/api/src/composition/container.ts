@@ -91,11 +91,11 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
     accounts: accountsRef,
     collaborators: () =>
-      employmentCollaborators({ workspace, leave, notifications, realtime, hrProfile }),
+      employmentCollaborators({ workspace, leave, attendance, notifications, realtime, hrProfile }),
     ...companyAdminDeps(
       () => notifications,
       realtime,
-      () => leave.employment,
+      () => ({ employment: leave.employment, attendance }),
       () => workspace.adminWorkspaces,
     ),
   });
