@@ -1,0 +1,120 @@
+import type { AttendanceDayDto } from '@taskflow/contracts/attendance';
+
+import { LEAVE_PART_LABEL } from './labels';
+
+// "Bảng công của tôi" dạng lịch (T-046): câu chữ đời thường, giờ "8:02", lưới T2→CN, gộp ngày ngoài nhiệm kỳ.
+
+/** "8:02" (không số 0 đầu) theo múi giờ của lịch. */
+export function clockShort(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(iso));
+}
+
+const weekdayMon0 = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
+
+/** Lưới tuần T2→CN của tháng: mỗi tuần 7 ô, `null` = ô đệm ngoài tháng. `days` đã đủ mọi ngày, theo thứ tự. */
+export function calendarWeeks<T extends { date: string }>(days: readonly T[]): (T | null)[][] {
+  if (days.length === 0) return [];
+  const cells: (T | null)[] = [
+    ...Array.from({ length: weekdayMon0(days[0]?.date ?? '') }, () => null),
+    ...days,
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
+}
+
+export type Tone = 'work' | 'late' | 'absent' | 'leave' | 'off' | 'holiday' | 'muted' | 'none';
+
+export type DayText = Readonly<{
+  /** Chữ chính trong ô ("Đi làm", "Đi muộn 37 phút", "Vắng", …); rỗng = ngày tương lai / ngoài nhiệm kỳ. */
+  label: string;
+  /** Dòng phụ ("8:02–17:35", tên lễ, "nửa ngày"). */
+  detail: string | null;
+  icon: string;
+  tone: Tone;
+}>;
+
+const EMPTY: DayText = { label: '', detail: null, icon: '', tone: 'none' };
+
+const minutesText = (n: number) => `${n} phút`;
+
+/**
+ * Câu chữ của một ngày cho người không rành IT. `today` = ngày của SERVER: ngày sau hôm nay ⇒ trống (không ghi "Chưa tới
+ * giờ"). NOT_EMPLOYED ⇒ trống ở đây — được gộp thành "Bạn bắt đầu làm từ dd/MM" (`employmentNote`).
+ */
+export function dayText(d: AttendanceDayDto, today: string): DayText {
+  if (d.date > today || d.status === 'NOT_EMPLOYED') return EMPTY;
+  const span =
+    d.firstIn &&
+    `${clockShort(d.firstIn, d.timezone)}–${d.lastOut ? clockShort(d.lastOut, d.timezone) : '…'}`;
+  switch (d.status) {
+    case 'PRESENT':
+    case 'MISSING_OUT': {
+      const forgot = d.status === 'MISSING_OUT' ? 'Quên chấm ra' : null;
+      if (d.lateMin > 0)
+        return {
+          label: `Đi muộn ${minutesText(d.lateMin)}`,
+          detail: forgot ?? span,
+          icon: '!',
+          tone: 'late',
+        };
+      if (d.earlyMin > 0)
+        return {
+          label: `Về sớm ${minutesText(d.earlyMin)}`,
+          detail: forgot ?? span,
+          icon: '!',
+          tone: 'late',
+        };
+      return { label: 'Đi làm', detail: forgot ?? span, icon: '✓', tone: forgot ? 'late' : 'work' };
+    }
+    case 'ABSENT':
+      return { label: 'Vắng', detail: null, icon: '✕', tone: 'absent' };
+    case 'ON_LEAVE':
+      return {
+        label: 'Nghỉ phép',
+        detail: d.leave && d.leave !== 'FULL' ? LEAVE_PART_LABEL[d.leave] : 'cả ngày',
+        icon: '☾',
+        tone: 'leave',
+      };
+    case 'HOLIDAY':
+      return { label: 'Ngày lễ', detail: d.holidayName, icon: '★', tone: 'holiday' };
+    case 'OFF':
+      return {
+        label: weekdayMon0(d.date) === 6 ? 'Chủ nhật' : 'Ngày nghỉ',
+        detail: null,
+        icon: '–',
+        tone: 'off',
+      };
+    case 'PENDING':
+      // Chỉ còn HÔM NAY (ngày tương lai đã trả EMPTY ở trên): chưa chấm vào.
+      return { label: 'Chưa chấm', detail: null, icon: '○', tone: 'muted' };
+  }
+}
+
+const ddMm = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+
+/**
+ * Ngày ngoài nhiệm kỳ liền ở ĐẦU tháng ⇒ "Bạn bắt đầu làm từ dd/MM"; liền ở CUỐI ⇒ "Bạn đã nghỉ làm từ dd/MM". `null`
+ * khi cả tháng trong nhiệm kỳ (hoặc cả tháng ngoài nhiệm kỳ — không có ngày làm nào để nói).
+ */
+export function employmentNote(days: readonly AttendanceDayDto[]): {
+  started: string | null;
+  left: string | null;
+} {
+  const employed = days.filter((d) => d.status !== 'NOT_EMPLOYED');
+  const first = employed[0];
+  const last = employed.at(-1);
+  if (!first || !last) return { started: null, left: null };
+  const lastDay = days.at(-1);
+  return {
+    started: days[0]?.status === 'NOT_EMPLOYED' ? `Bạn bắt đầu làm từ ${ddMm(first.date)}` : null,
+    left:
+      lastDay?.status === 'NOT_EMPLOYED'
+        ? `Bạn đã nghỉ làm từ ${ddMm(days[days.indexOf(last) + 1]?.date ?? lastDay.date)}`
+        : null,
+  };
+}
