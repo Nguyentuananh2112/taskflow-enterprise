@@ -19,8 +19,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`E2E-12 axe (${colorScheme})`, () => {
     test.use({ colorScheme });
 
-    test('login, register', async ({ page }) => {
-      for (const path of ['/login', '/register']) {
+    // Mốc 3.5: /register bỏ ⇒ trang công khai thứ hai là /activate (không token ⇒ câu hướng dẫn).
+    test('login, activate', async ({ page }) => {
+      for (const path of ['/login', '/activate']) {
         await page.goto(path);
         await page.waitForLoadState('networkidle');
         expect(await seriousViolations(page), path).toEqual([]);

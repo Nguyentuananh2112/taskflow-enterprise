@@ -6,6 +6,7 @@ import { apiLogin } from '../support/api';
 import { adaToken, adaUser, apiCreateUser, apiNewWorkspace } from '../support/company';
 import { API_URL } from '../support/env';
 import { awaiting, expect, loginViaUi, newUser, test } from '../support/fixtures';
+import { addMemberViaUi } from '../support/members';
 import { seedHrWorld, vnDate } from '../support/hr';
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
@@ -251,14 +252,10 @@ test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox;
   // Mia thêm Max bằng combobox (chỉ người thuộc công ty — ADR-134).
   await loginViaUi(page, w.mia.user);
   await page.goto(`/w/${w3.id}/settings/members`);
-  const search = page.getByRole('combobox', { name: 'Tìm nhân viên' });
-  await search.fill(max.fullName.slice(0, 8));
-  await page.getByRole('option', { name: new RegExp(`^${escapeRe(max.fullName)} · `) }).click();
-  await page.getByLabel('Vai trò').selectOption('MEMBER');
   const added = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url() === `${API_URL}/workspaces/${w3.id}/members`,
   );
-  await page.getByRole('button', { name: 'Thêm', exact: true }).click();
+  await addMemberViaUi(page, max, 'Thành viên');
   expect((await added).status()).toBe(201);
 
   // Hana cho Mia nghỉ, ngày làm cuối = hôm qua ⇒ hoàn tất ngay trong request (biên 06:00 ở CLK-HR-05).

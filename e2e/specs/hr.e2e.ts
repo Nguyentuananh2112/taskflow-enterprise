@@ -352,6 +352,9 @@ test(`E2E-HR-03 / E2E-HR-18 [${T065B}]: Ada cấp "Quản lý nhân sự" cho Mi
   await save();
 
   await expect(manage.getByRole('link', { name: /^Nhân sự/ })).toBeVisible(REALTIME);
+  await expect(
+    mia.page.getByText('Quyền của bạn trong công ty vừa thay đổi').first(),
+  ).toBeVisible();
   await manage.getByRole('link', { name: /^Nhân sự/ }).click();
   await expect(mia.page.getByRole('heading', { level: 1, name: 'Nhân sự' })).toBeVisible();
   await expect(mia.page.getByRole('tablist', { name: 'Quản lý nhân sự' })).toBeVisible();
