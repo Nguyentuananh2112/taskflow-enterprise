@@ -148,7 +148,11 @@ export const RATE_LIMIT_RULES = {
       failMode: 'open',
     }),
   ],
-  /** Xuất CSV bảng công (SEC-HR-13): truy vấn nặng cả công ty — 20/giờ/user. */
+  /**
+   * Xuất CSV bảng công (SEC-HR-13): truy vấn nặng cả công ty — 20/giờ/user. Mốc 5 (ADR-130): MỌI báo cáo .xlsx
+   * (`attendance/export.xlsx`, `leave/export.xlsx`, `payroll/…/export.xlsx`) dùng CHÍNH quy tắc này (cùng `id` ⇒ cùng
+   * bucket với CSV) qua `EXPORT_RATE_LIMIT`.
+   */
   attendanceExport: [
     rule({
       id: 'attendance-export-user',
@@ -191,6 +195,9 @@ export const RATE_LIMIT_RULES = {
     rule({ id: 'socket-handshake-ip', windowMs: MINUTE, limit: 20, key: 'ip', failMode: 'open' }),
   ],
 } as const satisfies Record<string, readonly RateLimitRule[]>;
+
+/** Mọi route .xlsx (ADR-130): CÙNG quy tắc / bucket với xuất CSV — không phải hạn mức riêng (20/giờ/user chung). */
+export const EXPORT_RATE_LIMIT: readonly RateLimitRule[] = RATE_LIMIT_RULES.attendanceExport;
 
 /** `project:join`: 30 lần/phút/socket — đếm trong bộ nhớ của socket (trạng thái gắn với kết nối). */
 export const PROJECT_JOIN_LIMIT = { windowMs: MINUTE, limit: 30 } as const;

@@ -192,11 +192,11 @@ describe('CORS (P2, middleware.ts:77,79)', () => {
     expect(res.headers['access-control-max-age']).toBe('600');
   });
 
-  it('request thường: Expose-Headers gồm X-Request-Id, Retry-After, RateLimit-Policy, RateLimit (FE đọc Retry-After)', async () => {
+  it('request thường: Expose-Headers gồm X-Request-Id, Retry-After, RateLimit-Policy, RateLimit, Content-Disposition (FE đọc Retry-After, tên file xlsx)', async () => {
     const a = app((x) => x.get('/r', echo));
     const res = await request(a).get('/r').set('Origin', WEB);
     expect(res.headers['access-control-expose-headers']).toBe(
-      'X-Request-Id,Retry-After,RateLimit-Policy,RateLimit',
+      'X-Request-Id,Retry-After,RateLimit-Policy,RateLimit,Content-Disposition',
     );
   });
 });
