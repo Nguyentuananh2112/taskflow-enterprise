@@ -18,6 +18,8 @@ import {
 } from './leave-adapters';
 import { leaveNotifierFrom } from './notification-adapters';
 import type { Persistence } from './persistence';
+import { FflateXlsxWriter } from '../core/export/xlsx/xlsx-writer';
+import type { ILogger } from '../core/logging/logger';
 
 export type LeaveModule = ReturnType<typeof createLeaveModule>;
 
@@ -32,6 +34,7 @@ export function wireLeave(
     persistence: Pick<Persistence, 'leave' | 'task' | 'uow'>;
     clock: IClock;
     ids: IIdGenerator;
+    logger: ILogger;
   },
   m: {
     company: () => CompanyPortsForLeave;
@@ -51,6 +54,8 @@ export function wireLeave(
     company: leaveCompanyFrom(m.company),
     // Ngày vào công ty: hồ sơ của T-054 (B) — chưa nối ⇒ null cho mọi người (phép = annual, cờ thiếu ngày vào).
     hireDates: m.hireDates ?? NO_HIRE_DATES,
+    spreadsheet: new FflateXlsxWriter(),
+    logger: d.logger,
     audit: leaveAudit(m.hrAudit),
     uow: d.persistence.uow,
     clock: d.clock,

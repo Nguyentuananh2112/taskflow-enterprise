@@ -203,12 +203,13 @@ export class LeaveKit {
    * Chụp phép chuyển sang năm `year` (ADR-131) khi năm đó ĐÃ bắt đầu và dòng còn NULL — trong khóa, idempotent
    * (`ifNull`). Gọi ở submit / approve / PATCH số dư / PUT policy.
    */
-  async snapshotCarried(userId: string, year: number, today: CalendarDate): Promise<void> {
-    if (today < `${String(year)}-01-01`) return;
+  async snapshotCarried(userId: string, year: number, today: CalendarDate): Promise<boolean> {
+    if (today < `${String(year)}-01-01`) return false;
     const stored = await this.d.requests.getOrCreateBalance(userId, year);
-    if (stored.carried !== null) return;
+    if (stored.carried !== null) return false;
     const carried = await this.calculator().carriedInto(userId, year);
     await this.d.requests.setCarried(userId, year, carried, 'ifNull');
+    return true;
   }
 
   /**

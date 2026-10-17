@@ -163,7 +163,7 @@ export function createContainer(d: ContainerDeps): Container {
   accountsRef.current = auth.accounts;
   // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
   const leave = wireLeave(
-    { persistence, clock: business, ids },
+    { persistence, clock: business, ids, logger },
     {
       company: () => ({ ...company, clock: business }),
       hrAudit: () => company.hrAudit,

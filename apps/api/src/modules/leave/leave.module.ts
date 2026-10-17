@@ -13,6 +13,15 @@ import type { ILeavePolicyStore, ILeaveRepository } from './application/ports/le
 import { EmploymentLeaveHooks } from './application/use-cases/employment-hooks.use-cases';
 import { LeaveController } from './presentation/leave.controller';
 import { leaveRoutes, type LeaveRouteDeps } from './presentation/leave.routes';
+import {
+  GetLeavePolicyQuery,
+  PutLeavePolicyUseCase,
+} from './application/use-cases/leave-policy.use-cases';
+import { LeavePolicyController } from './presentation/leave-policy.controller';
+import { LeaveExportUseCase } from './application/use-cases/leave-export.use-case';
+import { LeaveCarryoverJob } from './application/use-cases/leave-carryover.job';
+import type { ISpreadsheetWriter } from '../../core/export/xlsx/xlsx-writer';
+import type { ILogger } from '../../core/logging/logger';
 
 /** Lưu trữ của leave (composition root chọn bộ nhớ / Prisma). */
 export interface LeaveRepositories {
@@ -25,6 +34,9 @@ export interface LeaveRepositories {
 
 export interface LeaveModuleDeps extends LeaveCommandDeps {
   readModel: ILeaveReadModel;
+  /** Bộ ghi .xlsx (core, ADR-130) — báo cáo phép. */
+  spreadsheet: ISpreadsheetWriter;
+  logger: ILogger;
   employees: ILeaveEmployeeDirectory;
   responder: HttpResponder;
   http: Pick<LeaveRouteDeps, 'authenticate' | 'limit'>;
@@ -44,17 +56,28 @@ export function createLeaveModule(d: LeaveModuleDeps): {
   summaries: Pick<ILeaveReadModel, 'leaveSummaries'>;
   /** Port vòng đời nhân viên cho company (T-062): dọn đơn khi nghỉ việc / nâng Admin, reset khi nhận lại. */
   employment: EmploymentLeaveHooks;
+  /** Job `leave-carryover` (T-057) — composition đăng ký vào MaintenanceScheduler. */
+  carryover: LeaveCarryoverJob;
 } {
   const commands = new LeaveCommands(d);
   const queries = new LeaveQueries(d);
   const controller = new LeaveController({ commands, queries, responder: d.responder });
-  const router = leaveRoutes({ controller, company: d.company, ...d.http });
+  const kit = new LeaveKit(d);
+  const policy = new LeavePolicyController({
+    get: new GetLeavePolicyQuery(kit),
+    put: new PutLeavePolicyUseCase(kit, d.readModel, d.employees),
+    exporter: new LeaveExportUseCase(kit, d.readModel, d.employees),
+    spreadsheet: d.spreadsheet,
+    responder: d.responder,
+  });
+  const router = leaveRoutes({ controller, policy, company: d.company, ...d.http });
   return {
     router,
     commands,
     queries,
     approvedLeaves: queries,
     summaries: d.readModel,
-    employment: new EmploymentLeaveHooks(new LeaveKit(d)),
+    employment: new EmploymentLeaveHooks(kit),
+    carryover: new LeaveCarryoverJob(kit, d.employees, d.logger),
   };
 }

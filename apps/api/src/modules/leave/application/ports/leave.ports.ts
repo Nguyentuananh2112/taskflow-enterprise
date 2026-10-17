@@ -191,14 +191,22 @@ export interface ILeaveNotifier {
 }
 
 export type HrAuditAction =
-  'LEAVE_SUBMIT' | 'LEAVE_CANCEL' | 'LEAVE_DECIDE' | 'LEAVE_REVOKE' | 'BALANCE_ADJUST';
+  | 'LEAVE_SUBMIT'
+  | 'LEAVE_CANCEL'
+  | 'LEAVE_DECIDE'
+  | 'LEAVE_REVOKE'
+  | 'BALANCE_ADJUST'
+  // T-057: HR đặt chính sách phép một năm (không có người bị tác động ⇒ targetUserId null).
+  | 'POLICY_SET'
+  // T-057: báo cáo phép .xlsx (ADR-130).
+  | 'EXPORT';
 
 /** `HrAuditLog` chỉ thêm. `before`/`after` KHÔNG chứa `reason` của đơn (B-H2). */
 export interface IHrAudit {
   record(input: {
     actorId: string;
     action: HrAuditAction;
-    targetUserId: string;
+    targetUserId: string | null;
     refId: string | null;
     before: Readonly<Record<string, unknown>> | null;
     after: Readonly<Record<string, unknown>> | null;
