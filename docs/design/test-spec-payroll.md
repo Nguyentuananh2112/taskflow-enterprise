@@ -64,7 +64,7 @@ Mỗi ca ghi tiền dùng một **số đánh dấu** duy nhất (vd `7 031 117`
 
 | Env | Ai | Vì sao |
 |---|---|---|
-| `PAYROLL_REMINDER_ON_START=1` (một lượt khi khởi động), `PAYROLL_REMINDER_INTERVAL_MS` (mặc định 1 giờ) — **A nhận 18/10**; job maintenance interval, theo `businessClock`, chống lặp `(period, ngày VN)` | A (T-049) | CLK-PAY-02…04 |
+| `PAYROLL_REMINDER_ON_START=true` (lượt đầu ngay lúc khởi động; mặc định sau 60 s), `PAYROLL_REMINDER_INTERVAL_MS` (1 000…86 400 000, đặt ⇒ không jitter; mặc định 1 giờ + jitter 60 s) — **có ở A 68d32c39** (`feat/T-049-payroll-domain`), chỉ `APP_ENV=test` | A (T-049) | CLK-PAY-02…04 |
 | Hạ mốc retention chấm công (vd `RETENTION_ATTENDANCE_DAYS` nhỏ) — hoặc xác nhận chỉ kiểm ở tầng I | A / B | RD-06: kỳ quá retention ⇒ cấm Tính lại công; điều chỉnh copy `paidHalfDays` |
 
 ## 2. PD — `payrollDaysOf` (tầng U, Stryker `attendance-domain` ≥ 90 %; vế S ở PD-20)
@@ -199,7 +199,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | Mã | Mốc | Ca | Mong đợi |
 |---|---|---|---|
 | CLK-PAY-01 | `'*-L'` 23:59:30 | tạo nháp kỳ tháng hiện tại ⇒ 422; sau 00:00 cùng lệnh ⇒ 201 | đúng |
-| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | bảng kỳ trước còn NHÁP ⇒ nhắc `PAYROLL_REMINDER` tới Kay, Kim, Ada (không Hana, không Mia); chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
+| CLK-PAY-02 | `'*-05'` 00:00:30 (`PAYROLL_REMINDER_ON_START=1`) | bảng kỳ trước còn NHÁP ⇒ nhắc `PAYROLL_REMINDER` (actor null, `refId` = UUID cố định theo ngày `0000YYYY-MMDD-7000-8000-000000000001`) tới Kay, Kim, Ada (mọi người đang có `payroll:manage`; không Hana, không Mia); thu `PAYROLL_MANAGE` của Kim ⇒ hôm sau Kim không nhận; chạy job lần 2 cùng ngày ⇒ không nhắc lại | đúng |
 | CLK-PAY-03 | `'*-04'` 23:59:30 | trước 00:00 không nhắc; sau ⇒ nhắc | đúng |
 | CLK-PAY-04 | restart mốc `'*-11'` 10:00 | quá ngày 10 vẫn nhắc mỗi ngày; phát hành ⇒ hết nhắc | đúng |
 
