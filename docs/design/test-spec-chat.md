@@ -203,7 +203,7 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 
 | ID | Người viết | File | Ghi chú thêm |
 |---|---|---|---|
-| E2E-CH-01 | H | `avatar.e2e.ts` | Selector H (17/10): `region "Ảnh đại diện"`, `getByLabel('Chọn ảnh')`, `dialog "Cắt ảnh đại diện"`, `slider "Thu phóng"`, phím mũi tên trên `img "Vùng cắt ảnh"`, `button "Lưu ảnh đại diện"`. Sau lưu: avatar `img` alt = họ tên ở header, thẻ task (board), trang thành viên. Gỡ ⇒ quay về chữ cái |
+| E2E-CH-01 | H | `avatar.e2e.ts` | Selector H (17/10): `region "Ảnh đại diện"`, `getByLabel('Chọn ảnh')`, `dialog "Cắt ảnh đại diện"`, `slider "Thu phóng"`, phím mũi tên trên `img "Vùng cắt ảnh"`, `button "Lưu ảnh đại diện"`. Chờ xong theo điều kiện: dialog đóng + toast status "Đã cập nhật ảnh đại diện" (gỡ ⇒ "Đã gỡ ảnh đại diện"). Sau lưu: avatar `img` alt = họ tên ở header, thẻ task (board), trang thành viên. Gỡ ⇒ quay về chữ cái |
 | E2E-CH-02 | F | `chat.e2e.ts` | Vic mở 2 tab; Mia gửi ⇒ cả 2 tab hiện + badge; tab 1 đọc ⇒ badge 0 ở cả 2. Kéo dài > 10 s (đi qua `auth:renew` của socket) |
 | E2E-CH-03 | F | `chat.e2e.ts` | Tạo nhóm qua `chat/people` (`q` riêng); kéo-thả ảnh; dán ảnh `@chromium-only`; `dialog "Xem ảnh"`; PDF ⇒ `button "Tải xuống <tên>"` ⇒ SHA-256 trùng tệp gửi; tên tệp tiếng Việt |
 | E2E-CH-04 | F | `chat.e2e.ts` | Từ trang ws ⇒ phòng ws; OWNER bớt người ⇒ tab người đó: phòng biến mất khỏi danh sách (event hoặc lần tải kế) |
