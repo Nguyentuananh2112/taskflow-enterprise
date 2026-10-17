@@ -183,7 +183,7 @@ describe('T-057: job leave-carryover', () => {
       carryover: { runOnce: noop },
     });
 
-  it('LUÔN đăng ký (kể cả local/test không cờ — luật nghiệp vụ): 1 giờ + jitter 5 phút, lượt đầu sau 5 s', () => {
+  it('LUÔN đăng ký (kể cả local/test không cờ — luật nghiệp vụ): 1 giờ + jitter 5 s, lượt đầu sau 5–10 s', () => {
     const job = jobs(testEnvVars({ APP_ENV: 'test' })).find((j) => j.name === LEAVE_CARRYOVER_JOB);
     expect(job).toMatchObject({ intervalMs: 3_600_000, jitterMs: 5_000, firstRunAfterMs: 5_000 });
   });
