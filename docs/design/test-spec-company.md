@@ -127,11 +127,14 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | `test/security/company-access.sec.ts` | SEC-HR-30…35, 38, 65 |
 | `test/security/company-idor.sec.ts` | SEC-HR-36, 37, 39 |
 | `test/security/company-activation.sec.ts` | SEC-HR-56…61, 63 |
-| `test/security/company-offboard.sec.ts` | SEC-HR-62, 68, 69, 70 |
+| `test/security/company-offboard.sec.ts` | SEC-HR-62 (vế hoàn tất trong request), 68 — D |
+| `test/security/company-clock-0559.sec.ts` | mốc 05:59:10 (khe trước job): CLK-HR-05, SEC-HR-62b (sau 06:00), 69, 70 — D |
+| `test/security/company-activation.sec.ts` | SEC-HR-56…61, 63, 63b — F |
+| `test/security/company-races.sec.ts` | CC-HR-16…19, 26, 27 — F (CC-HR-18 vế job / 05:59:59 ở company-clock-0559) |
 | `test/integration/company/session-revoke.int.ts` | SEC-HR-66 (tầng I, store token-version giả ném lỗi) |
 | `test/security/company-bootstrap.sec.ts` | SEC-HR-64 (gọi CLI trực tiếp, không cần API) |
 | `test/security/company-races.sec.ts` | CC-HR-16…19, 26, 27 |
-| `test/security/company-clock-*.sec.ts` | CLK-HR-05…09 (mỗi mốc một file) |
+| `test/security/company-clock-*.sec.ts` | CLK-HR-06…09 (mỗi mốc một file, `api.restart`) — B |
 | `test/security/hr*.sec.ts` (có sẵn) | viết lại theo §6 |
 | `e2e/specs/company.e2e.ts` | E2E-HR-15…19 |
 | `e2e/specs/hr.e2e.ts` | E2E-HR-01…14 viết lại theo §6 |
@@ -161,11 +164,11 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | **SEC-HR-30** | Leo quyền: Mia, Hana, Kay mỗi người `PUT admin/access/:self {role:'ADMIN'}` và `{grants:['HR_MANAGE']}`, và cùng lệnh cho Max; Hana `POST hr/employees` có `role` | 403 (body sai vẫn 403); 400 strict ở `POST hr/employees`; sau đó `GET /auth/me` của từng người không đổi |
 | **SEC-HR-31** | Hana cấp/thu `HR_MANAGE`, `PAYROLL_MANAGE`, nâng ADMIN cho Max; Hana `PUT offboarding` / `activation-link` cho Ada, chính mình, Kay (giữ grant) | 403; Ada làm cùng lệnh ⇒ 200 |
 | **SEC-HR-32** | Ada tự hạ / tự cho mình nghỉ (đã có Ada2); Ada2 hạ Ada khi chỉ còn Ada là Admin kia (hạ Admin cuối) | tự làm ⇒ 403; Admin cuối ⇒ 409 `last_admin`; Ada2 hạ Ada khi còn ≥ 2 Admin ⇒ 200 |
-| **SEC-HR-33** | Ada thu `HR_MANAGE` của Hana; Hana dùng CÙNG access token gọi đọc (`attendance/today`) và ghi (`approve`); lệnh ghi đang chờ khóa lúc thu | 403 ngay request kế tiếp; lệnh ghi sau khóa 403, không ghi (đếm DB) |
+| **SEC-HR-33** | Ada thu `HR_MANAGE` của Hana; Hana dùng CÙNG access token gọi đọc (`attendance/today`) và ghi (`approve`); lệnh ghi đang chờ khóa lúc thu (vế đua: CC-HR-11 ở hr-races.sec) | 403 ngay request kế tiếp; lệnh ghi sau khóa 403, không ghi (đếm DB) |
 | **SEC-HR-34** | Parity qua `/auth/me.company.permissions` của từng tổ hợp role/grant | grant ∌ `company:*`; `HR_MANAGE` ∌ `payroll:*`; `PAYROLL_MANAGE` ∌ `hr:*`; ADMIN ∌ `*:self`; không quyền ws nào trong tập công ty |
 | **SEC-HR-35** | Mia gọi mọi route `hr:manage` / `company:admin` với body sai; Mia đọc công / đơn / số dư của Max qua route HR; Hana `GET hr/audit-logs`; Ada `POST attendance/check-in`, `POST leave/requests` | 403 (không 400); 403; 403; 403 |
 | **SEC-HR-36** | IDOR qua route self: Max hủy đơn của Mia, đọc `me/events` với id lượt của Mia, `POST me/notifications/:id/read` id của Mia; Hana `GET attendance/events?userId=<chưa từng là nhân viên>` | 404 (không 403, không lộ tồn tại) |
-| **SEC-HR-37** | Mia (OWNER W1) thêm vào W1: `userId` không thuộc công ty / Quinn (đã nghỉ) / người sắp nghỉ / Nina (chờ kích hoạt) / Ada (Admin hoạt động); Max (MEMBER) gọi `member-candidates`; `q` = `%`, `_`, `\`, 1 000 ký tự; lần 61/giờ | 422 `NOT_ACTIVE_EMPLOYEE` / 422 / 422 / **201** / **201**; 403; `%` `_` `\` khớp chữ thường (không trả cả danh sách); 400; 429 |
+| **SEC-HR-37** | Mia (OWNER W1) thêm vào W1: `userId` không thuộc công ty (qua API chỉ có id lạ ⇒ 404 `user`) / Quinn (đã nghỉ) / người sắp nghỉ / Nina (chờ kích hoạt) / Ada (Admin hoạt động); Max (MEMBER) gọi `member-candidates`; `q` = `%`, `_`, `\`, 1 000 ký tự; lần 61/giờ | 422 `NOT_ACTIVE_MEMBER` / 422 / 422 / **201** / **201**; 403; `%` `_` `\` khớp chữ thường (không trả cả danh sách); 400; 429 |
 | **SEC-HR-38** | Ada gọi route dự án W2 (không là thành viên); Ada là thành viên W1 ⇒ theo role W1; `admin/workspaces` chỉ có tên / OWNER / số thành viên (không project / task); `owner` với `userId` ngoài ws, Ada tự nhận khi không là thành viên, ws còn OWNER, ws xóa mềm; `archive` ws còn thành viên; nâng Max lên Admin ⇒ membership W1 của Max giữ nguyên | 404 `workspace`; đúng role; không lộ dữ liệu dự án; 422 / 422 / 409 `workspace_has_owner` / 409; 409; giữ |
 | **SEC-HR-39** | `POST auth/register` (mọi body, kể cả hợp lệ cũ); `GET /register` (web); route cũ `/workspaces/:wsId/attendance/*`, `…/leave-requests`, `…/members/:id/grants`, `…/hr-audit-logs`, `/me/attendance/*`; Ada cấp grant cho Mia ⇒ không có event `member:grants-changed` (chỉ `company:access-changed`) | 404 chung của router (không lộ email); không trang; 404; đúng |
 | **SEC-HR-56** | Token dùng lần 2; hết hạn (CLK-HR-06); bị thu hồi do "tạo lại link"; token sửa 1 ký tự; rác 3 độ dài | 410 `ACTIVATION_GONE` ×3; 400 `ACTIVATION_INVALID` ×2, **body giống hệt nhau** (so JSON trừ `meta`) |
@@ -173,10 +176,10 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | **SEC-HR-58** | Nina (chờ kích hoạt) `login` với mọi mật khẩu kể cả rỗng, `refresh`; Quinn (đã nghỉ) `login`, `refresh` bằng refresh token cũ, access token cũ gọi route công ty | như user không tồn tại (cùng mã / body / thời gian); 401; 401 `SESSION_REVOKED` |
 | **SEC-HR-59** | Token (số canh) không có trong: audit, thông báo, stdout pino của API, Sentry (API + web — sự kiện ném lỗi trên `/activate`), `GET hr/employees`, URL của mọi request API; response thêm / tạo lại link có `no-store`; không route GET nào trả token; `/activate` có `Referrer-Policy: no-referrer` và xóa fragment khỏi URL sau khi tải | đúng (S + E) |
 | **SEC-HR-60** | Bot xem trước: GET `/activate#t=…` 5 lần (context không JS) + `inspect` 5 lần | token vẫn `activate` được; `inspect` không đổi `used_at` (đọc qua `activate` thành công) |
-| **SEC-HR-61** | `activate` mật khẩu yếu; rồi mật khẩu tốt; rồi dùng lại | 422, token vẫn sống; 200 + phiên mới; 410 |
-| **SEC-HR-62** | Mia sắp nghỉ, `lastDay` = hôm qua, mốc 05:59:00 (K, file CLK riêng); sau 06:00 (trước job) gọi route công ty, route W1, `refresh`, socket handshake, socket join | 401 `SESSION_REVOKED`; 404 `workspace`; 401; từ chối; từ chối |
+| **SEC-HR-61** | `activate` mật khẩu yếu; rồi mật khẩu tốt; rồi dùng lại | 400 `VALIDATION_ERROR` (B: policy trước transaction), token vẫn sống; 200 + phiên mới; 410 |
+| **SEC-HR-62** | (a) Hoàn tất trong request (`lastDay` quá khứ): token cũ gọi route công ty, route W1, `refresh`, socket handshake; socket đang nối. (b) **SEC-HR-62b** (file 05:59:10, khe sau `access_until` trước job): cùng các lệnh với token còn hợp lệ | (a) 401 `UNAUTHORIZED` (token_version tăng — tầng xác thực, trước membership) ở mọi route; refresh 401 `REFRESH_TOKEN_INVALID`; handshake từ chối; socket bị ngắt. (b) 401 `SESSION_REVOKED`; route W1 404 `workspace`; refresh 401; handshake / join từ chối |
 | **SEC-HR-63** | Hana thêm nhân viên lần 31 / giờ; tạo lại link cho một người lần 11 / giờ | 429 + `Retry-After` |
-| **SEC-HR-64** | Bootstrap (CLI, không API): lần 2 khi đã có Admin; thiếu từng env; không TTY và không `APP_ENV=test`; `--reissue-link` khi Admin đã kích hoạt; email của nhân viên đã có mật khẩu | thoát 1 + "Đã có Admin", DB không đổi; thoát lỗi, không user; từ chối; thoát 1; nâng ADMIN, mật khẩu giữ, không token |
+| **SEC-HR-64** | (64b "email của nhân viên đã có mật khẩu ⇒ nâng ADMIN" cần trạng thái "chưa có Admin" — API không tạo được ⇒ tầng I)  Bootstrap (CLI, không API): lần 2 khi đã có Admin; thiếu từng env; không TTY và không `APP_ENV=test`; `--reissue-link` khi Admin đã kích hoạt; email của nhân viên đã có mật khẩu | thoát 1 + "Đã có Admin", DB không đổi; thoát lỗi, không user; từ chối; thoát 1; nâng ADMIN, mật khẩu giữ, không token |
 | **SEC-HR-65** | Body strict: `POST hr/employees` có `grants` / `role` / `userId` / `startDate` tương lai / −32 ngày; `PUT admin/access` có `startDate` / `userId` | 400 / 422 (`startDate` ngoài khoảng) |
 | **SEC-HR-66** | **Tầng I, không phải S** (TL: KHÔNG dừng Valkey dùng chung). Integration với Postgres thật + store token-version **giả** (test double inject qua composition) ném lỗi ở `setTokenVersion` khi: hoàn tất nghỉ việc, Admin hạ Admin, nâng lên Admin | transaction rollback: không departure, `company_members` / role / grants không đổi, refresh token không bị revoke nửa vời, không `disconnectUser`; gọi lại khi store hết lỗi ⇒ thành công trọn vẹn (job thử lại); ca thành công: access token cũ bị từ chối ngay (đọc `token_version` mới), `disconnectUser` được gọi đúng một lần |
 | **SEC-HR-68** | Nhận lại Quinn: refresh token / access token cũ trước khi nghỉ; mật khẩu cũ; trước khi nhận lại | không sống lại (401); đăng nhập được sau khi nhận lại; trước đó như không tồn tại |
@@ -190,11 +193,11 @@ await api.restart({ TEST_CLOCK_ANCHOR: shiftIso(anchor, 7 * DAY_MS - 30_000) })
 | ID | Ca | Mong đợi |
 |---|---|---|
 | CC-HR-16 | Mia check-in 2 tab song song (key khác; rồi cùng key) | khác key: một 201 + một 409 `already_checked_in`; cùng key: một 201 + một 200 replay; luôn đúng 1 IN |
-| CC-HR-17 | Ada và Ada2 hạ nhau song song | đúng 1 thành công, 1 × 409 `last_admin`; luôn còn ≥ 1 Admin |
+| CC-HR-17 | Ada và Ada2 hạ nhau song song (chỉ còn hai Admin) | đúng 1 thành công; bên thua 403 (đã mất quyền — `lockAdmins` tuần tự hóa) / 401 (phiên bị thu hồi) / 409 `last_admin`; luôn còn đúng ≥ 1 Admin, không 5xx |
 | CC-HR-18 | `PUT offboarding` `lastDay` quá khứ (hoàn tất trong request) ‖ job hoàn tất ‖ Mia chấm Ra (05:59:59, K) ‖ Hana `DELETE offboarding` | đúng **một** departure, một `endMembership`, không 500; trạng thái cuối nhất quán (nghỉ **hoặc** còn làm, không nửa vời) |
 | CC-HR-19 | 2 `activate` cùng token; 2 `POST hr/employees` cùng email | một phiên + một 410; một tài khoản + một 409 `already_employee` |
 | CC-HR-26 | hoàn tất nghỉ việc ‖ Mia gửi đơn ×20 | sau hoàn tất không còn đơn PENDING nào sau `lastDay` của Mia |
-| CC-HR-27 | `admin/workspaces/:id/owner` ‖ OWNER cũ được thêm lại | đúng một OWNER, không 500 |
+| CC-HR-27 | ws mồ côi (OWNER duy nhất nghỉ): Ada giao OWNER cho hai thành viên song song ("thêm lại" chỉ đi qua `admin/workspaces/:id/owner` — ws mồ côi không ai có `member:add`) | đúng một OWNER, bên kia 409 `workspace_has_owner`, không 5xx |
 
 ## 5. CLK — đồng hồ neo (tầng K, mỗi file một process / mốc)
 
