@@ -11,6 +11,8 @@ export const hrKeys = {
   schedules: (wsId: string) => ['ws', wsId, 'hr', 'schedules'] as const,
   holidays: (wsId: string, year: number) => ['ws', wsId, 'hr', 'holidays', year] as const,
   leave: (wsId: string) => ['ws', wsId, 'hr', 'leave'] as const,
+  /** Số đơn chờ (lối tắt trên thẻ Chấm công, T-045) — dưới `leave` ⇒ duyệt / realtime làm mới. */
+  leavePendingCount: (wsId: string) => ['ws', wsId, 'hr', 'leave', 'pending-count'] as const,
   leaveList: (wsId: string, status: LeaveStatus | 'ALL') =>
     ['ws', wsId, 'hr', 'leave', status] as const,
   balances: (wsId: string, year: number) => ['ws', wsId, 'hr', 'balances', year] as const,

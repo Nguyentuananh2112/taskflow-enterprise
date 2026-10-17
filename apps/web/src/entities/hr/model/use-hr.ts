@@ -71,6 +71,17 @@ export function useHrLeaveRequests(wsId: string, status: LeaveStatus | 'ALL', en
   });
 }
 
+/** Số đơn chờ duyệt cả công ty (trang đầu ≤ 50; `more` ⇒ "50+"). Chỉ gọi khi có `hr:manage`. */
+export function useHrPendingLeaveCount(wsId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: hrKeys.leavePendingCount(wsId),
+    queryFn: () => hrLeaveApi.list(wsId, 'PENDING'),
+    select: (r) => ({ count: r.data.length, more: r.page?.hasMore ?? false }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useLeaveBalances(wsId: string, year: number | null) {
   return useInfiniteQuery({
     queryKey: hrKeys.balances(wsId, year ?? 0),

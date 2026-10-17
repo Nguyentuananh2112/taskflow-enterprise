@@ -35,7 +35,13 @@ function checkErrorMessage(error: unknown): string {
  * thì tự thử lại 1 lần với CÙNG key: server trả kết quả cũ thay vì tạo lượt thứ hai. Response là
  * `AttendanceTodayDto` ⇒ ghi thẳng vào cache, không GET lại.
  */
-export function useAttendanceCheck(wsId: string) {
+type Options = Readonly<{
+  /** Câu toast khi thành công (mặc định "Đã chấm vào" / "Đã chấm ra" — E2E dựa vào câu này). */
+  successTitle?: (today: AttendanceTodayDto, kind: CheckKind) => string;
+}>;
+
+export function useAttendanceCheck(wsId: string, options: Options = {}) {
+  const { successTitle } = options;
   return useMutation({
     mutationFn: ({ kind, key }: { kind: CheckKind; key: string }) =>
       kind === 'IN' ? attendanceApi.checkIn(wsId, key) : attendanceApi.checkOut(wsId, key),
@@ -47,7 +53,8 @@ export function useAttendanceCheck(wsId: string) {
       for (const part of ['month', 'events'] as const) {
         void context.client.invalidateQueries({ queryKey: [...attendanceKeys.all(wsId), part] });
       }
-      toast({ title: kind === 'IN' ? 'Đã chấm vào' : 'Đã chấm ra', tone: 'success' });
+      const title = successTitle?.(today, kind) ?? (kind === 'IN' ? 'Đã chấm vào' : 'Đã chấm ra');
+      toast({ title, tone: 'success' });
     },
     onError: (error, _v, _r, context) => {
       void context.client.invalidateQueries({ queryKey: attendanceKeys.today(wsId) });
