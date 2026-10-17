@@ -1,8 +1,10 @@
 # Mốc 6 — Avatar và Trò chuyện (thiết kế, CHỜ người dùng duyệt)
 
-> Trạng thái: **đề xuất v2 — chờ người dùng duyệt** (Tech Lead, 2026-10-17). ADR-141…148 chỉ vào `DECISIONS.md` sau khi duyệt; rủi ro R43–R49 vào `threat-model.md` §6 (B, T-074). Vé T-067…T-074. Chưa ai code trước khi duyệt.
+> Trạng thái: **đề xuất v2.1 — chờ người dùng duyệt** (Tech Lead, 2026-10-17). ADR-141…148 chỉ vào `DECISIONS.md` sau khi duyệt; rủi ro R43–R49 vào `threat-model.md` §6 (B, T-074). Vé T-067…T-074. Chưa ai code trước khi duyệt.
 > Căn cứ: `company-level.md` v2.1 (ADR-133…140), `data-retention.md` (R27), `threat-model.md` (tới R42), `security.md` §5–6, `devops.md` §1/§4.3, runbook `backup-restore.md`, `schema.prisma` @0dcaaf4 (migration 5), `core/realtime/*` (phòng `user:` / `session:` / `project:`, `companyGatedSocketAuthenticator`), `core/http/middleware.ts` (`requireJsonContentType`, body 100 kB), `IWorkspaceExitPort`, web `shared/ui/avatar`, `app/security/csp.ts`. Phản biện: B (bảo mật/lưu file), E (web), F (`docs/reviews/F-m6-avatar-chat-review.md` @642c40b) — ghi nguồn tại chỗ. Dữ liệu ví dụ là bịa.
 > **Chạy song song Mốc 4/5** bằng đội riêng: **G** (backend), **H** (web), **F** (test), B review. Không đụng module `payroll`, `leave`, `attendance`, `hr`, `company` (trừ chỗ ghi rõ ở ADR-148).
+
+**v2.1 — TL chốt** (v2 @ d2580dc): SEC-CH-21…25 đúng nội dung của B (ca v2 cùng số chuyển sang SEC-CH-33…37, SEC-CH-29 gộp vào 22); thứ tự mục ☰ dùng chung Mốc 4/6; bot phụ thuộc = Dependabot.
 
 **v2 — phản biện B/E/F + trả lời người dùng** (v1 @ 2a0ab9a)
 - Người dùng 17/10: lưu tin + tệp **12 tháng**; **không** quét virus, **cấm** tệp nén / chạy được, chặn macro theo nội dung; giữ 5 MB / 20 MB / 10 tệp / 50 GB; hosting "chưa biết" ⇒ TL chốt thiết kế cho máy có ổ lâu dài (ADR-141), hỏi lại **trước deploy**.
@@ -49,7 +51,7 @@
   - tài liệu: PDF; DOCX/XLSX/PPTX và ODT/ODS nhận diện bằng **central directory** (F-04, B M6) — tìm `[Content_Types].xml` (OOXML) hoặc `mimetype` (ODF), không theo thứ tự entry; trần **2 000 entry**, chỉ giải nén `[Content_Types].xml` / `mimetype` / `manifest.xml` với trần 1 MB. **Chặn** khi có `vbaProject.bin`, content-type chứa `macroEnabled`, thư mục `Basic/` hoặc `Scripts/` (ODF), `externalLink`, `oleObject`/`embeddings/*.bin` ⇒ 415 `MACRO_OR_ACTIVE_CONTENT`.
   - văn bản: TXT/CSV — UTF-8 (có/không BOM), UTF-16 LE/BE có BOM, **Windows-1258** khi không phải UTF-8 hợp lệ và không có NUL (F-05); lưu nguyên byte.
   - **Cấm:** HTML, SVG, XML, JS, tệp chạy được (MZ, ELF, Mach-O, `#!`), ZIP/RAR/7z/GZ thuần, video/âm thanh. Đuôi ≠ nội dung ⇒ 415 `UNSUPPORTED_FILE_TYPE`; `?as=image` mà không phải ảnh ⇒ 415.
-- **Ảnh mã hóa lại bằng sharp** (B HIGH-2): bản 0.35.5 đã có trong lockfile (qua `next`); thêm vào `apps/api` **ghim chính xác**, bot cập nhật phụ thuộc theo dõi (A/B kiểm phiên bản + giấy phép trên npm trước khi thêm — TEAM luật 4; Apache-2.0, libvips LGPL-3.0 liên kết động).
+- **Ảnh mã hóa lại bằng sharp** (B HIGH-2): bản 0.35.5 đã có trong lockfile (qua `next`); thêm vào `apps/api` **ghim chính xác**, **Dependabot** theo dõi (bot phụ thuộc của repo) (A/B kiểm phiên bản + giấy phép trên npm trước khi thêm — TEAM luật 4; Apache-2.0, libvips LGPL-3.0 liên kết động).
   - Chạy trong **`worker_threads`** (pool 2 worker, `resourceLimits` ~256 MB / worker, timeout 10 s ⇒ giết worker + 422); đầu vào **chỉ Buffer** (đã nằm trọn trong trần 5/20 MB), không stream vào sharp.
   - Thứ tự: `sharp(buf, {limitInputPixels: 40e6, failOn: 'error', pages: 1}).metadata()` ⇒ `format` phải **khớp** kết quả `sniffType` (khác ⇒ 415) ⇒ mới biến đổi: `.rotate()` theo EXIF, **bỏ mọi metadata**, WebP q≈82. Avatar 256 + 64 px; ảnh chat `preview` ≤ 1 600 px + `thumb` ≤ 320 px; **không giữ bản gốc** ảnh gửi dạng ảnh. "Gửi dạng tệp" = lưu nguyên, chỉ tải xuống (UI cảnh báo vị trí trong ảnh).
   - Hàng đợi đầy (2 đang chạy + 4 chờ) ⇒ **503** `IMAGE_PROCESSING_BUSY` + `Retry-After: 5` (F-03b).
@@ -116,7 +118,7 @@
 
 **ADR-148 — Migration, phân đội, quy tắc song song.**
 - Một migration `avatar_chat`: 3 enum, 5 bảng mới (§3), `users.avatar_version`. **Timestamp thư mục đặt lúc merge**; "migration 6…9" của Mốc 4/5 là nhãn, không là thứ tự.
-- Code mới: `modules/chat`, `core/files`; web `entities/chat`, `features/chat-*`, `features/avatar-*`, `widgets/chat-*`, `views/chat`. **File chung phải sửa** (TL gộp khi merge): `schema.prisma` (khối "Mốc 6" cuối file + 3 dòng relation ở `User`), composition root, `app.ts`, `core/http/middleware.ts` (CORS header + ngoại lệ content-type), `core/realtime/events.ts`, `packages/contracts` (`UserRefDto`, `chat/`), web `app-header` (thứ tự mục ☰ chốt **một lần** với đội Mốc 4 — E12), `shared/api/http` (nhánh body nhị phân), `shared/ui/avatar` (prop `src`), `csp.ts`, Sentry web (scrub `sig`), trang `/hr/employees` (dialog gỡ avatar ở **cấp trang**, không trong widget HR — E12), `security.md`, `devops.md`, `security-go-live.md`.
+- Code mới: `modules/chat`, `core/files`; web `entities/chat`, `features/chat-*`, `features/avatar-*`, `widgets/chat-*`, `views/chat`. **File chung phải sửa** (TL gộp khi merge): `schema.prisma` (khối "Mốc 6" cuối file + 3 dòng relation ở `User`), composition root, `app.ts`, `core/http/middleware.ts` (CORS header + ngoại lệ content-type), `core/realtime/events.ts`, `packages/contracts` (`UserRefDto`, `chat/`), web `app-header` (thứ tự mục ☰ TL chốt dùng chung Mốc 4/6 — §7), `shared/api/http` (nhánh body nhị phân), `shared/ui/avatar` (prop `src`), `csp.ts`, Sentry web (scrub `sig`), trang `/hr/employees` (dialog gỡ avatar ở **cấp trang**, không trong widget HR — E12), `security.md`, `devops.md`, `security-go-live.md`.
 - Nhánh tích hợp `feat/avatar-chat` từ `main`; verify gộp một lượt; rebase khi Mốc 4/5 merge.
 
 ## 3. Dữ liệu — migration `avatar_chat`
@@ -182,18 +184,23 @@ Lỗi mới: 400 `INVALID_UPLOAD_NAME`; 413 `PAYLOAD_TOO_LARGE`; 415 `UNSUPPORTE
 | SEC-CH-18 | `chat/people` | không email, không người đã rời / chờ kích hoạt |
 | SEC-CH-19 | `chat:typing` hội thoại không thuộc; 10 / giây | không ai nhận; bỏ qua ngoài 1 / 3 s |
 | SEC-CH-20 | Log API, log proxy, Sentry API + web (event **và breadcrumb**) | không thân tin, tên tệp, query `/media`, `sig` (B M8, F-11) |
-| SEC-CH-21 | (B) Ảnh có magic PNG nhưng `metadata().format` khác / hỏng giữa tệp | 415 / 422; không biến thể nào được ghi |
-| SEC-CH-22 | (B) Octet-stream gửi tới route khác `PUT me/avatar`, `POST chat/uploads`; đúng path sai method | 415 |
-| SEC-CH-23 | (B) Đổi `purpose`/`kind`/`variant`/`version` giữ nguyên `sig`; ký bằng `_PREVIOUS` trong lúc xoay; secret < 32 byte hoặc = JWT | 404; 200; từ chối khởi động |
-| SEC-CH-24 | (B) Office có `vbaProject.bin`, `macroEnabled`, `externalLink`, `oleObject`, ODF `Basic/`, > 2 000 entry; `.docm` đổi đuôi `.docx` | 415 |
-| SEC-CH-25 | (B) Upload thứ 4 đồng thời; ổ trống < trần; Valkey hạn mức lỗi | 429; 507 trước khi tạo tmp; 503 (fail-closed) |
+| SEC-CH-21 | (B) SVG / TIFF đổi tên thành `.jpg`, magic giả JPEG | 415 ở bước kiểm `metadata().format` (trước mọi biến đổi); không biến thể nào được ghi |
+| SEC-CH-22 | (B) Xóa tin rồi mở URL ảnh đã phát (còn hạn) | 404 ngay (kiểm DB mỗi lần) |
+| SEC-CH-23 | (B) DOCX có `vbaProject.bin`; DOCX có `externalLink` | 415 `MACRO_OR_ACTIVE_CONTENT` |
+| SEC-CH-24 | (B) 4 upload song song của một user | cái thứ 4 ⇒ 429 |
+| SEC-CH-25 | (B) grep log proxy (Caddy) + log app của suite | không có `sig=` |
 | SEC-CH-26 | (F-08) Hủy kết nối ở 50 % | ≤ 2 s không còn tệp trong `tmp/` |
 | SEC-CH-27 | (F-08) Drip 1 KB/s | cắt sau `UPLOAD_IDLE_TIMEOUT_MS` / tổng, không sót tmp |
 | SEC-CH-28 | (F-03g) Nghỉ việc rồi nhận lại | không thấy nhóm cũ; DIRECT cũ hiện lại; OWNER thêm lại ⇒ thấy |
-| SEC-CH-29 | (F-03h) Xóa tin rồi mở URL ảnh đã ký | 404 ngay |
+| SEC-CH-29 | (F-03h) — gộp vào **SEC-CH-22** (giữ số, không dùng lại) | — |
 | SEC-CH-30 | (F) Ws xóa mềm ⇒ phòng 404 mọi người; khôi phục ⇒ quay lại; purge ⇒ cascade + blob bị sweep (đếm tệp trong kho) | đúng |
 | SEC-CH-31 | (F-09/F-10) Blob bị xóa tay ⇒ tải; 601 request `/media` / phút / IP; chữ ký sai không chạm đĩa | 404 không 500; 429; — |
 | SEC-CH-32 | (F-04/F-05) DOCX/XLSX từ Word, LibreOffice, Google Docs, WPS; CSV UTF-16 BOM / Windows-1258 | 201 |
+| SEC-CH-33 | (v2 #21 cũ) Magic PNG nhưng `metadata().format` khác / tệp hỏng giữa chừng | 415 / 422; không biến thể nào được ghi |
+| SEC-CH-34 | (v2 #22 cũ, B M1) Octet-stream tới route khác `PUT me/avatar`, `POST chat/uploads`; đúng path sai method | 415 |
+| SEC-CH-35 | (v2 #23 cũ, B M3) Đổi `purpose`/`kind`/`variant`/`version` giữ `sig`; ký bằng `_PREVIOUS` lúc xoay; secret < 32 byte hoặc = JWT | 404; 200; từ chối khởi động |
+| SEC-CH-36 | (v2 #24 cũ, B M6) Office có `macroEnabled`, `oleObject`, ODF `Basic/`, > 2 000 entry; `.docm` đổi đuôi `.docx` | 415 |
+| SEC-CH-37 | (v2 #25 cũ, B M7) Ổ trống < trần; Valkey hạn mức lỗi | 507 trước khi tạo tmp; 503 (fail-closed) |
 
 ## 6. Test (F: `test-spec-chat.md` + harness + soát cuối; G/H viết ca theo module — T-073)
 
@@ -208,7 +215,7 @@ Lỗi mới: 400 `INVALID_UPLOAD_NAME`; 413 `PAYLOAD_TOO_LARGE`; 415 `UNSUPPORTE
 
 ## 7. Web (H — theo E)
 
-- **Header** (E9): ≥ md icon "Trò chuyện" cạnh chuông, badge `9+`, `aria-label="Trò chuyện, N tin chưa đọc"`; < md mục "Trò chuyện" trong ☰ + chấm badge trên ☰ + ô "Trò chuyện" ở trang chính `/w`. Trang ws: link ⇒ `/chat/ws/[wsId]`.
+- **Header** (E9): ≥ md icon "Trò chuyện" cạnh chuông, badge `9+`, `aria-label="Trò chuyện, N tin chưa đọc"`; < md mục "Trò chuyện" trong ☰ + chấm badge trên ☰ + ô "Trò chuyện" ở trang chính `/w`. **Thứ tự mục ☰ (TL chốt, dùng chung Mốc 4/6):** Trang chính · Chấm công · Nghỉ phép · Phiếu lương · Trò chuyện · Nhân sự · Bảng lương · Quản trị — mục theo quyền / vai trò ẩn khi không có (Admin không có Chấm công, Nghỉ phép, Phiếu lương). Trang ws: link ⇒ `/chat/ws/[wsId]`.
 - `/chat` + `/chat/[id]`: < md hai màn toàn màn hình; ≥ md hai cột. "Tin nhắn mới", "Tạo nhóm" (combobox `chat/people`).
 - **Luồng tin** (E8): cuộn ngược bù `scrollHeight` khi chèn trang cũ; giữ chỗ ảnh bằng `width/height`; mark-read khi tab **visible** + `IntersectionObserver` tin cuối, debounce 1 s; vạch "Tin chưa đọc"; reply, sửa/xóa; "Đã xem" ở DIRECT. Ảnh chat `onError` ⇒ invalidate trang chứa tin **một lần / id** (URL hết khung) (E1).
 - **Composer** (E10): Enter gửi **bỏ qua khi `isComposing`** (Telex/VNI); `pointer: coarse` ⇒ Enter xuống dòng + nút Gửi; dán/kéo-thả; typing throttle ≥ 3 s. Gửi lạc quan với `clientMsgId`, khử trùng echo đến **trước** response (E6), catch-up gộp theo `id`. Nháp chỉ trong state (E11).
@@ -241,9 +248,9 @@ Lỗi mới: 400 `INVALID_UPLOAD_NAME`; 413 `PAYLOAD_TOO_LARGE`; 415 `UNSUPPORTE
 | T-070 | G | Realtime: phát `user:` lọc công ty, event, `chat:typing` (cache ≤ 5 s), test I 2 socket / 2 tab | T-069 | 1 ngày |
 | T-071 | H | Avatar `src` mọi nơi, cropper (Pointer + phím), `/account`, dialog gỡ ở `/hr/employees`, CSP, nhánh nhị phân `http` + XHR upload | contracts T-068; MSW trước | 2 ngày |
 | T-072 | H | Chat UI §7 | contracts T-069; MSW; realtime sau T-070 | 4,5 ngày |
-| T-073 | F (+G, H) | `test-spec-chat.md` + kiểm kê mã ca theo file ngay khi viết, harness nhị phân, soát cuối, E2E, clock-window, Stryker (F ≈ 4 ngày); ca SEC/CC theo module chia **từ đầu**: G viết SEC-CH-06…12, 21…27, 29, 31, CC-CH-04/07/08/09 (≈ 1,5 ngày), H viết E2E-CH-01/07 (≈ 0,5 ngày) | song song; S/C sau T-069/T-070; E2E sau T-072 | ≈ 6 ngày tổng |
+| T-073 | F (+G, H) | `test-spec-chat.md` + kiểm kê mã ca theo file ngay khi viết, harness nhị phân, soát cuối, E2E, clock-window, Stryker (F ≈ 4 ngày); ca SEC/CC theo module chia **từ đầu**: G viết SEC-CH-06…12, 21…27, 31, 33…37, CC-CH-04/07/08/09 (≈ 1,5 ngày), H viết E2E-CH-01/07 (≈ 0,5 ngày) | song song; S/C sau T-069/T-070; E2E sau T-072 | ≈ 6 ngày tổng |
 | T-074 | B | Review T-067 + T-069; `threat-model.md` R43–R49; `data-retention.md` D12–D14 + đoạn thông báo + quy trình yêu cầu thủ công; `security.md` (upload, W-CSP-2, ngoại lệ content-type); `devops.md` §1.3 đổi ứng viên mặc định (ổ lâu dài); `security-go-live.md` mục chốt hosting + CORP + backup tệp | review theo vé | 1,5 ngày |
-| — | TL | `DECISIONS.md` ADR-141…148 sau duyệt; `feat/avatar-chat`; gộp file chung; chốt thứ tự mục ☰ với đội Mốc 4 | sau duyệt | 0,5 ngày |
+| — | TL | `DECISIONS.md` ADR-141…148 sau duyệt; `feat/avatar-chat`; gộp file chung; báo đội Mốc 4 thứ tự mục ☰ đã chốt | sau duyệt | 0,5 ngày |
 
 Thứ tự: **T-067 → T-068 → T-069 → T-070**; H bắt đầu từ contracts + MSW; F viết spec + harness từ ngày 1. **Đường găng G ≈ 11 ngày** (9,5 code + 1,5 ca test); H ≈ 7 ngày song song; tổng lịch ≈ **12–13 ngày làm việc** + verify gộp, tùy tải máy (ADR-107). Việc nặng (upload lớn, sharp trong Docker build, Playwright, Stryker) xếp lượt với Mốc 4/5.
 
