@@ -11,6 +11,8 @@ export const chatKeys = {
   detail: (id: string) => ['chat', 'conversation', id] as const,
   messages: (id: string) => ['chat', 'messages', id] as const,
   people: (q: string) => ['chat', 'people', q] as const,
+  /** Phòng của workspace đã phân giải (`PUT chat/workspaces/:wsId/conversation`). */
+  wsRoom: (wsId: string) => ['chat', 'ws-room', wsId] as const,
 };
 
 const nextCursor = (last: {

@@ -16,7 +16,7 @@ export function WorkspaceRoomPage() {
   const { wsId = '' } = useParams<{ wsId: string }>();
   const router = useRouter();
   const room = useQuery({
-    queryKey: [...chatKeys.all, 'ws-room', wsId],
+    queryKey: chatKeys.wsRoom(wsId),
     queryFn: () => chatApi.workspaceRoom(wsId),
     enabled: wsId !== '',
     retry: false,

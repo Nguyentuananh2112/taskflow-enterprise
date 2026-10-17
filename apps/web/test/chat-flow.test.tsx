@@ -208,6 +208,29 @@ describe('trò chuyện', () => {
     expect(await screen.findByText('Bạn không còn ở cuộc trò chuyện này')).toBeTruthy();
   });
 
+  it('bị bớt khỏi nhóm lúc mất mạng (lỡ removed) ⇒ nối lại, bù gặp 404 ⇒ xóa cache, về /chat + báo (B L1)', async () => {
+    const { f, vic, client } = setup(0);
+    const group = mock.chat.create('GROUP', { title: 'Nhóm kho' });
+    mock.chat.addParticipant(group.id, vic.id, 'OWNER');
+    mock.chat.addParticipant(group.id, f.owner.id, 'MEMBER');
+    mock.chat.messages.add({
+      conversationId: group.id,
+      senderId: vic.id,
+      clientMsgId: crypto.randomUUID(),
+      requestHash: 'x',
+      body: 'Tin trong nhóm',
+      replyToId: null,
+      attachmentIds: [],
+    });
+    openApp(`/chat/${group.id}`, client);
+    await screen.findByText('Tin trong nhóm');
+    act(() => client.drop());
+    mock.chat.removeParticipant(group.id, f.owner.id); // event removed bị lỡ
+    act(() => client.connect());
+    await waitFor(() => expect(window.location.pathname).toBe('/chat'));
+    expect(await screen.findByText('Bạn không còn ở cuộc trò chuyện này')).toBeTruthy();
+  });
+
   it('phòng workspace /chat/ws/[wsId] ⇒ tạo-hoặc-lấy ⇒ chuyển sang /chat/[id] "# tên ws"', async () => {
     const { f, client } = setup(0);
     openApp(`/chat/ws/${f.wsId}`, client);

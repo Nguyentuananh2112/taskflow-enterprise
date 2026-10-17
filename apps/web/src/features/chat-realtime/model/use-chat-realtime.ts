@@ -20,6 +20,7 @@ import {
   type MessagesData,
 } from '@/entities/chat';
 import { useSession } from '@/entities/session';
+import { isApiError } from '@/shared/api';
 import { useRealtimeClient } from '@/shared/socket';
 import { toast } from '@/shared/ui/toast';
 
@@ -34,18 +35,43 @@ const refreshLists = (qc: QueryClient) => {
   void qc.invalidateQueries({ queryKey: chatKeys.unread });
 };
 
-/** Bù mọi luồng đang cache sau khi nối lại; gộp theo id (không trùng). */
-async function catchUp(qc: QueryClient): Promise<void> {
+/**
+ * Bù mọi luồng đang cache sau khi nối lại; gộp theo id (không trùng). Trả các hội thoại đã MẤT QUYỀN (404 — bị bớt / rời
+ * lúc offline, lỡ `chat:conversation:removed`, B L1) để xử lý như removed. Lỗi khác (mạng lại rớt) ⇒ lần nối sau bù tiếp.
+ */
+async function catchUp(qc: QueryClient): Promise<string[]> {
   const cached = qc.getQueriesData<MessagesData>({ queryKey: ['chat', 'messages'] });
+  const gone: string[] = [];
   await Promise.all(
     cached.map(async ([key, data]) => {
       const convId = String(key[2]);
       const after = newestMessage(data)?.id;
       if (!after) return;
-      const { data: missed } = await chatApi.messages(convId, { after });
-      qc.setQueryData<MessagesData>(key, (old) => appendMessages(old, missed));
+      try {
+        const { data: missed } = await chatApi.messages(convId, { after });
+        qc.setQueryData<MessagesData>(key, (old) => appendMessages(old, missed));
+      } catch (error) {
+        if (isApiError(error, 'RESOURCE_NOT_FOUND')) gone.push(convId);
+      }
     }),
-  ).catch(() => undefined); // mạng lại rớt ⇒ lần nối sau bù tiếp
+  );
+  return gone;
+}
+
+/**
+ * Mất quyền một hội thoại ⇒ xóa tin + chi tiết khỏi cache (mất quyền ⇒ mất lịch sử, §3). Trả `true` khi người dùng đang
+ * xem nó — ở `/chat/[id]` hoặc ở `/chat/ws/[wsId]` mà phòng đã phân giải ra đúng hội thoại này (B L2).
+ */
+export function forget(qc: QueryClient, conversationId: string, pathname: string): boolean {
+  qc.removeQueries({ queryKey: chatKeys.messages(conversationId) });
+  qc.removeQueries({ queryKey: chatKeys.detail(conversationId) });
+  refreshLists(qc);
+  const wsId = /^\/chat\/ws\/([^/]+)/.exec(pathname)?.[1];
+  const onRoom =
+    wsId !== undefined &&
+    qc.getQueryData<{ id: string }>(chatKeys.wsRoom(wsId))?.id === conversationId;
+  if (onRoom) qc.removeQueries({ queryKey: chatKeys.wsRoom(wsId) });
+  return onRoom || pathname === `/chat/${conversationId}`;
 }
 
 export function useChatRealtime(): void {
@@ -62,6 +88,11 @@ export function useChatRealtime(): void {
   });
 
   useEffect(() => {
+    const removed = (conversationId: string) => {
+      if (!forget(queryClient, conversationId, path.current)) return;
+      router.replace('/chat');
+      toast({ title: 'Bạn không còn ở cuộc trò chuyện này' });
+    };
     const patch = (
       raw: unknown,
       schema: typeof ChatMessageNewEvent | typeof ChatMessageUpdatedEvent,
@@ -104,15 +135,7 @@ export function useChatRealtime(): void {
       }),
       client.on('chat:conversation:removed', (raw) => {
         const event = ChatConversationRemovedEvent.safeParse(raw);
-        if (!event.success) return;
-        const { conversationId } = event.data.data;
-        queryClient.removeQueries({ queryKey: chatKeys.messages(conversationId) });
-        queryClient.removeQueries({ queryKey: chatKeys.detail(conversationId) });
-        refreshLists(queryClient);
-        if (path.current === `/chat/${conversationId}`) {
-          router.replace('/chat');
-          toast({ title: 'Bạn không còn ở cuộc trò chuyện này' });
-        }
+        if (event.success) removed(event.data.data.conversationId);
       }),
       client.on('chat:typing', (raw) => {
         const event = ChatTypingEvent.safeParse(raw);
@@ -120,7 +143,7 @@ export function useChatRealtime(): void {
           typingStore.start(event.data.data.conversationId, event.data.data.userId);
       }),
       client.onReconnect(() => {
-        void catchUp(queryClient);
+        void catchUp(queryClient).then((gone) => gone.forEach(removed));
         refreshLists(queryClient);
       }),
     ];
