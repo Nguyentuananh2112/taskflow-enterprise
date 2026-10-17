@@ -8,12 +8,13 @@ import {
   SequentialIdGenerator,
   SpyLogger,
 } from '../../../../test/support';
-import { ServiceUnavailableError } from '../../../core/errors';
+import { ResourceConflictError, ServiceUnavailableError } from '../../../core/errors';
 import { CompanyAccess } from '../application/company-access';
 import { HrAuditWriter } from '../application/hr-audit-writer';
 import type { ICompanyAccounts } from '../application/ports/accounts.port';
 import type { EmploymentCollaborators } from '../application/ports/employment-collaborators.port';
 import { CompleteOffboardingUseCase } from '../application/use-cases/complete-offboarding.use-case';
+import { CancelOffboardingUseCase } from '../application/use-cases/offboarding.use-cases';
 import type { CompanyMemberSnapshot } from '../domain/company-member';
 import { InMemoryCompanyOffboarding } from '../infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../infrastructure/in-memory/in-memory-company';
@@ -185,5 +186,34 @@ describe('A review T-062', () => {
     expect(await store.tenuresOf({ userIds: [MIA], from: '2026-11-02', to: '2026-11-30' })).toEqual(
       [],
     );
+  });
+});
+
+describe('F CC-HR-18 — DELETE hủy lịch thua lượt đua', () => {
+  it('lúc đọc còn lịch, lúc ghi đã mất (PUT hoàn tất / đổi trước) ⇒ 409 offboarding_changed, không 200 / 404', async () => {
+    const clock = new FakeClock(NOW);
+    const offboarding = new InMemoryCompanyOffboarding(store);
+    offboarding.cancel = () => Promise.resolve(null); // giả lập UPDATE … WHERE offboard_last_day IS NOT NULL đếm 0
+    const hrAudit = new InMemoryHrAuditLog(() => undefined);
+    const ids = new SequentialIdGenerator();
+    const cancel = new CancelOffboardingUseCase({
+      access: new CompanyAccess({ members: store, clock }),
+      members: store,
+      offboarding,
+      accounts: {} as never,
+      collaborators: () => {
+        throw new Error('không dùng');
+      },
+      audit: new HrAuditWriter({ hrAudit, ids, clock }),
+      uow: new FakeUnitOfWork(store, hrAudit),
+      ids,
+      clock,
+      timeZone: () => Promise.resolve('Asia/Ho_Chi_Minh'),
+      logger: new SpyLogger(),
+    });
+    await expect(cancel.execute({ actorId: HR, userId: MIA })).rejects.toMatchObject({
+      constructor: ResourceConflictError,
+      details: { reason: 'offboarding_changed' },
+    });
   });
 });

@@ -11,7 +11,10 @@ import type { ICompanyAccounts } from '../../../src/modules/company/application/
 import type { EmploymentCollaborators } from '../../../src/modules/company/application/ports/employment-collaborators.port';
 import { AdminAccessUseCases } from '../../../src/modules/company/application/use-cases/admin-access.use-cases';
 import { CompleteOffboardingUseCase } from '../../../src/modules/company/application/use-cases/complete-offboarding.use-case';
-import { ScheduleOffboardingUseCase } from '../../../src/modules/company/application/use-cases/offboarding.use-cases';
+import {
+  CancelOffboardingUseCase,
+  ScheduleOffboardingUseCase,
+} from '../../../src/modules/company/application/use-cases/offboarding.use-cases';
 import { AppError } from '../../../src/core/errors';
 import { PrismaCompanyMembers } from '../../../src/modules/company/infrastructure/prisma/prisma-company';
 import { PrismaCompanyOffboarding } from '../../../src/modules/company/infrastructure/prisma/prisma-company-offboarding';
@@ -260,4 +263,59 @@ describe('A review T-062 HIGH-1: lên lịch nghỉ cho Admin ‖ PUT /admin/acc
       expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
     }
   }, 120_000);
+});
+
+describe('F CC-HR-18: PUT lên lịch (ngày làm cuối đã qua ⇒ hoàn tất ngay) ‖ DELETE hủy lịch', () => {
+  it('một bên thắng nhất quán qua 20 lượt: LEFT + DELETE 409/404, hoặc DELETE thắng rồi PUT áp sau (LEFT) — không bao giờ PUT 200 mà vẫn còn làm', async () => {
+    const p = testPrisma();
+    for (let round = 0; round < 20; round += 1) {
+      await resetDatabase();
+      const hrId = (
+        await p.user.create({
+          data: { email: `hr-${randomUUID()}@example.test`, fullName: 'hr', passwordHash: 'x' },
+        })
+      ).id;
+      const u = (
+        await p.user.create({
+          data: { email: `u-${randomUUID()}@example.test`, fullName: 'u', passwordHash: 'x' },
+        })
+      ).id;
+      await p.companyMember.createMany({
+        data: [
+          { userId: hrId, role: 'EMPLOYEE', grants: ['HR_MANAGE'], startDate: day('2026-01-05') },
+          {
+            userId: u,
+            role: 'EMPLOYEE',
+            startDate: day('2026-10-01'),
+            offboardLastDay: day('2026-11-05'),
+            offboardAccessUntil: new Date('2026-11-05T23:00:00.000Z'),
+            offboardScheduledById: hrId,
+          },
+        ],
+      });
+      const sd = offboardingDeps();
+      const put = new ScheduleOffboardingUseCase(sd, new CompleteOffboardingUseCase(sd));
+      const del = new CancelOffboardingUseCase(offboardingDeps());
+      const [a, b] = await Promise.allSettled([
+        put.execute({ actorId: hrId, userId: u, lastDay: '2026-11-01' }),
+        del.execute({ actorId: hrId, userId: u }),
+      ]);
+      const row = await p.companyMember.findUnique({ where: { userId: u } });
+      const departures = await p.companyMemberDeparture.count({ where: { userId: u } });
+      if (a.status === 'fulfilled') {
+        // PUT báo thành công ⇒ người đó PHẢI đã nghỉ, đúng một departure.
+        expect(a.value.completed, `vòng ${round}`).toBe(true);
+        expect(row, `vòng ${round}`).toBeNull();
+        expect(departures).toBe(1);
+        if (b.status === 'rejected') {
+          expect((b.reason as AppError).statusCode, String(b.reason)).toBeLessThan(500);
+        }
+      } else {
+        expect((a.reason as AppError).statusCode, String(a.reason)).toBeLessThan(500);
+        expect(b.status).toBe('fulfilled');
+        expect(row?.offboardLastDay ?? null).toBeNull();
+        expect(departures).toBe(0);
+      }
+    }
+  }, 180_000);
 });

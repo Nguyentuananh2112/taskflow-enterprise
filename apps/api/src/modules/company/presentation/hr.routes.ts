@@ -124,7 +124,7 @@ export function hrRoutes(d: {
   router.post(
     '/employees/:userId/activation-link',
     ...authed,
-    ...d.limit(RATE_LIMIT_RULES.hireEmployee),
+    ...d.limit(RATE_LIMIT_RULES.activationLink),
     one,
     c.reissue,
   );
