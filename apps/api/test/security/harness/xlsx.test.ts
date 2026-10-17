@@ -173,7 +173,7 @@ describe('parseXml', () => {
     ['ký tự cấm U+0001', '<a>\u0001</a>'],
     ['tham chiếu ký tự cấm', '<a>&#1;</a>'],
     ['surrogate lẻ', '<a>\uD800x</a>'],
-    ['U+FFFE', '<a>￾</a>'],
+    ['U+FFFE', `<a>${String.fromCharCode(0xfffe)}</a>`],
     ['DOCTYPE', '<!DOCTYPE a [<!ENTITY e "x">]><a>&e;</a>'],
     ['thuộc tính lặp', '<a k="1" k="2"/>'],
   ])('%s ⇒ ném lỗi', (_, xml) => {

@@ -95,18 +95,18 @@ Chưa có env ⇒ ca khai pending theo vé, không bỏ.
 | Mã | Tầng | Ca | Mong đợi |
 |---|---|---|---|
 | EP-01 | A + S | `PUT` lần đầu `expectedVersion 0` ⇒ tạo; gửi lại `expectedVersion 0` | 200 `version 1`; 409 `VERSION_CONFLICT` |
-| EP-02 | A + S | `hireDate` 1949-12-31 / 1950-01-01 / hôm nay (businessClock) / ngày mai | 400 / 200 / 200 / 400 |
+| EP-02 | A + S | `hireDate` 1949-12-31 / 1950-01-01 / hôm nay (businessClock) / ngày mai; sai mẫu, 30/02 | 400 / 200 / 200 / **422 `HIRE_DATE_IN_FUTURE`** (B T-054 — cận trên phụ thuộc giờ nghiệp vụ, như `START_DATE_OUT_OF_RANGE`) / 400 |
 | EP-03 | U + S | `workPhone` `"+84 (90) 123-4567"` ⇒ lưu `+84901234567`; 7 số; 16 số; chữ cái | 200 chuẩn hóa; 400; 400; 400 |
 | EP-04 | A + S | đổi `hireDate` **đã có** không `reason`; có `reason`; đặt `hireDate` lần đầu không `reason` | 422 `REASON_REQUIRED`; 200; 200 |
 | EP-05 | S | Quinn (đã nghỉ) ⇒ HR `GET`/`PUT` được; user chưa từng là nhân viên / Ada (Admin chưa từng là nhân viên) | 200; 404 `user` (= SEC-HR-43) |
 | EP-06 | A + S | audit `PROFILE_SET` (before/after, `workPhoneChanged`, lý do ở `after.note`) + đúng 1 thông báo `PROFILE_UPDATED` cho nhân viên (delta `refId`) | đúng |
 | EP-07 | I | port `hireDates({userIds})`: chưa có hồ sơ ⇒ `null`; có ⇒ ngày; id lạ ⇒ không có khóa | đúng |
-| EP-08 | H | `/me`, `/departments` khai báo trước `/:userId` (không bị bắt thành `userId = "me"`) | đúng |
+| EP-08 | H + S | `/me`, `/departments` khai báo trước `/:userId` (không bị bắt thành `userId = "me"`); vế S gộp vào SEC-HR-41 | đúng |
 | EP-09 | A + S | đổi `hireDate` làm mất thâm niên của người đã dùng phép ⇒ `negativeBalances` = kết quả hàm thuần dùng chung với `PUT leave/policy` (so cùng dữ liệu cả hai đường) | khớp |
 | EP-10 | I | retention D8: đã nghỉ 729 ngày giữ, 731 ngày xóa; nhận lại ⇒ giữ; D8 chạy **trước** D5 | đúng |
 | EP-11 | A + I + S | `POST hr/employees` có trường hồ sơ ⇒ hồ sơ + nhân viên **một** transaction (lỗi ở bước hồ sơ — A: fake ném; S: `workPhone` 7 số ⇒ 400 trước khi tạo) ⇒ không còn user / membership; không trường hồ sơ ⇒ như Mốc 3.5, không hồ sơ; nhận lại `keepHireDate` true (giữ) / false + `hireDate` mới (thay) / không gửi (giữ nguyên), audit `after.rehire = true` | đúng |
 | EP-12 | A + S | nhập `hireDate` năm nay cho người có `adjustmentDays < 0` ⇒ `warnings: ['ADJUSTMENT_DAYS_REVIEW']`; `adjustmentDays ≥ 0` ⇒ `warnings: []` | đúng |
-| EP-13 | S | `GET hr/employee-profiles?q=` tìm theo tên; `seniority`; `missingHireDate`; nhãn đang làm / sắp nghỉ / đã nghỉ; limit 50 + cursor | đúng |
+| EP-13 | S | danh sách là `GET hr/employees` (B T-054 — không có `GET hr/employee-profiles?q`): cột phẳng `hireDate`, `department`, `jobTitle`, `missingHireDate`, `seniority` (năm / tháng), **không** `workPhone` | đúng |
 
 ## 3. CR — đơn bổ sung giờ (ADR-129)
 
@@ -136,16 +136,16 @@ Mọi ca tải: `expectXlsxHeaders` + `readXlsx` + `expectSafeWorkbook`.
 
 | Mã | Tầng | Ca | Mong đợi |
 |---|---|---|---|
-| XL-01 | S | `attendance/export.xlsx` có sheet "Tổng hợp", "Theo ngày", "Giờ vào – ra" (đúng thứ tự); `leave/export.xlsx` có "Số phép", "Đơn đã duyệt" | đúng |
+| XL-01 | S | `attendance/export.xlsx` có sheet "Tổng hợp", "Theo ngày", "Giờ vào – ra" (đúng thứ tự); `leave/export.xlsx` có "Số dư YYYY", "Đơn đã duyệt" (TL chấp nhận tên của D, 18/10) | đúng |
 | XL-02 | S | dòng của Mia: tổng công = `totalsOf` qua `attendance?month`; số phép = `leave/balances?year` (`entitled`, `used`, `remaining`…) | khớp từng số |
-| XL-03 | S | ô số là số (`t` vắng, `value` number), ô ngày là serial + style ngày (`isDateFormat`), ô chữ `inlineStr` | đúng |
+| XL-03 | S | ô số là số (`t` vắng, `value` number), ô ngày là serial + style ngày (`isDateFormat`), ô chữ `inlineStr` — **TL chốt 18/10:** ngày là ngày thật (serial + numFmt dd/mm/yyyy); D thêm kiểu ngày vào writer, A và D dùng; ca khẳng định khi có | đúng |
 | XL-04 | S | Quinn nghỉ giữa kỳ: có nhãn "đã nghỉ", ngày sau `lastDay` không tính; ngày ngoài retention "Ngoài thời hạn lưu"; Ada không có dòng; Admin từng là nhân viên ⇒ chỉ ngày thuộc nhiệm kỳ EMPLOYEE cũ | đúng |
 | XL-05 | S (nightly/CI) + S (local) | **nightly** (`SEC_NIGHTLY=1`, không vào cổng local — ADR-107): 1 000 người × 31 ngày, RSS API tăng < 100 MB, < 30 s. **Local**: `EXPORT_MAX_EMPLOYEES=3` ⇒ người thứ 4 ⇒ 422 `EXPORT_TOO_LARGE`, **không header xlsx**, không audit `EXPORT`, có log; tương tự `EXPORT_MAX_LEAVE_ROWS` cho báo cáo phép | đúng |
 | XL-06 | H (B) | port đọc giả ném lỗi ở lô 2 ⇒ `res.socket.destroy()`, client nhận kết nối bị cắt (`download().aborted`), không `end()`; audit `EXPORT` đã ghi | đúng |
 | XL-07 | S | `EXPORT_BATCH_SIZE=1`, `EXPORT_BATCH_DELAY_MS=300`: trong lúc xuất, HR thêm/hủy lượt của người ở lô sau ⇒ tổng trong file = trạng thái lúc bắt đầu (REPEATABLE READ) | đúng |
 | XL-08 | thủ công (F, 1 lần) | file bịa mở trên Excel vi-VN + LibreOffice: không cảnh báo sửa file, dấu tiếng Việt đúng, ngày dd/mm/yyyy, ô `=…` hiện nguyên văn, lưu lại thành CSV không thành công thức. Ghi kết quả + ảnh chụp (dữ liệu bịa) vào `docs/reviews/T-059-xlsx-manual.md` | đạt |
 | XL-09 | S | `leave/export.xlsx?year&from&to`: `from > to` ⇒ 400; vắt năm ⇒ 400; mặc định cả năm; tên file `nghi-phep-YYYY.xlsx` | đúng |
-| XL-10 | S | audit `EXPORT` đúng 1 dòng / lần tải thành công, `after = {report, period, from?, to?, rows, format: 'xlsx'}`; 400/422/429 không audit | đúng |
+| XL-10 | S | audit `EXPORT` đúng 1 dòng / lần tải thành công, `after = {report, period, from?, to?, rows, format: 'xlsx'}` — báo cáo phép `{report:'LEAVE_YEAR', period:'YYYY', from, to, rows, format:'xlsx'}` (TL chốt 18/10); 400/422/429 không audit | đúng |
 
 ## 5. LP — chính sách & số dư phép (ADR-131)
 
@@ -175,11 +175,11 @@ U: `entitlementOf`, `carried`, kiểm số dư, hạn E — Stryker `leave-domai
 | Mã | Ca | Mong đợi | File |
 |---|---|---|---|
 | SEC-HR-40 | Mia: `GET`/`PUT hr/employee-profiles/:other` (body sai), `POST attendance/corrections/:id/approve` (body sai), `PUT leave/policy/:year` (body sai) | 403 (không 400) | profile / corrections / policy |
-| SEC-HR-41 | `hr/employee-profiles/me`: đúng người, có `workPhone` của mình; Ada ⇒ 403; Quinn sau `access_until` ⇒ 401 `SESSION_REVOKED` | đúng | profile |
+| SEC-HR-41 | `hr/employee-profiles/me`: đúng người, có `workPhone` của mình; Ada ⇒ 403; người đã nghỉ (hoàn tất trong request ⇒ phiên bị thu hồi) ⇒ 401 `UNAUTHORIZED` (khe trước job ⇒ `SESSION_REVOKED` — company-clock-0559) | đúng | profile |
 | SEC-HR-42 | Hana sửa hồ sơ chính mình ⇒ 403; Ada sửa hồ sơ Hana ⇒ 200; Hugo sửa hồ sơ Hana ⇒ 200 | đúng | profile |
 | SEC-HR-43 | `GET`/`PUT hr/employee-profiles/:userId` với user chưa từng là nhân viên, Ada, UUID ngẫu nhiên | 404 `user` (body giống nhau) | profile |
 | SEC-HR-45 | mass assignment: `PUT` hồ sơ có `userId` / `version` / `updatedById`; `POST attendance/corrections` có `userId` / `status` | 400 strict | profile / corrections |
-| SEC-HR-46 | `q` = `%`, `_`, `\` khớp chữ thường (chỉ người có ký tự đó trong tên/phòng ban, không cả danh sách); `q` 101 ký tự / 1 000 ký tự | đúng; 400 | profile |
+| SEC-HR-46 | `GET hr/employees?q=` = `%`, `_`, `\` khớp chữ thường (lọc `includes` trong bộ nhớ — không LIKE; chỉ người có ký tự đó trong tên / email, không cả danh sách); `q` 101 ký tự ⇒ 400 | đúng; 400 | profile |
 | SEC-HR-47 | audit `PROFILE_SET` không có `workPhone` (cả before/after), không khóa `reason`; thông báo không có giá trị hồ sơ; log API không có SĐT | đúng | profile |
 | SEC-HR-48 | IDOR: Max hủy / xem đơn của Mia ⇒ 404; Max gọi danh sách HR ⇒ 403 | đúng | corrections |
 | SEC-HR-49 | Hana tự duyệt / từ chối đơn của mình ⇒ 403; Hugo mở đơn, bị thu `HR_MANAGE` rồi duyệt ⇒ 403, không lượt ADJUSTMENT | đúng | corrections |
@@ -246,8 +246,8 @@ E2E-HR-14…19 (Mốc 3.5) vẫn xanh; menu nhân viên có thêm "Hồ sơ củ
 |---|---|---|---|
 | `test/security/harness/clock.ts` + `clock.test.ts` | `nextVnDateAnchor`, `localToIso`, `dateInTz`, `daysInMonth` | — (đã có) | TL |
 | `test/security/harness/xlsx.ts` + `xlsx.test.ts` | bộ đọc .xlsx §1.2 | — (đã có) | B |
-| `test/security/hr-profile.sec.ts` | SEC-HR-40 (hồ sơ), 41, 42, 43, 45 (hồ sơ), 46, 47 · EP-01…06, 09, 11, 12, 13 (vế S) | T-054 | A |
-| `test/security/hr-corrections.sec.ts` | SEC-HR-40 (approve), 45 (đơn), 48…51 · CR-01…06, 08…13, 15 (vế S) | T-055 + T-056 | D |
+| `test/security/hr-profile.sec.ts` | SEC-HR-40, 41, 42, 43, 45, 46, 47 · EP-01…06, 11, 13 (vế S) — **15/15 xanh** trên `feat/m5-hr` 7ed6681 | T-054 | A |
+| `test/security/hr-corrections.sec.ts` | SEC-HR-40c, 45c (vế đơn của 40 / 45 — mã có hậu tố để mỗi mã đúng một file), 48…51 · CR-01…06, 08…11, 13, 14 (vế S), 15 — **đã viết** (pending `T-056` tới khi vé vào `feat/m5-hr`) | T-055 + T-056 | D |
 | `test/security/hr-export.sec.ts` | SEC-HR-52, 53, 54 (vế nội dung) · XL-01…04, 05 (local), 07, 09, 10 | T-055 + T-056 (bảng công), T-057 (phép) | B |
 | `test/security/hr-export-limits.sec.ts` | SEC-HR-54 (429 giờ + đồng thời) | T-055 | B |
 | `test/security/hr-export-load.nightly.sec.ts` | XL-05 (nightly) | T-055 + T-056 | B |

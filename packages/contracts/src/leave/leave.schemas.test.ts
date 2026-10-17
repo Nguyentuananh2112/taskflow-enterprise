@@ -112,6 +112,16 @@ describe('leave — DTO', () => {
       usedDays: 6,
       pendingDays: 0,
       remainingDays: -4,
+      // T-057 phân rã (ADR-131).
+      baseDays: 12,
+      seniorityBonusDays: 0,
+      seniorityYears: 0,
+      entitledSource: 'POLICY',
+      missingHireDate: false,
+      carriedOverDays: 0,
+      carriedFinal: true,
+      carriedExpiresOn: null,
+      carriedUsableDays: 0,
     };
     expect(LeaveBalanceRowDto.safeParse(row).success).toBe(true);
     expect(LeaveBalanceRowDto.safeParse({ ...row, usedDays: -1 }).success).toBe(false);

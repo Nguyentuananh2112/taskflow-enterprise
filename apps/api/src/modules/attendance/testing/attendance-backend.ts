@@ -4,6 +4,7 @@ import type {
   AttendanceEventRecord,
   IAttendanceEventStore,
 } from '../application/ports/attendance-event-store.port';
+import type { ICorrectionStore } from '../application/ports/correction-store.port';
 import type { IWorkCalendarStore } from '../application/ports/work-calendar-store.port';
 import type { WorkSchedule } from '../domain/work-schedule';
 import { InMemoryAttendanceEventStore } from '../infrastructure/persistence/in-memory/in-memory-attendance';
@@ -16,6 +17,8 @@ import { InMemoryWorkCalendarStore } from '../infrastructure/persistence/in-memo
 export interface AttendanceBackend {
   events: IAttendanceEventStore;
   calendar: IWorkCalendarStore;
+  /** Đơn bổ sung giờ (T-056) — bỏ trống ⇒ harness đơn dùng bản in-memory. */
+  corrections?: ICorrectionStore;
   uow: IUnitOfWork;
   /** Dữ liệu nền (user cho FK) — chạy trước mỗi harness. */
   seed(): Promise<void>;

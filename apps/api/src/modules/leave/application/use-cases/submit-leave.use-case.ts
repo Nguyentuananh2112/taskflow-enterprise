@@ -45,7 +45,7 @@ export class SubmitLeaveUseCase {
     const { actorId } = scope;
     const d = this.kit.d;
     return d.uow.run(async () => {
-      await d.requests.lockUser(actorId);
+      await this.kit.lockFor(actorId); // policy SHARED → leave:<user> (ADR-131/136)
       await this.kit.requireActor(actorId, PERMISSION_LEAVE_SELF);
       await d.company.assertActiveEmployee(actorId);
       const employment = await d.company.employmentOf(actorId);
@@ -58,14 +58,16 @@ export class SubmitLeaveUseCase {
 
       const holding = await d.requests.listHolding(actorId, year);
       assertNoOverlap(holding, input);
+      const today = await this.kit.today();
+      await this.kit.snapshotCarried(actorId, year, today);
       await this.kit.assertBalance({
         userId: actorId,
         year,
         type: input.type,
-        requested: halfDays,
         holding,
-        calendar,
         tenure: countingTenure(employment),
+        today,
+        extra: input,
       });
 
       const now = d.clock.now();

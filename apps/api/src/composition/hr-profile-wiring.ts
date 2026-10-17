@@ -10,6 +10,7 @@ import {
   NO_NEGATIVE_BALANCES,
   type HrProfileModule,
 } from '../modules/hr-profile/hr-profile.module';
+import type { IProfileLeaveBalances } from '../modules/hr-profile/application/ports/employee-profile.port';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
 import type { Persistence } from './persistence';
 
@@ -23,6 +24,8 @@ export function wireHrProfile(
     company: Pick<CompanyModule, 'access' | 'permissionsOf' | 'employeeRef' | 'hrAudit'>;
     notifications: Pick<NotificationsModule, 'publisher'>;
     timeZone: () => Promise<string>;
+    /** T-057: phép âm khi đổi `hireDate` ← leave (`leave.employment`). */
+    leaveBalances?: () => IProfileLeaveBalances;
   },
   http: { responder: HttpResponder; limit: (rules: readonly RateLimitRule[]) => RequestHandler[] },
 ): HrProfileModule {
@@ -35,7 +38,7 @@ export function wireHrProfile(
     people: { employeeRef: (userId) => m.company.employeeRef(userId) },
     audit: { record: (input) => m.company.hrAudit.record(input) },
     notifier: { notify: (input) => m.notifications.publisher.notify(input) },
-    leaveBalances: () => NO_NEGATIVE_BALANCES,
+    leaveBalances: m.leaveBalances ?? (() => NO_NEGATIVE_BALANCES),
     uow: d.persistence.uow,
     clock: d.clock,
     timeZone: m.timeZone,

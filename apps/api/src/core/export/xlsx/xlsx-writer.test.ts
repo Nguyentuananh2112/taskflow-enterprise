@@ -10,9 +10,11 @@ import {
   cellXml,
   columnName,
   escapeXml,
+  excelSerial,
   needsQuotePrefix,
   sheetName,
   stripXmlForbidden,
+  xlsxDate,
 } from './xlsx-cells';
 import { XLSX_CONTENT_TYPE, sendXlsx } from './xlsx-response';
 import { FflateXlsxWriter, XLSX_MAX_ROWS, type SpreadsheetSheet } from './xlsx-writer';
@@ -60,6 +62,38 @@ describe('xlsx-cells (thuần)', () => {
     expect(() => cellXml('A1', Number.POSITIVE_INFINITY)).toThrow();
   });
 
+  it('ngày: serial Excel hệ 1900 (mốc đã biết + đối chiếu Date.UTC 2 000 ngày ngẫu nhiên), style 4; sai ⇒ ném lỗi', () => {
+    for (const [iso, serial] of [
+      ['1900-03-01', 61],
+      ['1970-01-01', 25_569],
+      ['2000-02-29', 36_585],
+      ['2026-10-18', 46_313],
+      ['2026-12-31', 46_387],
+      ['9999-12-31', 2_958_465],
+    ] as const) {
+      expect(excelSerial(iso), iso).toBe(serial);
+    }
+    let seed = 20_261_018;
+    for (let i = 0; i < 2_000; i++) {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      const ms = Date.UTC(1900, 2, 1) + (seed % 2_897_000) * 86_400_000;
+      const iso = new Date(ms).toISOString().slice(0, 10);
+      expect(excelSerial(iso), iso).toBe(ms / 86_400_000 + 25_569);
+    }
+    expect(cellXml('C2', xlsxDate('2026-10-18'))).toBe('<c r="C2" s="4"><v>46313</v></c>');
+    for (const bad of [
+      '2026-02-29',
+      '2026-13-01',
+      '2026-04-31',
+      '26-10-18',
+      '2026-10-18T00:00',
+      '1900-02-28',
+    ]) {
+      expect(() => xlsxDate(bad), bad).toThrow();
+    }
+    expect(xlsxDate('2028-02-29')).toEqual({ date: '2028-02-29' });
+  });
+
   it('tên sheet: bỏ ký tự cấm, ≤ 31, không rỗng, trùng ⇒ hậu tố', () => {
     const used = new Set<string>();
     expect(sheetName('Phép [2026]: tổng/hợp?', used)).toBe('Phép  2026   tổng hợp');
@@ -86,6 +120,7 @@ describe('FflateXlsxWriter', () => {
     expect(Object.keys(files).sort()).toEqual([
       '[Content_Types].xml',
       '_rels/.rels',
+      'docProps/core.xml',
       'xl/_rels/workbook.xml.rels',
       'xl/styles.xml',
       'xl/workbook.xml',
@@ -105,6 +140,12 @@ describe('FflateXlsxWriter', () => {
     expect(sheet).toContain('<c r="A1" t="inlineStr" s="2">'); // tiêu đề đậm
     expect(sheet).toContain('<col min="1" max="1" width="30" customWidth="1"/>');
     expect(files['xl/styles.xml']).toContain('quotePrefix="1"');
+    // F SEC-HR-54: creator = TaskFlow, không app.xml / lastModifiedBy / Company / Manager / sheet ẩn / definedNames.
+    expect(files['docProps/core.xml']).toContain('<dc:creator>TaskFlow</dc:creator>');
+    expect(Object.keys(files)).not.toContain('docProps/app.xml');
+    for (const xml of Object.values(files)) {
+      expect(xml).not.toMatch(/lastModifiedBy|<Company|<Manager|state="hidden"|definedNames/);
+    }
     expect(files['xl/workbook.xml']).toContain('<sheet name="Phép" sheetId="1" r:id="rId1"/>');
   });
 
@@ -230,7 +271,10 @@ describe('B L1/L2/L3', () => {
     expect(sheet).toContain('<c r="A1" t="inlineStr" s="3">');
     expect(sheet).toContain('<c r="B1" t="inlineStr" s="2">');
     expect(sheet).toContain('a&#13;b');
-    expect(files['xl/styles.xml']).toContain('<cellXfs count="4">');
+    const styles = files['xl/styles.xml']!;
+    expect(styles).toContain('<cellXfs count="5">');
+    expect(styles.match(/<xf [^>]*xfId="0"/g)).toHaveLength(5); // count khớp số xf thật
+    expect(styles).toContain('<numFmt numFmtId="164" formatCode="dd/mm/yyyy"/>');
   });
 
   it(`L3 vượt ${String(XLSX_MAX_ROWS)} hàng (gồm tiêu đề) ⇒ ném lỗi, không xuất file hỏng`, async () => {

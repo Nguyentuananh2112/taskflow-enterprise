@@ -26,7 +26,11 @@ export const HR_AUDIT_ACTIONS = [
   'WORKSPACE_OWNER_ASSIGNED',
   'WORKSPACE_ARCHIVED',
   'COMPANY_RENAMED',
+  'POLICY_SET',
   'PROFILE_SET',
+  'CORRECTION_SUBMIT',
+  'CORRECTION_CANCEL',
+  'CORRECTION_DECIDE',
 ] as const;
 export type HrAuditAction = (typeof HR_AUDIT_ACTIONS)[number];
 

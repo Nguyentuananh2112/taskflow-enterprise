@@ -2,6 +2,7 @@ import { Zip, ZipDeflate, strToU8 } from 'fflate';
 
 import { rowXml, sheetName, type CellValue } from './xlsx-cells';
 import {
+  CORE_PROPS_XML,
   ROOT_RELS_XML,
   SHEET_TAIL_XML,
   STYLES_XML,
@@ -15,7 +16,8 @@ import {
 // strToU8) — không bao giờ giải nén dữ liệu người dùng (giới hạn bề mặt zip-bomb). File DUY NHẤT được import fflate
 // (luật depcruise `xlsx-only-fflate`). Ghi theo lô ra `sink` ⇒ không giữ cả bảng trong bộ nhớ.
 
-export type { CellValue } from './xlsx-cells';
+export type { CellValue, XlsxDate } from './xlsx-cells';
+export { xlsxDate } from './xlsx-cells';
 
 export interface SpreadsheetColumn {
   header: string;
@@ -79,6 +81,7 @@ export class FflateXlsxWriter implements ISpreadsheetWriter {
     const names = sheets.map((s) => sheetName(s.name, used));
     await addWhole('[Content_Types].xml', contentTypesXml(sheets.length));
     await addWhole('_rels/.rels', ROOT_RELS_XML);
+    await addWhole('docProps/core.xml', CORE_PROPS_XML);
     await addWhole('xl/workbook.xml', workbookXml(names));
     await addWhole('xl/_rels/workbook.xml.rels', workbookRelsXml(sheets.length));
     await addWhole('xl/styles.xml', STYLES_XML);

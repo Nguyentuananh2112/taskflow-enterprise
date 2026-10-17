@@ -4,7 +4,10 @@ import type { IClock, IIdGenerator } from '../core/domain';
 import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import type { AuthModule } from '../modules/auth/auth.module';
-import type { IWorkCalendarPort } from '../modules/leave/application/ports/leave.ports';
+import type {
+  ILeaveHireDates,
+  IWorkCalendarPort,
+} from '../modules/leave/application/ports/leave.ports';
 import { createLeaveModule } from '../modules/leave/leave.module';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
 import {
@@ -15,6 +18,10 @@ import {
 } from './leave-adapters';
 import { leaveNotifierFrom } from './notification-adapters';
 import type { Persistence } from './persistence';
+import type { ExportLimits } from '../core/export/export-limits';
+import type { ExportSlots } from '../core/export/export-slots';
+import { FflateXlsxWriter } from '../core/export/xlsx/xlsx-writer';
+import type { ILogger } from '../core/logging/logger';
 
 export type LeaveModule = ReturnType<typeof createLeaveModule>;
 
@@ -22,11 +29,14 @@ export type LeaveModule = ReturnType<typeof createLeaveModule>;
  * Module leave (T-039/T-064) với adapter thật: lịch ← attendance, quyền / nhân viên / nhiệm kỳ + audit ← company
  * (T-061), thông báo ← notifications, tên ← reader user của task/auth.
  */
+const NO_HIRE_DATES: ILeaveHireDates = { hireDateOf: () => Promise.resolve(null) };
+
 export function wireLeave(
   d: {
     persistence: Pick<Persistence, 'leave' | 'task' | 'uow'>;
     clock: IClock;
     ids: IIdGenerator;
+    logger: ILogger;
   },
   m: {
     company: () => CompanyPortsForLeave;
@@ -34,6 +44,11 @@ export function wireLeave(
     attendance: { workCalendar: IWorkCalendarPort };
     notifications: Pick<NotificationsModule, 'publisher'>;
     auth: Pick<AuthModule, 'authenticate'>;
+    hireDates?: ILeaveHireDates;
+    /** Một bộ suất cho MỌI export của công ty (bảng công, phép, lương) — container tạo. */
+    exportSlots: ExportSlots;
+    /** Trần / nhịp đọc (T-055, `config.exportLimits`) — thiếu ⇒ DEFAULT_EXPORT_LIMITS. */
+    exportLimits?: ExportLimits | undefined;
   },
   http: { responder: HttpResponder; limit: (rules: readonly RateLimitRule[]) => RequestHandler[] },
 ): LeaveModule {
@@ -43,6 +58,13 @@ export function wireLeave(
     calendar: m.attendance.workCalendar,
     notifier: leaveNotifierFrom(m.notifications.publisher),
     company: leaveCompanyFrom(m.company),
+    // Ngày vào công ty: hồ sơ của T-054 (B) — chưa nối ⇒ null cho mọi người (phép = annual, cờ thiếu ngày vào).
+    hireDates: m.hireDates ?? NO_HIRE_DATES,
+    spreadsheet: new FflateXlsxWriter(),
+    readSnapshot: d.persistence.uow.snapshot,
+    exportSlots: m.exportSlots,
+    exportLimits: m.exportLimits,
+    logger: d.logger,
     audit: leaveAudit(m.hrAudit),
     uow: d.persistence.uow,
     clock: d.clock,

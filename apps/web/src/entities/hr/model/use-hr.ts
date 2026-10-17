@@ -91,3 +91,13 @@ export function useLeaveBalances(year: number | null) {
     staleTime: 60_000,
   });
 }
+
+/** Chính sách phép của một năm (ADR-131) — năm chưa đặt ⇒ server trả bản kế thừa / mức luật. */
+export function useLeavePolicy(year: number, enabled = true) {
+  return useQuery({
+    queryKey: hrKeys.policy(year),
+    queryFn: () => hrLeaveApi.policy(year),
+    enabled,
+    staleTime: 0,
+  });
+}
