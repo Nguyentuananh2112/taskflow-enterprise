@@ -8,7 +8,7 @@ import { applyServerErrors } from '@/shared/lib/form-errors';
 import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
 import { ClientForm } from '@/shared/ui/client-form';
-import { Input } from '@/shared/ui/input';
+import { PasswordInput } from '@/shared/ui/password-input';
 import { toast } from '@/shared/ui/toast';
 
 import { useChangePassword } from '../model/use-change-password';
@@ -44,19 +44,17 @@ export function ChangePasswordForm() {
   return (
     <ClientForm onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
       {errors.root?.server && <Alert>{errors.root.server.message}</Alert>}
-      <Input
+      <PasswordInput
         label="Mật khẩu hiện tại"
-        type="password"
+        rules={[]}
         autoComplete="current-password"
         required
         error={errors.currentPassword?.message}
         {...register('currentPassword')}
       />
-      <Input
+      <PasswordInput
         label="Mật khẩu mới"
-        type="password"
         autoComplete="new-password"
-        hint="Từ 12 đến 256 ký tự."
         required
         error={errors.newPassword?.message}
         {...register('newPassword')}
