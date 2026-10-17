@@ -12,6 +12,7 @@ import { EmptyState } from '@/shared/ui/empty-state';
 import { PageMain } from '@/shared/ui/page';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { AttendanceCard, CheckInPrompt, HomeShortcuts } from '@/widgets/attendance-card';
+import { ChatHomeTile } from '@/widgets/chat-entry';
 
 import { ManageTiles } from './manage-tiles';
 
@@ -64,6 +65,8 @@ export function WorkspacePickerPage() {
       <CheckInPrompt enabled={employee} />
       <ManageTiles />
       <HomeShortcuts enabled={employee} />
+      {/* Mốc 6: < md lối vào trò chuyện (≥ md là icon cạnh chuông). */}
+      <ChatHomeTile />
       <section aria-labelledby="ws-heading" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <h2 id="ws-heading" className="text-base font-semibold">

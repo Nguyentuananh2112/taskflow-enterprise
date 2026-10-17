@@ -29,6 +29,10 @@ const fake = vi.hoisted(() => {
       return socket;
     },
     off: () => socket,
+    emit(event: string, payload: unknown) {
+      state.emitted.push({ event, payload });
+      return true;
+    },
     connect() {
       state.connectCalls += 1;
       state.active = true;
@@ -318,5 +322,19 @@ describe('createSocketIoClient', () => {
       { event: 'project:join', payload: { workspaceId: 'w', projectId: 'p' } },
       { event: 'auth:renew', payload: { token: 'access-2' } },
     ]);
+  });
+
+  it('chat:typing (Mốc 6): gửi rồi quên khi đã kết nối; chưa kết nối ⇒ bỏ (không xếp hàng)', () => {
+    const { client } = setup();
+    const before = fake.state.emitted.length;
+    client.sendTyping({ conversationId: 'c1' });
+    expect(fake.state.emitted).toHaveLength(before);
+    fake.state.connected = true;
+    client.sendTyping({ conversationId: 'c1' });
+    expect(fake.state.emitted.at(-1)).toEqual({
+      event: 'chat:typing',
+      payload: { conversationId: 'c1' },
+    });
+    fake.state.connected = false;
   });
 });

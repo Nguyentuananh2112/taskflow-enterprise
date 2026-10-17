@@ -113,4 +113,5 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   PAYLOAD_TOO_LARGE: 'Tệp quá lớn.',
   INVALID_UPLOAD_NAME: 'Tên tệp không hợp lệ.',
   UNSUPPORTED_FILE_TYPE: 'Loại tệp không được nhận.',
+  MACRO_OR_ACTIVE_CONTENT: 'Tệp có macro hoặc nội dung chủ động.',
 };

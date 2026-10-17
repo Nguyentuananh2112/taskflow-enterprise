@@ -1,4 +1,5 @@
 import type {
+  ChatTypingPayload,
   ProjectJoinPayload,
   ProjectLeavePayload,
   ServerToClientEvents,
@@ -26,6 +27,11 @@ export interface RealtimeClient {
   joinProject(payload: ProjectJoinPayload): Promise<SocketAck>;
   leaveProject(payload: ProjectLeavePayload): Promise<SocketAck>;
   renewAuth(token: string): Promise<SocketAck>;
+  /**
+   * Mốc 6 (ADR-145): "đang gõ" — gửi rồi quên (không ack); chưa kết nối ⇒ bỏ. Người gọi tự giới hạn ≥ 3 s / lần
+   * (server cũng chỉ nhận ≤ 1 / 3 s / socket).
+   */
+  sendTyping(payload: ChatTypingPayload): void;
 }
 
 /** Client không làm gì — trước khi đăng nhập, hoặc khi không có socket (mock dev). */
@@ -43,5 +49,6 @@ export function createOfflineRealtimeClient(clientId: string): RealtimeClient {
     joinProject: ack,
     leaveProject: ack,
     renewAuth: ack,
+    sendTyping: () => undefined,
   };
 }

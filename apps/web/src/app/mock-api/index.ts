@@ -1,6 +1,9 @@
 import { createActivationHandlers } from './activation-handlers';
 import { createAdminHandlers } from './admin-handlers';
 import { createAvatarHandlers } from './avatar-handlers';
+import { createChatGroupHandlers } from './chat-group-handlers';
+import { createChatHandlers } from './chat-handlers';
+import { createChatMessageHandlers } from './chat-message-handlers';
 import { createAttendanceHandlers } from './attendance-handlers';
 import { createEmployeeHandlers } from './employee-handlers';
 import { createAuthHandlers } from './auth-handlers';
@@ -12,6 +15,7 @@ import { MockLeave } from './mock-leave';
 import { MockAttendance } from './mock-attendance';
 import { MockBoard } from './mock-board';
 import { MockAvatars } from './mock-avatars';
+import { MockChat } from './mock-chat';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
 import { createMemberHandlers } from './member-handlers';
@@ -27,6 +31,7 @@ import { createWorkspaceHandlers } from './workspace-handlers';
 // qua `board.onEvent` (test nối vào socket giả).
 
 export { MockAvatars, type AvatarChange } from './mock-avatars';
+export { MockChat } from './mock-chat';
 export { MockBoard, type BoardEvent } from './mock-board';
 export { MockDb, REFRESH_GRACE_MS, type MockDbOptions } from './mock-db';
 export { isMockApiEnabled } from './mock-flag';
@@ -58,6 +63,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const avatars = new MockAvatars(baseUrl, options.now ?? Date.now);
   board.avatarOf = (userId) => avatars.urlOf(userId, '64');
   db.company.avatarOf = board.avatarOf;
+  const chat = new MockChat(db, baseUrl, options.now ?? Date.now);
   return {
     db,
     board,
@@ -66,10 +72,14 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     leave,
     hr,
     avatars,
+    chat,
     handlers: [
       contentTypeGuard(baseUrl),
       ...createAuthHandlers(baseUrl, db, allowedOrigins, avatars),
       ...createAvatarHandlers(baseUrl, db, avatars, limit),
+      ...createChatHandlers(baseUrl, db, chat),
+      ...createChatGroupHandlers(baseUrl, db, chat),
+      ...createChatMessageHandlers(baseUrl, db, chat, limit),
       ...createActivationHandlers(baseUrl, db),
       ...createAdminHandlers(baseUrl, db),
       ...createWorkspaceHandlers(baseUrl, db, board, limit),

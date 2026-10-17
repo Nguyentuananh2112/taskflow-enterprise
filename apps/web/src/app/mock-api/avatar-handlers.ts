@@ -7,43 +7,10 @@ import type { MockDb } from './mock-db';
 import { requireCompany } from './mock-guard';
 import type { RateLimiter } from './request-guards';
 import { fail, noContent, ok } from './respond';
+import { mediaGone, sniffImage, uploadName } from './upload-sniff';
 
 // Avatar của mock API (avatar-chat.md ADR-141/142, §4): `PUT/DELETE me/avatar`, `DELETE hr/employees/:userId/avatar`,
 // `GET media/avatars/:userId/:variant`. Thứ tự lỗi như server: 401 → 403 → 400 → 404 → 413/415 → 429.
-
-/** Chỉ ảnh mà avatar nhận (sniff theo nội dung, không tin đuôi / Content-Type — ADR-141). */
-function sniffImage(bytes: Uint8Array): string | null {
-  const at = (i: number) => bytes[i] ?? -1;
-  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return 'image/jpeg';
-  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return 'image/png';
-  const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
-  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'image/webp';
-  return null;
-}
-
-/** `X-Upload-Name`: bắt buộc, percent-encoded UTF-8, ≤ 255 byte sau giải mã (F-03c). */
-function uploadName(request: Request): string | null {
-  const raw = request.headers.get('x-upload-name');
-  if (!raw) return null;
-  try {
-    const name = decodeURIComponent(raw);
-    return name.length > 0 && new TextEncoder().encode(name).length <= 255 ? name : null;
-  } catch {
-    return null;
-  }
-}
-
-const mediaGone = () =>
-  new HttpResponse(
-    '<!doctype html><meta charset="utf-8"><title>Không tìm thấy</title><p>Liên kết đã hết hạn hoặc không còn tồn tại.</p><p><a href="/">Quay lại</a></p>',
-    {
-      status: 404,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Content-Security-Policy': "default-src 'none'; sandbox",
-      },
-    },
-  );
 
 export function createAvatarHandlers(
   baseUrl: string,

@@ -318,4 +318,54 @@ describe('http.upload — XHR nhị phân (avatar-chat.md ADR-141, §7 E2)', () 
       'Bearer new',
     ]);
   });
+
+  describe('refresh chủ động trước tệp lớn (TL chốt — T-072)', () => {
+    it('token còn < minTokenValidityMs ⇒ refresh TRƯỚC, gửi bằng token mới, chỉ 1 lượt XHR', async () => {
+      const auth = { ...fakeAuth(), expiresAt: () => Date.now() + 30_000 };
+      const { http, made } = setup([respondOk({ avatarUrl: 'u' })], auth);
+      await http.upload('POST', '/chat/uploads', {
+        schema: Schema,
+        body: blob,
+        name: 'a.pdf',
+        minTokenValidityMs: 60_000,
+      });
+      expect(auth.refresh).toHaveBeenCalledTimes(1);
+      expect(made).toHaveLength(1);
+      expect(made[0]!.headers['authorization']).toBe('Bearer new');
+    });
+
+    it('token còn lâu, hoặc không truyền minTokenValidityMs (avatar) ⇒ không refresh', async () => {
+      const auth = { ...fakeAuth(), expiresAt: () => Date.now() + 10 * 60_000 };
+      const soon = { ...fakeAuth(), expiresAt: () => Date.now() + 1_000 };
+      const a = setup([respondOk({ avatarUrl: 'u' })], auth);
+      await a.http.upload('POST', '/x', {
+        schema: Schema,
+        body: blob,
+        name: 'a',
+        minTokenValidityMs: 60_000,
+      });
+      const b = setup([respondOk({ avatarUrl: 'u' })], soon);
+      await b.http.upload('PUT', '/me/avatar', { schema: Schema, body: blob, name: 'a' });
+      expect(auth.refresh).not.toHaveBeenCalled();
+      expect(soon.refresh).not.toHaveBeenCalled();
+    });
+
+    it('refresh trước lỗi (mạng) ⇒ vẫn gửi, không kết thúc phiên', async () => {
+      const auth = {
+        ...fakeAuth({ refresh: vi.fn(() => Promise.reject(new Error('mạng'))) }),
+        expiresAt: () => Date.now() + 1_000,
+      };
+      const { http, made } = setup([respondOk({ avatarUrl: 'u' })], auth);
+      await expect(
+        http.upload('POST', '/x', {
+          schema: Schema,
+          body: blob,
+          name: 'a',
+          minTokenValidityMs: 60_000,
+        }),
+      ).resolves.toEqual({ avatarUrl: 'u' });
+      expect(made).toHaveLength(1);
+      expect(auth.onSessionEnded).not.toHaveBeenCalled();
+    });
+  });
 });

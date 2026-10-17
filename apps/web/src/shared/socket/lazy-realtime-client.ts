@@ -90,5 +90,6 @@ export function createLazyRealtimeClient(
     joinProject: (payload) => viaReal((c) => c.joinProject(payload)),
     leaveProject: (payload) => viaReal((c) => c.leaveProject(payload)),
     renewAuth: (token) => viaReal((c) => c.renewAuth(token)),
+    sendTyping: (payload) => real?.sendTyping(payload),
   };
 }

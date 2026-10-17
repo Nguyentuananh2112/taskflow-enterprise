@@ -26,6 +26,7 @@ export const http = createHttpClient({
     getAccessToken: () => hooks.getAccessToken(),
     refresh: () => hooks.refresh(),
     onSessionEnded: (reason) => hooks.onSessionEnded(reason),
+    expiresAt: () => hooks.expiresAt?.() ?? 0,
   },
 });
 
