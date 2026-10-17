@@ -24,8 +24,10 @@ export interface UploadOptions {
   declaredLength?: number;
   /** Hủy socket sau khi gửi đúng `abortAt` byte. */
   abortAt?: number;
-  /** Gửi chậm (byte / giây) — giữ kết nối mở (SEC-CH-24 / 27). */
+  /** Gửi chậm (byte / giây) — giữ kết nối mở (SEC-CH-24). */
   dripBps?: number;
+  /** Gửi đúng `stallAt` byte rồi NGỪNG (không end, không hủy) — server phải tự cắt theo idle timeout (SEC-CH-27). */
+  stallAt?: number;
   method?: string;
   /** Header thêm (vd bỏ Bearer bằng `authorization: undefined`). */
   headers?: Record<string, string | undefined>;
@@ -91,7 +93,7 @@ async function pump(
   body: Buffer,
   opts: UploadOptions,
 ): Promise<void> {
-  const limit = opts.abortAt ?? body.length;
+  const limit = opts.abortAt ?? opts.stallAt ?? body.length;
   const step = opts.dripBps ? Math.max(1, Math.floor(opts.dripBps / 4)) : CHUNK;
   for (let off = 0; off < limit; off += step) {
     if (req.destroyed) return;
@@ -104,6 +106,7 @@ async function pump(
     req.destroy();
     return;
   }
+  if (opts.stallAt !== undefined) return;
   req.end();
 }
 

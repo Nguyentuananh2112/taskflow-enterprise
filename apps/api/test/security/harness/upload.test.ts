@@ -102,6 +102,16 @@ describe('harness upload', () => {
     expect(last().bytes).toBe(2048);
   });
 
+  it('stallAt: gửi đúng N byte rồi im — kết nối vẫn mở tới khi server tự cắt', async () => {
+    const pending = upload(api, 'tok', Buffer.alloc(100_000, 4), { stallAt: 30_000 });
+    await expect.poll(() => last().bytes).toBe(30_000);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(last()).toMatchObject({ bytes: 30_000, aborted: false });
+    // Server (giả) cắt kết nối như idle timeout ⇒ client nhận "bị cắt", không treo.
+    server.closeAllConnections();
+    await expect(pending).resolves.toMatchObject({ aborted: true, status: 0 });
+  });
+
   it('không token ⇒ không Authorization; contentType ghi đè', async () => {
     await upload(api, undefined, Buffer.alloc(5), { contentType: 'text/plain' });
     expect(last().headers.authorization).toBeUndefined();
