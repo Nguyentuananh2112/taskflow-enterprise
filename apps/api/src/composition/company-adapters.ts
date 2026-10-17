@@ -1,3 +1,4 @@
+import type { EmploymentCollaborators } from '../modules/company';
 import type { ICompanyAccessEvents } from '../modules/company/application/ports/access-events.port';
 import type { IAdminWorkspaces } from '../modules/company/application/ports/admin-workspaces.port';
 import type { IOffboardLeavePort } from '../modules/company/application/ports/offboard-leave.port';
@@ -52,5 +53,23 @@ export function companyAccessEvents(
       }),
     pushAccessChanged: ({ userId, role, grants, actorId }) =>
       realtime.notifyCompanyAccessChanged({ userId, role, grants }, { actorId }),
+  };
+}
+
+/** T-062: cộng tác vòng đời nhân viên — gọi trễ (module workspace / leave / notifications dựng SAU company). */
+export function employmentCollaborators(m: {
+  workspace: { exit: EmploymentCollaborators['workspaceExit'] };
+  leave: {
+    employment: EmploymentCollaborators['offboardLeave'] & EmploymentCollaborators['rehireLeave'];
+  };
+  notifications: Pick<NotificationsModule, 'publisher'>;
+  realtime: Pick<LateBoundRealtime, 'notifyCompanyAccessChanged'>;
+}): EmploymentCollaborators {
+  return {
+    workspaceExit: m.workspace.exit,
+    offboardLeave: m.leave.employment,
+    rehireLeave: m.leave.employment,
+    notifier: m.notifications.publisher,
+    realtime: m.realtime,
   };
 }

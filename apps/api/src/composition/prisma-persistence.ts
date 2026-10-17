@@ -11,6 +11,7 @@ import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
 import { createPrismaAttendanceRepositories } from '../modules/attendance/attendance.module';
 import { PrismaHrAuditLog } from '../modules/company/infrastructure/prisma/prisma-hr-audit-log';
+import { PrismaCompanyOffboarding } from '../modules/company/infrastructure/prisma/prisma-company-offboarding';
 import {
   PrismaCompany,
   PrismaCompanyMembers,
@@ -96,6 +97,7 @@ export function createPrismaPersistence(d: {
       members: new PrismaCompanyMembers(db),
       tenures: new PrismaCompanyTenureReader(db),
       hrAudit: new PrismaHrAuditLog(db),
+      offboarding: new PrismaCompanyOffboarding(db),
     },
     attendance: createPrismaAttendanceRepositories(db),
     leave,

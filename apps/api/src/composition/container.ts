@@ -18,7 +18,7 @@ import {
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
-import { companyAdminDeps } from './company-adapters';
+import { companyAdminDeps, employmentCollaborators } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
@@ -87,6 +87,7 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
+    collaborators: () => employmentCollaborators({ workspace, leave, notifications, realtime }),
     ...companyAdminDeps(
       () => notifications,
       realtime,

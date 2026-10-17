@@ -98,6 +98,8 @@ export function createTestApp(
       grants?: ('HR_MANAGE' | 'PAYROLL_MANAGE')[];
       /** false ⇒ không tạo workspace mặc định (`workspaceId` = ''). */
       workspace?: boolean;
+      /** EMPLOYEE: ngày đầu nhiệm kỳ (mặc định hôm nay theo giờ nghiệp vụ). */
+      startDate?: string;
     } = {},
   ) {
     const role = opts.role ?? 'EMPLOYEE';
@@ -116,7 +118,9 @@ export function createTestApp(
         role,
         grants: role === 'EMPLOYEE' ? (opts.grants ?? []) : [],
         startDate:
-          role === 'EMPLOYEE' ? toLocal(businessClock.now(), DEFAULT_COMPANY_TIME_ZONE).date : null,
+          role === 'EMPLOYEE'
+            ? (opts.startDate ?? toLocal(businessClock.now(), DEFAULT_COMPANY_TIME_ZONE).date)
+            : null,
         at: businessClock.now(),
       });
       if (opts.workspace === false) return { userId: user.id, workspaceId: '' };

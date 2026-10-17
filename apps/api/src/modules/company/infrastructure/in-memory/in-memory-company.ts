@@ -178,7 +178,8 @@ export class InMemoryCompanyStore
     const wanted = (userId: string) => q.userIds === undefined || q.userIds.includes(userId);
     const current = [...this.#state.members.values()]
       .filter((m) => m.role === 'EMPLOYEE' && m.startDate !== null && wanted(m.userId))
-      .map((m) => ({ userId: m.userId, from: m.startDate!, until: null }));
+      // Có lịch nghỉ ⇒ nhiệm kỳ kết thúc ở `offboardLastDay` (A review T-062 MEDIUM-1, cùng nghĩa với bản Prisma).
+      .map((m) => ({ userId: m.userId, from: m.startDate!, until: m.offboardLastDay }));
     const past = this.#state.departures
       .filter((d) => d.role === 'EMPLOYEE' && wanted(d.userId))
       .map((d) => ({ userId: d.userId, from: d.firstDay, until: d.lastDay }));

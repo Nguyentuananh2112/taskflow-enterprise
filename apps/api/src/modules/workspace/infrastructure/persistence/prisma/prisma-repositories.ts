@@ -156,6 +156,14 @@ export class PrismaMembershipRepository implements IMembershipRepository {
        FOR UPDATE`;
     return rows.map((r) => r.user_id);
   }
+  async listWorkspaceIdsOfUser(userId: string): Promise<string[]> {
+    const rows = await this.db().workspaceMember.findMany({
+      where: { userId },
+      orderBy: [{ workspaceId: 'asc' }],
+      select: { workspaceId: true },
+    });
+    return rows.map((r) => r.workspaceId);
+  }
   async listUserIds(workspaceId: string): Promise<string[]> {
     const rows = await this.db().workspaceMember.findMany({
       where: { workspaceId },

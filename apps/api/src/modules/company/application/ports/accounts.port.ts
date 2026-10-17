@@ -25,6 +25,8 @@ export interface ICompanyAccounts {
     createdById: string | null;
     ttlMs: number;
   }): Promise<{ token: string; link: string; expiresAt: Date }>;
+  /** Thu hồi mọi token kích hoạt còn sống (ADR-137 "Hoàn tất" bước 5). Trả số token. */
+  revokeActivations(userId: string): Promise<number>;
   /**
    * Thu hồi mọi phiên theo ADR-105 (đổi vai trò Admin / nghỉ việc): `token_version + 1` + thu hồi refresh token
    * + ghi `tv` mới lên Valkey TRƯỚC commit (lỗi ⇒ 503, rollback); `disconnectUser` SAU commit.

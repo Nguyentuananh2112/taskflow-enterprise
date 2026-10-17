@@ -26,10 +26,27 @@ export function maintenanceJobs(d: {
    */
   businessClock: IClock;
   logger: ILogger;
+  /**
+   * T-062 (R40): hoàn tất nghỉ việc tới hạn — LUÔN chạy (kể cả local/test): đây là luật nghiệp vụ (rời ws, thu hồi
+   * phiên, dọn đơn), không phải dọn dẹp. Thiếu ⇒ không đăng ký (test cũ).
+   */
+  offboarding?: { completeDueOffboardings(signal?: AbortSignal): Promise<unknown> };
 }): ScheduledJob[] {
   const { persistence: p, env, clock, businessClock, logger } = d;
   const groupOn = maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED);
   const jobs: ScheduledJob[] = [];
+  const offboarding = d.offboarding;
+  if (offboarding) {
+    jobs.push({
+      name: 'complete-offboardings',
+      intervalMs: OFFBOARDING_INTERVAL_MS,
+      jitterMs: 5_000,
+      firstRunAfterMs: 5_000,
+      run: async (signal) => {
+        await offboarding.completeDueOffboardings(signal);
+      },
+    });
+  }
   // T-033: purge workspace hết ân hạn mỗi giờ, khóa advisory theo lô.
   if (groupOn && p.workspacePurger) {
     jobs.push(
@@ -62,6 +79,9 @@ export function maintenanceJobs(d: {
   }
   return jobs;
 }
+
+/** R40: socket đã nối của người hết `access_until` bị ngắt trễ tối đa ~1 phút. */
+export const OFFBOARDING_INTERVAL_MS = 60_000;
 
 /**
  * Job retention THẬT SỰ chạy ở process này: lưu trữ có bước dọn (Prisma) VÀ cờ cho phép. Một điều kiện duy nhất cho

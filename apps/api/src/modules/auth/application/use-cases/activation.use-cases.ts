@@ -57,6 +57,11 @@ export class ActivationIssuer {
     });
     return { token, link: `${this.d.webOrigin}/activate#t=${token}`, expiresAt };
   }
+
+  /** Nghỉ việc / xóa: mọi token sống của user chết NGAY (ADR-137 "Hoàn tất" bước 5). Trả số token bị thu hồi. */
+  revokeAll(userId: string): Promise<number> {
+    return this.d.tokens.revokeAllForUser(userId, this.d.clock.now());
+  }
 }
 
 interface ResolveDeps {

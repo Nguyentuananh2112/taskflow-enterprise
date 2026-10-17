@@ -12,6 +12,7 @@ import {
   PrismaCompanyMembers,
   PrismaCompanyTenureReader,
 } from '../../../src/modules/company/infrastructure/prisma/prisma-company';
+import { PrismaCompanyOffboarding } from '../../../src/modules/company/infrastructure/prisma/prisma-company-offboarding';
 import { PrismaHrAuditLog } from '../../../src/modules/company/infrastructure/prisma/prisma-hr-audit-log';
 import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
 import {
@@ -98,6 +99,7 @@ beforeEach(async () => {
       members: new PrismaCompanyMembers(db),
       tenures: new PrismaCompanyTenureReader(db),
       hrAudit: new PrismaHrAuditLog(db),
+      offboarding: new PrismaCompanyOffboarding(db),
     },
     ids: new UuidV7Generator(),
     clock,
@@ -106,6 +108,9 @@ beforeEach(async () => {
     responder: {} as never,
     limit: () => [],
     accounts: { current: null },
+    collaborators: () => {
+      throw new Error('không dùng ở ca này');
+    },
     // Không dùng ở ca này (chỉ audience): route admin / dọn đơn không chạy.
     offboardLeave: { offboardCleanup: () => Promise.resolve({ cancelled: 0, revoked: 0 }) },
     accessEvents: {

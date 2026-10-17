@@ -11,6 +11,7 @@ import type { CompanyAccess } from '../company-access';
 import type { HrAuditWriter } from '../hr-audit-writer';
 import type { ICompanyAccounts } from '../ports/accounts.port';
 import type { ICompanyMemberRepository, ICompanyTenureReader } from '../ports/company-member.port';
+import type { IRehireLeavePort } from '../ports/employment-collaborators.port';
 
 const HOUR_MS = 60 * 60 * 1000;
 /** ADR-137: link kích hoạt nhân viên sống 7 ngày. */
@@ -60,6 +61,8 @@ export class HireEmployeeUseCase {
       /** Múi giờ lịch công ty (ADR-120) — attendance (A, T-063) nối phiên bản lịch hiện hành. */
       timeZone: () => Promise<string>;
       logger: ILogger;
+      /** Module leave (nhận lại cùng năm — D H2); tham chiếu trễ ở composition. */
+      rehireLeave: () => IRehireLeavePort;
     },
   ) {}
 
@@ -93,7 +96,20 @@ export class HireEmployeeUseCase {
       if (existing && (await this.d.members.find(existing.userId))) {
         throw new ResourceConflictError({ reason: 'already_employee', field: 'email' });
       }
+      let sameYearRehire = false;
       if (existing) {
+        // Bậc 3 ADR-136 TRƯỚC khi chèn dòng (bậc 5): resetOnRehire lấy lại khóa leave — tái nhập, vô hại.
+        await this.d.members.lockEmployeeWork(existing.userId);
+        // Nhận lại cùng năm (D H2): nhiệm kỳ trước có ngày trong năm của `startDate` ⇒ đặt lại điều chỉnh phép.
+        const year = startDate.slice(0, 4);
+        sameYearRehire =
+          (
+            await this.d.tenures.tenuresOf({
+              userIds: [existing.userId],
+              from: `${year}-01-01`,
+              to: startDate,
+            })
+          ).length > 0;
         // Nhận lại: nhiệm kỳ mới phải bắt đầu SAU ngày làm cuối của mọi nhiệm kỳ cũ (tenure không chồng).
         const overlap = await this.d.tenures.tenuresOf({
           userIds: [existing.userId],
@@ -113,6 +129,13 @@ export class HireEmployeeUseCase {
         startDate,
         at: now,
       });
+      if (sameYearRehire) {
+        await this.d.rehireLeave().resetOnRehire({
+          userId,
+          year: Number(startDate.slice(0, 4)),
+          actorId: actor.userId,
+        });
+      }
       const hasPassword = existing?.hasPassword ?? false;
       const activation = hasPassword
         ? null
