@@ -22,6 +22,7 @@ import {
   vnWorkday,
   type HrWorld,
 } from '../support/hr';
+import { loadUntilVisible } from '../support/load-more';
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
@@ -717,14 +718,10 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   // Một công ty (§0.4): bảng công tháng có MỌI nhân viên của lượt chạy, phân trang "Tải thêm", không có ô tìm ⇒ tải tới
   // khi thấy Mia (không dựa trang 1 — đỏ ở 5840a31 khi DB E2E đã tích lũy > 48 người).
   const miaBtn = hana.page.getByRole('button', { name: w.mia.user.fullName, exact: true });
-  const more = hana.page.getByRole('button', { name: 'Tải thêm' });
   // Chờ bảng có dữ liệu (thấy Mia hoặc nút "Tải thêm") rồi mới đếm — đếm sớm ra 0 khi bảng còn đang tải.
+  const more = hana.page.getByRole('button', { name: 'Tải thêm' });
   await expect(miaBtn.or(more).first()).toBeVisible();
-  for (let i = 0; i < 30 && (await miaBtn.count()) === 0; i += 1) {
-    await expect(more, `không thấy ${w.mia.user.fullName} và hết "Tải thêm"`).toBeVisible();
-    await more.click();
-    await expect(more.or(miaBtn).first()).toBeVisible();
-  }
+  await loadUntilVisible(miaBtn, hana.page.getByRole('row'), more);
   await miaBtn.click();
   const sheet = hana.page.getByRole('region', { name: `Bảng công của ${w.mia.user.fullName}` });
   // T-046: lịch T2…CN như /attendance — đúng một ô hôm nay (theo server), là ô của ngày mốc.
