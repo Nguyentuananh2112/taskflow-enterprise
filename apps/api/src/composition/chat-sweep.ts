@@ -16,7 +16,7 @@ export const CHAT_SWEEP_MAX_BATCHES = 20;
  * 1. tin quá 12 tháng (giờ NGHIỆP VỤ) + đính kèm của chúng;
  * 2. upload chưa gắn quá `orphanTtlSec` (24 giờ, giờ thật — cửa sổ ngắn);
  * 3. `left_at` cho participant của người không còn dòng `company_members` (danh sách thành viên đúng — ADR-143);
- * 4. blob khóa ngẫu nhiên KHÔNG còn dòng nào tham chiếu, cũ hơn `orphanTtlSec` (crash giữa commit và xóa đĩa,
+ * 4. blob trong namespace `chat/` (CHỈ của chat — B M1) KHÔNG còn dòng nào tham chiếu, cũ hơn `orphanTtlSec` (crash giữa commit và xóa đĩa,
  *    upload hỏng giữa chừng) — blob mới để yên: có thể là upload đang ghi dòng.
  */
 export function chatSweepTask(d: {
@@ -78,7 +78,7 @@ export function chatSweepTask(d: {
       removed += dead.length;
       chunk = [];
     };
-    for await (const { key, modifiedAt } of d.store.list('random')) {
+    for await (const { key, modifiedAt } of d.store.list('chat')) {
       if (modifiedAt >= before) continue;
       chunk.push(key);
       if (chunk.length >= CHAT_SWEEP_BATCH) await flush();

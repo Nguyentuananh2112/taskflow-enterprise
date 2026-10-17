@@ -30,15 +30,29 @@ describe('UploadByteBudget (ADR-141, SEC-CH-14)', () => {
     await expect(budget.consume('u', 1)).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
-  it('Valkey: EXPIRE chỉ lần đầu trong ngày', async () => {
+  it('Valkey: INCRBY + EXPIRE NX trong MỘT MULTI (nguyên tử — B L1)', async () => {
     const calls: string[] = [];
     let total = 0;
-    const counter = valkeyByteCounter({
-      incrBy: (_k, by) => Promise.resolve((total += by)),
-      expire: (k, s) => Promise.resolve(void calls.push(`${k}:${s}`)),
-    });
-    await counter.incrBy('ub:u:d', 5, 99);
-    await counter.incrBy('ub:u:d', 5, 99);
-    expect(calls).toEqual(['ub:u:d:99']);
+    const multi = {
+      incrBy(k: string, by: number) {
+        calls.push(`incrBy ${k} ${by}`);
+        total += by;
+        return multi;
+      },
+      expire(k: string, s: number, mode: 'NX') {
+        calls.push(`expire ${k} ${s} ${mode}`);
+        return multi;
+      },
+      exec: () => Promise.resolve([total, 1]),
+    };
+    const counter = valkeyByteCounter({ multi: () => multi });
+    expect(await counter.incrBy('ub:u:d', 5, 99)).toBe(5);
+    expect(await counter.incrBy('ub:u:d', 5, 99)).toBe(10);
+    expect(calls).toEqual([
+      'incrBy ub:u:d 5',
+      'expire ub:u:d 99 NX',
+      'incrBy ub:u:d 5',
+      'expire ub:u:d 99 NX',
+    ]);
   });
 });

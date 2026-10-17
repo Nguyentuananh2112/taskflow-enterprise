@@ -9,7 +9,7 @@ import { chatSweepTask } from './chat-sweep';
 
 const DAY = 86_400_000;
 /** Khóa ngẫu nhiên hợp lệ (26 ký tự base32). */
-const key = (c: string) => c.repeat(26);
+const key = (c: string) => `chat/${c.repeat(26)}`;
 
 function fakeStore(blobs: Record<string, Date>) {
   const map = new Map(Object.entries(blobs));

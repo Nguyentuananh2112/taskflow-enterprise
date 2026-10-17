@@ -51,7 +51,7 @@ it('client đi khi "worker" còn chạy ⇒ commit 503 ServiceUnavailableError, 
         setTimeout(r, 5_000).unref();
       });
       try {
-        await staged.commit();
+        await staged.commit('chat');
         res.json({ ok: true });
       } catch (err) {
         commitError = err;

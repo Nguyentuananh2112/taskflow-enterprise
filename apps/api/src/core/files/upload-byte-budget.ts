@@ -6,17 +6,26 @@ export interface ByteCounter {
   incrBy(key: string, by: number, ttlSec: number): Promise<number>;
 }
 
-/** Client tối thiểu của node-redis cho bộ đếm. */
-export interface ValkeyIncrClient {
-  incrBy(key: string, by: number): Promise<number>;
-  expire(key: string, seconds: number): Promise<unknown>;
+/** Phần tối thiểu của `MULTI` node-redis cho bộ đếm. */
+export interface ValkeyMulti {
+  incrBy(key: string, by: number): ValkeyMulti;
+  expire(key: string, seconds: number, mode: 'NX'): ValkeyMulti;
+  exec(): Promise<unknown[]>;
 }
 
+export interface ValkeyIncrClient {
+  multi(): ValkeyMulti;
+}
+
+/**
+ * `MULTI: INCRBY + EXPIRE NX` — NGUYÊN TỬ (B L1 T-069): không còn khe "đã cộng nhưng chưa đặt hạn" để lại khóa
+ * không TTL khi mất kết nối giữa hai lệnh; `NX` giữ hạn của lần đầu trong ngày.
+ */
 export function valkeyByteCounter(client: ValkeyIncrClient): ByteCounter {
   return {
     async incrBy(key, by, ttlSec) {
-      const total = await client.incrBy(key, by);
-      if (total === by) await client.expire(key, ttlSec); // lần đầu trong ngày
+      const [total] = await client.multi().incrBy(key, by).expire(key, ttlSec, 'NX').exec();
+      if (typeof total !== 'number') throw new Error('INCRBY không trả số');
       return total;
     },
   };
@@ -40,6 +49,9 @@ const VN_OFFSET_MS = 7 * 3_600_000;
  * Trần byte upload mỗi người mỗi ngày (ADR-141: 200 MB; `CHAT_UPLOAD_DAILY_BYTES` ở test). Đếm SAU khi biết kích
  * thước (bản tạm), TRƯỚC khi xử lý / ghi kho; vượt ⇒ trả lại phần vừa cộng + 429. Kho đếm lỗi ⇒ 503 (fail-closed —
  * upload tốn đĩa, khác R21).
+ *
+ * CÓ CHỦ Ý (B L2 T-069, ADR-147): upload bị TỪ CHỐI sau bước này (sai loại, macro, ảnh hỏng) VẪN tính vào ngân sách —
+ * byte đã nhận + đã kiểm tốn đĩa / CPU như upload thành công; chống dò bằng tệp xấu lặp lại. Không phải lỗi.
  */
 export class UploadByteBudget {
   constructor(

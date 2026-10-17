@@ -5,7 +5,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { PayloadTooLargeError, StorageFullError } from '../../errors';
-import { isFileKey, randomFileKey, relativePathOf, type FileKey } from '../domain/file-key';
+import {
+  base32Token,
+  isFileKey,
+  relativePathOf,
+  type FileKey,
+  type FileNamespace,
+} from '../domain/file-key';
 import { SNIFF_HEAD_BYTES } from '../domain/sniff-type';
 import {
   FileExistsError,
@@ -68,7 +74,7 @@ export class LocalFileStore implements IFileStore {
     if ((await this.#fs.freeBytes(this.#root)) < options.maxBytes * FREE_SPACE_HEADROOM) {
       throw new StorageFullError();
     }
-    const tmpPath = path.join(this.#tmp, randomFileKey(randomBytes(16)));
+    const tmpPath = path.join(this.#tmp, base32Token(randomBytes(16)));
     const hash = createHash('sha256');
     const headChunks: Buffer[] = [];
     let headLen = 0;
@@ -108,7 +114,7 @@ export class LocalFileStore implements IFileStore {
 
   async put(
     data: Buffer | Readable,
-    options: { maxBytes: number; key?: FileKey },
+    options: { maxBytes: number; key: FileKey | FileNamespace },
   ): Promise<StoredFile> {
     const staged = await this.stage(data, options);
     try {
@@ -155,13 +161,16 @@ export class LocalFileStore implements IFileStore {
   }
 
   async *list(
-    prefix: `avatars/${string}` | 'random',
+    prefix: `avatars/${string}` | FileNamespace,
   ): AsyncIterable<{ key: FileKey; modifiedAt: Date }> {
-    if (prefix === 'random') {
-      // `ab/cd/<key>` đúng vị trí của khóa (bỏ tmp/, avatars/, tệp lạ).
-      for await (const f of walkFiles(this.#root, '')) {
-        const key = /^[a-z2-7]{2}\/[a-z2-7]{2}\/([a-z2-7]{26})$/.exec(f.relative)?.[1];
-        if (key && isFileKey(key) && relativePathOf(key) === f.relative) {
+    if (prefix === 'chat') {
+      // CHỈ namespace được hỏi: `<ns>/ab/cd/<26>` đúng vị trí của khóa (tệp lạ bị bỏ qua).
+      for await (const f of walkFiles(this.#root, prefix)) {
+        const token = /^[a-z2-7]{2}\/[a-z2-7]{2}\/([a-z2-7]{26})$/.exec(
+          f.relative.slice(prefix.length + 1),
+        )?.[1];
+        const key = `${prefix}/${token ?? ''}`;
+        if (token && isFileKey(key) && relativePathOf(key) === f.relative) {
           yield { key, modifiedAt: f.modifiedAt };
         }
       }

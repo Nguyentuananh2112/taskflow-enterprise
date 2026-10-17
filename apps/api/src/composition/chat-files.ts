@@ -53,7 +53,7 @@ export function chatUploadProcessor(d: {
       const type = await contentType(staged, name);
       const base = { name, sizeBytes: staged.sizeBytes, sha256: staged.sha256 };
       if (as === 'file') {
-        const stored = await staged.commit(); // lưu nguyên byte — chỉ tải xuống (`attachment`)
+        const stored = await staged.commit('chat'); // lưu nguyên byte — chỉ tải xuống (`attachment`)
         return {
           ...base,
           kind: 'FILE',
@@ -76,7 +76,7 @@ export function chatUploadProcessor(d: {
       const keys: string[] = [];
       try {
         for (const v of [preview, thumb]) {
-          keys.push((await d.store.put(v.data, { maxBytes: v.data.length })).key);
+          keys.push((await d.store.put(v.data, { maxBytes: v.data.length, key: 'chat' })).key);
         }
       } catch (err) {
         await deleteKeys(d.store, keys);

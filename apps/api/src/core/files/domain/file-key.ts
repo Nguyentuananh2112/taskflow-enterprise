@@ -3,26 +3,40 @@
  * Kiểm bằng regex TRƯỚC mọi thao tác đĩa — đây là ranh giới chống path traversal.
  *
  * Hai dạng:
- * - ngẫu nhiên: 128 bit base32 (RFC 4648, chữ thường, không padding) = 26 ký tự ⇒ `ab/cd/<key>`;
+ * - ngẫu nhiên CÓ TIỀN TỐ MODULE (B M1 T-069, TL): `<namespace>/<26 ký tự base32>` — 128 bit, RFC 4648 chữ thường,
+ *   không padding; trên đĩa `<namespace>/ab/cd/<26>`. Mỗi module một namespace ⇒ bước dọn của module chỉ quét
+ *   namespace CỦA MÌNH, không bao giờ xóa nhầm blob của module khác. Module mới thêm vào `FILE_NAMESPACES`;
  * - avatar (ADR-142, `users.avatar_version` là cột duy nhất): `avatars/<userId>/<version>/<256|64>`.
  */
 
 export type FileKey = string & { readonly __brand: 'FileKey' };
 
-const RANDOM_KEY = /^[a-z2-7]{26}$/;
+/** Namespace của khóa ngẫu nhiên — một module một phần tử (chat: đính kèm T-069). */
+export const FILE_NAMESPACES = ['chat'] as const;
+export type FileNamespace = (typeof FILE_NAMESPACES)[number];
+
+const NAMESPACED_KEY = /^(chat)\/([a-z2-7]{26})$/;
 const AVATAR_KEY =
   /^avatars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[1-9][0-9]{0,8}\/(256|64)$/;
 
 export type AvatarVariant = '256' | '64';
 
 export function isFileKey(value: string): value is FileKey {
-  return RANDOM_KEY.test(value) || AVATAR_KEY.test(value);
+  return NAMESPACED_KEY.test(value) || AVATAR_KEY.test(value);
 }
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 
-/** 16 byte ngẫu nhiên (adapter cấp — domain không tự sinh) ⇒ khóa 26 ký tự. */
-export function randomFileKey(bytes: Uint8Array): FileKey {
+export const isFileNamespace = (value: string): value is FileNamespace =>
+  (FILE_NAMESPACES as readonly string[]).includes(value);
+
+/** Khóa ngẫu nhiên của `namespace` từ 16 byte ngẫu nhiên (adapter cấp — domain không tự sinh). */
+export function randomFileKey(namespace: FileNamespace, bytes: Uint8Array): FileKey {
+  return `${namespace}/${base32Token(bytes)}` as FileKey;
+}
+
+/** 16 byte ⇒ 26 ký tự base32 chữ thường (cũng là tên tệp tạm). */
+export function base32Token(bytes: Uint8Array): string {
   if (bytes.length !== 16) throw new RangeError('cần đúng 16 byte');
   let out = '';
   let buffer = 0;
@@ -36,7 +50,7 @@ export function randomFileKey(bytes: Uint8Array): FileKey {
     }
   }
   if (bits > 0) out += ALPHABET[(buffer << (5 - bits)) & 31];
-  return out as FileKey;
+  return out;
 }
 
 export function avatarFileKey(userId: string, version: number, variant: AvatarVariant): FileKey {
@@ -45,7 +59,10 @@ export function avatarFileKey(userId: string, version: number, variant: AvatarVa
   return key;
 }
 
-/** Đường dẫn tương đối trong kho (dấu `/`): khóa ngẫu nhiên ⇒ `ab/cd/<key>`; avatar giữ nguyên. */
+/** Đường dẫn tương đối trong kho (dấu `/`): khóa ngẫu nhiên ⇒ `<ns>/ab/cd/<26>`; avatar giữ nguyên. */
 export function relativePathOf(key: FileKey): string {
-  return RANDOM_KEY.test(key) ? `${key.slice(0, 2)}/${key.slice(2, 4)}/${key}` : key;
+  const m = NAMESPACED_KEY.exec(key);
+  if (!m) return key;
+  const [, ns, token = ''] = m;
+  return `${ns}/${token.slice(0, 2)}/${token.slice(2, 4)}/${token}`;
 }
