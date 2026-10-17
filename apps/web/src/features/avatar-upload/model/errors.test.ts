@@ -38,6 +38,7 @@ describe('avatarErrorMessage — lời thường (§7 E5)', () => {
       'Ảnh lớn quá, hãy chọn ảnh nhỏ hơn.',
     );
     expect(avatarErrorMessage(api(429, 'RATE_LIMITED'))).toContain('thử lại sau ít phút');
+    expect(avatarErrorMessage(api(507, 'STORAGE_FULL'))).toContain('quản trị viên'); // T-067: mã đã có
     expect(
       avatarErrorMessage(api(507, CLIENT_ERROR_CODES.unknown, null, 'STORAGE_FULL')),
     ).toContain('quản trị viên');

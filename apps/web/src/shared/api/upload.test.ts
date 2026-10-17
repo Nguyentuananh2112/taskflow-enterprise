@@ -261,11 +261,18 @@ describe('http.upload — XHR nhị phân (avatar-chat.md ADR-141, §7 E2)', () 
     expect(auth.onSessionEnded).not.toHaveBeenCalled();
   });
 
-  it('envelope lỗi có mã mới (STORAGE_FULL — contracts chưa có) ⇒ ApiError giữ status + serverCode', async () => {
+  it('envelope lỗi có mã contracts CHƯA có ⇒ ApiError giữ status + serverCode', async () => {
+    const { http } = setup([respondFail(503, 'SOME_FUTURE_CODE')]);
+    await expect(
+      http.upload('PUT', '/me/avatar', { schema: Schema, body: blob, name: 'a' }),
+    ).rejects.toMatchObject({ status: 503, serverCode: 'SOME_FUTURE_CODE' });
+  });
+
+  it('507 STORAGE_FULL (T-067 đã có trong contracts) ⇒ code giữ nguyên', async () => {
     const { http } = setup([respondFail(507, 'STORAGE_FULL')]);
     await expect(
       http.upload('PUT', '/me/avatar', { schema: Schema, body: blob, name: 'a' }),
-    ).rejects.toMatchObject({ status: 507, serverCode: 'STORAGE_FULL' });
+    ).rejects.toMatchObject({ status: 507, code: 'STORAGE_FULL' });
   });
 
   it('413 PAYLOAD_TOO_LARGE (mã đã có) ⇒ code giữ nguyên', async () => {

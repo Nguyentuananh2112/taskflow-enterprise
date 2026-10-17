@@ -6,7 +6,7 @@ import type { MockAvatars } from './mock-avatars';
 import type { MockDb } from './mock-db';
 import { requireCompany } from './mock-guard';
 import type { RateLimiter } from './request-guards';
-import { fail, failUnlisted, noContent, ok } from './respond';
+import { fail, noContent, ok } from './respond';
 
 // Avatar của mock API (avatar-chat.md ADR-141/142, §4): `PUT/DELETE me/avatar`, `DELETE hr/employees/:userId/avatar`,
 // `GET media/avatars/:userId/:variant`. Thứ tự lỗi như server: 401 → 403 → 400 → 404 → 413/415 → 429.
@@ -58,7 +58,7 @@ export function createAvatarHandlers(
       const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
       if (!uploadName(request)) {
-        return failUnlisted(400, 'INVALID_UPLOAD_NAME', 'Tên tệp không hợp lệ.');
+        return fail(400, 'INVALID_UPLOAD_NAME');
       }
       if (Number(request.headers.get('content-length') ?? 0) > AVATAR_MAX_BYTES) {
         return fail(413, 'PAYLOAD_TOO_LARGE');
@@ -67,7 +67,7 @@ export function createAvatarHandlers(
       if (bytes.length > AVATAR_MAX_BYTES) return fail(413, 'PAYLOAD_TOO_LARGE');
       const type = sniffImage(bytes);
       if (!type) {
-        return failUnlisted(415, 'UNSUPPORTED_FILE_TYPE', 'Chỉ nhận ảnh JPG, PNG hoặc WebP.');
+        return fail(415, 'UNSUPPORTED_FILE_TYPE');
       }
       const limited = limit(`avatar:${ctx.ok.user.id}`, 10); // 10 lần / giờ / user (ADR-142)
       if (limited) return limited;
