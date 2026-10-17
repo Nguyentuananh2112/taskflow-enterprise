@@ -1,8 +1,13 @@
 import type { ReactNode } from 'react';
 
-type Props = Readonly<{ title: string; subtitle: string; footer: ReactNode; children: ReactNode }>;
+type Props = Readonly<{
+  title: string;
+  subtitle?: string;
+  footer?: ReactNode;
+  children: ReactNode;
+}>;
 
-/** Khung chung của màn khách (đăng nhập / đăng ký): một `main`, một `h1`. */
+/** Khung chung của màn khách (đăng nhập, kích hoạt tài khoản): một `main`, một `h1`. */
 export function AuthCard({ title, subtitle, footer, children }: Props) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
@@ -14,10 +19,10 @@ export function AuthCard({ title, subtitle, footer, children }: Props) {
           <h1 id="auth-heading" className="text-xl font-semibold">
             {title}
           </h1>
-          <p className="text-sm text-text-muted">{subtitle}</p>
+          {subtitle && <p className="text-sm text-text-muted">{subtitle}</p>}
         </div>
         {children}
-        <p className="text-sm text-text-muted">{footer}</p>
+        {footer && <p className="text-sm text-text-muted">{footer}</p>}
       </section>
     </main>
   );

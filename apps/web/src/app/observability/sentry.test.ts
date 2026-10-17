@@ -57,6 +57,10 @@ describe('beforeSend web — allow-list (T-035 mục 2)', () => {
       value: 'bad [REDACTED_EMAIL]',
     });
     expect(scrubUrl('/board?task=1#x')).toBe('/board');
+    // ADR-137 / B MEDIUM-1: token kích hoạt ở fragment không bao giờ tới Sentry.
+    expect(scrubUrl('https://app.example.com/activate#t=Zm9vYmFy-token')).toBe(
+      'https://app.example.com/activate',
+    );
   });
 });
 
