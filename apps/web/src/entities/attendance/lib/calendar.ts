@@ -94,6 +94,9 @@ export function dayText(d: AttendanceDayDto, today: string): DayText {
         icon: '–',
         tone: 'off',
       };
+    case 'RETENTION_EXPIRED':
+      // Dữ liệu đã quá thời hạn lưu (R27) — trung tính, không phải "Vắng".
+      return { label: 'Ngoài thời hạn lưu', detail: null, icon: '⌛', tone: 'off' };
     case 'PENDING':
       // Chỉ còn HÔM NAY (ngày tương lai đã trả EMPTY ở trên): chưa chấm vào.
       return { label: 'Chưa chấm', detail: null, icon: '○', tone: 'muted' };

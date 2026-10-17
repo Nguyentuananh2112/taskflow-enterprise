@@ -104,6 +104,13 @@ describe('dayText — câu chữ đời thường', () => {
     );
   });
 
+  it('ngày quá thời hạn lưu (RETENTION_EXPIRED, R27) ⇒ "Ngoài thời hạn lưu", trung tính, không phải "Vắng"', () => {
+    expect(dayText(day('2024-09-02', { status: 'RETENTION_EXPIRED' }), today)).toMatchObject({
+      label: 'Ngoài thời hạn lưu',
+      tone: 'off',
+    });
+  });
+
   it('muộn lâu ⇒ viết theo giờ: "Đi muộn 2 giờ", "Đi muộn 1 giờ 5 phút"', () => {
     expect(dayText(day('2026-10-14', { status: 'PRESENT', lateMin: 120 }), today).label).toBe(
       'Đi muộn 2 giờ',
