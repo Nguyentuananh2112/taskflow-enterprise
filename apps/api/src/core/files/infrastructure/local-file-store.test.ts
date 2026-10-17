@@ -6,14 +6,15 @@ import { Readable } from 'node:stream';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PayloadTooLargeError, StorageFullError } from '../../errors';
+import { PayloadTooLargeError, ServiceUnavailableError, StorageFullError } from '../../errors';
 import { avatarFileKey, type FileKey } from '../domain/file-key';
 import { SNIFF_HEAD_BYTES } from '../domain/sniff-type';
-import { FileMissingError } from '../ports';
+import { FileExistsError, FileMissingError } from '../ports';
 import {
   FileStoreConfigError,
   LocalFileStore,
-  RENAME_RETRIES,
+  PLACE_RETRIES,
+  STALE_TEMP_AGE_MS,
   type LocalFileStoreOptions,
 } from './local-file-store';
 
@@ -56,6 +57,17 @@ describe('LocalFileStore.create — kiểm lúc khởi động', () => {
     );
   });
 
+  it('đi theo junction/symlink: kho trỏ vào thư mục cấm qua liên kết ⇒ từ chối (B L-a)', async () => {
+    const app = path.join(root, 'app');
+    const inside = path.join(app, 'files');
+    await fsp.mkdir(inside, { recursive: true });
+    const link = path.join(root, 'store-link');
+    await fsp.symlink(inside, link, 'junction');
+    await expect(LocalFileStore.create(link, { forbiddenParents: [app] })).rejects.toThrow(
+      /thư mục ứng dụng/,
+    );
+  });
+
   it('hợp lệ ⇒ tạo tmp/, không để lại tệp thử', async () => {
     await make({ forbiddenParents: [path.join(root, 'other')] });
     expect(await tmpEntries()).toEqual([]);
@@ -74,12 +86,39 @@ describe('LocalFileStore — ghi', () => {
     expect(await tmpEntries()).toEqual([]);
   });
 
-  it('put với khóa avatar ⇒ avatars/<userId>/<version>/<variant>; ghi đè được', async () => {
+  it('put với khóa avatar ⇒ avatars/<userId>/<version>/<variant>; KHÔNG ghi đè (B M-a)', async () => {
     const store = await make();
     const key = avatarFileKey('0b6f2c1e-7f6a-4c1d-9a3e-2b1c0d9e8f7a', 1, '64');
     await store.put(Buffer.from('a'), { maxBytes: 10, key });
-    await store.put(Buffer.from('b'), { maxBytes: 10, key });
-    expect(await fsp.readFile(path.join(root, ...key.split('/')), 'utf8')).toBe('b');
+    await expect(store.put(Buffer.from('b'), { maxBytes: 10, key })).rejects.toBeInstanceOf(
+      FileExistsError,
+    );
+    expect(await fsp.readFile(path.join(root, ...key.split('/')), 'utf8')).toBe('a');
+    expect(await tmpEntries()).toEqual([]);
+  });
+
+  it('hai upload đua cùng khóa avatar ⇒ đúng một thắng, blob nguyên vẹn, không sót tmp', async () => {
+    const store = await make();
+    const key = avatarFileKey('0b6f2c1e-7f6a-4c1d-9a3e-2b1c0d9e8f7a', 2, '256');
+    const [a, b] = [Buffer.alloc(4096, 1), Buffer.alloc(4096, 2)];
+    const results = await Promise.allSettled([
+      store.put(a, { maxBytes: 10_000, key }),
+      store.put(b, { maxBytes: 10_000, key }),
+    ]);
+    const lost = results.filter((r) => r.status === 'rejected');
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect((lost[0] as PromiseRejectedResult).reason).toBeInstanceOf(FileExistsError);
+    const onDisk = await fsp.readFile(path.join(root, ...key.split('/')));
+    expect([sha(a), sha(b)]).toContain(sha(onDisk));
+    expect(await tmpEntries()).toEqual([]);
+  });
+
+  it('bản tạm bị sweep xóa trước commit ⇒ 503 có kiểm soát, không 500 trần (B M-b)', async () => {
+    const store = await make();
+    const staged = await store.stage(Buffer.from('abc'), { maxBytes: 10 });
+    for (const name of await tmpEntries()) await fsp.unlink(path.join(root, 'tmp', name));
+    await expect(staged.commit()).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
   it('stream nhiều chunk: head giữ đúng SNIFF_HEAD_BYTES đầu, read/readAll trên bản tạm', async () => {
@@ -157,8 +196,8 @@ describe('LocalFileStore — ghi', () => {
   });
 });
 
-describe('LocalFileStore — rename thử lại (CH-14, F-07)', () => {
-  const realRename = (from: string, to: string) => fsp.rename(from, to);
+describe('LocalFileStore — đặt vào chỗ thử lại (CH-14, F-07)', () => {
+  const realLink = (from: string, to: string) => fsp.link(from, to);
 
   it('EPERM 4 lần rồi được ⇒ thành công, chờ 4 × 50 ms', async () => {
     let calls = 0;
@@ -166,8 +205,7 @@ describe('LocalFileStore — rename thử lại (CH-14, F-07)', () => {
     const store = await make({
       sleep,
       fs: {
-        rename: (from, to) =>
-          ++calls <= 4 ? Promise.reject(errno('EPERM')) : realRename(from, to),
+        link: (from, to) => (++calls <= 4 ? Promise.reject(errno('EPERM')) : realLink(from, to)),
       },
     });
     const stored = await store.put(Buffer.from('x'), { maxBytes: 10 });
@@ -181,22 +219,22 @@ describe('LocalFileStore — rename thử lại (CH-14, F-07)', () => {
     let calls = 0;
     const store = await make({
       sleep: () => Promise.resolve(),
-      fs: { rename: (f, t) => (++calls === 1 ? Promise.reject(errno(code)) : realRename(f, t)) },
+      fs: { link: (f, t) => (++calls === 1 ? Promise.reject(errno(code)) : realLink(f, t)) },
     });
     await store.put(Buffer.from('x'), { maxBytes: 10 });
     expect(calls).toBe(2);
   });
 
-  it(`hết ${RENAME_RETRIES} lần thử lại ⇒ ném, tmp bị xóa`, async () => {
+  it(`hết ${PLACE_RETRIES} lần thử lại ⇒ ném, tmp bị xóa`, async () => {
     let calls = 0;
     const store = await make({
       sleep: () => Promise.resolve(),
-      fs: { rename: () => (++calls, Promise.reject(errno('EPERM'))) },
+      fs: { link: () => (++calls, Promise.reject(errno('EPERM'))) },
     });
     await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
       code: 'EPERM',
     });
-    expect(calls).toBe(RENAME_RETRIES + 1);
+    expect(calls).toBe(PLACE_RETRIES + 1);
     expect(await tmpEntries()).toEqual([]);
   });
 
@@ -204,7 +242,7 @@ describe('LocalFileStore — rename thử lại (CH-14, F-07)', () => {
     let calls = 0;
     const store = await make({
       sleep: () => Promise.resolve(),
-      fs: { rename: () => (++calls, Promise.reject(errno('ENOSPC'))) },
+      fs: { link: () => (++calls, Promise.reject(errno('ENOSPC'))) },
     });
     await expect(store.put(Buffer.from('x'), { maxBytes: 10 })).rejects.toMatchObject({
       code: 'ENOSPC',
@@ -257,6 +295,10 @@ describe('LocalFileStore — đọc / xóa', () => {
 });
 
 describe('LocalFileStore.purgeStaleTemp', () => {
+  it('ngưỡng tuổi tmp ≥ 2 × (180 s request + 10 s worker) — B M-b', () => {
+    expect(STALE_TEMP_AGE_MS).toBeGreaterThanOrEqual(2 * (180_000 + 10_000));
+  });
+
   it('chỉ xóa tmp cũ hơn mốc', async () => {
     const store = await make();
     const tmp = path.join(root, 'tmp');

@@ -7,12 +7,19 @@ import { pipeline } from 'node:stream/promises';
 import { PayloadTooLargeError, StorageFullError } from '../../errors';
 import { isFileKey, randomFileKey, relativePathOf, type FileKey } from '../domain/file-key';
 import { SNIFF_HEAD_BYTES } from '../domain/sniff-type';
-import { FileMissingError, type IFileStore, type StagedFile, type StoredFile } from '../ports';
+import {
+  FileExistsError,
+  FileMissingError,
+  type IFileStore,
+  type StagedFile,
+  type StoredFile,
+} from '../ports';
 import { LocalStagedFile } from './local-staged-file';
 
-/** Thao tác fs có thể thay ở test (CH-14: `rename` ném EPERM; ổ trống giả lập). */
+/** Thao tác fs có thể thay ở test (CH-14: `link` ném EPERM; ổ trống giả lập). */
 export interface FileStoreFs {
-  rename(from: string, to: string): Promise<void>;
+  /** Đặt tệp vào chỗ KHÔNG ghi đè (hard link — đích đã có ⇒ EEXIST). */
+  link(from: string, to: string): Promise<void>;
   /** Byte còn trống cho tiến trình không đặc quyền. */
   freeBytes(dir: string): Promise<number>;
 }
@@ -26,10 +33,17 @@ export interface LocalFileStoreOptions {
 
 /** Ổ phải còn ≥ `maxBytes` + 10 % trước khi mở tệp tạm (B M7). */
 export const FREE_SPACE_HEADROOM = 1.1;
-/** `rename` gặp EPERM/EBUSY/EACCES (Windows + Defender — F-07): thử lại tối đa 5 lần × 50 ms. */
-export const RENAME_RETRIES = 5;
-export const RENAME_RETRY_DELAY_MS = 50;
-const RETRYABLE_RENAME = new Set(['EPERM', 'EBUSY', 'EACCES']);
+/** Đặt vào chỗ gặp EPERM/EBUSY/EACCES (Windows + Defender — F-07): thử lại tối đa 5 lần × 50 ms. */
+export const PLACE_RETRIES = 5;
+export const PLACE_RETRY_DELAY_MS = 50;
+const RETRYABLE_PLACE = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Tuổi tối thiểu của tệp tạm để `files-sweep` xóa (B M-b): Linux xóa được cả tệp đang mở ⇒ ngưỡng phải
+ * ≥ 2 × (trần một request upload 180 s + chờ hàng đợi ảnh + worker sharp 10 s) ≈ 7 phút. Chọn 1 giờ —
+ * đường chính xóa tmp ngay khi lỗi/hủy, sweep chỉ là lưới an toàn (ADR-141).
+ */
+export const STALE_TEMP_AGE_MS = 60 * 60 * 1000;
 
 const TMP_DIR = 'tmp';
 
@@ -44,7 +58,7 @@ const errCode = (err: unknown): string | undefined =>
   typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : undefined;
 
 const defaultFs: FileStoreFs = {
-  rename: (from, to) => fsp.rename(from, to),
+  link: (from, to) => fsp.link(from, to),
   freeBytes: async (dir) => {
     const s = await fsp.statfs(dir);
     return s.bavail * s.bsize;
@@ -52,12 +66,15 @@ const defaultFs: FileStoreFs = {
 };
 
 const isInside = (child: string, parent: string): boolean => {
-  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  const rel = path.relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 };
 
+/** Đi theo symlink / junction (B L-a); đường dẫn chưa tồn tại ⇒ bản resolve. */
+const real = (p: string): Promise<string> => fsp.realpath(p).catch(() => path.resolve(p));
+
 /**
- * Adapter ổ cục bộ (ADR-141): `<root>/tmp/<khóa>` ⇒ `fsync` ⇒ `rename` vào `<root>/ab/cd/<khóa>`
+ * Adapter ổ cục bộ (ADR-141): `<root>/tmp/<khóa>` ⇒ `fsync` ⇒ hard link (không ghi đè) vào `<root>/ab/cd/<khóa>`
  * (hoặc `avatars/<userId>/<version>/<variant>`). Khóa kiểm bằng regex TRƯỚC mọi thao tác đĩa.
  */
 export class LocalFileStore implements IFileStore {
@@ -76,8 +93,9 @@ export class LocalFileStore implements IFileStore {
   /** Kiểm lúc khởi động: tuyệt đối, là thư mục, ghi được, ngoài thư mục cấm. Sai ⇒ ném (từ chối khởi động). */
   static async create(root: string, options: LocalFileStoreOptions = {}): Promise<LocalFileStore> {
     if (!path.isAbsolute(root)) throw new FileStoreConfigError('phải là đường dẫn tuyệt đối');
-    const resolved = path.resolve(root);
-    if ((options.forbiddenParents ?? []).some((p) => isInside(resolved, p))) {
+    const resolved = await real(root);
+    const parents = await Promise.all((options.forbiddenParents ?? []).map(real));
+    if (parents.some((p) => isInside(resolved, p))) {
       throw new FileStoreConfigError('nằm trong thư mục ứng dụng');
     }
     const stat = await fsp.stat(resolved).catch(() => undefined);
@@ -134,7 +152,7 @@ export class LocalFileStore implements IFileStore {
     }
     return new LocalStagedFile(tmpPath, size, hash.digest('hex'), Buffer.concat(headChunks), {
       pathOf: (key) => this.#pathOf(key),
-      rename: (from, to) => this.#renameWithRetry(from, to),
+      place: (from, to) => this.#placeWithRetry(from, to),
     });
   }
 
@@ -201,15 +219,19 @@ export class LocalFileStore implements IFileStore {
     return path.join(this.#root, ...relativePathOf(key).split('/'));
   }
 
-  async #renameWithRetry(from: string, to: string): Promise<void> {
+  /** Hard link rồi bỏ tmp: KHÔNG ghi đè (B M-a) — đích đã có ⇒ `FileExistsError`, không thử lại. */
+  async #placeWithRetry(from: string, to: string): Promise<void> {
     for (let attempt = 0; ; attempt++) {
       try {
-        await this.#fs.rename(from, to);
-        return;
+        await this.#fs.link(from, to);
+        break;
       } catch (err) {
-        if (attempt >= RENAME_RETRIES || !RETRYABLE_RENAME.has(errCode(err) ?? '')) throw err;
-        await this.#sleep(RENAME_RETRY_DELAY_MS);
+        const code = errCode(err) ?? '';
+        if (code === 'EEXIST') throw new FileExistsError();
+        if (attempt >= PLACE_RETRIES || !RETRYABLE_PLACE.has(code)) throw err;
+        await this.#sleep(PLACE_RETRY_DELAY_MS);
       }
     }
+    await fsp.unlink(from).catch(() => undefined); // còn sót ⇒ `purgeStaleTemp`
   }
 }

@@ -38,7 +38,10 @@ export interface StagedFile extends RandomAccessSource {
   readonly head: Buffer;
   /** Đọc toàn bộ vào bộ nhớ (ảnh ≤ 20 MB cho worker sharp — ADR-141). */
   readAll(): Promise<Buffer>;
-  /** Đưa vào kho với khóa mới (hoặc `key` cho trước). Gọi một lần. */
+  /**
+   * Đưa vào kho với khóa mới (hoặc `key` cho trước). Gọi một lần. KHÔNG BAO GIỜ ghi đè: đích đã có ⇒
+   * `FileExistsError` (hai upload avatar đua cùng version — B M-a). Bản tạm đã bị sweep xóa ⇒ 503.
+   */
   commit(key?: FileKey): Promise<StoredFile>;
   /** Xóa bản tạm; idempotent, gọi sau `commit` không làm gì. */
   discard(): Promise<void>;
@@ -48,5 +51,13 @@ export class FileMissingError extends Error {
   constructor(readonly key: FileKey) {
     super('Blob không còn trên đĩa');
     this.name = 'FileMissingError';
+  }
+}
+
+/** Đích của `commit` đã tồn tại — caller cấp khóa/version mới hoặc trả 409. */
+export class FileExistsError extends Error {
+  constructor() {
+    super('Blob đích đã tồn tại');
+    this.name = 'FileExistsError';
   }
 }

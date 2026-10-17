@@ -141,6 +141,17 @@ describe('file-key — khóa do server sinh', () => {
     `avatars/${USER}/1/64/../../x`,
     `avatars/not-a-uuid/1/64`,
     `tmp/${'a'.repeat(26)}`,
+    // B (soát T-067): bảng khóa phải bị từ chối
+    `avatars/${USER.toUpperCase()}/1/256`,
+    `avatars/${USER}/01/256`,
+    `avatars/${USER}/1234567890/256`,
+    `avatars\\${USER}\\1\\256`,
+    `avatars/${USER}/%2e%2e/256`,
+    `avatars/${USER}/1/256/`,
+    `/avatars/${USER}/1/256`,
+    `C:/avatars/${USER}/1/256`,
+    `ab/cd/${'a'.repeat(26)}`,
+    `${'a'.repeat(26)}\n`, // JS: `$` không khớp trước \n cuối (khác PCRE)
   ])('khóa sai %j bị từ chối', (key) => {
     expect(isFileKey(key)).toBe(false);
   });
