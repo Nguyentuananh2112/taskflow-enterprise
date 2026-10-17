@@ -162,6 +162,14 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
   rate limit toàn cục (test: CSP sandbox, CORP, `Cache-Control: private` không bị helmet / `no-store` đè; lỗi là
   HTML, không phải JSON envelope).
 
+## Kết quả chạy (lượt máy TL cấp 18/10, worktree C: `feat/T-067` @74afd33a + sửa test startup)
+
+- Unit toàn phần `apps/api` (`vitest run --maxWorkers=2`): **179 file / 2099 ca xanh**, exit 0, không Unhandled.
+- Integration (`test:integration`, DB riêng `taskflow_t067`, Valkey db 7, `REQUIRE_INTEGRATION=1`, không
+  `VITEST_MAX_WORKERS`): lượt 1 **1 đỏ / 766** — `task-prisma-startup.int.ts` (staging): `productionEnvVars` khai
+  `FILE_STORE_DIR=/var/lib/taskflow/files` không tồn tại ⇒ API từ chối khởi động ĐÚNG như ADR-141. Sửa test: dùng
+  thư mục tạm thật (`mkdtemp`, dọn ở `afterAll`). Chạy lại 2 lượt: **65 file / 766 ca xanh**, exit 0.
+
 ## Còn lại
 7 `files-sweep` · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
