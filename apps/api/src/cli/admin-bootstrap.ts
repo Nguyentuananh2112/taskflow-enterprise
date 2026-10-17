@@ -13,7 +13,7 @@ import pino from 'pino';
 
 import { appConfigFromEnv } from '../app';
 import { createContainer } from '../composition/container';
-import { createPrismaPersistence } from '../composition/persistence';
+import { createPrismaPersistence } from '../composition/prisma-persistence';
 import { EnvValidationError, loadEnv, type Env } from '../config/env';
 import { CryptoRandom, UuidV7Generator, clocksForEnv } from '../core/infrastructure/system';
 import { createValkeyClient } from '../core/infrastructure/valkey';

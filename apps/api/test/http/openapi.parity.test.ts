@@ -36,17 +36,17 @@ function routesOf(mounted: readonly { path: string; router: Router }[]): string[
 }
 
 /**
- * T-061 TẠM (apps/api/tsconfig.exclusions.json): route attendance / leave cấp ws còn trong danh mục nhưng router đã
- * gỡ — A (T-063) / D (T-064) thay bằng route cấp công ty rồi XÓA bộ lọc này.
+ * T-061 TẠM (apps/api/tsconfig.exclusions.json): route attendance cấp ws còn trong danh mục nhưng router đã gỡ (A,
+ * T-063); route `/leave/*` cấp công ty (T-064) đã trong danh mục nhưng container chỉ gắn leave khi dựng được lịch của
+ * attendance (T-063). XÓA bộ lọc này khi T-063 gắn cả hai.
  */
-const PENDING_T063_T064 =
-  /^\/workspaces\/\{wsId\}\/(attendance|leave-requests|leave-balances)(\/|$)/;
+const PENDING_T063 = /^(\/workspaces\/\{wsId\}\/attendance|\/leave)(\/|$)/;
 
 describe('OpenAPI ↔ router thật (A2)', () => {
   it('mọi route của router có trong danh mục OpenAPI và ngược lại (không thiếu, không thừa)', () => {
     const { container } = createTestApp();
     const actual = routesOf(container.routers);
-    const documented = API_ROUTES.filter((r) => !PENDING_T063_T064.test(r.path))
+    const documented = API_ROUTES.filter((r) => !PENDING_T063.test(r.path))
       .map((r) => `${r.method} ${r.path}`)
       .sort();
     expect(actual.length).toBeGreaterThan(20);

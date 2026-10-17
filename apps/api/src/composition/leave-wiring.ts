@@ -4,8 +4,7 @@ import type { IClock, IIdGenerator } from '../core/domain';
 import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import type { AuthModule } from '../modules/auth/auth.module';
-import type { AttendanceModule } from '../modules/attendance/attendance.module';
-import type { ApprovedLeavePort } from '../modules/attendance/application/ports/approved-leave.port';
+import type { IWorkCalendarPort } from '../modules/leave/application/ports/leave.ports';
 import { createLeaveModule } from '../modules/leave/leave.module';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
 import {
@@ -22,9 +21,10 @@ export type LeaveModule = ReturnType<typeof createLeaveModule>;
 /**
  * `ApprovedLeavePort` của attendance trỏ TRỄ sang leave: attendance cần ngày nghỉ đã duyệt, leave cần lịch của
  * attendance ⇒ tạo attendance trước với đối tượng này, gắn leave sau (`bind`). Attendance chỉ gọi port khi xử lý
- * request, không gọi lúc khởi tạo (A).
+ * request, không gọi lúc khởi tạo (A). Không import attendance (vẫn loại tạm tới T-063): `ApprovedLeavePort` của
+ * attendance khớp THEO CẤU TRÚC, tsc kiểm lúc container truyền đối tượng này vào attendance.
  */
-export class LateApprovedLeaves implements ApprovedLeavePort {
+export class LateApprovedLeaves {
   #leave: LeaveModule | undefined;
 
   bind(leave: LeaveModule): LeaveModule {
@@ -32,7 +32,7 @@ export class LateApprovedLeaves implements ApprovedLeavePort {
     return leave;
   }
 
-  approvedLeaves(q: Parameters<ApprovedLeavePort['approvedLeaves']>[0]) {
+  approvedLeaves(q: Parameters<LeaveModule['approvedLeaves']['approvedLeaves']>[0]) {
     if (!this.#leave) throw new Error('leave module chưa được tạo');
     return this.#leave.approvedLeaves.approvedLeaves(q);
   }
@@ -51,7 +51,7 @@ export function wireLeave(
   m: {
     company: () => CompanyPortsForLeave;
     hrAudit: () => HrAuditWriterForLeave;
-    attendance: Pick<AttendanceModule, 'workCalendar'>;
+    attendance: { workCalendar: IWorkCalendarPort };
     notifications: Pick<NotificationsModule, 'publisher'>;
     auth: Pick<AuthModule, 'authenticate'>;
   },

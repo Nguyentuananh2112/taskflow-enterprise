@@ -164,12 +164,34 @@ export class ListEmployeeDirectory implements ILeaveEmployeeDirectory {
   }
 }
 
-/** Lưu trữ leave chế độ bộ nhớ: một repo làm cả ghi lẫn đọc; nhân viên từ company. */
+/**
+ * Danh bạ số dư chế độ bộ nhớ (D M3): nhân viên HIỆN TẠI của công ty (dòng role EMPLOYEE — gồm sắp nghỉ, chờ kích
+ * hoạt), tên qua bản sao user của Task.
+ */
+function companyEmployees(
+  store: { members(): readonly { userId: string; role: CompanyRole }[] },
+  users: ReadonlyMap<string, { fullName: string }>,
+): () => Promise<UserRefDto[]> {
+  return () =>
+    Promise.resolve(
+      store
+        .members()
+        .filter((m) => m.role === 'EMPLOYEE')
+        .map((m) => ({ id: m.userId, fullName: users.get(m.userId)?.fullName ?? '' })),
+    );
+}
+
+/** Lưu trữ leave chế độ bộ nhớ: một repo làm cả ghi lẫn đọc; nhân viên từ bảng công ty trong bộ nhớ. */
 export function memoryLeaveRepositories(
   store: InMemoryLeaveRepository,
-  employees: () => Promise<UserRefDto[]>,
+  company: Parameters<typeof companyEmployees>[0],
+  users: Parameters<typeof companyEmployees>[1],
 ): LeaveRepositories {
-  return { requests: store, readModel: store, employees: new ListEmployeeDirectory(employees) };
+  return {
+    requests: store,
+    readModel: store,
+    employees: new ListEmployeeDirectory(companyEmployees(company, users)),
+  };
 }
 
 /** Lưu trữ leave Prisma — cùng `db` (một transaction) với các module khác. */
