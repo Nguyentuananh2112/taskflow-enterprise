@@ -28,6 +28,9 @@ export const HR_AUDIT_ACTIONS = [
   'COMPANY_RENAMED',
   'PROFILE_SET',
   'POLICY_SET',
+  'CORRECTION_SUBMIT',
+  'CORRECTION_CANCEL',
+  'CORRECTION_DECIDE',
 ] as const;
 export type HrAuditAction = (typeof HR_AUDIT_ACTIONS)[number];
 

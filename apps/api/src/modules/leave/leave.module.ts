@@ -1,5 +1,7 @@
 import type { Router } from 'express';
 
+import { DEFAULT_EXPORT_LIMITS, type ExportLimits } from '../../core/export/export-limits';
+
 import type { HttpResponder } from '../../core/http/envelope';
 import type { LeaveCommandDeps } from './application/leave-commands';
 import { LeaveCommands } from './application/leave-commands';
@@ -18,11 +20,7 @@ import {
   PutLeavePolicyUseCase,
 } from './application/use-cases/leave-policy.use-cases';
 import { LeavePolicyController } from './presentation/leave-policy.controller';
-import {
-  DEFAULT_LEAVE_EXPORT_LIMITS,
-  LeaveExportUseCase,
-  type LeaveExportLimits,
-} from './application/use-cases/leave-export.use-case';
+import { LeaveExportUseCase } from './application/use-cases/leave-export.use-case';
 import type { ExportSlots } from '../../core/export/export-slots';
 import type { IReadSnapshot } from '../../core/persistence/read-snapshot';
 import { LeaveCarryoverJob } from './application/use-cases/leave-carryover.job';
@@ -45,7 +43,7 @@ export interface LeaveModuleDeps extends LeaveCommandDeps {
   /** Snapshot đọc nhất quán + suất export đồng thời (T-055y) + trần / nhịp đọc (T-055 `exportLimits`). */
   readSnapshot: IReadSnapshot;
   exportSlots: ExportSlots;
-  exportLimits?: LeaveExportLimits;
+  exportLimits?: ExportLimits | undefined;
   logger: ILogger;
   employees: ILeaveEmployeeDirectory;
   responder: HttpResponder;
@@ -79,7 +77,7 @@ export function createLeaveModule(d: LeaveModuleDeps): {
     exporter: new LeaveExportUseCase(kit, d.readModel, d.employees, {
       snapshot: d.readSnapshot,
       slots: d.exportSlots,
-      limits: d.exportLimits ?? DEFAULT_LEAVE_EXPORT_LIMITS,
+      limits: d.exportLimits ?? DEFAULT_EXPORT_LIMITS,
     }),
     spreadsheet: d.spreadsheet,
     responder: d.responder,

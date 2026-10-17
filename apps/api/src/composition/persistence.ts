@@ -70,9 +70,8 @@ export interface Persistence {
   refreshTokenPurger?: IRefreshTokenPurger;
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
-  uow: IUnitOfWork;
-  /** Ảnh chụp đọc nhất quán cho báo cáo dài (ADR-130, T-055y) — cùng UoW (repository vẫn dùng `uow.db()`). */
-  readSnapshot: IReadSnapshot;
+  /** `snapshot`: ảnh chụp đọc REPEATABLE READ READ ONLY cho báo cáo .xlsx (ADR-130, T-055y). */
+  uow: IUnitOfWork & { snapshot: IReadSnapshot };
 }
 
 /** Lưu trữ trong bộ nhớ — chỉ local/test, MẤT DỮ LIỆU khi khởi động lại. */
@@ -124,6 +123,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       hrAudit,
       attendance.events,
       attendance.calendar,
+      attendance.corrections,
       leaveStore,
       profiles,
       leavePolicies,
@@ -157,6 +157,5 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     leave,
     hrProfile: { profiles, locks: profiles },
     uow,
-    readSnapshot: uow.snapshot,
   };
 }

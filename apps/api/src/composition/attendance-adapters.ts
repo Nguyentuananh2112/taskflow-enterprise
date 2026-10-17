@@ -1,6 +1,9 @@
 import type { RequestHandler } from 'express';
 
 import type { IClock, IIdGenerator } from '../core/domain';
+import { DEFAULT_EXPORT_LIMITS, type ExportLimits } from '../core/export/export-limits';
+import { ExportSlots } from '../core/export/export-slots';
+import { FflateXlsxWriter } from '../core/export/xlsx/xlsx-writer';
 import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import {
@@ -34,6 +37,14 @@ export class LateApprovedLeavePort implements ApprovedLeavePort {
 }
 
 /**
+ * Hai đối tượng dùng chung dựng ở container TRƯỚC attendance: đơn nghỉ gắn trễ + suất export của CẢ công ty (2 đồng thời —
+ * SEC-HR-54; báo cáo chấm công và báo cáo phép — T-057 — dùng cùng instance `exportSlots`).
+ */
+export function attendanceShared() {
+  return { approvedLeaves: new LateApprovedLeavePort(), exportSlots: new ExportSlots() };
+}
+
+/**
  * Module attendance với adapter thật: quyền + nhiệm kỳ + audit HR ← company (tham chiếu trễ), thông báo ←
  * notifications, đơn nghỉ ← leave (gắn trễ), mốc lưu ← job retention (T-047; thiếu ⇒ không áp), tên ← task/auth.
  * `clock` = giờ NGHIỆP VỤ (TEST_CLOCK_ANCHOR ở E2E).
@@ -50,7 +61,12 @@ export function wireAttendance(
     notifications: Pick<NotificationsModule, 'publisher'>;
     leaves: ApprovedLeavePort;
   },
-  http: { responder: HttpResponder; limit: (rules: readonly RateLimitRule[]) => RequestHandler[] },
+  http: {
+    responder: HttpResponder;
+    limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
+    /** Xuất .xlsx (T-055): trần + nhịp đọc (thiếu ⇒ mặc định) và suất export DÙNG CHUNG của container. */
+    exports: { limits?: ExportLimits | undefined; slots: ExportSlots };
+  },
 ): AttendanceModule {
   return createAttendanceModule({
     repos: d.persistence.attendance,
@@ -67,6 +83,13 @@ export function wireAttendance(
     notifier: attendanceNotifierFrom(m.notifications.publisher),
     membership: { permissionsOf: (userId) => m.company().permissionsOf(userId) },
     uow: d.persistence.uow,
+    exports: {
+      snapshot: d.persistence.uow.snapshot,
+      slots: http.exports.slots,
+      limits: http.exports.limits ?? DEFAULT_EXPORT_LIMITS,
+      writer: new FflateXlsxWriter(),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    },
     clock: d.clock,
     ids: d.ids,
     responder: http.responder,

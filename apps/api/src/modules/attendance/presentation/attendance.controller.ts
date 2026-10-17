@@ -6,6 +6,7 @@ import {
   type AdjustAttendanceBody,
   type AttendanceCompanyMonthQuery,
   type AttendanceEventsQuery,
+  type AttendanceExportXlsxQuery,
   type AttendanceMonthQuery,
   type CreateWorkScheduleBody,
   type DeleteHolidayBody,
@@ -19,7 +20,10 @@ import type { Request, Response } from 'express';
 import type { HttpResponder } from '../../../core/http/envelope';
 import { requireUser } from '../../../core/http/request-user';
 import type { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
+import { sendXlsx } from '../../../core/export/xlsx/xlsx-response';
+import type { ISpreadsheetWriter } from '../../../core/export/xlsx/xlsx-writer';
 import type { AttendanceExportUseCase } from '../application/use-cases/attendance-export.use-case';
+import type { AttendanceXlsxExportUseCase } from '../application/use-cases/attendance-xlsx-export.use-case';
 import type { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-case';
 import type { HrAttendanceQueries } from '../application/use-cases/hr-attendance.queries';
 import type { MyAttendanceQueries } from '../application/use-cases/my-attendance.queries';
@@ -32,6 +36,8 @@ export interface AttendanceControllerDeps {
   events: AttendanceEventsUseCases;
   calendar: WorkCalendarUseCases;
   exporter: AttendanceExportUseCase;
+  xlsx: AttendanceXlsxExportUseCase;
+  writer: ISpreadsheetWriter;
   responder: HttpResponder;
 }
 
@@ -95,6 +101,14 @@ export class AttendanceController {
       'Content-Disposition': `attachment; filename="cham-cong-${month}.csv"`,
     });
     await pipeline(Readable.from(lines), res);
+  };
+
+  /** ADR-130: lỗi trước khi gửi header vẫn là envelope JSON; sau header ⇒ `sendXlsx` hủy socket (không file cụt). */
+  exportXlsx = async (req: Request, res: Response) => {
+    const { month } = req.query as unknown as AttendanceExportXlsxQuery;
+    await this.d.xlsx.run(meOf(req), month, (filename, sheets) =>
+      sendXlsx(res, this.d.writer, filename, sheets),
+    );
   };
 
   listEvents = async (req: Request, res: Response) => {

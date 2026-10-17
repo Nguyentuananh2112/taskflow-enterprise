@@ -1,3 +1,4 @@
+import type { ExportLimits } from '../../../../core/export/export-limits';
 import type { ExportSlots } from '../../../../core/export/export-slots';
 import type { CellValue, SpreadsheetSheet } from '../../../../core/export/xlsx/xlsx-writer';
 import { BusinessRuleViolationError } from '../../../../core/errors';
@@ -27,21 +28,6 @@ const PART_LABEL: Record<string, string> = { FULL: 'Cả ngày', AM: 'Buổi sá
 /** Trần thời gian của snapshot báo cáo (≤ READ_SNAPSHOT_MAX_MS). */
 const SNAPSHOT_TIMEOUT_MS = 120_000;
 
-/** Trần + nhịp đọc (= `ExportLimits` của core/export/export-limits.ts — T-055; mặc định thiết kế §4). */
-export interface LeaveExportLimits {
-  maxEmployees: number;
-  maxLeaveRows: number;
-  batchSize: number;
-  batchDelayMs: number;
-}
-
-export const DEFAULT_LEAVE_EXPORT_LIMITS: Readonly<LeaveExportLimits> = Object.freeze({
-  maxEmployees: 1_000,
-  maxLeaveRows: 20_000,
-  batchSize: 500,
-  batchDelayMs: 0,
-});
-
 type Person = { id: string; fullName: string };
 
 export class LeaveExportUseCase {
@@ -52,7 +38,8 @@ export class LeaveExportUseCase {
     private readonly x: {
       snapshot: IReadSnapshot;
       slots: ExportSlots;
-      limits: LeaveExportLimits;
+      /** Trần / nhịp đọc dùng chung (T-055 `config.exportLimits`). */
+      limits: ExportLimits;
     },
   ) {}
 

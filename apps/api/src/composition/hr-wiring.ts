@@ -1,4 +1,5 @@
 import type { IClock, IIdGenerator } from '../core/domain';
+import type { ExportLimits } from '../core/export/export-limits';
 import type { ExportSlots } from '../core/export/export-slots';
 import type { ILogger } from '../core/logging/logger';
 import type { AuthModule } from '../modules/auth/auth.module';
@@ -20,7 +21,7 @@ type LeaveCompanyAudit = ReturnType<Parameters<typeof wireLeave>[1]['hrAudit']>;
  */
 export function wireLeaveAndProfile(
   d: {
-    persistence: Pick<Persistence, 'leave' | 'task' | 'uow' | 'hrProfile' | 'readSnapshot'>;
+    persistence: Pick<Persistence, 'leave' | 'task' | 'uow' | 'hrProfile'>;
     clock: IClock;
     ids: IIdGenerator;
     logger: ILogger;
@@ -31,6 +32,7 @@ export function wireLeaveAndProfile(
     notifications: Pick<NotificationsModule, 'publisher'>;
     auth: Pick<AuthModule, 'authenticate'>;
     exportSlots: ExportSlots;
+    exportLimits?: ExportLimits | undefined;
   },
   http: Http,
 ): { leave: LeaveModule; hrProfile: ReturnType<typeof wireHrProfile> } {
@@ -44,6 +46,7 @@ export function wireLeaveAndProfile(
       notifications: m.notifications,
       auth: m.auth,
       exportSlots: m.exportSlots,
+      exportLimits: m.exportLimits,
       hireDates: {
         hireDateOf: async (userId) => {
           if (!ref.profile) throw new Error('hr-profile chưa được dựng');

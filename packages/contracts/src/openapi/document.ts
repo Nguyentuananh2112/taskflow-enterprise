@@ -1,6 +1,7 @@
 import * as z from 'zod';
 
 import { ApiError, ApiMeta, PageMeta } from '../common/envelope';
+import { XLSX_CONTENT_TYPE } from '../attendance/correction.schemas';
 import { HealthzResponse } from '../system/healthz.schemas';
 import { API_ROUTES, type ApiRoute } from './routes';
 
@@ -43,12 +44,8 @@ function successResponse(route: ApiRoute): Json {
   const { status, data, paged, csv, xlsx } = route.response;
   if (xlsx) {
     return {
-      description: 'Bảng tính .xlsx (`Content-Disposition: attachment`) — ADR-130',
-      content: {
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
-          schema: { type: 'string', format: 'binary' },
-        },
-      },
+      description: 'Tệp Excel .xlsx (`Content-Disposition: attachment`, không envelope)',
+      content: { [XLSX_CONTENT_TYPE]: { schema: { type: 'string', format: 'binary' } } },
     };
   }
   if (csv) {

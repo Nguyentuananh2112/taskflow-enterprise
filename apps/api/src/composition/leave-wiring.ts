@@ -18,6 +18,7 @@ import {
 } from './leave-adapters';
 import { leaveNotifierFrom } from './notification-adapters';
 import type { Persistence } from './persistence';
+import type { ExportLimits } from '../core/export/export-limits';
 import type { ExportSlots } from '../core/export/export-slots';
 import { FflateXlsxWriter } from '../core/export/xlsx/xlsx-writer';
 import type { ILogger } from '../core/logging/logger';
@@ -32,7 +33,7 @@ const NO_HIRE_DATES: ILeaveHireDates = { hireDateOf: () => Promise.resolve(null)
 
 export function wireLeave(
   d: {
-    persistence: Pick<Persistence, 'leave' | 'task' | 'uow' | 'readSnapshot'>;
+    persistence: Pick<Persistence, 'leave' | 'task' | 'uow'>;
     clock: IClock;
     ids: IIdGenerator;
     logger: ILogger;
@@ -46,6 +47,8 @@ export function wireLeave(
     hireDates?: ILeaveHireDates;
     /** Một bộ suất cho MỌI export của công ty (bảng công, phép, lương) — container tạo. */
     exportSlots: ExportSlots;
+    /** Trần / nhịp đọc (T-055, `config.exportLimits`) — thiếu ⇒ DEFAULT_EXPORT_LIMITS. */
+    exportLimits?: ExportLimits | undefined;
   },
   http: { responder: HttpResponder; limit: (rules: readonly RateLimitRule[]) => RequestHandler[] },
 ): LeaveModule {
@@ -58,8 +61,9 @@ export function wireLeave(
     // Ngày vào công ty: hồ sơ của T-054 (B) — chưa nối ⇒ null cho mọi người (phép = annual, cờ thiếu ngày vào).
     hireDates: m.hireDates ?? NO_HIRE_DATES,
     spreadsheet: new FflateXlsxWriter(),
-    readSnapshot: d.persistence.readSnapshot,
+    readSnapshot: d.persistence.uow.snapshot,
     exportSlots: m.exportSlots,
+    exportLimits: m.exportLimits,
     logger: d.logger,
     audit: leaveAudit(m.hrAudit),
     uow: d.persistence.uow,

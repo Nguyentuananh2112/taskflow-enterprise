@@ -32,6 +32,7 @@ import { loadCommonPasswordList } from './modules/auth/infrastructure/security/c
 import { AppMetrics, startMetricsServer } from './core/observability/metrics';
 import type { IErrorReporter } from './core/observability/sentry';
 import { createHttpServer, listen } from './server';
+import { exportLimitsFromEnv } from './core/export/export-limits';
 
 export async function startServer(
   env: Env,
@@ -74,6 +75,7 @@ export async function startServer(
       jwtSecret: env.JWT_ACCESS_SECRET,
       jwtPreviousSecret: env.JWT_ACCESS_SECRET_PREVIOUS,
       jwtAccessTtlSeconds: env.JWT_ACCESS_TTL_SECONDS,
+      exportLimits: exportLimitsFromEnv(env),
     },
     logger,
     clock,

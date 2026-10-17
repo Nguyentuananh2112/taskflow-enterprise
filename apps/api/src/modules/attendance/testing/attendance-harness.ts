@@ -1,7 +1,7 @@
 import { FakeClock, SequentialIdGenerator } from '../../../../test/support';
 import { ForbiddenError, SessionRevokedError } from '../../../core/errors';
 import type { AttendanceDeps } from '../application/attendance-days';
-import type { HrAuditAction } from '../application/ports/collaborators.port';
+import type { CorrectionAuditAction, HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
 import { AttendanceExportUseCase } from '../application/use-cases/attendance-export.use-case';
 import { CheckInOutUseCase } from '../application/use-cases/check-in-out.use-case';
@@ -78,7 +78,7 @@ export async function createAttendanceHarness(
   const revoked = new Set<string>();
   const notified: { recipientId: string; eventId: string; actorId: string }[] = [];
   const audit: {
-    action: HrAuditAction;
+    action: HrAuditAction | CorrectionAuditAction;
     actorId: string;
     targetUserId: string | null;
     refId: string | null;

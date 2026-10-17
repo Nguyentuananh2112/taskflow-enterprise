@@ -27,7 +27,12 @@ const prismaLike = {
   workspacePurger: {},
   refreshTokenPurger: { purgeExpired: noop },
   retention: {
-    attendance: { scrubClientInfo: noop, deleteEvents: noop },
+    attendance: {
+      scrubClientInfo: noop,
+      deleteEvents: noop,
+      deleteCorrections: noop,
+      scrubCorrectionReasons: noop,
+    },
     leave: {
       scrubReasons: noop,
       deleteRequestsBeforeYear: noop,
@@ -105,7 +110,12 @@ describe('maintenanceJobs — đồng hồ của từng job (R31)', () => {
       refreshTokenPurger: { purgeExpired: record('tokenCutoff') },
       retention: {
         ...(prismaLike.retention as object),
-        attendance: { scrubClientInfo: noop, deleteEvents: record('eventsCutoff') },
+        attendance: {
+          scrubClientInfo: noop,
+          deleteEvents: record('eventsCutoff'),
+          deleteCorrections: noop,
+          scrubCorrectionReasons: noop,
+        },
       },
     } as unknown as Persistence;
     const real = new FakeClock('2026-12-01T00:00:00.000Z');

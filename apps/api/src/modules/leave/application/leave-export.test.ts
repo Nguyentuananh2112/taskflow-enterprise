@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_EXPORT_LIMITS, type ExportLimits } from '../../../core/export/export-limits';
 import { ExportSlots } from '../../../core/export/export-slots';
 import type { SpreadsheetSheet } from '../../../core/export/xlsx/xlsx-writer';
 import type { IReadSnapshot } from '../../../core/persistence/read-snapshot';
 import { createLeaveHarness, U } from '../testing/leave-harness';
-import {
-  DEFAULT_LEAVE_EXPORT_LIMITS,
-  LeaveExportUseCase,
-  type LeaveExportLimits,
-} from './use-cases/leave-export.use-case';
+import { LeaveExportUseCase } from './use-cases/leave-export.use-case';
 
 // T-057 báo cáo phép (ADR-130/131; B review; F SEC-HR-54, XL-05): thứ tự quyền → suất (429) → đếm trong snapshot
 // (422 EXPORT_TOO_LARGE) → audit EXPORT → deliver; 429 / 422 / lỗi quyền KHÔNG audit; suất luôn được nhả.
@@ -33,13 +30,13 @@ function spySnapshot(order: string[]): IReadSnapshot {
   };
 }
 
-function exporter(h: H, opts: { limits?: Partial<LeaveExportLimits>; slots?: ExportSlots } = {}) {
+function exporter(h: H, opts: { limits?: Partial<ExportLimits>; slots?: ExportSlots } = {}) {
   const order: string[] = [];
   const slots = opts.slots ?? new ExportSlots();
   const use = new LeaveExportUseCase(h.kit, h.readModel, h.employees, {
     snapshot: spySnapshot(order),
     slots,
-    limits: { ...DEFAULT_LEAVE_EXPORT_LIMITS, ...opts.limits },
+    limits: { ...DEFAULT_EXPORT_LIMITS, ...opts.limits },
   });
   return { use, order, slots };
 }
