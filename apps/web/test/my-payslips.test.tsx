@@ -69,7 +69,10 @@ describe('/payslips (T-050)', () => {
       within(sheet).getByRole('rowheader', { name: '(4) Tổng thực lĩnh = (1) + (2) − (3)' }),
     ).toBeTruthy();
     // Không có lượt chấm nào ⇒ lương theo công 0 ⇒ "—" đọc "0 đồng".
-    expect(within(sheet).getAllByLabelText('0 đồng').length).toBeGreaterThan(0);
+    const zero = within(sheet).getAllByText('0 đồng');
+    expect(zero.length).toBeGreaterThan(0);
+    expect(zero[0]?.className).toContain('sr-only');
+    expect(zero[0]?.previousElementSibling?.getAttribute('aria-hidden')).toBe('true');
     expect(screen.getByRole('region', { name: 'Tổng thực lĩnh' }).textContent).toContain('660.000');
     await waitFor(() => expect(document.title).toBe('Phiếu lương tháng 9/2026'));
     expect(document.title).not.toMatch(/\d{3}\.\d{3}/);

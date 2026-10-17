@@ -74,6 +74,12 @@ describe('/payroll (T-050)', () => {
     expect(
       await within(dialog).findByText(/Nguyễn An: chưa có hồ sơ lương, thiếu ngày vào công ty/),
     ).toBeTruthy();
+    // Hủy rồi mở lại ⇒ ô tick về trống, danh sách bị chặn cũ không còn (H soát T-050).
+    await u.click(within(dialog).getByRole('button', { name: 'Hủy' }));
+    await u.click(screen.getByRole('button', { name: 'Phát hành' }));
+    const again = await screen.findByRole('dialog', { name: /^Phát hành bảng lương/ });
+    expect(within(again).getByLabelText<HTMLInputElement>('Tôi đã kiểm tra').checked).toBe(false);
+    expect(within(again).queryByText(/Chưa phát hành được/)).toBeNull();
   });
 
   it('đủ hồ sơ ⇒ phát hành được: bảng thành "Đã phát hành", nhân viên thấy phiếu', async () => {

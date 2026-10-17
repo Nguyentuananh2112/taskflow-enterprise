@@ -34,3 +34,14 @@ export function reformatVndInput(input: string): string {
   const value = parseVnd(input);
   return value === null || input.trim() === '' ? input : groupDigits(value);
 }
+
+/**
+ * Ô đang GÕ từng phím (giá trị cũ do chính ô định dạng): bỏ dấu chấm nghìn cũ rồi nhóm lại ("6.0000" ⇒ "60.000").
+ * Có ký tự khác chữ số / dấu chấm ⇒ giữ nguyên (để ô báo lỗi).
+ */
+export function regroupTyped(input: string): string {
+  const digits = input.replace(/\./gu, '');
+  if (!/^\d+$/u.test(digits)) return input;
+  const value = Number(digits);
+  return Number.isSafeInteger(value) && value <= MONEY_MAX ? groupDigits(value) : input;
+}

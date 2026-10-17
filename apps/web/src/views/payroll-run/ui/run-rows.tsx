@@ -1,7 +1,7 @@
 import type { PayrollRunDto } from '@taskflow/contracts/payroll';
 import Link from 'next/link';
 
-import { BLOCK_REASON, workDays } from '@/entities/payroll';
+import { BLOCK_REASON, monthLabel, workDays } from '@/entities/payroll';
 import { formatVnd } from '@/shared/lib/money';
 
 type Run = Readonly<{ run: PayrollRunDto }>;
@@ -49,7 +49,7 @@ export function RunRows({ run }: Run) {
       </ul>
       <div className="relative hidden overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm">
-          <caption className="sr-only">Phiếu lương tháng {run.period}</caption>
+          <caption className="sr-only">Phiếu lương tháng {monthLabel(run.period)}</caption>
           <thead>
             <tr className="border-b border-border text-left text-xs text-text-muted">
               <th scope="col" className="sticky left-0 bg-bg py-2 pr-3 font-medium">

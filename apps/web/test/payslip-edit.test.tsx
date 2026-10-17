@@ -58,11 +58,11 @@ describe('form phiếu lương (T-050)', () => {
     await u.click(
       await screen.findByRole('button', { name: 'Thêm dòng — (2) Thưởng doanh số theo kênh' }),
     );
-    await u.type(screen.getByLabelText(/^Nhãn dòng 1/), 'Thưởng kênh online');
-    const amount = screen.getByLabelText(/^Số tiền dòng 1/);
+    await u.type(screen.getByLabelText(/^Nhãn — Thưởng, dòng 1/), 'Thưởng kênh online');
+    const amount = screen.getByLabelText(/^Số tiền — Thưởng, dòng 1/);
     await u.click(amount);
     await u.paste('1,500,000');
-    await u.tab();
+    // Chấm nghìn chèn NGAY khi dán (không đợi rời ô).
     expect((amount as HTMLInputElement).value).toBe('1.500.000');
     // Chưa chấm công ngày nào ⇒ lương theo công 0; thâm niên 2 năm × 500 000.
     const preview = screen.getByRole('region', { name: 'Tổng thực lĩnh (xem trước)' });
@@ -74,6 +74,23 @@ describe('form phiếu lương (T-050)', () => {
       bonusTotal: 1_500_000,
       lockVersion: 2,
     });
+  });
+
+  it('dán số âm ⇒ báo rõ ngay dưới ô (không bỏ dấu lặng lẽ); chữ cái ⇒ lỗi ở đúng ô', async () => {
+    const { an, open } = seed();
+    open(`/payroll/2026-09/${an.id}`);
+    const u = user();
+    await u.click(
+      await screen.findByRole('button', { name: 'Thêm dòng — (3) Các khoản giảm trừ' }),
+    );
+    const amount = screen.getByLabelText(/^Số tiền — Giảm trừ, dòng 1/);
+    await u.click(amount);
+    await u.paste('-500.000');
+    expect(screen.getByText(/Không nhập số âm — dấu do mục quyết định/)).toBeTruthy();
+    await u.clear(amount);
+    await u.type(amount, '5a');
+    expect(amount.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText('Chỉ nhập chữ số (vd 1.500.000).')).toBeTruthy();
   });
 
   it('sửa công ⇒ ô lý do (nhắc không ghi bệnh) bắt buộc; quá công chuẩn ⇒ câu lỗi', async () => {
@@ -111,8 +128,8 @@ describe('form phiếu lương (T-050)', () => {
     const u = user();
     await u.click(await screen.findByRole('button', { name: 'Tạo bản điều chỉnh' }));
     await u.click(screen.getByRole('button', { name: 'Thêm dòng — (3) Các khoản giảm trừ' }));
-    await u.type(screen.getByLabelText(/^Nhãn dòng 1/), 'Tạm ứng');
-    await u.type(screen.getByLabelText(/^Số tiền dòng 1/), '200000');
+    await u.type(screen.getByLabelText(/^Nhãn — Giảm trừ, dòng 1/), 'Tạm ứng');
+    await u.type(screen.getByLabelText(/^Số tiền — Giảm trừ, dòng 1/), '200000');
     await u.type(screen.getByLabelText(/^Lý do điều chỉnh/), 'Quên trừ tạm ứng');
     await u.click(screen.getByRole('button', { name: 'Xem khác biệt' }));
     const diff = screen.getByRole('region', { name: 'Khác biệt' });

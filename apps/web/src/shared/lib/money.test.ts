@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MONEY_MAX, formatVnd, parseVnd, reformatVndInput } from './money';
+import { MONEY_MAX, formatVnd, parseVnd, reformatVndInput, regroupTyped } from './money';
 
 describe('tiền VND (T-050)', () => {
   it('formatVnd: dấu chấm nghìn + NBSP trước ₫', () => {
@@ -34,5 +34,12 @@ describe('tiền VND (T-050)', () => {
     expect(reformatVndInput('7,000,000')).toBe('7.000.000');
     expect(reformatVndInput('7a')).toBe('7a');
     expect(reformatVndInput('')).toBe('');
+  });
+
+  it('regroupTyped: gõ tiếp sau số đã nhóm ⇒ nhóm lại; có chữ ⇒ giữ nguyên', () => {
+    expect(regroupTyped('6.0000')).toBe('60.000');
+    expect(regroupTyped('60.0000')).toBe('600.000');
+    expect(regroupTyped('6.00')).toBe('600');
+    expect(regroupTyped('6a')).toBe('6a');
   });
 });

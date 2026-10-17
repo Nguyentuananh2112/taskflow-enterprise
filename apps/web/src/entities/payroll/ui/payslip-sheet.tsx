@@ -17,7 +17,15 @@ export function Money({ value, strong = false }: Readonly<{ value: number; stron
         strong && 'font-semibold',
       )}
     >
-      {value === 0 ? <span aria-label="0 đồng">—</span> : formatVnd(value)}
+      {value === 0 ? (
+        // aria-label trên span không role bị trình đọc bỏ qua ⇒ chữ ẩn thật (H soát T-050).
+        <>
+          <span aria-hidden="true">—</span>
+          <span className="sr-only">0 đồng</span>
+        </>
+      ) : (
+        formatVnd(value)
+      )}
     </td>
   );
 }

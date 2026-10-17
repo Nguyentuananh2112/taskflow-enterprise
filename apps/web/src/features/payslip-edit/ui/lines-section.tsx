@@ -3,12 +3,19 @@
 import type { PayslipSection } from '@taskflow/contracts/payroll';
 import type { ReactNode } from 'react';
 
-import { formatVnd } from '@/shared/lib/money';
+import { formatVnd, parseVnd } from '@/shared/lib/money';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { MoneyInput } from '@/shared/ui/money-input';
 
 import type { LineDraft } from '../lib/form-state';
+
+/** Tên mục ngắn cho nhãn ô — trình đọc màn hình biết dòng thuộc mục nào. */
+const SHORT: Readonly<Record<PayslipSection, string>> = {
+  INCOME: 'Lương',
+  BONUS: 'Thưởng',
+  DEDUCTION: 'Giảm trừ',
+};
 
 type Props = Readonly<{
   title: string;
@@ -26,6 +33,7 @@ type Props = Readonly<{
  */
 export function LinesSection({ title, section, total, lines, onChange, fixed }: Props) {
   const mine = lines.filter((l) => l.section === section);
+  const short = SHORT[section];
   const update = (key: string, patch: Partial<LineDraft>) =>
     onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   return (
@@ -41,21 +49,22 @@ export function LinesSection({ title, section, total, lines, onChange, fixed }: 
           className="grid gap-2 border-t border-border pt-3 sm:grid-cols-[1fr_12rem_auto] sm:items-start"
         >
           <Input
-            label={`Nhãn dòng ${i + 1}`}
+            label={`Nhãn — ${short}, dòng ${i + 1}`}
             maxLength={120}
             value={l.label}
             onChange={(e) => update(l.key, { label: e.target.value })}
           />
           <MoneyInput
-            label={`Số tiền dòng ${i + 1}`}
+            label={`Số tiền — ${short}, dòng ${i + 1}`}
             value={l.amount}
             onChange={(amount) => update(l.key, { amount })}
+            error={parseVnd(l.amount) === null ? 'Chỉ nhập chữ số (vd 1.500.000).' : undefined}
           />
           <Button
             size="sm"
             variant="ghost"
             className="sm:mt-6"
-            aria-label={`Xóa dòng ${i + 1} của mục ${title}`}
+            aria-label={`Xóa — ${short}, dòng ${i + 1}`}
             onClick={() => onChange(lines.filter((x) => x.key !== l.key))}
           >
             Xóa

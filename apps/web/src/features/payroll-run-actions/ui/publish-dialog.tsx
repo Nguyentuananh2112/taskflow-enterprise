@@ -30,14 +30,23 @@ export function PublishDialog({ run }: Props) {
   const total = run.payslips.reduce((n, p) => n + p.netPay, 0);
   const missingOut = run.todo.filter((t) => t.kind === 'MISSING_OUT');
   const nameOf = (id: string) => run.payslips.find((p) => p.user.id === id)?.user.fullName ?? id;
+  // Mở / đóng (Hủy, Esc, xong) đều qua đây ⇒ ô "Tôi đã kiểm tra" và danh sách bị chặn cũ không sót lại (H soát T-050).
+  const show = (next: boolean) => {
+    setOpen(next);
+    setChecked(false);
+    setBlocked(null);
+  };
   const publish = useMutation({
-    mutationFn: () => payrollApi.publish(run.period),
+    mutationFn: () => {
+      setBlocked(null);
+      return payrollApi.publish(run.period);
+    },
     onSuccess: (r, _v, _c, context) => {
       context.client.setQueryData(payrollKeys.run(run.period), r);
       void context.client.invalidateQueries({ queryKey: payrollKeys.runs() });
       void context.client.invalidateQueries({ queryKey: payslipKeys.all() });
       toast({ title: `Đã phát hành bảng lương tháng ${monthLabel(run.period)}`, tone: 'success' });
-      setOpen(false);
+      show(false);
     },
     onError: (error) => {
       const details = isApiError(error) ? PublishBlockedDetails.safeParse(error.details) : null;
@@ -46,18 +55,15 @@ export function PublishDialog({ run }: Props) {
   });
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Phát hành</Button>
+      <Button onClick={() => show(true)}>Phát hành</Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) setChecked(false);
-        }}
+        onOpenChange={show}
         title={`Phát hành bảng lương tháng ${monthLabel(run.period)}?`}
         description="Sau khi phát hành, nhân viên thấy phiếu và số không sửa được (sai thì tạo bản điều chỉnh)."
         footer={
           <>
-            <Button variant="secondary" onClick={() => setOpen(false)}>
+            <Button variant="secondary" onClick={() => show(false)}>
               Hủy
             </Button>
             <Button
