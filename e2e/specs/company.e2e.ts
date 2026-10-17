@@ -54,12 +54,12 @@ test(`@main E2E-HR-15 [${T065A}]: Ada ⇒ /w có "Việc quản lý" (Nhân sự
 }) => {
   const mia = newUser('co15-mia');
   const { accessToken: miaToken } = await apiCreateUser(request, mia);
-  const miaWs = await apiNewWorkspace(request, miaToken, `WS Mia co15 ${mia.email.slice(9, 17)}`);
-  const adaWs = await apiNewWorkspace(
-    request,
-    await adaToken(request),
-    `WS Ada co15 ${mia.email.slice(9, 17)}`,
-  );
+  // Tên ws duy nhất mỗi lượt (Ada là MỘT người cho mọi project Playwright trên cùng DB).
+  const run = mia.email.slice(9, 17);
+  const miaName = `WS Mia co15 ${run}`;
+  const adaName = `WS Ada co15 ${run}`;
+  const miaWs = await apiNewWorkspace(request, miaToken, miaName);
+  const adaWs = await apiNewWorkspace(request, await adaToken(request), adaName);
 
   await loginViaUi(page, adaUser());
   await page.goto(HOME);
@@ -70,8 +70,12 @@ test(`@main E2E-HR-15 [${T065A}]: Ada ⇒ /w có "Việc quản lý" (Nhân sự
   await expect(shortcuts(page)).toHaveCount(0);
   // Admin KHÔNG có quyền ngầm vào ws (ADR-134): chỉ thấy ws mình là thành viên.
   const adaList = myWorkspaces(page);
-  await expect(adaList.getByRole('link', { name: /^WS Ada co15/ })).toBeVisible();
-  await expect(adaList.getByRole('link', { name: /^WS Mia co15/ })).toHaveCount(0);
+  await expect(
+    adaList.getByRole('link', { name: new RegExp(`^${escapeRe(adaName)}`) }),
+  ).toBeVisible();
+  await expect(
+    adaList.getByRole('link', { name: new RegExp(`^${escapeRe(miaName)}`) }),
+  ).toHaveCount(0);
   expect(miaWs.id).not.toBe(adaWs.id);
 
   const m = await openAs(browser, mia);
@@ -83,7 +87,9 @@ test(`@main E2E-HR-15 [${T065A}]: Ada ⇒ /w có "Việc quản lý" (Nhân sự
   );
   await expect(shortcuts(m.page).getByRole('link', { name: /^Xin nghỉ/ })).toBeVisible();
   await expect(manageBlock(m.page)).toHaveCount(0);
-  await expect(myWorkspaces(m.page).getByRole('link', { name: /^WS Mia co15/ })).toBeVisible();
+  await expect(
+    myWorkspaces(m.page).getByRole('link', { name: new RegExp(`^${escapeRe(miaName)}`) }),
+  ).toBeVisible();
   await m.close();
 });
 
@@ -210,16 +216,13 @@ test(`E2E-HR-17 [${T065B}]: Hana thêm nhân viên ở 360 px (tên chứa paylo
     await p.getByRole('button', { name: 'Kích hoạt tài khoản' }).click();
     expect((await activated).status()).toBe(200);
     await expect(p).toHaveURL(/\/w$/);
-    // Dialog nhắc chấm công có thể hiện ở /w (T-045) — dùng chính nút của nó.
+    // Mốc thứ Ba 10:00, người mới chưa chấm ⇒ dialog nhắc (T-045) CHẮC CHẮN mở ở /w và che thẻ — dùng nút của nó.
     const prompt = p.getByRole('dialog', { name: /^Chào buổi/ });
+    await expect(prompt).toBeVisible();
     const checkIn = p.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url() === `${API_URL}/attendance/check-in`,
     );
-    if (await prompt.isVisible()) {
-      await prompt.getByRole('button', { name: 'Chấm công vào', exact: true }).click();
-    } else {
-      await attendanceCard(p).getByRole('button', { name: 'Chấm vào' }).click();
-    }
+    await prompt.getByRole('button', { name: 'Chấm công vào', exact: true }).click();
     expect((await checkIn).status()).toBe(201);
     expect(leaked, 'không request nào mang token trong URL').toEqual([]);
   } finally {
@@ -234,7 +237,11 @@ test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox;
   browser,
   request,
 }) => {
-  const w = await seedHrWorld(request, 'co19', { hanaIsHr: true });
+  // lastDay (hôm qua) phải ≥ startDate (B T-062: không thì 422 LAST_DAY_OUT_OF_RANGE) ⇒ nhiệm kỳ từ 3 ngày trước.
+  const w = await seedHrWorld(request, 'co19', {
+    hanaIsHr: true,
+    startDate: addDays(vnDate(), -3),
+  });
   const max = newUser('co19-max');
   await apiCreateUser(request, max);
   const w3Name = `W3 co19 ${w.mia.userId.slice(0, 8)}`;

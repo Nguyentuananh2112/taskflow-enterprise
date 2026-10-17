@@ -697,9 +697,11 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   const hana = await openAs(browser, w.hana.user);
   const dialogsHana = await arm(hana.context);
   await hana.page.goto('/hr?tab=leave');
-  await expect(hana.page.getByText(P.pending)).toBeVisible();
+  // Một công ty: hàng đợi có cả đơn cùng payload của ca khác (HR-08b) ⇒ khoanh trong đơn của Mia ca này.
+  const miaLeaves = hana.page.getByRole('listitem', { name: `Đơn của ${w.mia.user.fullName}` });
+  await expect(miaLeaves.getByText(P.pending)).toBeVisible();
   await hana.page.getByLabel('Trạng thái').selectOption({ label: 'Tất cả' });
-  await expect(hana.page.getByText(P.reason)).toBeVisible();
+  await expect(miaLeaves.getByText(P.reason)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana /hr Đơn nghỉ');
   await hana.page.goto(`/hr?tab=calendar`);
   if (holiday.slice(0, 4) !== vnDate().slice(0, 4)) {

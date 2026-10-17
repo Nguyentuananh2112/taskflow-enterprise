@@ -73,9 +73,10 @@ async function join(
   label: string,
   role: 'MEMBER' | 'VIEWER',
   grants: 'HR_MANAGE'[] = [],
+  startDate?: string,
 ): Promise<HrPerson> {
   const user = newUser(label);
-  const s = await apiCreateUser(request, user, { grants });
+  const s = await apiCreateUser(request, user, { grants, ...(startDate ? { startDate } : {}) });
   await apiAddMember(request, owner, user, role);
   return { user, userId: s.userId, accessToken: s.accessToken };
 }
@@ -92,14 +93,16 @@ export async function seedHrWorld(
   request: APIRequestContext,
   label: string,
   // Cấp HR_MANAGE cho Hana cần PUT admin/access (T-061a) ⇒ chỉ ca thật sự cần HR bật (ca khác không phải chờ vé).
-  { hanaIsHr = false }: { hanaIsHr?: boolean } = {},
+  { hanaIsHr = false, startDate }: { hanaIsHr?: boolean; startDate?: string } = {},
 ): Promise<HrWorld> {
-  const oliviaUser = newUser(`${label}-olivia`);
+  // §0.4: một công ty + nhiều project Playwright trên CÙNG DB ⇒ tên người phải duy nhất mỗi lượt (HR thấy mọi người).
+  const tag = `${label}-${randomUUID().slice(0, 4)}`;
+  const oliviaUser = newUser(`${tag}-olivia`);
   const olivia = { ...(await apiRegister(request, oliviaUser)), user: oliviaUser };
   const [hana, mia, vic] = await Promise.all([
-    join(request, olivia, `${label}-hana`, 'MEMBER', hanaIsHr ? ['HR_MANAGE'] : []),
-    join(request, olivia, `${label}-mia`, 'MEMBER'),
-    join(request, olivia, `${label}-vic`, 'VIEWER'),
+    join(request, olivia, `${tag}-hana`, 'MEMBER', hanaIsHr ? ['HR_MANAGE'] : [], startDate),
+    join(request, olivia, `${tag}-mia`, 'MEMBER', [], startDate),
+    join(request, olivia, `${tag}-vic`, 'VIEWER', [], startDate),
   ]);
   return { olivia, hana, mia, vic };
 }
