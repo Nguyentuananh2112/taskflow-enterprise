@@ -80,7 +80,7 @@ Bộ đọc **độc lập** với bộ ghi của API: unzip bằng `node:zlib` 
 |---|---|---|
 | `EXPORT_MAX_EMPLOYEES`, `EXPORT_MAX_LEAVE_ROWS` | B (T-055) | XL-05 vế 422: dựng 1 001 người ở local quá nặng ⇒ hạ trần còn 3 / 5 |
 | `EXPORT_BATCH_SIZE`, `EXPORT_BATCH_DELAY_MS` | B (T-055) | giữ export "đang chạy" đủ lâu, hộp đen: export thứ 3 đồng thời ⇒ 429 (SEC-HR-54), ghi song song trong lúc xuất (XL-07) |
-| `LEAVE_CARRYOVER_ON_START=1` (một lượt trước `/readyz`, log `maintenance.run_done {job: 'leave-carryover', snapshotted}`), `LEAVE_CARRYOVER_INTERVAL_MS` (≥ 1000) — **D nhận 18/10** | D (T-057) | CLK-HR-13, CC-HR-24. Job `leave-carryover` **luôn đăng ký** (cả test): mỗi 1 giờ + jitter ≤ 5 phút, lượt đầu 5–10 s sau start, chụp năm hiện tại cho nhân viên đang làm còn NULL ⇒ ca S nào cần `carriedFinal:false` (LP-12) phải tạo người **sau** lượt đầu (chờ log `maintenance.run_done` job `leave-carryover`) |
+| `LEAVE_CARRYOVER_ON_START=1` (một lượt trước `/readyz`, log `maintenance.run_done {job: 'leave-carryover', durationMs}` như mọi job — `MaintenanceScheduler.runNow`; số người chụp `snapshotted` ở log tóm tắt riêng của job; lỗi ⇒ `maintenance.run_failed`), `LEAVE_CARRYOVER_INTERVAL_MS` (≥ 1000) — **D nhận 18/10** | D (T-057) | CLK-HR-13, CC-HR-24. Job `leave-carryover` **luôn đăng ký** (cả test): mỗi 1 giờ + jitter ≤ 5 phút, lượt đầu 5–10 s sau start, chụp năm hiện tại cho nhân viên đang làm còn NULL ⇒ ca S nào cần `carriedFinal:false` (LP-12) phải tạo người **sau** lượt đầu (chờ log `maintenance.run_done` job `leave-carryover`) |
 
 Chưa có env ⇒ ca khai pending theo vé, không bỏ.
 
@@ -166,7 +166,7 @@ U: `entitlementOf`, `carried`, kiểm số dư, hạn E — Stryker `leave-domai
 | LP-09b | A + S | đơn Y−1 PENDING từ tháng 12, duyệt trong tháng 1 ⇒ `carried(Y)` tính lại | đúng |
 | LP-10 | A + S | hạ chính sách năm nay ⇒ `negativeBalances` có người đã dùng nhiều; đơn đã duyệt không đổi trạng thái | đúng |
 | LP-11 | S | đơn vắt 2 năm ⇒ 422 `LEAVE_SPANS_YEARS` (giữ Mốc 3) | đúng |
-| LP-12 | A + S | GET khi `carried_over_days` NULL ⇒ tính tạm, `carriedFinal: false`, **không ghi** (GET lần 2 vẫn false); job chạy 2 lần (restart `LEAVE_CARRYOVER_ON_START=1` ×2) ⇒ giá trị không đổi, `snapshotted` lần 2 = 0. Người tạo sau lượt đầu của job (§1.3) | đúng |
+| LP-12 | A + S | GET khi `carried_over_days` NULL ⇒ tính tạm, `carriedFinal: false`, **không ghi** (GET lần 2 vẫn false); job chạy 2 lần (restart `LEAVE_CARRYOVER_ON_START=1` ×2) ⇒ giá trị không đổi, `snapshotted` (log tóm tắt của job) lần 2 = 0. Người tạo sau lượt đầu của job (§1.3) | đúng |
 | LP-13 | U + S | nhận lại: nhiệm kỳ trước ở năm khác ⇒ đủ `base` năm Y; cùng năm Y ⇒ không cấp lại, đơn trước `start_date` hiện tại không trừ, `adjustmentDays` về 0 (audit `BALANCE_ADJUST`) | đúng |
 | LP-14 | S | phân rã DTO `leave/balances/me`: `base`, `seniorityBonus`, `seniorityYears`, `entitled`, `adjustment`, `carriedOver`, `carriedFinal`, `carriedExpiresOn`, `carriedUsable`, `used`, `pending`, `remaining` + trường cũ; công thức "Còn" = §5 thiết kế | đúng |
 
