@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { randomIp, type Actor, type Actors } from './actors';
+import { SEC_CLOCK_ANCHOR, addDays, vnDateOf } from './clock';
 import type { RawResponse } from './http-client';
 import type { ApiUnderTest } from './suite';
 
@@ -116,14 +117,17 @@ export function withKey(
   });
 }
 
-/** Ngày làm việc (T2–T7 của lịch mặc định S0 — workspace mới không có dòng lịch) cách hôm nay ≥ `offset` ngày, dạng YYYY-MM-DD (UTC đủ dùng). */
-export function workday(offset: number): string {
-  const d = new Date(Date.now() + offset * 86_400_000);
+/**
+ * Ngày làm việc (T2–T7 của lịch mặc định S0 — workspace mới không có dòng lịch) cách "hôm nay" ≥ `offset` ngày.
+ * "Hôm nay" = ngày VN của mốc đồng hồ nghiệp vụ (`SEC_CLOCK_ANCHOR`, harness/clock.ts), KHÔNG phải giờ máy.
+ */
+export function workday(offset: number, anchor: string = SEC_CLOCK_ANCHOR): string {
+  const d = new Date(`${addDays(vnDateOf(anchor), offset)}T00:00:00Z`);
   while (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 }
 
-export const thisMonth = () => new Date().toISOString().slice(0, 7);
+export const thisMonth = (anchor: string = SEC_CLOCK_ANCHOR) => vnDateOf(anchor).slice(0, 7);
 
 export interface LeaveDto {
   id: string;
@@ -181,5 +185,11 @@ export const eventIdOf = (res: RawResponse): string =>
 export const eventsOf = (res: RawResponse): AttendanceEventDto[] =>
   (res.json as { data: { events: AttendanceEventDto[] } }).data.events;
 
-/** Ngày công hôm nay theo lịch mặc định S0 (Asia/Ho_Chi_Minh, UTC+7). */
-export const todayVn = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+/**
+ * Ngày công "hôm nay" theo lịch mặc định S0 (Asia/Ho_Chi_Minh) của mốc đồng hồ nghiệp vụ. Mốc thứ Ba 10:00 ⇒
+ * thời gian trôi trong một lượt chạy (vài phút) không đổi ngày.
+ */
+export const todayVn = (anchor: string = SEC_CLOCK_ANCHOR) => vnDateOf(anchor);
+
+/** Env cho `useApi()` của các file HR: API chạy theo cùng mốc với helper ngày ở trên. */
+export const hrClockEnv = (anchor: string = SEC_CLOCK_ANCHOR) => ({ TEST_CLOCK_ANCHOR: anchor });

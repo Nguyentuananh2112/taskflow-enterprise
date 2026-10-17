@@ -17,6 +17,7 @@ import {
   withKey,
   workday,
   type HrTenant,
+  hrClockEnv,
 } from './harness/hr';
 import { errorEnvelope } from './harness/http-client';
 import { openSocket, connected } from './harness/socket';
@@ -25,7 +26,8 @@ import { secCase, useApi } from './harness/suite';
 // SEC-HR-* (docs/design/test-spec-hr.md §7, T-042). Viết TRƯỚC khi có route: mọi ca khai báo pending
 // theo vé backend (harness/pending.ts) ⇒ gỡ mục đó khi vé merge là ca tự chạy. Thứ tự lỗi §0.3.
 
-const api = useApi();
+// Giờ nghiệp vụ neo thứ Ba 10:00 VN (harness/clock.ts) — cùng mốc với workday()/todayVn().
+const api = useApi(hrClockEnv());
 const actors = new Actors(api);
 let seeded: Promise<HrTenant> | undefined;
 const hr = () => (seeded ??= seedHr(actors));
@@ -99,7 +101,7 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
     AREA,
     async () => {
       const t = await hr();
-      const path = HR.balance(t.ws, t.max.userId, new Date().getUTCFullYear());
+      const path = HR.balance(t.ws, t.max.userId, Number(todayVn().slice(0, 4)));
       const res = await actors.json('PATCH', path, t.mia.accessToken, { adjustmentDays: 'x' });
       expect(res.status, `PATCH ${path}`).toBe(403);
     },
@@ -195,7 +197,7 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
     const t = await hr();
     const res = await actors.json(
       'PATCH',
-      HR.balance(t.ws, t.otto.userId, new Date().getUTCFullYear()),
+      HR.balance(t.ws, t.otto.userId, Number(todayVn().slice(0, 4))),
       t.hana.accessToken,
       { adjustmentDays: 1, note: 'idor' },
     );
@@ -227,7 +229,7 @@ describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
       (
         await actors.json(
           'PATCH',
-          HR.balance(t.ws, t.hana.userId, new Date().getUTCFullYear()),
+          HR.balance(t.ws, t.hana.userId, Number(todayVn().slice(0, 4))),
           t.hana.accessToken,
           { adjustmentDays: 5, note: 'tự cộng' },
         )
