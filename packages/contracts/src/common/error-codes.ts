@@ -26,6 +26,10 @@ export const ErrorCode = z.enum([
   'RATE_LIMITED',
   'INTERNAL_ERROR',
   'SERVICE_UNAVAILABLE',
+  // Mốc 3.5 (ADR-135, ADR-137)
+  'SESSION_REVOKED',
+  'ACTIVATION_INVALID',
+  'ACTIVATION_GONE',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -47,6 +51,13 @@ export const BusinessRule = z.enum([
   'GRANT_NOT_ALLOWED',
   // T-043 / R27: ghi lượt chấm / ngày lễ cho ngày đã quá thời hạn lưu (job retention sẽ xóa ngay).
   'OUTSIDE_RETENTION',
+  // Mốc 3.5 (company-level.md): thêm thành viên ws phải thuộc công ty; Admin giao OWNER cho thành viên ws;
+  // chấm ngoài nhiệm kỳ; đơn sau ngày làm cuối; email của tài khoản đã xóa.
+  'NOT_ACTIVE_MEMBER',
+  'NOT_WORKSPACE_MEMBER',
+  'NOT_EMPLOYED',
+  'AFTER_LAST_DAY',
+  'EMAIL_UNAVAILABLE',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
