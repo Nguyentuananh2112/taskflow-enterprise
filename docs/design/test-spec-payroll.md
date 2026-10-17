@@ -175,7 +175,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | SEC-PAY-06 | Quinn sau `access_until` ⇒ 401 `SESSION_REVOKED` cả route self | đúng |
 | SEC-PAY-07 | mass assignment: body phiếu có `netPay`, `incomeTotal`, `seniorityAllowance`, `salaryByDays`, `userId`, `revision`, `status` ⇒ 400 strict (tổng chỉ do server tính) | đúng |
 | SEC-PAY-08 | tiền: `-1`, `1e12 + 1`, `1.5`, `"7000000"`, `1e21`, `NaN` ⇒ 400; 51 dòng ⇒ 400; nhãn rỗng / 121 ký tự / ký tự điều khiển ⇒ 400 | đúng |
-| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số; **lý do sửa công / lý do điều chỉnh** (chuỗi đánh dấu) chỉ có ở phiếu (kế toán + chính nhân viên), không có trong thông báo, log, audit đọc bởi người khác Admin | đúng |
+| SEC-PAY-09 | không lộ tiền (§0.5): thông báo, log, URL, body lỗi; ném lỗi giữa chừng (body sai kiểu ở lô dòng thứ 30) ⇒ log không có số; **lý do sửa công / lý do điều chỉnh** (chuỗi đánh dấu) chỉ có ở phiếu (kế toán + chính nhân viên), không có trong thông báo `PAYSLIP_*`, log, body Sentry; trong audit lý do nằm ở `after.note` (bước D7' của retention xóa được), **không** dùng khóa `reason` (B 18/10) | đúng |
 | SEC-PAY-10 | audit `PAYROLL_*` có before/after số tiền; `GET hr/audit-logs` chỉ Admin (Kay, Hana ⇒ 403) | đúng |
 | SEC-PAY-11 | header: mọi route lương `Cache-Control: no-store`; export có header tải file + `nosniff` | đúng |
 | SEC-PAY-12 | `payroll_settings`: chỉ `payroll:manage`; `seniorityPerYear` âm / > 1e12 ⇒ 400; luôn một dòng (CHECK `id = 1` — I) | đúng |
