@@ -92,4 +92,38 @@ describe('thẻ Chấm công', () => {
     await userEvent.setup({ delay: null }).click(screen.getByRole('button', { name: 'Thử lại' }));
     expect(await screen.findByRole('region', { name: 'Chấm công' })).toBeTruthy();
   });
+
+  it('không layout-shift (demo TL d9): skeleton CÙNG khung min-h với thẻ; ô thông báo luôn có, chấm xong chỉ đổi CHỮ (cùng phần tử)', async () => {
+    const f = seedBoard(mock);
+    const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    mock.server.use(
+      http.get(
+        url,
+        async () => {
+          await gate;
+          return undefined; // chuyển tiếp cho handler mock thật
+        },
+        { once: true },
+      ),
+    );
+    f.signInAs(f.owner);
+    openApp(
+      `/w/${f.wsId}/projects`,
+      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
+    );
+    const skeleton = await screen.findByRole('status', { name: 'Đang tải chấm công' });
+    expect(skeleton.className).toContain('min-h-60');
+    release();
+    const card = await screen.findByRole('region', { name: 'Chấm công' });
+    expect(card.className).toContain('min-h-60');
+    const note = within(card).getByText('Bạn chưa chấm vào hôm nay.');
+    expect(note.className).toContain('min-h-10');
+    await userEvent
+      .setup({ delay: null })
+      .click(within(card).getByRole('button', { name: 'Chấm vào' }));
+    await waitFor(() => expect(note.textContent).toBe('Đã chấm vào lúc 10:00.'));
+    expect(note.isConnected).toBe(true);
+  });
 });
