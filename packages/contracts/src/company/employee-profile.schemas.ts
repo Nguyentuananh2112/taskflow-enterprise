@@ -6,7 +6,10 @@ import { EmployeeStatus } from './company-roles';
 // Mốc 5 — hồ sơ nhân viên tối giản (docs/design/hr-extended.md ADR-128, T-054). Cấp CÔNG TY: một dòng / user, không
 // phiên bản, nguồn DUY NHẤT của `hireDate` (lương + phép). KHÔNG lưu CCCD, địa chỉ, ngày sinh, SĐT/email cá nhân.
 
-/** Cận dưới cố định; cận trên = hôm nay theo giờ nghiệp vụ (server kiểm — CHECK của DB không dùng now()). */
+/**
+ * Cận dưới cố định (400); cận trên = hôm nay theo giờ nghiệp vụ — server kiểm ⇒ 422 `HIRE_DATE_IN_FUTURE` (CHECK của
+ * DB không dùng now()).
+ */
 export const HIRE_DATE_MIN = '1950-01-01';
 
 export const HireDate = DateOnly.refine((d) => d >= HIRE_DATE_MIN, {
