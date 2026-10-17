@@ -53,7 +53,9 @@ import {
   ActivationInspectBody,
   ActivationInspectResponse,
   HireEmployeeBody,
+  CompanyDto,
   HireEmployeeResponse,
+  UpdateCompanyBody,
 } from '../company/company.schemas';
 import {
   AuthTokenDto,
@@ -107,7 +109,8 @@ import {
  */
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type Security = 'bearer' | 'refreshCookie' | 'none';
-export type Tag = 'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'notifications';
+export type Tag =
+  'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'company' | 'notifications';
 
 export interface ApiRoute {
   method: HttpMethod;
@@ -177,6 +180,26 @@ export const API_ROUTES: readonly ApiRoute[] = [
       'ORIGIN_NOT_ALLOWED',
       'RATE_LIMITED',
     ],
+  },
+  // ---------- công ty (Mốc 3.5, ADR-133/139) ----------
+  {
+    method: 'get',
+    path: '/company',
+    summary: 'Tên công ty (header mọi trang) — mọi người đang thuộc công ty',
+    tag: 'company',
+    security: 'bearer',
+    response: { status: 200, data: CompanyDto },
+    errors: ['SESSION_REVOKED', 'RESOURCE_NOT_FOUND'],
+  },
+  {
+    method: 'patch',
+    path: '/company',
+    summary: 'Đổi tên công ty (company:admin, expectedVersion) — audit COMPANY_RENAMED',
+    tag: 'company',
+    security: 'bearer',
+    body: UpdateCompanyBody,
+    response: { status: 200, data: CompanyDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'RESOURCE_NOT_FOUND', 'VERSION_CONFLICT'],
   },
   {
     method: 'post',

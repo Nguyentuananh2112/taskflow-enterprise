@@ -51,6 +51,13 @@ export class InMemoryCompanyStore
     return Promise.resolve({ ...this.#state.company });
   }
 
+  rename(input: { name: string; expectedVersion: number }): Promise<CompanyProfile | null> {
+    const c = this.#state.company;
+    if (!c || c.version !== input.expectedVersion) return Promise.resolve(null);
+    this.#state.company = { name: input.name, version: c.version + 1 };
+    return Promise.resolve({ ...this.#state.company });
+  }
+
   find(userId: string): Promise<CompanyMemberSnapshot | null> {
     const m = this.#state.members.get(userId);
     return Promise.resolve(m ? { ...m, grants: [...m.grants] } : null);

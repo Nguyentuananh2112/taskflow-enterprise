@@ -21,6 +21,11 @@ import type {
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
+import {
+  GetCompanyQuery,
+  RenameCompanyUseCase,
+} from './application/use-cases/company-profile.use-cases';
+import { CompanyController, companyRoutes } from './presentation/company.routes';
 import { HrController, hrRoutes } from './presentation/hr.routes';
 import {
   effectiveCompanyPermissions,
@@ -77,6 +82,8 @@ export interface CompanyModule {
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
   /** Router `/api/v1/hr` (thêm nhân viên — T-061; phần còn lại T-062). */
   hrRoutes(authenticate: RequestHandler): Router;
+  /** Router `/api/v1/company` (đọc tên; Admin đổi tên). */
+  companyRoutes(authenticate: RequestHandler): Router;
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
     isActive(userId: string): Promise<boolean>;
@@ -132,6 +139,10 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     clock,
     timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
   });
+  const permissionsOf = async (userId: string) => {
+    const m = await active(userId);
+    return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
+  };
   const meOf = async (userId: string): Promise<MeCompanyView | null> => {
     const m = await active(userId);
     if (!m) return null;
@@ -157,15 +168,23 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
         authenticate,
         limit: d.limit,
       }),
+    companyRoutes: (authenticate) =>
+      companyRoutes({
+        controller: new CompanyController({
+          get: new GetCompanyQuery({ company: d.repos.company, permissionsOf }),
+          rename: new RenameCompanyUseCase({ ...d, access, audit, company: d.repos.company }),
+          responder: d.responder,
+        }),
+        permissionsOf,
+        authenticate,
+        limit: d.limit,
+      }),
     sessionGate: {
       isActive: async (userId) => (await active(userId)) !== null,
       meOf,
       companyName: async () => (await d.repos.company.get())?.name ?? null,
     },
-    async permissionsOf(userId) {
-      const m = await active(userId);
-      return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
-    },
+    permissionsOf,
     meOf,
     notificationAudience: {
       async accessOf(userId) {

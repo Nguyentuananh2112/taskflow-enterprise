@@ -95,6 +95,7 @@ export const HrAuditAction = z.enum([
   'ACTIVATION_LINK_ISSUED',
   'WORKSPACE_OWNER_ASSIGNED',
   'WORKSPACE_ARCHIVED',
+  'COMPANY_RENAMED',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

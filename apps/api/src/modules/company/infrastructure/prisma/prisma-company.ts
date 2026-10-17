@@ -50,6 +50,18 @@ export class PrismaCompany implements ICompanyRepository {
     if (!row) throw new Error('companies: không đọc lại được dòng vừa tạo');
     return row;
   }
+
+  async rename(input: {
+    name: string;
+    expectedVersion: number;
+    at: Date;
+  }): Promise<CompanyProfile | null> {
+    const { count } = await this.db().company.updateMany({
+      where: { id: COMPANY_ID, version: input.expectedVersion },
+      data: { name: input.name, version: { increment: 1 }, updatedAt: input.at },
+    });
+    return count === 1 ? this.get() : null;
+  }
 }
 
 export class PrismaCompanyMembers implements ICompanyMemberRepository {

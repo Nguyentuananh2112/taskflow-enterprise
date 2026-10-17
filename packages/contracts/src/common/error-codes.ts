@@ -91,6 +91,8 @@ export const NotFoundDetails = z.object({
     'work_schedule',
     // Mốc 3 (T-040)
     'notification',
+    // Mốc 3.5: chưa `admin:bootstrap` ⇒ chưa có dòng `companies`
+    'company',
   ]),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;
