@@ -8,8 +8,12 @@ import type { AttendanceModule } from '../modules/attendance/attendance.module';
 import type { ApprovedLeavePort } from '../modules/attendance/application/ports/approved-leave.port';
 import { createLeaveModule } from '../modules/leave/leave.module';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
-import type { WorkspaceModule } from '../modules/workspace/workspace.module';
-import { leaveAudit, leaveMembership } from './leave-adapters';
+import {
+  leaveAudit,
+  leaveCompanyFrom,
+  type CompanyPortsForLeave,
+  type HrAuditWriterForLeave,
+} from './leave-adapters';
 import { leaveNotifierFrom } from './notification-adapters';
 import type { Persistence } from './persistence';
 
@@ -35,8 +39,8 @@ export class LateApprovedLeaves implements ApprovedLeavePort {
 }
 
 /**
- * Module leave (T-039) với adapter thật: lịch ← attendance (T-038), quyền / chốt ghi HR / audit ← workspace (T-037),
- * thông báo ← notifications (T-040), tên ← reader user của task/auth.
+ * Module leave (T-039/T-064) với adapter thật: lịch ← attendance, quyền / nhân viên / nhiệm kỳ + audit ← company
+ * (T-061), thông báo ← notifications, tên ← reader user của task/auth.
  */
 export function wireLeave(
   d: {
@@ -45,7 +49,8 @@ export function wireLeave(
     ids: IIdGenerator;
   },
   m: {
-    workspace: WorkspaceModule;
+    company: () => CompanyPortsForLeave;
+    hrAudit: () => HrAuditWriterForLeave;
     attendance: Pick<AttendanceModule, 'workCalendar'>;
     notifications: Pick<NotificationsModule, 'publisher'>;
     auth: Pick<AuthModule, 'authenticate'>;
@@ -57,8 +62,8 @@ export function wireLeave(
     users: d.persistence.task.users,
     calendar: m.attendance.workCalendar,
     notifier: leaveNotifierFrom(m.notifications.publisher),
-    membership: leaveMembership(() => m.workspace),
-    audit: leaveAudit(() => m.workspace),
+    company: leaveCompanyFrom(m.company),
+    audit: leaveAudit(m.hrAudit),
     uow: d.persistence.uow,
     clock: d.clock,
     ids: d.ids,

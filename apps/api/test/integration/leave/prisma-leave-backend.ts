@@ -14,7 +14,7 @@ export function prismaLeaveBackend(): LeaveBackend {
     uow,
     requests,
     readModel: new PrismaLeaveReadModel(() => uow.db()),
-    async prepare({ workspaces, users }) {
+    async prepare({ users }) {
       await prisma.user.createMany({
         data: users.map((id) => ({
           id,
@@ -24,22 +24,14 @@ export function prismaLeaveBackend(): LeaveBackend {
         })),
         skipDuplicates: true,
       });
-      await prisma.workspace.createMany({
-        data: workspaces.map((id) => ({
-          id,
-          name: `W ${id.slice(-4)}`,
-          slug: `ws-${id.slice(-12)}`,
-        })),
-        skipDuplicates: true,
-      });
     },
     seed: (record: LeaveRequestRecord) => requests.add(record),
     async rows() {
       const ids = await prisma.leaveRequest.findMany({
-        select: { id: true, workspaceId: true },
+        select: { id: true },
         orderBy: { id: 'asc' },
       });
-      const found = await Promise.all(ids.map((r) => requests.find(r.workspaceId, r.id)));
+      const found = await Promise.all(ids.map((r) => requests.find(r.id)));
       return found.filter((r): r is LeaveRequestRecord => r !== null);
     },
   };

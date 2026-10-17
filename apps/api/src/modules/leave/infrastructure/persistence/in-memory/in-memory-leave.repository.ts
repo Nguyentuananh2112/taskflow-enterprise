@@ -1,6 +1,3 @@
-import { DEFAULT_ENTITLED_HALF_DAYS } from '../../../domain/leave-balance';
-import type { HalfDays } from '../../../domain/leave-days';
-import { holdsBalance } from '../../../domain/leave-status';
 import type {
   ILeaveReadModel,
   LeaveListFilter,
@@ -12,17 +9,21 @@ import type {
   LeaveBalanceRecord,
   LeaveRequestRecord,
 } from '../../../application/ports/leave.ports';
-import type { CalendarDate } from '../../../domain/leave-days';
+import { DEFAULT_ENTITLED_HALF_DAYS } from '../../../domain/leave-balance';
+import type { CalendarDate, HalfDays } from '../../../domain/leave-days';
+import { holdsBalance } from '../../../domain/leave-status';
 
 interface State {
   requests: Map<string, LeaveRequestRecord>;
   balances: Map<string, LeaveBalanceRecord>;
 }
 
-const balanceKey = (ws: string, user: string, year: number) => `${ws}:${user}:${String(year)}`;
+const balanceKey = (user: string, year: number) => `${user}:${String(year)}`;
+const byStart = (a: LeaveRequestRecord, b: LeaveRequestRecord) =>
+  a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id);
 
 /**
- * Repo + read model leave trong bộ nhớ cho test A (test-spec §0.1) — cùng hợp đồng với bản Prisma. Snapshottable để
+ * Repo + read model leave trong bộ nhớ cho test A — cùng hợp đồng với bản Prisma (phạm vi công ty). Snapshottable để
  * `FakeUnitOfWork` rollback thật. `lockUser` ghi lại thứ tự khóa (test kiểm "khóa TRƯỚC khi đọc").
  */
 export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadModel {
@@ -47,29 +48,30 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
     return [...this.#s.requests.values()];
   }
 
-  lockUser(workspaceId: string, userId: string): Promise<void> {
-    this.locks.push(`taskflow:leave:${workspaceId}:${userId}`);
+  lockUser(userId: string): Promise<void> {
+    this.locks.push(`taskflow:leave:${userId}`);
     return Promise.resolve();
   }
 
-  listHolding(workspaceId: string, userId: string, year: number): Promise<LeaveRequestRecord[]> {
+  listHolding(userId: string, year: number): Promise<LeaveRequestRecord[]> {
     const y = String(year);
     return Promise.resolve(
-      [...this.#s.requests.values()]
-        .filter(
-          (r) =>
-            r.workspaceId === workspaceId &&
-            r.userId === userId &&
-            holdsBalance(r.status) &&
-            r.startDate.startsWith(y),
-        )
-        .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
+      this.rows()
+        .filter((r) => r.userId === userId && holdsBalance(r.status) && r.startDate.startsWith(y))
+        .sort(byStart),
     );
   }
 
-  find(workspaceId: string, id: string): Promise<LeaveRequestRecord | null> {
-    const r = this.#s.requests.get(id);
-    return Promise.resolve(r && r.workspaceId === workspaceId ? r : null);
+  listOpen(userId: string): Promise<LeaveRequestRecord[]> {
+    return Promise.resolve(
+      this.rows()
+        .filter((r) => r.userId === userId && holdsBalance(r.status))
+        .sort(byStart),
+    );
+  }
+
+  find(id: string): Promise<LeaveRequestRecord | null> {
+    return Promise.resolve(this.#s.requests.get(id) ?? null);
   }
 
   add(record: LeaveRequestRecord): Promise<void> {
@@ -79,35 +81,22 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
 
   save(record: LeaveRequestRecord, expectedVersion: number): Promise<boolean> {
     const current = this.#s.requests.get(record.id);
-    if (
-      !current ||
-      current.workspaceId !== record.workspaceId ||
-      current.version !== expectedVersion
-    ) {
-      return Promise.resolve(false);
-    }
+    if (!current || current.version !== expectedVersion) return Promise.resolve(false);
     this.#s.requests.set(record.id, record);
     return Promise.resolve(true);
   }
 
-  getOrCreateBalance(
-    workspaceId: string,
-    userId: string,
-    year: number,
-  ): Promise<LeaveBalanceRecord> {
-    const key = balanceKey(workspaceId, userId, year);
-    if (!this.#s.balances.has(key))
-      this.#s.balances.set(key, { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 });
-    return Promise.resolve(this.#s.balances.get(key)!);
+  getOrCreateBalance(userId: string, year: number): Promise<LeaveBalanceRecord> {
+    const key = balanceKey(userId, year);
+    const found = this.#s.balances.get(key);
+    if (found) return Promise.resolve(found);
+    const created = { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 };
+    this.#s.balances.set(key, created);
+    return Promise.resolve(created);
   }
 
-  setBalanceAdjustment(
-    workspaceId: string,
-    userId: string,
-    year: number,
-    adjustment: HalfDays,
-  ): Promise<void> {
-    const key = balanceKey(workspaceId, userId, year);
+  setBalanceAdjustment(userId: string, year: number, adjustment: HalfDays): Promise<void> {
+    const key = balanceKey(userId, year);
     const current = this.#s.balances.get(key) ?? {
       entitled: DEFAULT_ENTITLED_HALF_DAYS,
       adjustment: 0,
@@ -116,20 +105,9 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
     return Promise.resolve();
   }
 
-  hasHistory(workspaceId: string, userId: string): Promise<boolean> {
-    const inRequests = [...this.#s.requests.values()].some(
-      (r) => r.workspaceId === workspaceId && r.userId === userId,
-    );
-    const inBalances = [...this.#s.balances.keys()].some((k) =>
-      k.startsWith(`${workspaceId}:${userId}:`),
-    );
-    return Promise.resolve(inRequests || inBalances);
-  }
-
   // ------------------------------------------------------------ phía đọc (ILeaveReadModel)
 
   listRequests(
-    workspaceId: string,
     filter: LeaveListFilter,
     after: LeaveListKey | null,
     limit: number,
@@ -137,10 +115,9 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
     const keyOf = (r: LeaveRequestRecord) => `${r.createdAt.toISOString()}|${r.id}`;
     const cut = after ? `${after.createdAt}|${after.id}` : null;
     return Promise.resolve(
-      [...this.#s.requests.values()]
+      this.rows()
         .filter(
           (r) =>
-            r.workspaceId === workspaceId &&
             (filter.userId === undefined || r.userId === filter.userId) &&
             (filter.status === undefined || r.status === filter.status) &&
             (cut === null || keyOf(r) < cut),
@@ -151,63 +128,50 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
   }
 
   listApproved(q: {
-    workspaceId: string;
     userIds?: readonly string[] | undefined;
     from: CalendarDate;
     to: CalendarDate;
   }): Promise<LeaveRequestRecord[]> {
     return Promise.resolve(
-      [...this.#s.requests.values()]
+      this.rows()
         .filter(
           (r) =>
-            r.workspaceId === q.workspaceId &&
             r.status === 'APPROVED' &&
             (q.userIds === undefined || q.userIds.includes(r.userId)) &&
             r.startDate <= q.to &&
             r.endDate >= q.from,
         )
-        .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
+        .sort(byStart),
     );
   }
 
-  async leaveSummaries(
-    refs: readonly { workspaceId: string; refId: string }[],
-  ): Promise<ReadonlyMap<string, LeaveSummary>> {
+  leaveSummaries(refIds: readonly string[]): Promise<ReadonlyMap<string, LeaveSummary>> {
     const out = new Map<string, LeaveSummary>();
-    for (const { workspaceId, refId } of refs) {
-      const r = await this.find(workspaceId, refId);
+    for (const id of refIds) {
+      const r = this.#s.requests.get(id);
       if (r) out.set(r.id, { type: r.type, startDate: r.startDate, endDate: r.endDate });
     }
-    return out;
+    return Promise.resolve(out);
   }
 
-  async findBalances(
-    workspaceId: string,
+  findBalances(
     userIds: readonly string[],
     year: number,
   ): Promise<ReadonlyMap<string, LeaveBalanceRecord>> {
     const found = new Map<string, LeaveBalanceRecord>();
     for (const userId of userIds) {
-      const b = await this.findBalance(workspaceId, userId, year);
+      const b = this.#s.balances.get(balanceKey(userId, year));
       if (b) found.set(userId, b);
     }
-    return found;
+    return Promise.resolve(found);
   }
 
-  async listHoldingFor(
-    workspaceId: string,
-    userIds: readonly string[],
-    year: number,
-  ): Promise<LeaveRequestRecord[]> {
-    const lists = await Promise.all(userIds.map((u) => this.listHolding(workspaceId, u, year)));
+  async listHoldingFor(userIds: readonly string[], year: number): Promise<LeaveRequestRecord[]> {
+    const lists = await Promise.all(userIds.map((u) => this.listHolding(u, year)));
     return lists.flat();
   }
 
-  findBalance(
-    workspaceId: string,
-    userId: string,
-    year: number,
-  ): Promise<LeaveBalanceRecord | null> {
-    return Promise.resolve(this.#s.balances.get(balanceKey(workspaceId, userId, year)) ?? null);
+  findBalance(userId: string, year: number): Promise<LeaveBalanceRecord | null> {
+    return Promise.resolve(this.#s.balances.get(balanceKey(userId, year)) ?? null);
   }
 }

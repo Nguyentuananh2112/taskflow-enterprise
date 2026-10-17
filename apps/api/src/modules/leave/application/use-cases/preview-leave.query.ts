@@ -5,8 +5,10 @@ import {
   halfDaysToDecimal,
 } from '../../domain/leave-balance';
 import { assertLeaveRange, countLeaveHalfDays } from '../../domain/leave-days';
+import { assertNotAfterLastDay } from '../../domain/leave-tenure';
 import {
   PERMISSION_LEAVE_SELF,
+  countingTenure,
   summarizeStored,
   yearOf,
   type LeaveKit,
@@ -38,25 +40,28 @@ export class PreviewLeaveQuery {
     scope: LeaveScope,
     input: Omit<SubmitLeaveInput, 'reason'>,
   ): Promise<LeavePreviewDto> {
-    const { workspaceId, actorId } = scope;
-    await this.kit.requireActor(workspaceId, actorId, PERMISSION_LEAVE_SELF);
+    const { actorId } = scope;
+    await this.kit.requireActor(actorId, PERMISSION_LEAVE_SELF);
     assertLeaveRange(input);
+    const employment = await this.kit.d.company.employmentOf(actorId);
+    assertNotAfterLastDay(input, employment.lastDay);
 
     const year = yearOf(input.startDate);
-    const calendar = await this.kit.yearCalendar(workspaceId, year);
+    const calendar = await this.kit.yearCalendar(year);
     const halfDays = countLeaveHalfDays(input, calendar);
     assertHasWorkingDays(halfDays);
 
-    const holding = await this.kit.d.requests.listHolding(workspaceId, actorId, year);
+    const holding = await this.kit.d.requests.listHolding(actorId, year);
     assertNoOverlap(holding, input);
     if (!consumesAnnualBalance(input.type)) {
       return { days: halfDaysToDecimal(halfDays), remainingDays: null };
     }
-    const stored = await this.readModel.findBalance(workspaceId, actorId, year);
+    const stored = await this.readModel.findBalance(actorId, year);
     const balance = summarizeStored(
       stored ?? { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 },
       holding,
       calendar,
+      { tenure: countingTenure(employment) },
     );
     assertBalanceCovers(input.type, halfDays, balance);
     return {

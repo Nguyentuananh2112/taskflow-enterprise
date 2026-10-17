@@ -13,13 +13,12 @@ import type { CalendarDate } from '../../../domain/leave-days';
 import { fromDateOnly, toDateOnly, type DbProvider } from './db';
 import { toRecord } from './prisma-leave.repository';
 
-/** Phía đọc leave trên Postgres (CQRS-lite, ADR-015). Mọi truy vấn có `workspaceId` (tenant); không ghi. */
+/** Phía đọc leave trên Postgres (CQRS-lite, ADR-015) — phạm vi công ty; không ghi. */
 export class PrismaLeaveReadModel implements ILeaveReadModel {
   constructor(private readonly db: DbProvider) {}
 
   /** Keyset (createdAt, id) giảm dần — mới nhất trước, ổn định khi trùng createdAt. */
   async listRequests(
-    workspaceId: string,
     filter: LeaveListFilter,
     after: LeaveListKey | null,
     limit: number,
@@ -27,7 +26,6 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
     const at = after ? new Date(after.createdAt) : null;
     const rows = await this.db().leaveRequest.findMany({
       where: {
-        workspaceId,
         ...(filter.userId === undefined ? {} : { userId: filter.userId }),
         ...(filter.status === undefined ? {} : { status: filter.status }),
         ...(after && at
@@ -41,14 +39,12 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
   }
 
   async listApproved(q: {
-    workspaceId: string;
     userIds?: readonly string[] | undefined;
     from: CalendarDate;
     to: CalendarDate;
   }): Promise<LeaveRequestRecord[]> {
     const rows = await this.db().leaveRequest.findMany({
       where: {
-        workspaceId: q.workspaceId,
         status: 'APPROVED',
         ...(q.userIds === undefined ? {} : { userId: { in: [...q.userIds] } }),
         startDate: { lte: fromDateOnly(q.to) },
@@ -59,12 +55,10 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
     return rows.map(toRecord);
   }
 
-  async leaveSummaries(
-    refs: readonly { workspaceId: string; refId: string }[],
-  ): Promise<ReadonlyMap<string, LeaveSummary>> {
-    if (refs.length === 0) return new Map();
+  async leaveSummaries(refIds: readonly string[]): Promise<ReadonlyMap<string, LeaveSummary>> {
+    if (refIds.length === 0) return new Map();
     const rows = await this.db().leaveRequest.findMany({
-      where: { OR: refs.map((r) => ({ id: r.refId, workspaceId: r.workspaceId })) },
+      where: { id: { in: [...refIds] } },
       select: { id: true, type: true, startDate: true, endDate: true }, // KHÔNG reason (B-H2)
     });
     return new Map(
@@ -76,12 +70,11 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
   }
 
   async findBalances(
-    workspaceId: string,
     userIds: readonly string[],
     year: number,
   ): Promise<ReadonlyMap<string, LeaveBalanceRecord>> {
     const rows = await this.db().leaveBalance.findMany({
-      where: { workspaceId, year, userId: { in: [...userIds] } },
+      where: { year, userId: { in: [...userIds] } },
       select: { userId: true, entitledDays: true, adjustmentDays: true },
     });
     return new Map(
@@ -95,14 +88,9 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
     );
   }
 
-  async listHoldingFor(
-    workspaceId: string,
-    userIds: readonly string[],
-    year: number,
-  ): Promise<LeaveRequestRecord[]> {
+  async listHoldingFor(userIds: readonly string[], year: number): Promise<LeaveRequestRecord[]> {
     const rows = await this.db().leaveRequest.findMany({
       where: {
-        workspaceId,
         userId: { in: [...userIds] },
         status: { in: ['PENDING', 'APPROVED'] },
         startDate: {
@@ -115,13 +103,9 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
     return rows.map(toRecord);
   }
 
-  async findBalance(
-    workspaceId: string,
-    userId: string,
-    year: number,
-  ): Promise<LeaveBalanceRecord | null> {
+  async findBalance(userId: string, year: number): Promise<LeaveBalanceRecord | null> {
     const row = await this.db().leaveBalance.findUnique({
-      where: { workspaceId_userId_year: { workspaceId, userId, year } },
+      where: { userId_year: { userId, year } },
       select: { entitledDays: true, adjustmentDays: true },
     });
     return row
