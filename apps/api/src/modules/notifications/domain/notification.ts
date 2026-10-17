@@ -12,6 +12,9 @@ export const NOTIFICATION_TYPES = [
   'OFFBOARD_SCHEDULED',
   'OFFBOARD_CLEANUP',
   'PROFILE_UPDATED',
+  'PAYSLIP_PUBLISHED',
+  'PAYSLIP_REVISED',
+  'PAYROLL_REMINDER',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

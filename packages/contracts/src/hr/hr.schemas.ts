@@ -39,6 +39,10 @@ export const NotificationType = z.enum([
   'OFFBOARD_CLEANUP',
   // Mốc 5 (ADR-128): HR sửa hồ sơ của bạn — refId = userId, KHÔNG mang giá trị hồ sơ.
   'PROFILE_UPDATED',
+  // Mốc 4 (payroll.md §4): KHÔNG số tiền; refId = id phiếu (PUBLISHED / REVISED) hoặc id bảng lương (REMINDER).
+  'PAYSLIP_PUBLISHED',
+  'PAYSLIP_REVISED',
+  'PAYROLL_REMINDER',
 ]);
 export type NotificationType = z.infer<typeof NotificationType>;
 
@@ -100,6 +104,18 @@ export const HrAuditAction = z.enum([
   'COMPANY_RENAMED',
   // Mốc 5 (ADR-128): hồ sơ nhân viên — before/after KHÔNG có workPhone (chỉ cờ), lý do ở `after.note`.
   'PROFILE_SET',
+  // Mốc 4 (payroll.md §6, T-048): before/after CÓ số tiền ⇒ chỉ Admin đọc. Tiền tố `PAYROLL_` là ranh giới retention:
+  // mọi bước D7 / D7' BỎ QUA các action này (RD-11 — hạn lưu lương riêng). ≤ 32 ký tự.
+  'PAYROLL_SETTINGS_SET',
+  'PAYROLL_SALARY_SET',
+  'PAYROLL_RUN_CREATE',
+  'PAYROLL_RECALCULATE',
+  'PAYROLL_ADD_MISSING',
+  'PAYROLL_PAYSLIP_SET',
+  'PAYROLL_PUBLISH',
+  'PAYROLL_PAYSLIP_REVISE',
+  'PAYROLL_PAYSLIP_VIEW',
+  'PAYROLL_EXPORT',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 
