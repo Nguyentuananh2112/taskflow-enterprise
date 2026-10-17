@@ -48,6 +48,7 @@ describe('harness company-bootstrap', () => {
 
   it('bootstrapEnv thêm biến CLI, giữ env của suite', () => {
     expect(bootstrapEnv({ DATABASE_URL: 'pg://x', APP_ENV: 'test' }, { email: 'a@x' })).toEqual({
+      PERSISTENCE: 'prisma',
       DATABASE_URL: 'pg://x',
       APP_ENV: 'test',
       BOOTSTRAP_ADMIN_EMAIL: 'a@x',

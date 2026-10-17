@@ -105,6 +105,8 @@ export function bootstrapEnv(
   admin: { email: string; name?: string; company?: string },
 ): Record<string, string> {
   return {
+    // B (fbbf71f): CLI gọi loadEnv đầy đủ như API + cần PERSISTENCE=prisma; Valkey phải sống.
+    PERSISTENCE: 'prisma',
     ...env,
     BOOTSTRAP_ADMIN_EMAIL: admin.email,
     BOOTSTRAP_ADMIN_NAME: admin.name ?? 'Sec Ada',
