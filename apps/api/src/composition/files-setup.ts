@@ -83,10 +83,11 @@ export async function createFiles(d: FilesSetupDeps): Promise<FilesBundle> {
   const store = await LocalFileStore.create(root, {
     forbiddenParents: cwd === path.parse(cwd).root ? [] : [cwd],
   });
-  let workerUp = false;
+  // -1 = chưa tự kiểm (pool lười — TL 18/10); 1 / 0 sau lần tự kiểm đầu tiên (sau khi ready).
+  let workerUp = -1;
   const pipeline: IImagePipeline = env.FILES_IMAGE_PIPELINE_DISABLED
     ? new DisabledImagePipeline()
-    : new SharpImagePipeline({ onHealth: (up) => (workerUp = up) });
+    : new SharpImagePipeline({ onHealth: (up) => (workerUp = up ? 1 : 0) });
   const quota = new StorageQuota(
     () => storeUsageBytes(root),
     env.FILE_STORE_MAX_BYTES,
@@ -120,14 +121,14 @@ export async function createFiles(d: FilesSetupDeps): Promise<FilesBundle> {
   });
   d.metrics?.gauge(
     'files_image_worker_up',
-    'Worker sharp tự kiểm thành công (1) / không (0)',
-    () => (workerUp ? 1 : 0),
+    'Worker sharp tự kiểm: 1 = được, 0 = không, -1 = chưa kiểm',
+    () => workerUp,
   );
 
   let timer: NodeJS.Timeout | undefined;
   const check = async () => {
     const ok = await pipeline.selfTest();
-    workerUp = ok;
+    workerUp = ok ? 1 : 0;
     if (!ok) logger.error({}, 'files.image_pipeline_unavailable');
     const ratio = await quota.ratio().catch(() => 0);
     if (ratio >= 0.9) logger.warn({ ratio }, 'files.storage_nearly_full');

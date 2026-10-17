@@ -1,6 +1,3 @@
-import { createRequire } from 'node:module';
-import { Worker } from 'node:worker_threads';
-
 import {
   ImageProcessingBusyError,
   ImageProcessingUnavailableError,
@@ -8,18 +5,18 @@ import {
   imageUnreadableError,
   UnsupportedFileTypeError,
 } from '../../errors';
-import { IMAGE_TYPES, type ImageType } from '../domain/sniff-type';
+import type { ImageType } from '../domain/sniff-type';
 import type { IImagePipeline, ImageVariant, ImageVariantSpec } from '../ports';
-import { IMAGE_WORKER_SOURCE } from './image-worker-source';
+import {
+  IMAGE_MAX_QUEUE,
+  IMAGE_POOL_SIZE,
+  IMAGE_TIMEOUT_MS,
+  IMAGE_WORKER_IDLE_MS,
+  sharpWorkerFactory,
+  type WorkerLike,
+} from './sharp-worker';
 
-/** Phần của `Worker` mà pool dùng — test thay bằng worker giả. */
-export interface WorkerLike {
-  postMessage(value: unknown): void;
-  on(event: 'message', fn: (value: unknown) => void): unknown;
-  on(event: 'error', fn: (err: unknown) => void): unknown;
-  on(event: 'exit', fn: (code: number) => void): unknown;
-  terminate(): Promise<number>;
-}
+export { sharpWorkerFactory, type WorkerLike } from './sharp-worker';
 
 export interface ImagePipelineOptions {
   factory?: () => WorkerLike;
@@ -27,14 +24,11 @@ export interface ImagePipelineOptions {
   poolSize?: number;
   maxQueue?: number;
   timeoutMs?: number;
+  /** Worker rảnh quá chừng này thì tắt (khởi động LƯỜI — TL 18/10); việc mới ⇒ dựng lại. */
+  idleMs?: number;
   onHealth?: (up: boolean) => void;
 }
 
-export const IMAGE_POOL_SIZE = 2;
-export const IMAGE_MAX_QUEUE = 4;
-export const IMAGE_TIMEOUT_MS = 10_000;
-export const IMAGE_WORKER_HEAP_MB = 256;
-export const LIMIT_INPUT_PIXELS = 40_000_000;
 /** Worker chết trước khi sẵn sàng chừng này lần liên tiếp ⇒ coi như không nạp được sharp. */
 const MAX_SPAWN_FAILURES = 2;
 
@@ -52,16 +46,7 @@ interface Slot {
   dead: boolean;
   job?: Job | undefined;
   timer?: NodeJS.Timeout | undefined;
-}
-
-/** Worker thật: mã nhúng (`eval`), sharp theo đường dẫn tuyệt đối, giới hạn heap V8. */
-export function sharpWorkerFactory(): WorkerLike {
-  const sharpPath = createRequire(import.meta.url).resolve('sharp');
-  return new Worker(IMAGE_WORKER_SOURCE, {
-    eval: true,
-    workerData: { sharpPath, allowedFormats: IMAGE_TYPES, limitInputPixels: LIMIT_INPUT_PIXELS },
-    resourceLimits: { maxOldGenerationSizeMb: IMAGE_WORKER_HEAP_MB },
-  });
+  idle?: NodeJS.Timeout | undefined;
 }
 
 const ERRORS: Readonly<Record<string, () => Error>> = {
@@ -70,7 +55,11 @@ const ERRORS: Readonly<Record<string, () => Error>> = {
   UNREADABLE: () => imageUnreadableError(),
 };
 
-/** Pool worker sharp (ADR-141): mỗi worker một việc; đầy (đang chạy + chờ) ⇒ 503 BUSY; quá giờ ⇒ giết + 422. */
+/**
+ * Pool worker sharp (ADR-141): mỗi worker một việc; đầy (đang chạy + chờ ≥ pool + hàng chờ) ⇒ 503 BUSY; quá giờ ⇒
+ * giết + 422. Khởi động LƯỜI (TL 18/10): không dựng worker tới việc đầu tiên, rảnh `idleMs` ⇒ tắt — tiến trình
+ * API không đụng ảnh (suite S/E2E) không tốn RAM cho worker.
+ */
 export class SharpImagePipeline implements IImagePipeline {
   readonly #slots: Slot[] = [];
   readonly #queue: Job[] = [];
@@ -87,9 +76,14 @@ export class SharpImagePipeline implements IImagePipeline {
       poolSize: options.poolSize ?? IMAGE_POOL_SIZE,
       maxQueue: options.maxQueue ?? IMAGE_MAX_QUEUE,
       timeoutMs: options.timeoutMs ?? IMAGE_TIMEOUT_MS,
+      idleMs: options.idleMs ?? IMAGE_WORKER_IDLE_MS,
       onHealth: options.onHealth ?? (() => undefined),
     };
-    for (let i = 0; i < this.#o.poolSize; i++) this.#spawn();
+  }
+
+  /** Số worker đang sống (test / gauge). */
+  get workerCount(): number {
+    return this.#slots.length;
   }
 
   transform(input: Buffer, expected: ImageType, variants: readonly ImageVariantSpec[]) {
@@ -101,11 +95,8 @@ export class SharpImagePipeline implements IImagePipeline {
 
   async selfTest(): Promise<boolean> {
     if (!this.#up && !this.#closed) {
-      this.#up = true; // thử dựng lại pool
+      this.#up = true; // thử dựng lại pool (worker dựng ở #enqueue)
       this.#spawnFailures = 0;
-      // Số lần cố định (không `while slots < poolSize`): factory ném ⇒ slot không tăng ⇒ lặp vô hạn.
-      const missing = this.#o.poolSize - this.#slots.length;
-      for (let i = 0; i < missing && this.#up; i++) this.#spawn();
     }
     const ok = await this.#enqueue({ kind: 'selfTest' }, false).then(
       () => true,
@@ -122,6 +113,7 @@ export class SharpImagePipeline implements IImagePipeline {
     for (const slot of slots) {
       slot.dead = true;
       clearTimeout(slot.timer);
+      clearTimeout(slot.idle);
       slot.job?.reject(new ImageProcessingUnavailableError()); // việc đang chạy cũng phải kết thúc
       slot.job = undefined;
     }
@@ -130,14 +122,34 @@ export class SharpImagePipeline implements IImagePipeline {
 
   #enqueue(message: Record<string, unknown>, limited: boolean): Promise<ImageVariant[]> {
     if (!this.#up || this.#closed) return Promise.reject(new ImageProcessingUnavailableError());
-    const idle = this.#slots.some((s) => s.ready && !s.job);
-    if (limited && !idle && this.#queue.length >= this.#o.maxQueue) {
+    const inFlight = this.#slots.filter((s) => s.job).length;
+    if (limited && inFlight + this.#queue.length >= this.#o.poolSize + this.#o.maxQueue) {
       return Promise.reject(new ImageProcessingBusyError());
     }
     return new Promise((resolve, reject) => {
       this.#queue.push({ id: this.#nextId++, message, resolve, reject });
+      this.#ensureWorkers();
       this.#pump();
     });
+  }
+
+  /** Dựng đủ `poolSize` worker khi có việc. Số lần cố định: factory ném ⇒ slot không tăng ⇒ không lặp vô hạn. */
+  #ensureWorkers(): void {
+    const missing = this.#o.poolSize - this.#slots.length;
+    for (let i = 0; i < missing && this.#up && !this.#closed; i++) this.#spawn();
+  }
+
+  /** Rảnh (sẵn sàng, không việc) ⇒ hẹn tắt sau `idleMs`; có việc ⇒ hủy hẹn. */
+  #armIdle(slot: Slot): void {
+    clearTimeout(slot.idle);
+    if (slot.dead || !slot.ready || slot.job) return;
+    slot.idle = setTimeout(() => {
+      if (slot.dead || slot.job) return;
+      slot.dead = true;
+      this.#slots.splice(this.#slots.indexOf(slot), 1);
+      void slot.worker.terminate();
+    }, this.#o.idleMs);
+    slot.idle.unref();
   }
 
   #pump(): void {
@@ -146,6 +158,7 @@ export class SharpImagePipeline implements IImagePipeline {
       const job = this.#queue.shift();
       if (!job) return;
       slot.job = job;
+      clearTimeout(slot.idle);
       slot.timer = setTimeout(() => this.#timeout(slot), this.#o.timeoutMs);
       slot.worker.postMessage({ id: job.id, ...job.message });
     }
@@ -167,6 +180,7 @@ export class SharpImagePipeline implements IImagePipeline {
         slot.ready = true;
         this.#spawnFailures = 0;
         this.#pump();
+        this.#armIdle(slot);
       } else this.#settle(slot, msg as Reply);
     });
     worker.on('error', () => this.#lost(slot));
@@ -181,6 +195,7 @@ export class SharpImagePipeline implements IImagePipeline {
     if (reply.ok) job.resolve(reply.variants.map((v) => ({ ...v, data: Buffer.from(v.data) })));
     else job.reject((ERRORS[reply.error] ?? ERRORS['UNREADABLE']!)());
     this.#pump();
+    this.#armIdle(slot);
   }
 
   /** Quá `timeoutMs`: ảnh quá phức tạp ⇒ 422; giết worker (libvips không hủy được giữa chừng), dựng mới. */
@@ -196,11 +211,12 @@ export class SharpImagePipeline implements IImagePipeline {
     if (slot.dead) return;
     slot.dead = true;
     clearTimeout(slot.timer);
+    clearTimeout(slot.idle);
     slot.job?.reject(imageTooComplexError());
     slot.job = undefined;
     this.#slots.splice(this.#slots.indexOf(slot), 1);
     if (!slot.ready) this.#spawnFailed();
-    else if (!this.#closed) this.#spawn();
+    else if (this.#queue.length > 0) this.#ensureWorkers(); // lười: chỉ dựng lại khi còn việc chờ
   }
 
   #spawnFailed(): void {
@@ -209,7 +225,7 @@ export class SharpImagePipeline implements IImagePipeline {
       if (this.#up) this.#o.onHealth(false);
       this.#up = false;
       this.#failQueue(new ImageProcessingUnavailableError());
-    } else this.#spawn();
+    } else if (this.#queue.length > 0) this.#spawn();
   }
 
   #failQueue(err: Error): void {

@@ -38,6 +38,12 @@ export const FILES_TEST_ONLY_VARS = [
   'FILES_SWEEP_INTERVAL_MS',
   'FILES_IMAGE_PIPELINE_DISABLED',
 ] as const;
+
+/**
+ * Danh sách CHUNG các biến chỉ APP_ENV=test (một vòng lặp, một thông báo lỗi). Gộp với T-055 (Mốc 5,
+ * `TEST_ONLY_KEYS` của B) khi hai mốc gặp nhau: nối thêm phần tử, không thêm cơ chế thứ hai.
+ */
+const TEST_ONLY_KEYS = [...FILES_TEST_ONLY_VARS] as const;
 const redisUrl = z.url({ protocol: /^rediss?$/ });
 
 const originList = z
@@ -170,7 +176,7 @@ const EnvSchema = z
       fail('TEST_CLOCK_ANCHOR', 'chỉ được đặt khi APP_ENV=test');
     }
     if (env.APP_ENV !== 'test') {
-      for (const key of FILES_TEST_ONLY_VARS) {
+      for (const key of TEST_ONLY_KEYS) {
         if (env[key] !== undefined) fail(key, 'chỉ được đặt khi APP_ENV=test');
       }
     }

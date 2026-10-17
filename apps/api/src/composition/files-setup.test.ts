@@ -157,6 +157,7 @@ describe('createFiles — khởi động', () => {
     const logger = quietLogger();
     const metrics = new AppMetrics({ defaultMetrics: false });
     files = await createFiles({ env: envWith(), clock, logger, metrics, webOrigin: 'http://w' });
+    expect(await metrics.registry.metrics()).toMatch(/^files_image_worker_up -1$/m); // chưa kiểm
     files.startHealthChecks();
     await vi.waitFor(() =>
       expect(vi.mocked(logger.error).mock.calls.map((c) => (c as unknown[])[1])).toContain(

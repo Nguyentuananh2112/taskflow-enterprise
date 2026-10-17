@@ -146,6 +146,13 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - **`StorageQuota`**: số đã dùng = duyệt cây kho (bỏ `tmp/`) + cộng ngay sau mỗi commit; đối soát mỗi
   `FILE_STORE_USAGE_CACHE_MS` (60 s); `rawUpload` kiểm trước khi ghi bản tạm ⇒ 507 `STORAGE_FULL`
   (+ `Connection: close`, xả có trần); ≥ 90 % ⇒ log `files.storage_nearly_full` (mỗi 5 phút cùng tự kiểm).
+- Soát B (9584f6a9): đạt. **L2 — chấp nhận, ghi cho F:** quota có thể bị vượt CÓ GIỚI HẠN — các upload đồng thời
+  đều qua kiểm 507 rồi mới cộng ⇒ vượt tối đa ≈ số lượt đồng thời × trần một tệp (12 × 20 MB); đã chặn bằng
+  `UploadSlots`. **L1 (khi gộp Mốc 5):** vòng kiểm biến test-only chạy trên `TEST_ONLY_KEYS` (spread
+  `FILES_TEST_ONLY_VARS`) — gộp với danh sách `TEST_ONLY_KEYS` của T-055 thành một.
+- **Pool sharp khởi động LƯỜI (TL 18/10):** không dựng worker tới việc đầu tiên; worker rảnh 60 s ⇒ tắt, việc mới ⇒
+  dựng lại; "đầy" tính theo đang chạy + chờ ≥ pool + hàng chờ (đúng cả lúc worker đang khởi động). Gauge
+  `files_image_worker_up` = -1 tới lần tự kiểm đầu (sau `listen`), rồi 1 / 0. Tự kiểm chỉ giữ worker ≤ 60 s.
 - **`MediaResolverRegistry`**: T-068 / T-069 `register('avatars' | 'chat', resolver)`; chưa đăng ký ⇒ 404.
 - **`createFiles`** dựng kho (từ chối khởi động nếu không dùng được / nằm trong cwd), pipeline (hoặc Disabled),
   quota, signer, registry, `upload(maxBytes)`, router `/media` + hạn mức IP; gauge `files_image_worker_up`;

@@ -201,6 +201,56 @@ describe('SharpImagePipeline — pool (ADR-141, F-03b)', () => {
     );
   });
 
+  it('khởi động LƯỜI: không worker tới việc đầu tiên (TL 18/10)', async () => {
+    const factory = vi.fn(() => new FakeWorker(() => OK));
+    const pipeline = new SharpImagePipeline({ factory });
+    expect(factory).not.toHaveBeenCalled();
+    expect(pipeline.workerCount).toBe(0);
+    await pipeline.transform(Buffer.from('x'), 'png', SPEC);
+    expect(factory).toHaveBeenCalledTimes(2);
+    await pipeline.close();
+  });
+
+  it('worker rảnh quá idleMs ⇒ tắt; việc mới ⇒ dựng lại', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const workers: FakeWorker[] = [];
+      const pipeline = new SharpImagePipeline({
+        poolSize: 1,
+        idleMs: 60_000,
+        factory: () => {
+          const w = new FakeWorker(() => OK);
+          workers.push(w);
+          return w;
+        },
+      });
+      await pipeline.transform(Buffer.from('x'), 'png', SPEC);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(pipeline.workerCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(pipeline.workerCount).toBe(0);
+      expect(workers[0]?.terminated).toBe(true);
+      await pipeline.transform(Buffer.from('y'), 'png', SPEC);
+      expect(workers).toHaveLength(2);
+      await pipeline.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('đếm "đầy" theo đang chạy + chờ, kể cả lúc worker đang khởi động (không 503 nhầm)', async () => {
+    const pipeline = new SharpImagePipeline({
+      timeoutMs: 60_000,
+      factory: () => new FakeWorker(() => null),
+    });
+    const six = Array.from({ length: 6 }, () =>
+      pipeline.transform(Buffer.from('x'), 'png', SPEC).catch((e: unknown) => e),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    await pipeline.close();
+    for (const r of await Promise.all(six)) expect(r).not.toBeInstanceOf(ImageProcessingBusyError);
+  });
+
   it('DisabledImagePipeline (FILES_IMAGE_PIPELINE_DISABLED) ⇒ 503 UNAVAILABLE, selfTest false', async () => {
     const pipeline = new DisabledImagePipeline();
     await expect(pipeline.transform()).rejects.toBeInstanceOf(ImageProcessingUnavailableError);
