@@ -22,7 +22,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:coverage": "vitest run --coverage --maxWorkers=2"
+    "test:coverage": "vitest run --coverage --maxWorkers=2",
+    "mutation:payroll-math": "node ../../apps/api/node_modules/@stryker-mutator/core/bin/stryker.js run stryker/payroll-math.config.mjs"
   },
   "dependencies": {
     "zod": "catalog:"
