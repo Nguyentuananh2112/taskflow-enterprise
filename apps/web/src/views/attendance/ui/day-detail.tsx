@@ -14,7 +14,6 @@ import { Button } from '@/shared/ui/button';
 import { Dialog } from '@/shared/ui/dialog';
 
 type Props = Readonly<{
-  wsId: string;
   day: AttendanceDayDto | null;
   /** Mọi ngày của tháng đang xem — "Ngày trước / Ngày sau" không vượt khỏi tháng. */
   days: readonly AttendanceDayDto[];
@@ -24,8 +23,8 @@ type Props = Readonly<{
 }>;
 
 /** Panel chi tiết một ngày (T-046): Giờ vào / Giờ ra / Số giờ làm bằng lời thường + lượt chấm của chính mình. */
-export function DayDetail({ wsId, day, days, today, onSelectDay, onClose }: Props) {
-  const events = useMyAttendanceEvents(wsId, day?.date ?? null);
+export function DayDetail({ day, days, today, onSelectDay, onClose }: Props) {
+  const events = useMyAttendanceEvents(day?.date ?? null);
   const text = day ? dayText(day, today) : null;
   const index = day ? days.findIndex((d) => d.date === day.date) : -1;
   const prev = index > 0 ? days[index - 1] : undefined;

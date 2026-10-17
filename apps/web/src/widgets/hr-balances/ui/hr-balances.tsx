@@ -10,7 +10,7 @@ import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
-type Props = Readonly<{ wsId: string; today: string; isOwner: boolean; viewerId: string | null }>;
+type Props = Readonly<{ today: string; isAdmin: boolean; viewerId: string | null }>;
 
 const COLUMNS = ['Được hưởng', 'Điều chỉnh', 'Đã dùng', 'Chờ duyệt', 'Còn lại'] as const;
 
@@ -18,10 +18,10 @@ const COLUMNS = ['Được hưởng', 'Điều chỉnh', 'Đã dùng', 'Chờ du
  * Tab "Số phép" (ADR-122): mọi nhân viên hiện tại, kể cả chưa có dòng số dư (mặc định 12 ngày). Chỉ
  * năm nay ± 1 (giới hạn của PATCH). "Còn lại" có thể âm — hiện đúng số, tô màu cảnh báo.
  */
-export function HrBalances({ wsId, today, isOwner, viewerId }: Props) {
+export function HrBalances({ today, isAdmin, viewerId }: Props) {
   const thisYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(thisYear);
-  const list = useLeaveBalances(wsId, year);
+  const list = useLeaveBalances(year);
   const rows = list.data?.pages.flatMap((p) => p.data) ?? [];
   return (
     <section aria-labelledby="hr-balances" className="flex flex-col gap-3">
@@ -92,7 +92,7 @@ export function HrBalances({ wsId, today, isOwner, viewerId }: Props) {
                       {daysText(r.remainingDays)}
                     </td>
                     <td className="py-2 text-right">
-                      {(!own || isOwner) && <AdjustBalanceButton wsId={wsId} row={r} own={own} />}
+                      {(!own || isAdmin) && <AdjustBalanceButton row={r} own={own} />}
                     </td>
                   </tr>
                 );

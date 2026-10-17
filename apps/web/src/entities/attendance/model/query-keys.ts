@@ -1,7 +1,7 @@
-// Dưới gốc ['ws', wsId] (frontend.md §3.2) ⇒ mất quyền workspace (`forgetWorkspace`) dọn luôn.
+// Mốc 3.5: dưới gốc ['company'] (ADR-139) — đăng xuất / SESSION_REVOKED ⇒ `queryClient.clear()` dọn hết.
 export const attendanceKeys = {
-  all: (wsId: string) => ['ws', wsId, 'attendance'] as const,
-  today: (wsId: string) => ['ws', wsId, 'attendance', 'today'] as const,
-  month: (wsId: string, month: string) => ['ws', wsId, 'attendance', 'month', month] as const,
-  myEvents: (wsId: string, date: string) => ['ws', wsId, 'attendance', 'events', date] as const,
+  all: () => ['company', 'attendance'] as const,
+  today: () => ['company', 'attendance', 'today'] as const,
+  month: (month: string) => ['company', 'attendance', 'month', month] as const,
+  myEvents: (date: string) => ['company', 'attendance', 'events', date] as const,
 };

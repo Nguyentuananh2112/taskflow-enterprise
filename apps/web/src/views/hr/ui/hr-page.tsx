@@ -1,10 +1,10 @@
 'use client';
 
-import { Uuid } from '@taskflow/contracts/common';
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { useCompanyToday, useForgetHrWhenRevoked } from '@/entities/hr';
-import { usePermission } from '@/entities/workspace';
+import { useCompanyPermission, useSession } from '@/entities/session';
 import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
@@ -19,41 +19,39 @@ import { HrToday } from '@/widgets/hr-today';
 import { HrTabs, type HrTab } from './hr-tabs';
 
 /**
- * `/w/[wsId]/hr` (attendance-leave.md §6): Hôm nay · Bảng công tháng · Đơn nghỉ · Lịch & ngày lễ · Số
- * phép. Ẩn khi thiếu `hr:manage` (role ∪ grants — đổi realtime qua `member:grants-changed`); server vẫn
+ * `/hr` — cấp CÔNG TY (ADR-139; attendance-leave.md §6): Hôm nay · Bảng công tháng · Đơn nghỉ · Lịch & ngày lễ · Số
+ * phép. Ẩn khi thiếu `hr:manage` (Admin ngầm có; HR do Admin cấp ở Quản trị — `/auth/me`); server vẫn
  * kiểm mọi request. Tab theo `?tab=` để chuông "đơn mới" mở thẳng tab Đơn nghỉ. "Hôm nay" (ngày, tháng,
  * năm mặc định) lấy theo server + múi giờ của lịch, không theo máy.
  */
 export function HrPage() {
-  const { wsId = '' } = useParams<{ wsId: string }>();
-  const valid = Uuid.safeParse(wsId).success;
-  const { role, can, viewerId } = usePermission(wsId);
-  const allowed = valid && can('hr:manage');
-  const today = useCompanyToday(wsId, allowed);
-  useForgetHrWhenRevoked(wsId, role !== null && !allowed);
+  const { company, can } = useCompanyPermission();
+  const viewerId = useSession().user?.id ?? null;
+  const allowed = can('hr:manage');
+  const today = useCompanyToday(allowed);
+  useForgetHrWhenRevoked(company !== null && !allowed);
   const router = useRouter();
   const pathname = usePathname();
   const tab = useSearchParams().get('tab') ?? 'today';
 
-  if (!valid || isApiError(today.error, 'RESOURCE_NOT_FOUND')) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-16">
-        <EmptyState title="Không tìm thấy hoặc bạn không có quyền truy cập" />
-      </main>
-    );
-  }
-  if ((role !== null && !allowed) || isApiError(today.error, 'FORBIDDEN_ACCESS')) {
+  // Mất quyền khi đang mở trang (realtime / 403) ⇒ báo rõ + lối về, không màn trắng (E A5).
+  if ((company !== null && !allowed) || isApiError(today.error, 'FORBIDDEN_ACCESS')) {
     return (
       <main className="mx-auto max-w-md px-4 py-16">
         <EmptyState
           title="Bạn không có quyền Quản lý nhân sự"
-          description="Chủ sở hữu workspace có thể cấp quyền này trong Cài đặt › Thành viên."
+          description="Quản trị viên công ty cấp quyền này ở mục Quản trị › Phân quyền."
+          action={
+            <Link href="/w" className="text-sm underline">
+              Về trang chính
+            </Link>
+          }
         />
       </main>
     );
   }
   const data = today.data;
-  const ctx = { wsId, today: data?.date ?? '', isOwner: role === 'OWNER', viewerId };
+  const ctx = { today: data?.date ?? '', isAdmin: company?.role === 'ADMIN', viewerId };
   const tabs: HrTab[] = [
     { key: 'today', label: 'Hôm nay', render: () => data && <HrToday data={data} /> },
     { key: 'timesheet', label: 'Bảng công tháng', render: () => <HrTimesheet {...ctx} /> },

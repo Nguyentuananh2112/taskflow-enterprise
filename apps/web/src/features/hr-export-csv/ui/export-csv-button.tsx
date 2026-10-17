@@ -8,16 +8,16 @@ import { saveBlob } from '@/shared/lib/save-blob';
 import { Button } from '@/shared/ui/button';
 import { toast } from '@/shared/ui/toast';
 
-type Props = Readonly<{ wsId: string; month: string }>;
+type Props = Readonly<{ month: string }>;
 
 /**
  * Xuất CSV bảng công tháng cả công ty (§5): fetch có Bearer → Blob → tải (không URL ký). Server ghi audit
  * EXPORT + hạn mức; CSV không có IP/UA và đã chống CSV injection (B-M5). File đã tải ra ngoài tầm kiểm soát
  * của hệ thống (R28) ⇒ nhắc người dùng ngay trên nút.
  */
-export function ExportCsvButton({ wsId, month }: Props) {
+export function ExportCsvButton({ month }: Props) {
   const exportCsv = useMutation({
-    mutationFn: () => hrAttendanceApi.exportCsv(wsId, month),
+    mutationFn: () => hrAttendanceApi.exportCsv(month),
     onSuccess: ({ blob, filename }) => {
       saveBlob(blob, filename ?? `cham-cong-${month}.csv`);
       toast({ title: 'Đã xuất bảng công', tone: 'success' });

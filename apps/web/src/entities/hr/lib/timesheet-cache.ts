@@ -16,13 +16,12 @@ type Pages = InfiniteData<ApiResult<AttendanceMemberMonthDto[]>>;
  */
 export function replaceTimesheetDay(
   client: QueryClient,
-  wsId: string,
   userId: string,
   change: Pick<AttendanceEventChangeDto, 'day' | 'totals'>,
 ): void {
   const { day, totals } = change;
   client.setQueryData<Pages>(
-    hrKeys.month(wsId, day.date.slice(0, 7)),
+    hrKeys.month(day.date.slice(0, 7)),
     (old) =>
       old && {
         ...old,

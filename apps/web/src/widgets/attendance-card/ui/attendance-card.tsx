@@ -8,7 +8,7 @@ import {
   useAttendanceToday,
   useServerClock,
 } from '@/entities/attendance';
-import { usePermission } from '@/entities/workspace';
+import { useCompanyPermission } from '@/entities/session';
 import { CheckButtons } from '@/features/attendance-check';
 import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/button';
@@ -17,7 +17,6 @@ import { AttendanceShortcuts } from './attendance-shortcuts';
 import { CARD_FRAME, CardNote, CardSkeleton } from './card-frame';
 
 type Props = Readonly<{
-  wsId: string;
   enabled: boolean;
   /**
    * Quyền chưa biết (workspace đang tải) ⇒ vẫn giữ chỗ bằng skeleton — tránh thẻ "xuất hiện" sau đó đẩy danh sách
@@ -44,10 +43,10 @@ const dayFormat = (timeZone: string) =>
   });
 
 /** Thẻ Chấm công đầu trang danh sách dự án (attendance-leave.md §6). Ẩn với VIEWER (`enabled`). */
-export function AttendanceCard({ wsId, enabled, pending = false }: Props) {
-  const today = useAttendanceToday(wsId, enabled);
+export function AttendanceCard({ enabled, pending = false }: Props) {
+  const today = useAttendanceToday(enabled);
   const clock = useServerClock(today.data?.serverNow, today.dataUpdatedAt);
-  const canManageHr = usePermission(wsId).can('hr:manage');
+  const canManageHr = useCompanyPermission().can('hr:manage');
   if (!enabled) return pending ? <CardSkeleton /> : null;
   if (!today.data) {
     return today.isError ? (
@@ -106,10 +105,10 @@ export function AttendanceCard({ wsId, enabled, pending = false }: Props) {
           </dd>
         </dl>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 whitespace-nowrap sm:ml-auto">
-          <CheckButtons wsId={wsId} today={t} />
+          <CheckButtons today={t} />
         </div>
       </div>
-      <AttendanceShortcuts wsId={wsId} today={t.date} canManageHr={canManageHr} />
+      <AttendanceShortcuts today={t.date} canManageHr={canManageHr} />
     </section>
   );
 }

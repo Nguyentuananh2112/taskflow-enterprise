@@ -175,7 +175,7 @@ describe('lối tắt dưới thẻ Chấm công', () => {
     const leave = (start: string) => ({ type: 'ANNUAL', startDate: start, endDate: start });
     await f.apiAs(f.owner, 'POST', `/workspaces/${f.wsId}/leave-requests`, leave('2026-10-19'));
     await f.apiAs(mia, 'POST', `/workspaces/${f.wsId}/leave-requests`, leave('2026-10-20'));
-    promptMemory.mark(f.owner.id, f.wsId, '2026-10-15'); // không cần dialog ở ca này
+    promptMemory.mark(f.owner.id, '2026-10-15'); // không cần dialog ở ca này
     open();
     const nav = await screen.findByRole('navigation', { name: 'Lối tắt chấm công và nghỉ phép' });
     const link = (name: RegExp) => within(nav).findByRole('link', { name });
@@ -196,7 +196,7 @@ describe('lối tắt dưới thẻ Chấm công', () => {
   it('MEMBER không có hr:manage ⇒ không có lối tắt Nhân sự; chưa có đơn ⇒ không ghi số', async () => {
     const { f, open } = seed();
     const mia = f.addUser('Mia Trần', `mia-${crypto.randomUUID()}@example.com`, 'MEMBER');
-    promptMemory.mark(mia.id, f.wsId, '2026-10-15');
+    promptMemory.mark(mia.id, '2026-10-15');
     open(mia);
     const nav = await screen.findByRole('navigation', { name: 'Lối tắt chấm công và nghỉ phép' });
     expect(await within(nav).findByRole('link', { name: /^Xin nghỉ · còn/ })).toBeTruthy();

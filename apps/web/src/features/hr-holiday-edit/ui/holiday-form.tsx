@@ -8,26 +8,26 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { toast } from '@/shared/ui/toast';
 
-type Props = Readonly<{ wsId: string; today: string; isOwner: boolean }>;
+type Props = Readonly<{ today: string; isAdmin: boolean }>;
 
 /**
- * Thêm / đổi tên ngày lễ (PUT idempotent theo ngày). Ngày đã qua làm đổi bảng công cũ ⇒ chỉ OWNER, bắt
+ * Thêm / đổi tên ngày lễ (PUT idempotent theo ngày). Ngày đã qua làm đổi bảng công cũ ⇒ chỉ Admin, bắt
  * buộc lý do (ADR-121, A#4) — HR khác: ô ngày chặn từ hôm nay.
  */
-export function HolidayForm({ wsId, today, isOwner }: Props) {
+export function HolidayForm({ today, isAdmin }: Props) {
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
   const [reason, setReason] = useState('');
   const past = date !== '' && date < today;
   const save = useMutation({
     mutationFn: () =>
-      hrAttendanceApi.putHoliday(wsId, date, {
+      hrAttendanceApi.putHoliday(date, {
         name: name.trim(),
         ...(past ? { reason: reason.trim() } : {}),
       }),
     onSuccess: (_d, _v, _r, context) => {
       // Ngày lễ đổi trạng thái ngày ⇒ bảng công / hôm nay tính lại khi đọc.
-      void context.client.invalidateQueries({ queryKey: hrKeys.all(wsId) });
+      void context.client.invalidateQueries({ queryKey: hrKeys.all() });
       toast({ title: `Đã lưu ngày lễ ${name.trim()}`, tone: 'success' });
       setDate('');
       setName('');
@@ -46,7 +46,7 @@ export function HolidayForm({ wsId, today, isOwner }: Props) {
           label="Ngày"
           type="date"
           required
-          min={isOwner ? undefined : today}
+          min={isAdmin ? undefined : today}
           value={date}
           onChange={(e) => setDate(e.target.value)}
         />
@@ -72,7 +72,7 @@ export function HolidayForm({ wsId, today, isOwner }: Props) {
         type="submit"
         className="self-start"
         loading={save.isPending}
-        disabled={!date || !name.trim() || (past && (!isOwner || !reason.trim()))}
+        disabled={!date || !name.trim() || (past && (!isAdmin || !reason.trim()))}
       >
         Lưu ngày lễ
       </Button>

@@ -131,7 +131,7 @@ export function createAuthHandlers(
     http.get(url('/auth/me'), ({ request }) => {
       const auth = authenticate(request);
       if (auth.response) return auth.response;
-      const company = db.companyOf(auth.user.id);
+      const company = db.company.of(auth.user.id);
       // ADR-135: không thuộc công ty ⇒ 401 SESSION_REVOKED (không có "đăng nhập mà không thuộc công ty").
       if (!company) return fail(401, 'SESSION_REVOKED');
       return ok(MeWithCompanyResponse, {

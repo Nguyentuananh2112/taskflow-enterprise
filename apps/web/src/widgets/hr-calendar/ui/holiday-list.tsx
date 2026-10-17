@@ -9,12 +9,12 @@ import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
-type Props = Readonly<{ wsId: string; today: string; isOwner: boolean }>;
+type Props = Readonly<{ today: string; isAdmin: boolean }>;
 
-/** Ngày lễ theo năm (HR nhập — §1). Ngày đã qua: chỉ OWNER sửa/xóa (ADR-121). */
-export function HolidayList({ wsId, today, isOwner }: Props) {
+/** Ngày lễ theo năm (HR nhập — §1). Ngày đã qua: chỉ Admin sửa/xóa (ADR-121). */
+export function HolidayList({ today, isAdmin }: Props) {
   const [year, setYear] = useState(Number(today.slice(0, 4)));
-  const holidays = useHolidays(wsId, year);
+  const holidays = useHolidays(year);
   return (
     <section aria-labelledby="hr-holidays" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -51,13 +51,13 @@ export function HolidayList({ wsId, today, isOwner }: Props) {
                   </span>{' '}
                   · {h.name}
                 </span>
-                {(!past || isOwner) && <DeleteHolidayButton wsId={wsId} holiday={h} past={past} />}
+                {(!past || isAdmin) && <DeleteHolidayButton holiday={h} past={past} />}
               </li>
             );
           })}
         </ul>
       )}
-      <HolidayForm wsId={wsId} today={today} isOwner={isOwner} />
+      <HolidayForm today={today} isAdmin={isAdmin} />
     </section>
   );
 }

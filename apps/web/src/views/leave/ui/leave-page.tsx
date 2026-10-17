@@ -1,13 +1,11 @@
 'use client';
 
-import { Uuid } from '@taskflow/contracts/common';
-import { useParams } from 'next/navigation';
+import Link from 'next/link';
 
 import { useAttendanceToday } from '@/entities/attendance';
 import { daysText, useMyLeaveBalance, useMyLeaveRequests } from '@/entities/leave';
-import { usePermission } from '@/entities/workspace';
+import { useCompanyPermission } from '@/entities/session';
 import { LeaveRequestForm } from '@/features/leave-submit';
-import { isApiError } from '@/shared/api';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { PageMain } from '@/shared/ui/page';
@@ -15,29 +13,27 @@ import { Skeleton } from '@/shared/ui/skeleton';
 
 import { MyLeaveList } from './my-leave-list';
 
-/** `/w/[wsId]/leave` — số phép còn, gửi đơn, đơn của tôi (attendance-leave.md §6). */
+/** `/leave` — số phép còn, gửi đơn, đơn của tôi (attendance-leave.md §6), cấp CÔNG TY (ADR-139). */
 export function LeavePage() {
-  const { wsId = '' } = useParams<{ wsId: string }>();
-  const valid = Uuid.safeParse(wsId).success;
-  const { role, can } = usePermission(wsId);
-  const allowed = valid && can('leave:self');
+  const { company, can } = useCompanyPermission();
+  const allowed = can('leave:self');
   // "Hôm nay" theo múi giờ của LỊCH (server) — quy tắc hủy đơn APPROVED so với ngày bắt đầu (D-M5).
-  const todayQuery = useAttendanceToday(wsId, allowed);
+  const todayQuery = useAttendanceToday(allowed);
   const today = todayQuery.data?.date ?? null;
-  const balance = useMyLeaveBalance(wsId, today ? Number(today.slice(0, 4)) : null);
-  const requests = useMyLeaveRequests(wsId, allowed);
+  const balance = useMyLeaveBalance(today ? Number(today.slice(0, 4)) : null);
+  const requests = useMyLeaveRequests(allowed);
 
-  if (!valid || isApiError(requests.error, 'RESOURCE_NOT_FOUND')) {
+  if (company !== null && !allowed) {
     return (
       <main className="mx-auto max-w-md px-4 py-16">
-        <EmptyState title="Không tìm thấy hoặc bạn không có quyền truy cập" />
-      </main>
-    );
-  }
-  if (role !== null && !allowed) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-16">
-        <EmptyState title="Vai trò Người xem không xin nghỉ trong workspace này" />
+        <EmptyState
+          title="Tài khoản Quản trị không xin nghỉ phép"
+          action={
+            <Link href="/w" className="text-sm underline">
+              Về trang chính
+            </Link>
+          }
+        />
       </main>
     );
   }
@@ -70,7 +66,7 @@ export function LeavePage() {
           Gửi đơn mới
         </h2>
         {today ? (
-          <LeaveRequestForm wsId={wsId} today={today} />
+          <LeaveRequestForm today={today} />
         ) : todayQuery.isError ? (
           // "Hôm nay" của server chưa có ⇒ không dựng form (min ngày, luật hủy) — báo lỗi, không kẹt skeleton.
           <EmptyState
@@ -96,7 +92,7 @@ export function LeavePage() {
           />
         ) : requests.data && today ? (
           <>
-            <MyLeaveList wsId={wsId} requests={requests.data} today={today} />
+            <MyLeaveList requests={requests.data} today={today} />
             {requests.hasNextPage && (
               <Button
                 variant="secondary"

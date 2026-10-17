@@ -18,15 +18,15 @@ const FILTERS: ReadonlyArray<{ value: Filter; label: string }> = [
   { value: 'ALL', label: 'Tất cả' },
 ];
 
-type Props = Readonly<{ wsId: string; today: string; isOwner: boolean; viewerId: string | null }>;
+type Props = Readonly<{ today: string; isAdmin: boolean; viewerId: string | null }>;
 
 /**
  * Tab "Đơn nghỉ" (§6, §9): mặc định đơn CHỜ DUYỆT, mới nhất trước. HR thấy lý do (B-H2 — chỉ người gửi
- * + `hr:manage`); đơn của chính mình: ẩn nút trừ OWNER (server vẫn 403 — B-H1).
+ * + `hr:manage`); đơn của chính mình: ẩn nút trừ Admin (server vẫn 403 — B-H1).
  */
-export function HrLeaveQueue({ wsId, today, isOwner, viewerId }: Props) {
+export function HrLeaveQueue({ today, isAdmin, viewerId }: Props) {
   const [filter, setFilter] = useState<Filter>('PENDING');
-  const list = useHrLeaveRequests(wsId, filter, true);
+  const list = useHrLeaveRequests(filter, true);
   const items = list.data?.pages.flatMap((p) => p.data) ?? [];
   return (
     <section aria-labelledby="hr-leave" className="flex flex-col gap-3">
@@ -88,15 +88,13 @@ export function HrLeaveQueue({ wsId, today, isOwner, viewerId }: Props) {
                   {r.decisionNote && (
                     <p className="break-words text-text-muted">Ghi chú: {r.decisionNote}</p>
                   )}
-                  {own && !isOwner && (
+                  {own && !isAdmin && (
                     <p className="text-xs text-text-muted">
                       Đơn của bạn — người khác có quyền Quản lý nhân sự sẽ xử lý.
                     </p>
                   )}
                 </div>
-                {(!own || isOwner) && (
-                  <LeaveDecision wsId={wsId} request={r} today={today} own={own} />
-                )}
+                {(!own || isAdmin) && <LeaveDecision request={r} today={today} own={own} />}
               </li>
             );
           })}

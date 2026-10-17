@@ -91,8 +91,7 @@ export function useRealtimeSession(): void {
       );
       void queryClient.invalidateQueries({ queryKey: memberKeys.all(workspaceId) });
       // T-041c: mất quyền ⇒ xóa ngay dữ liệu HR đã cache (IP/UA, lý do nghỉ — §9, R27), ở mọi trang.
-      if (!grants.includes('HR_MANAGE'))
-        queryClient.removeQueries({ queryKey: hrKeys.all(workspaceId) });
+      if (!grants.includes('HR_MANAGE')) queryClient.removeQueries({ queryKey: hrKeys.all() });
       toast({
         title: grants.includes('HR_MANAGE')
           ? 'Bạn được cấp quyền Quản lý nhân sự'
@@ -106,13 +105,14 @@ export function useRealtimeSession(): void {
       void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
       // T-041c: dữ liệu liên quan đổi theo thông báo, không cần tải lại trang (E2E-HR-02). Các key nằm
       // dưới ['ws', ws] ⇒ chỉ query đang mở mới refetch.
-      const { type, workspaceId } = event.data.data;
+      // Mốc 3.5: dữ liệu HR thuộc công ty (key ['company', …]) — `workspaceId` của event cũ không còn dùng.
+      const { type } = event.data.data;
       if (HR_SIDE.has(type)) {
-        void queryClient.invalidateQueries({ queryKey: hrKeys.all(workspaceId) });
+        void queryClient.invalidateQueries({ queryKey: hrKeys.all() });
       }
       if (EMPLOYEE_SIDE.has(type)) {
-        void queryClient.invalidateQueries({ queryKey: leaveKeys.all(workspaceId) });
-        void queryClient.invalidateQueries({ queryKey: attendanceKeys.all(workspaceId) });
+        void queryClient.invalidateQueries({ queryKey: leaveKeys.all() });
+        void queryClient.invalidateQueries({ queryKey: attendanceKeys.all() });
       }
     });
     // Rớt socket thì có thể lỡ `notification:new` ⇒ kết nối lại thì tải lại chuông.

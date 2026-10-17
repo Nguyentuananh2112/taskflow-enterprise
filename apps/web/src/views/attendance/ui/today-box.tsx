@@ -5,7 +5,7 @@ import type { AttendanceTodayDto } from '@taskflow/contracts/attendance';
 import { clockShort, LEAVE_PART_LABEL } from '@/entities/attendance';
 import { CheckButtons } from '@/features/attendance-check';
 
-type Props = Readonly<{ wsId: string; today: AttendanceTodayDto }>;
+type Props = Readonly<{ today: AttendanceTodayDto }>;
 
 const longDay = (t: AttendanceTodayDto) =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -36,7 +36,7 @@ function statusText(t: AttendanceTodayDto): string {
 }
 
 /** Ô "Hôm nay" nổi bật trên Bảng công của tôi (T-046): trạng thái, giờ vào / ra, nút chấm công dùng chung với thẻ. */
-export function TodayBox({ wsId, today: t }: Props) {
+export function TodayBox({ today: t }: Props) {
   return (
     <section
       aria-labelledby="today-box"
@@ -59,7 +59,7 @@ export function TodayBox({ wsId, today: t }: Props) {
         </dd>
       </dl>
       <div className="sm:ml-auto">
-        <CheckButtons wsId={wsId} today={t} />
+        <CheckButtons today={t} />
       </div>
     </section>
   );

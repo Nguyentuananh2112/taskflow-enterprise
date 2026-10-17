@@ -11,12 +11,11 @@ import { AddPunchForm } from './add-punch-form';
 import { VoidPunchButton } from './void-punch-button';
 
 type Props = Readonly<{
-  wsId: string;
   user: Readonly<{ id: string; fullName: string }>;
   /** `null` = đóng. */
   date: string | null;
   onClose: () => void;
-  /** Vì sao chỉ xem (không tự sửa của mình — B-H1, trừ OWNER; ngày chưa tới); `null` = sửa được. */
+  /** Vì sao chỉ xem (không tự sửa của mình — B-H1, trừ Admin; ngày chưa tới); `null` = sửa được. */
   readOnlyReason: string | null;
 }>;
 
@@ -26,9 +25,9 @@ const KIND = { IN: 'Vào', OUT: 'Ra' } as const;
  * Lượt thô của một nhân viên trong một ngày (HR — gồm lượt đã hủy, IP/thiết bị §9) + hủy lượt + thêm
  * lượt ADJUSTMENT. Mọi chuỗi (ghi chú, lý do, UA) là TEXT — React tự escape.
  */
-export function DayPunchesDialog({ wsId, user, date, onClose, readOnlyReason }: Props) {
+export function DayPunchesDialog({ user, date, onClose, readOnlyReason }: Props) {
   const canEdit = readOnlyReason === null;
-  const events = useHrEvents(wsId, user.id, date);
+  const events = useHrEvents(user.id, date);
   const data = events.data;
   return (
     <Dialog
@@ -56,20 +55,14 @@ export function DayPunchesDialog({ wsId, user, date, onClose, readOnlyReason }: 
                   return (
                     <li key={e.id} className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="min-w-24">{label}</span>
-                      <VoidPunchButton
-                        wsId={wsId}
-                        userId={user.id}
-                        date={date}
-                        eventId={e.id}
-                        label={label}
-                      />
+                      <VoidPunchButton userId={user.id} date={date} eventId={e.id} label={label} />
                     </li>
                   );
                 })}
             </ul>
           )}
           {canEdit ? (
-            <AddPunchForm wsId={wsId} userId={user.id} date={date} />
+            <AddPunchForm userId={user.id} date={date} />
           ) : (
             <p className="text-sm text-text-muted">{readOnlyReason}</p>
           )}

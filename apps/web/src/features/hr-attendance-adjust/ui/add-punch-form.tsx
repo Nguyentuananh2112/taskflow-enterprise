@@ -11,7 +11,7 @@ import { Textarea } from '@/shared/ui/textarea';
 
 import { usePunchChange } from '../model/use-punch-change';
 
-type Props = Readonly<{ wsId: string; userId: string; date: string }>;
+type Props = Readonly<{ userId: string; date: string }>;
 
 const KINDS = [
   { value: 'IN', label: 'Vào' },
@@ -25,16 +25,15 @@ type KindChoice = (typeof KINDS)[number]['value'];
  * đổi), "Ra sau 0 giờ" = `nextDay` (vẫn thuộc ngày công này — giờ chốt 06:00). Lý do bắt buộc, nhân
  * viên được thông báo.
  */
-export function AddPunchForm({ wsId, userId, date }: Props) {
+export function AddPunchForm({ userId, date }: Props) {
   const [kind, setKind] = useState<KindChoice>('IN');
   const [time, setTime] = useState('');
   const [reason, setReason] = useState('');
   const add = usePunchChange(
-    wsId,
     userId,
     date,
     () =>
-      hrAttendanceApi.adjust(wsId, {
+      hrAttendanceApi.adjust({
         userId,
         date,
         kind: (kind === 'IN' ? 'IN' : 'OUT') satisfies AttendanceKind,

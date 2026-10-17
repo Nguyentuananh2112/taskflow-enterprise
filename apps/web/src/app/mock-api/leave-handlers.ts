@@ -13,7 +13,7 @@ import {
 } from '@taskflow/contracts/leave';
 
 import type { MockDb } from './mock-db';
-import { requireMember } from './mock-guard';
+import { COMPANY_SCOPE, requireCompany } from './mock-guard';
 import { conflict, evaluate, selfOnly, strip, type Leave, type MockLeave } from './mock-leave';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 
@@ -23,10 +23,10 @@ import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 // Ngày làm = T2–T7 như lịch mock (chưa có ngày lễ). Phép năm mặc định 12 ngày.
 
 export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeave): HttpHandler[] {
-  const base = `${baseUrl}/workspaces/:wsId`;
+  const base = `${baseUrl}/leave`;
   return [
-    http.get(`${base}/leave-requests`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.get(`${base}/requests`, ({ request }) => {
+      const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
       const denied = selfOnly(ctx.ok);
       if (denied) return denied;
@@ -35,21 +35,21 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
       if (query.response) return query.response;
       const { status, cursor, limit } = query.data;
       const mine = leave.items
-        .filter((l) => l.workspaceId === params.wsId && l.userId === ctx.ok.user.id)
+        .filter((l) => l.workspaceId === COMPANY_SCOPE && l.userId === ctx.ok.user.id)
         .filter((l) => !status || l.status === status)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       const page = paginate(mine.map(strip), cursor, limit);
       return ok(z.array(LeaveRequestDto), page.data, { page: page.page });
     }),
-    http.get(`${base}/leave-requests/preview`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.get(`${base}/requests/preview`, ({ request }) => {
+      const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
       const query = parseQuery(request, LeavePreviewQuery);
       if (query.response) return query.response;
-      const checked = evaluate(leave, ctx.ok, String(params.wsId), query.data);
+      const checked = evaluate(leave, ctx.ok, COMPANY_SCOPE, query.data);
       if (checked.response) return checked.response;
       const bal = leave.balance(
-        String(params.wsId),
+        COMPANY_SCOPE,
         ctx.ok.user.id,
         Number(query.data.startDate.slice(0, 4)),
       );
@@ -59,13 +59,13 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
         remainingDays: query.data.type === 'ANNUAL' ? bal.remainingDays : null,
       });
     }),
-    http.post(`${base}/leave-requests`, async ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.post(`${base}/requests`, async ({ request }) => {
+      const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
       const body = await parseBody(request, SubmitLeaveBody);
       if (body.response) return body.response;
       const b = body.data;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const checked = evaluate(leave, ctx.ok, wsId, b);
       if (checked.response) return checked.response;
       const at = new Date().toISOString();
@@ -92,15 +92,15 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
       leave.items.push(item);
       return ok(LeaveRequestDto, strip(item), { status: 201 });
     }),
-    http.post(`${base}/leave-requests/:id/cancel`, async ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.post(`${base}/requests/:id/cancel`, async ({ request, params }) => {
+      const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
       const denied = selfOnly(ctx.ok);
       if (denied) return denied;
       const body = await parseBody(request, CancelLeaveBody);
       if (body.response) return body.response;
       const l = leave.items.find(
-        (x) => x.id === params.id && x.workspaceId === params.wsId && x.userId === ctx.ok.user.id,
+        (x) => x.id === params.id && x.workspaceId === COMPANY_SCOPE && x.userId === ctx.ok.user.id,
       );
       if (!l || !Uuid.safeParse(params.id).success)
         return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'leave_request' });
@@ -116,13 +116,13 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
       });
       return ok(LeaveRequestDto, strip(l));
     }),
-    http.get(`${base}/leave-balances/me`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.get(`${base}/balances/me`, ({ request }) => {
+      const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
       const denied = selfOnly(ctx.ok);
       if (denied) return denied;
       const year = Number(new URL(request.url).searchParams.get('year'));
-      return ok(LeaveBalanceDto, leave.balance(String(params.wsId), ctx.ok.user.id, year));
+      return ok(LeaveBalanceDto, leave.balance(COMPANY_SCOPE, ctx.ok.user.id, year));
     }),
   ];
 }

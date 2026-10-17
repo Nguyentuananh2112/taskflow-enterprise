@@ -38,21 +38,20 @@ export function notificationText(n: NotificationDto): string {
   }
 }
 
-/** Nơi mở khi bấm thông báo. */
+/** Nơi mở khi bấm thông báo — route CÔNG TY ở gốc (Mốc 3.5, ADR-139), không còn `/w/[wsId]/…`. */
 export function notificationHref(n: NotificationDto): string {
-  const ws = `/w/${n.workspaceId}`;
   switch (n.type) {
     case 'LEAVE_SUBMITTED':
-      return `${ws}/hr?tab=leave`;
+      return '/hr?tab=leave';
     case 'LEAVE_APPROVED':
     case 'LEAVE_REJECTED':
     case 'LEAVE_CANCELLED':
     case 'LEAVE_REVOKED':
-      return `${ws}/leave`;
+      return '/leave';
     case 'ATTENDANCE_ADJUSTED':
-      return `${ws}/attendance`;
+      return '/attendance';
     case 'HR_GRANTED':
     case 'HR_REVOKED':
-      return `${ws}/projects`;
+      return '/w';
   }
 }

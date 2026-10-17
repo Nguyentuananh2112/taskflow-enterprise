@@ -13,33 +13,27 @@ import type { MockAttendance } from './mock-attendance';
 import { MOCK_TZ, localDate } from './mock-attendance';
 import { totalsOf } from './mock-hr';
 import type { MockDb } from './mock-db';
-import { requireMember, type MemberContext } from './mock-guard';
+import { COMPANY_SCOPE, requireCompany } from './mock-guard';
 import { fail, ok, parseQuery } from './respond';
 
-// Chấm công (attendance-leave.md §5, mã lỗi đã chốt với A — T-038): VIEWER 403 `attendance:self`;
+// Chấm công cấp CÔNG TY (Mốc 3.5 — route `/attendance/…`; attendance-leave.md §5, mã lỗi A — T-038): Admin 403
+// `attendance:self`;
 // Idempotency-Key bắt buộc UUID (400); lặp cùng key + cùng loại ⇒ 200 trả hôm nay hiện tại (không tạo
 // lượt mới); cùng key khác loại ⇒ 422 `IDEMPOTENCY_KEY_REUSED`; IN lần 2 ⇒ 409 `already_checked_in`;
 // OUT khi chưa IN ⇒ 422 `NOT_CHECKED_IN`. Giờ chấm do server ghi nhận.
-
-const selfOnly = (ctx: MemberContext) =>
-  ctx.membership.role === 'VIEWER'
-    ? fail(403, 'FORBIDDEN_ACCESS', { required: 'attendance:self' })
-    : null;
 
 export function createAttendanceHandlers(
   baseUrl: string,
   db: MockDb,
   attendance: MockAttendance,
 ): HttpHandler[] {
-  const base = `${baseUrl}/workspaces/:wsId/attendance`;
+  const base = `${baseUrl}/attendance`;
 
   const punch = (kind: 'IN' | 'OUT') =>
-    http.post(`${base}/${kind === 'IN' ? 'check-in' : 'check-out'}`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.post(`${base}/${kind === 'IN' ? 'check-in' : 'check-out'}`, ({ request }) => {
+      const ctx = requireCompany(request, db, 'attendance:self');
       if (ctx.response) return ctx.response;
-      const denied = selfOnly(ctx.ok);
-      if (denied) return denied;
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       const userId = ctx.ok.user.id;
       const key = request.headers.get('idempotency-key');
       if (!Uuid.safeParse(key).success || key === null) {
@@ -69,25 +63,21 @@ export function createAttendanceHandlers(
     });
 
   return [
-    http.get(`${base}/me/today`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.get(`${base}/me/today`, ({ request }) => {
+      const ctx = requireCompany(request, db, 'attendance:self');
       if (ctx.response) return ctx.response;
-      const denied = selfOnly(ctx.ok);
-      if (denied) return denied;
-      return ok(AttendanceTodayDto, attendance.todayDto(String(params.wsId), ctx.ok.user.id));
+      return ok(AttendanceTodayDto, attendance.todayDto(COMPANY_SCOPE, ctx.ok.user.id));
     }),
-    http.get(`${base}/me`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.get(`${base}/me`, ({ request }) => {
+      const ctx = requireCompany(request, db, 'attendance:self');
       if (ctx.response) return ctx.response;
-      const denied = selfOnly(ctx.ok);
-      if (denied) return denied;
       const query = parseQuery(request, AttendanceMonthQuery);
       if (query.response) return query.response;
       const [year, month] = query.data.month.split('-').map(Number) as [number, number];
       const daysIn = new Date(Date.UTC(year, month, 0)).getUTCDate();
-      const wsId = String(params.wsId);
+      const wsId = COMPANY_SCOPE;
       // Ngày trước khi gia nhập (theo lịch) không phải ngày vắng ⇒ NOT_EMPLOYED (TL chốt).
-      const joinedAt = db.workspaces.member(wsId, ctx.ok.user.id)?.joinedAt;
+      const joinedAt = db.company.joinedAt(ctx.ok.user.id);
       const joinedDate = joinedAt ? localDate(joinedAt) : undefined;
       const days = Array.from({ length: daysIn }, (_, i) =>
         attendance.summarize(
@@ -104,14 +94,12 @@ export function createAttendanceHandlers(
         totals: totalsOf(days, attendance.today()), // như API (T-046)
       });
     }),
-    http.get(`${base}/me/events`, ({ request, params }) => {
-      const ctx = requireMember(request, db, params);
+    http.get(`${base}/me/events`, ({ request }) => {
+      const ctx = requireCompany(request, db, 'attendance:self');
       if (ctx.response) return ctx.response;
-      const denied = selfOnly(ctx.ok);
-      if (denied) return denied;
       const query = parseQuery(request, MyAttendanceEventsQuery);
       if (query.response) return query.response;
-      const events = attendance.events(String(params.wsId), ctx.ok.user.id, query.data.date);
+      const events = attendance.events(COMPANY_SCOPE, ctx.ok.user.id, query.data.date);
       return ok(AttendanceEventsDto, { timezone: MOCK_TZ, events });
     }),
     punch('IN'),

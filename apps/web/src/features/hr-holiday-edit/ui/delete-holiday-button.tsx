@@ -10,16 +10,15 @@ import { Dialog, DialogClose } from '@/shared/ui/dialog';
 import { Input } from '@/shared/ui/input';
 import { toast } from '@/shared/ui/toast';
 
-type Props = Readonly<{ wsId: string; holiday: HolidayDto; past: boolean }>;
+type Props = Readonly<{ holiday: HolidayDto; past: boolean }>;
 
-/** Xóa ngày lễ (204 idempotent). Ngày đã qua: chỉ OWNER render nút này, bắt buộc lý do. */
-export function DeleteHolidayButton({ wsId, holiday, past }: Props) {
+/** Xóa ngày lễ (204 idempotent). Ngày đã qua: chỉ Admin render nút này, bắt buộc lý do. */
+export function DeleteHolidayButton({ holiday, past }: Props) {
   const [reason, setReason] = useState('');
   const remove = useMutation({
-    mutationFn: () =>
-      hrAttendanceApi.deleteHoliday(wsId, holiday.date, past ? reason.trim() : undefined),
+    mutationFn: () => hrAttendanceApi.deleteHoliday(holiday.date, past ? reason.trim() : undefined),
     onSuccess: (_d, _v, _r, context) => {
-      void context.client.invalidateQueries({ queryKey: hrKeys.all(wsId) });
+      void context.client.invalidateQueries({ queryKey: hrKeys.all() });
       toast({ title: `Đã xóa ngày lễ ${holiday.name}`, tone: 'success' });
     },
     onError: (error) => toast({ title: calendarErrorMessage(error), tone: 'error' }),
