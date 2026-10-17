@@ -128,8 +128,12 @@ một mình KHÔNG đủ.
   chạm đĩa, máy chỉ có **public key**, dùng chung `BACKUP_AGE_RECIPIENTS` / `BACKUP_S3_*` / credential PutObject-only
   với `backup.sh`; tầng giữ chọn lúc tải lên (`daily/` `weekly/` `monthly/` — lifecycle rule mục 3 áp luôn); khóa
   `taskflow/<tầng>/taskflow-files-<stamp>.tar.age` + dấu hoàn tất `….ok` chỉ khi mọi bước xong.
-- Lịch: cùng `taskflow-backup.timer` — `compose.prod.yml` chạy `backup.sh && backup-files.sh`, heartbeat chỉ ping khi
-  **cả hai** xong (thiếu một ⇒ email sau 26 giờ). Kho mount **chỉ đọc** vào container backup.
+- Lịch: cùng `taskflow-backup.timer` — `taskflow-backup.service` chạy service `backup` (DB, uid postgres) RỒI service
+  `backup-files` (cùng image, **uid 1000** = user `node` sở hữu blob `0600`), heartbeat ở bước sau ⇒ chỉ ping khi
+  **cả hai** xong (thiếu một ⇒ email sau 26 giờ). Kho mount **chỉ đọc**.
+- **Không bao giờ ra backup rỗng mà "thành công"** (B HIGH-1): tệp không đọc được ⇒ FAIL trước khi tar (exit 4); tar
+  không bỏ qua lỗi đọc (exit ≥ 2 ⇒ FAIL); kho có tệp mà archive không có tệp nào ⇒ FAIL (exit 5) — đều KHÔNG `.ok`,
+  KHÔNG heartbeat. Đã thử trong container: uid 999 ⇒ exit 4; uid 1000 ⇒ đủ blob + `.ok`; archive rỗng ⇒ exit 5.
 - Loại `tmp/` (upload đang dở). Blob không bao giờ bị ghi đè (commit = hard link, khóa mới) ⇒ tar đọc tệp nào là bản
   hoàn chỉnh; tệp bị xóa giữa chừng (sweep / xóa tin) bỏ qua. Kho > ~40 GiB ⇒ đặt `BACKUP_FILES_EXPECTED_SIZE`.
 - RPO kho tệp ≤ 24 giờ (R47: hỏng ổ ⇒ mất tệp từ lần backup cuối). R48: dữ liệu đã xóa còn trong backup tới hết tầng.
@@ -138,12 +142,14 @@ một mình KHÔNG đủ.
 
 1. Khôi phục Postgres theo §5.1 (chọn bản DB có `.ok`).
 2. Chọn bản `taskflow-files-*.tar.age` có `.ok` **cùng ngày hoặc ngay sau** bản DB (backup chạy DB trước rồi tệp ⇒ tệp
-   thừa so với DB, không thiếu).
+   **chủ yếu thừa** so với DB; có thể **thiếu vài tệp** vừa bị xóa trong khoảng giữa dump DB và tar — blob của tin
+   xóa đi trong ≤ 1 giờ — ⇒ các tệp đó 404 ở bước 6, chấp nhận được).
 3. Dừng `api` (`docker compose -f compose.prod.yml stop api`). Tạo volume mới / làm rỗng volume cũ — KHÔNG giải nén
    chồng lên kho đang có.
 4. Trên máy có khóa giải mã (khóa KHÔNG nằm trên máy chủ — mục 2): tải bản mã bằng credential đọc,
-   `age -d -i taskflow-backup.key taskflow-files-<stamp>.tar.age | tar -x -C <thư mục kho mới>`, rồi chép vào volume
-   (`docker run --rm -v taskflow-prod_filestore:/dst -v <thư mục>:/src:ro …`), `chown -R 1000:1000` (user `node`).
+   `age -d -i taskflow-backup.key taskflow-files-<stamp>.tar.age | tar -x --same-permissions -C <thư mục kho mới>`
+   (giữ blob `0600`), rồi chép vào volume giữ quyền (`docker run --rm -v taskflow-prod_filestore:/dst
+   -v <thư mục>:/src:ro debian cp -a /src/. /dst/`), `chown -R 1000:1000` (user `node`).
 5. Khởi động `api`. API kiểm thư mục + hard link lúc khởi động (sai ⇒ từ chối khởi động, log tên lỗi).
 6. Kiểm: ≥ 20 khóa ngẫu nhiên trong DB mở được qua `/media`; tệp thiếu ⇒ 404 + log `media.blob_missing` (không 500 —
    F-09); tệp thừa (không còn dòng DB) do `files-sweep` dọn ở lượt kế.

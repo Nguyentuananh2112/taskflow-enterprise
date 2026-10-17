@@ -199,6 +199,14 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - Runbook `backup-restore.md` §7: sao lưu, khôi phục (DB trước, tệp sau, không giải nén chồng, chown 1000), diễn tập
   hằng tháng (khóa từ két, ≥ 20 khóa qua `/media`, tệp thừa do sweep dọn), những gì không làm.
 - Chưa build image Docker (job nặng; image backup / api thuộc cổng CI). B / D soát phần deploy.
+- **Soát B (da7177e4 + 3dae7904) — HIGH-1 đã sửa:** container backup chạy uid 999 không đọc được blob `0600` của uid 1000;
+  `tar --ignore-failed-read` ⇒ exit 0 ⇒ archive RỖNG vẫn `.ok` + heartbeat. Sửa: (a) bỏ `--ignore-failed-read`
+  (không đọc được ⇒ tar exit ≥ 2 ⇒ FAIL); thêm kiểm trước tệp không đọc được ⇒ exit 4; (b) service riêng `backup-files`
+  (`user: 1000:1000`, kho `:ro`, `HOME=/tmp`), `backup` chỉ còn DB; systemd chạy hai bước tuần tự, heartbeat ở bước sau;
+  (c) đếm tệp thật vào archive trên nhánh `tar --list` của luồng — kho có tệp mà archive rỗng ⇒ exit 5, không `.ok`.
+  Thử trong container `postgres:18.6-bookworm` (`--rm`): uid 999 + blob 0600 uid 1000 ⇒ exit 4, không tải; uid 1000 ⇒
+  đủ blob + `.ok`; tar giả ra archive rỗng ⇒ exit 5, không `.ok`; kho rỗng ⇒ thành công. Runbook §7.2: L1 ("chủ yếu
+  thừa; có thể thiếu vài tệp vừa xóa ⇒ 404"), L2 (`tar -x --same-permissions`, `cp -a`, chown 1000).
 
 ## Bước 9 — ca U / I của G trong phạm vi T-067 (kiểm kê cho F — test-spec-chat §2 / §9)
 

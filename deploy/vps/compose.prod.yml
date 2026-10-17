@@ -139,15 +139,26 @@ services:
     image: ghcr.io/${GHCR_OWNER:?}/taskflow-backup@${BACKUP_DIGEST:-sha256:CHANGE_ME}
     profiles: [backup]
     env_file: .env.backup # BACKUP_* + AWS_* (PutObject-only) + BACKUP_HEARTBEAT_URL — mẫu: .env.backup.example
-    # Ping heartbeat bằng python3 (có sẵn — awscli Debian chạy trên python3); image B2 không có wget/curl.
-    entrypoint: ['sh', '-c']
-    # DB rồi kho tệp (Mốc 6 — devops.md §4.3): heartbeat CHỈ khi cả hai xong ⇒ thiếu một ⇒ email sau 26 h.
-    command:
-      - backup.sh && backup-files.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then python3 -c "import sys,urllib.request as u; u.urlopen(sys.argv[1], timeout=30).read()" "$${BACKUP_HEARTBEAT_URL}"; fi
-    # Kho tệp CHỈ ĐỌC — máy backup không sửa được tệp (backup-files.sh loại tmp/).
-    volumes: ['filestore:/var/lib/taskflow/files:ro']
+    # Chỉ DB (uid postgres của image). Heartbeat ở `backup-files` — systemd chạy backup RỒI backup-files, bước sau
+    # chỉ chạy khi bước trước thành công ⇒ heartbeat CHỈ khi cả hai xong (thiếu một ⇒ email sau 26 h).
+    command: ['backup.sh']
     depends_on:
       postgres: { condition: service_healthy }
+
+  # Kho tệp Mốc 6 (devops.md §4.3/§4.6, runbook backup-restore.md §7) — cùng image, user RIÊNG: blob là 0600 của `node`
+  # (uid 1000) ⇒ chạy bằng uid 1000 mới đọc được (B HIGH-1). Kho mount CHỈ ĐỌC; không cần quyền DB.
+  backup-files:
+    image: ghcr.io/${GHCR_OWNER:?}/taskflow-backup@${BACKUP_DIGEST:-sha256:CHANGE_ME}
+    profiles: [backup]
+    user: '1000:1000'
+    env_file: .env.backup
+    environment:
+      HOME: /tmp # aws CLI ghi cache vào $HOME — uid 1000 không có home trong image
+    volumes: ['filestore:/var/lib/taskflow/files:ro']
+    # Ping heartbeat bằng python3 (có sẵn — awscli Debian chạy trên python3); image B2 không có wget/curl.
+    entrypoint: ['sh', '-c']
+    command:
+      - backup-files.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then python3 -c "import sys,urllib.request as u; u.urlopen(sys.argv[1], timeout=30).read()" "$${BACKUP_HEARTBEAT_URL}"; fi
 
 volumes:
   pgdata:
