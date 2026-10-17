@@ -112,6 +112,10 @@ export const NotFoundDetails = z.object({
     'notification',
     // Mốc 3.5: chưa `admin:bootstrap` ⇒ chưa có dòng `companies`
     'company',
+    // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)
+    'conversation',
+    'message',
+    'attachment',
   ]),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;
