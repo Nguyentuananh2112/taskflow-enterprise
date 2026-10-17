@@ -37,6 +37,10 @@ export const FILES_TEST_ONLY_VARS = [
   'FILES_SWEEP_ON_START',
   'FILES_SWEEP_INTERVAL_MS',
   'FILES_IMAGE_PIPELINE_DISABLED',
+  // T-069: cửa sổ / hạn mức chat (ADR-141 F-01)
+  'CHAT_EDIT_WINDOW_SECONDS',
+  'CHAT_UPLOAD_DAILY_BYTES',
+  'CHAT_SEND_HOURLY',
 ] as const;
 
 /**
@@ -160,6 +164,9 @@ const EnvSchema = z
     FILES_SWEEP_ON_START: optionalFlag,
     FILES_SWEEP_INTERVAL_MS: optionalInt(1_000, 3_600_000),
     FILES_IMAGE_PIPELINE_DISABLED: optionalFlag,
+    CHAT_EDIT_WINDOW_SECONDS: optionalInt(1, 900),
+    CHAT_UPLOAD_DAILY_BYTES: optionalInt(1_000, 200 * 1024 * 1024),
+    CHAT_SEND_HOURLY: optionalInt(1, 600),
   })
   .superRefine((env, ctx) => {
     const fail = (path: keyof typeof env, message: string) =>

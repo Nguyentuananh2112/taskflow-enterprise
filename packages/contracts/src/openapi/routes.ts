@@ -117,6 +117,7 @@ import {
   WorkspaceDto,
   WorkspaceParams,
 } from '../workspace';
+import { CHAT_API_ROUTES } from './chat-routes';
 
 /**
  * Danh mục route HTTP của `/api/v1` — NGUỒN của OpenAPI (A2, sinh từ Zod, không viết tay). Test
@@ -126,7 +127,15 @@ import {
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type Security = 'bearer' | 'refreshCookie' | 'none';
 export type Tag =
-  'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'company' | 'notifications';
+  | 'auth'
+  | 'workspaces'
+  | 'members'
+  | 'projects'
+  | 'tasks'
+  | 'hr'
+  | 'company'
+  | 'notifications'
+  | 'chat';
 
 /** `X-Upload-Name` = `encodeURIComponent(tên gốc)` — ≤ 255 byte UTF-8 sau giải mã (ADR-141). */
 const AvatarUploadHeaders = z.object({ 'x-upload-name': z.string().min(1).max(765) });
@@ -1038,4 +1047,5 @@ export const API_ROUTES: readonly ApiRoute[] = [
     query: ListAuditLogsQuery,
     response: { status: 200, data: z.array(AuditLogDto), paged: true },
   },
+  ...CHAT_API_ROUTES,
 ];

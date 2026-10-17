@@ -18,6 +18,7 @@ import type { IFileStore, IImagePipeline } from '../core/files/ports';
 import { mediaRouter } from '../core/files/presentation/media-router';
 import { rawUpload } from '../core/files/presentation/raw-upload';
 import { StorageQuota } from '../core/files/storage-quota';
+import { MemoryByteCounter, type ByteCounter } from '../core/files/upload-byte-budget';
 import { UploadSlots } from '../core/files/upload-slots';
 import type { ILogger } from '../core/logging/logger';
 import type { AppMetrics } from '../core/observability/metrics';
@@ -43,6 +44,8 @@ export interface FilesBundle {
   /** Module sở hữu dữ liệu đăng ký kiểm DB cho `/media` theo kind. */
   resolvers: MediaResolverRegistry;
   quota: StorageQuota;
+  /** Bộ đếm byte upload theo ngày (Valkey; bộ nhớ ở local/test) — hạn mức 200 MB / ngày của chat (T-069). */
+  byteCounter: ByteCounter;
   /** Middleware upload nhị phân theo trần (avatar 5 MB, tệp chat 20 MB). */
   upload(maxBytes: number): RequestHandler;
   /** Router `/api/v1/media` (không Bearer). */
@@ -69,6 +72,8 @@ export interface FilesSetupDeps {
   mediaRateLimit?: RequestHandler;
   /** Link "Quay lại" của trang lỗi `/media`. */
   webOrigin: string;
+  /** Valkey (`valkeyByteCounter`); thiếu ⇒ bộ nhớ tiến trình (local/test). */
+  byteCounter?: ByteCounter;
 }
 
 async function storeDir(env: Env): Promise<string> {
@@ -165,6 +170,7 @@ export async function createFiles(d: FilesSetupDeps): Promise<FilesBundle> {
     signer,
     resolvers,
     quota,
+    byteCounter: d.byteCounter ?? new MemoryByteCounter(),
     media,
     orphanTtlSec: env.FILES_ORPHAN_TTL_SECONDS ?? FILES_DEFAULTS.orphanTtlSec,
     sweep,

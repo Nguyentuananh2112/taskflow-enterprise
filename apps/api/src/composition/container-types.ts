@@ -21,6 +21,7 @@ import type { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
 import type { ISocketAuthenticator } from '../core/realtime/ports';
 import type { FilesBundle } from './files-setup';
+import type { ChatSettings } from './chat-wiring';
 
 export interface ContainerConfig extends AppConfig {
   cookieSecure: boolean;
@@ -60,6 +61,8 @@ export interface ContainerDeps {
   errorReporter?: IErrorReporter;
   /** Mốc 6 (ADR-141): kho tệp + `/media` — thiếu ⇒ không gắn `/media` (test HTTP cũ). */
   files?: FilesBundle;
+  /** Mốc 6 (T-069): cửa sổ sửa / hạn mức chat chỉnh được ở APP_ENV=test. */
+  chat?: ChatSettings;
 }
 
 export interface Container {
