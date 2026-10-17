@@ -124,6 +124,7 @@ model User {
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
   lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(3)
   deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3) // D2; khác null ⇒ login/refresh bị từ chối như sai thông tin; set cùng tx với tăng token_version + thu hồi token (USER_DELETED)
+  avatarVersion     Int?      @map("avatar_version") // Mốc 6 (ADR-142): blob avatars/<id>/<v>/{256,64}; NULL = chữ cái; CHECK 1…999999999 bằng SQL tay
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 

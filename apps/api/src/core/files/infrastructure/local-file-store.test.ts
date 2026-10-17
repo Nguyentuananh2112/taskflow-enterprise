@@ -371,3 +371,34 @@ describe('storeUsageBytes — số đo cho STORAGE_FULL', () => {
     await staged.discard();
   });
 });
+
+describe('LocalFileStore.touch / list (T-068 — avatar gỡ giữ 30 ngày)', () => {
+  const USER = '0b6f2c1e-7f6a-4c1d-9a3e-2b1c0d9e8f7a';
+
+  it('touch đặt mốc sửa đổi; khóa không tồn tại ⇒ bỏ qua; list("avatars/") trả khóa avatar + mốc', async () => {
+    const store = await make();
+    const k64 = avatarFileKey(USER, 2, '64');
+    await store.put(Buffer.from('a'), { maxBytes: 10, key: k64 });
+    await store.put(Buffer.from('b'), { maxBytes: 10, key: avatarFileKey(USER, 2, '256') });
+    await store.put(Buffer.from('random'), { maxBytes: 10 }); // khóa ngẫu nhiên — không thuộc avatars/
+    const removedAt = new Date('2026-01-01T00:00:00.000Z');
+    await store.touch(k64, removedAt);
+    await store.touch(avatarFileKey(USER, 9, '64'), removedAt); // không có ⇒ không ném
+    const listed = [];
+    for await (const item of store.list('avatars/')) listed.push(item);
+    expect(listed.map((i) => i.key).sort()).toEqual([
+      `avatars/${USER}/2/256`,
+      `avatars/${USER}/2/64`,
+    ]);
+    expect(listed.find((i) => i.key === k64)?.modifiedAt.toISOString()).toBe(
+      removedAt.toISOString(),
+    );
+  });
+
+  it('list trên kho chưa có avatars/ ⇒ rỗng', async () => {
+    const store = await make();
+    const listed = [];
+    for await (const item of store.list('avatars/')) listed.push(item);
+    expect(listed).toEqual([]);
+  });
+});

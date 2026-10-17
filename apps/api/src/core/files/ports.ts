@@ -22,6 +22,10 @@ export interface IFileStore {
   exists(key: FileKey): Promise<boolean>;
   /** Lưới an toàn của `files-sweep`: xóa tệp tạm sửa lần cuối trước `before`. Trả số tệp đã xóa. */
   purgeStaleTemp(before: Date): Promise<number>;
+  /** Đặt mốc sửa đổi = `at` (T-068: avatar bị gỡ ⇒ blob giữ 30 ngày TỪ lúc gỡ — D13, B). Không có ⇒ bỏ qua. */
+  touch(key: FileKey, at: Date): Promise<void>;
+  /** Blob có khóa bắt đầu bằng `prefix` kèm mốc sửa đổi — cho bước sweep của module (avatar: T-068). */
+  list(prefix: 'avatars/'): AsyncIterable<{ key: FileKey; modifiedAt: Date }>;
 }
 
 export interface StoredFile {
@@ -103,10 +107,12 @@ export interface ImageVariant {
  * hàng đợi đầy ⇒ 503 `IMAGE_PROCESSING_BUSY`; không nạp được ⇒ 503 `IMAGE_PROCESSING_UNAVAILABLE`.
  */
 export interface IImagePipeline {
+  /** `maxPixels`: trần điểm ảnh THEO MỤC ĐÍCH (avatar thấp hơn chat — T-068, B); worker dùng min(maxPixels, trần chung). */
   transform(
     input: Buffer,
     expected: ImageType,
     variants: readonly ImageVariantSpec[],
+    options?: { maxPixels?: number },
   ): Promise<ImageVariant[]>;
   /** Tự kiểm (biến đổi ảnh 1 px) — lúc khởi động và mỗi 5 phút; cập nhật gauge `files_image_worker_up`. */
   selfTest(): Promise<boolean>;

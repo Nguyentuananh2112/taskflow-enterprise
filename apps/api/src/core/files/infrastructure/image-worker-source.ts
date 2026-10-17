@@ -22,16 +22,19 @@ const ALLOWED = new Set(workerData.allowedFormats);
 const LIMIT = workerData.limitInputPixels;
 const OPTIONS = { pages: 1, animated: false, limitInputPixels: LIMIT, failOn: 'error' };
 
-async function transform(input, expected, variants) {
-  const meta = await sharp(input, OPTIONS).metadata();
+async function transform(input, expected, variants, maxPixels) {
+  // Trần THEO MỤC ĐÍCH (avatar thấp hơn chat — T-068): min(maxPixels, trần chung); mọi sharp() dùng cùng options.
+  const limit = maxPixels > 0 ? Math.min(LIMIT, maxPixels) : LIMIT;
+  const options = { ...OPTIONS, limitInputPixels: limit };
+  const meta = await sharp(input, options).metadata();
   if (!ALLOWED.has(meta.format) || meta.format !== expected) return { ok: false, error: 'FORMAT_MISMATCH' };
-  if (!meta.width || !meta.height || meta.width * meta.height > LIMIT) return { ok: false, error: 'TOO_COMPLEX' };
+  if (!meta.width || !meta.height || meta.width * meta.height > limit) return { ok: false, error: 'TOO_COMPLEX' };
   const out = [];
   for (const v of variants) {
     const resize = v.fit === 'cover'
       ? { width: v.size, height: v.size, fit: 'cover' }
       : { width: v.size, height: v.size, fit: 'inside', withoutEnlargement: true };
-    const { data, info } = await sharp(input, OPTIONS)
+    const { data, info } = await sharp(input, options)
       .rotate()
       .resize(resize)
       .webp({ quality: 82 })
@@ -49,7 +52,7 @@ parentPort.on('message', async (msg) => {
       parentPort.postMessage({ id: msg.id, ok: res.ok, variants: [] });
       return;
     }
-    const res = await transform(Buffer.from(msg.input), msg.expected, msg.variants);
+    const res = await transform(Buffer.from(msg.input), msg.expected, msg.variants, msg.maxPixels || 0);
     if (!res.ok) return parentPort.postMessage({ id: msg.id, ok: false, error: res.error });
     // Không transfer: buffer của sharp là bộ nhớ ngoài V8, không detach được ⇒ structured clone (sao chép).
     parentPort.postMessage({ id: msg.id, ok: true, variants: res.variants });
