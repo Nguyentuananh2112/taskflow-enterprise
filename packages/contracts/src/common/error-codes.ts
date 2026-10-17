@@ -62,6 +62,8 @@ export const BusinessRule = z.enum([
   'START_DATE_OUT_OF_RANGE',
   'LAST_DAY_OUT_OF_RANGE',
   'ALREADY_ACTIVATED',
+  // Mốc 5 (T-057, ADR-131): chính sách phép năm đã qua chỉ đọc.
+  'POLICY_YEAR_LOCKED',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 

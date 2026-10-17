@@ -96,6 +96,8 @@ export const HrAuditAction = z.enum([
   'WORKSPACE_OWNER_ASSIGNED',
   'WORKSPACE_ARCHIVED',
   'COMPANY_RENAMED',
+  // Mốc 5 (T-057, ADR-131): HR đặt chính sách phép một năm (lý do ở `after.note`).
+  'POLICY_SET',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 
