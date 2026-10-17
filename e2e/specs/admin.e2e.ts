@@ -40,7 +40,8 @@ test('T-034: thêm thành viên bằng combobox nhân viên (+ email lạ ⇒ kh
   await form
     .getByRole('combobox', { name: 'Tìm nhân viên' })
     .fill(`nobody-${String(Date.now())}@e2e.example`);
-  await expect(page.getByText(NO_CANDIDATE, { exact: true })).toBeVisible();
+  // Chữ nằm trong listbox của combobox (chỉ hiện khi đang mở; trước đó là "Đang tìm…") ⇒ chờ toBeVisible.
+  await expect(form.getByText(NO_CANDIDATE, { exact: true })).toBeVisible();
   await expect(form.getByRole('button', { name: 'Thêm', exact: true })).toBeDisabled();
 
   await addMemberViaUi(page, b, 'Thành viên');
