@@ -104,6 +104,30 @@ describe('dayText — câu chữ đời thường', () => {
     );
   });
 
+  it('muộn lâu ⇒ viết theo giờ: "Đi muộn 2 giờ", "Đi muộn 1 giờ 5 phút"', () => {
+    expect(dayText(day('2026-10-14', { status: 'PRESENT', lateMin: 120 }), today).label).toBe(
+      'Đi muộn 2 giờ',
+    );
+    expect(dayText(day('2026-10-14', { status: 'PRESENT', lateMin: 65 }), today).label).toBe(
+      'Đi muộn 1 giờ 5 phút',
+    );
+  });
+
+  it('TƯƠNG LAI vẫn hiện điều đã biết trước: lễ (tên), phép đã duyệt (cả ngày / nửa ngày); Chủ nhật tương lai trống', () => {
+    expect(
+      dayText(day('2026-10-30', { status: 'HOLIDAY', holidayName: 'Lễ công ty' }), today),
+    ).toMatchObject({ label: 'Ngày lễ', detail: 'Lễ công ty' });
+    expect(dayText(day('2026-10-20', { status: 'ON_LEAVE', leave: 'FULL' }), today)).toMatchObject({
+      label: 'Nghỉ phép',
+      detail: 'cả ngày',
+    });
+    expect(dayText(day('2026-10-21', { status: 'PENDING', leave: 'PM' }), today)).toMatchObject({
+      label: 'Nghỉ phép',
+      detail: 'buổi chiều',
+    });
+    expect(dayText(day('2026-10-25', { status: 'OFF', isWorkday: false }), today).label).toBe('');
+  });
+
   it('ngày TƯƠNG LAI ⇒ trống (không "Chưa tới giờ"); hôm nay chưa chấm ⇒ "Chưa chấm"; ngoài nhiệm kỳ ⇒ trống', () => {
     expect(dayText(day('2026-10-16'), today).label).toBe('');
     expect(dayText(day('2026-10-15'), today).label).toBe('Chưa chấm');

@@ -132,7 +132,8 @@ function DayCell({ day, today, tabbable, buttonRef, onKeyDown, onFocus, onSelect
         className={cn(
           'flex h-full min-h-12 w-full flex-col items-start gap-0.5 rounded-control border border-l-4 border-border p-1.5 text-left sm:min-h-20',
           tone.cell,
-          future && 'opacity-60',
+          // Tương lai không có gì đã biết trước: số ngày màu chữ phụ (token đạt AA) thay vì làm mờ cả ô.
+          future && !text.label && 'text-text-muted',
           isToday && 'ring-2 ring-primary',
         )}
       >

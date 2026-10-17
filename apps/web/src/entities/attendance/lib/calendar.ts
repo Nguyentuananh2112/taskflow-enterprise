@@ -1,6 +1,7 @@
 import type { AttendanceDayDto } from '@taskflow/contracts/attendance';
 
 import { LEAVE_PART_LABEL } from './labels';
+import { duration } from './time';
 
 // "Bảng công của tôi" dạng lịch (T-046): câu chữ đời thường, giờ "8:02", lưới T2→CN, gộp ngày ngoài nhiệm kỳ.
 
@@ -40,14 +41,25 @@ export type DayText = Readonly<{
 
 const EMPTY: DayText = { label: '', detail: null, icon: '', tone: 'none' };
 
-const minutesText = (n: number) => `${n} phút`;
+/** "37 phút", "2 giờ", "1 giờ 5 phút" — số phút lớn viết theo giờ cho dễ đọc. */
+const minutesText = (n: number) => duration(n);
+
+/** Ngày tương lai chỉ hiện điều ĐÃ BIẾT TRƯỚC (lễ, phép đã duyệt) — còn lại để trống, không "Chưa tới giờ". */
+const PLANNED: ReadonlySet<AttendanceDayDto['status']> = new Set(['HOLIDAY', 'ON_LEAVE']);
 
 /**
- * Câu chữ của một ngày cho người không rành IT. `today` = ngày của SERVER: ngày sau hôm nay ⇒ trống (không ghi "Chưa tới
- * giờ"). NOT_EMPLOYED ⇒ trống ở đây — được gộp thành "Bạn bắt đầu làm từ dd/MM" (`employmentNote`).
+ * Câu chữ của một ngày cho người không rành IT. `today` = ngày của SERVER: ngày sau hôm nay chỉ hiện lễ / phép đã
+ * duyệt, còn lại trống (không ghi "Chưa tới giờ"). NOT_EMPLOYED ⇒ trống ở đây — được gộp thành "Bạn bắt đầu làm từ dd/MM" (`employmentNote`).
  */
 export function dayText(d: AttendanceDayDto, today: string): DayText {
-  if (d.date > today || d.status === 'NOT_EMPLOYED') return EMPTY;
+  if (d.status === 'NOT_EMPLOYED') return EMPTY;
+  if (d.date > today) {
+    if (PLANNED.has(d.status)) return plannedText(d);
+    // Phép nửa ngày ở tương lai: server để PENDING kèm `leave` AM/PM.
+    if (d.leave)
+      return { label: 'Nghỉ phép', detail: LEAVE_PART_LABEL[d.leave], icon: '☾', tone: 'leave' };
+    return EMPTY;
+  }
   const span =
     d.firstIn &&
     `${clockShort(d.firstIn, d.timezone)}–${d.lastOut ? clockShort(d.lastOut, d.timezone) : '…'}`;
@@ -73,14 +85,8 @@ export function dayText(d: AttendanceDayDto, today: string): DayText {
     case 'ABSENT':
       return { label: 'Vắng', detail: null, icon: '✕', tone: 'absent' };
     case 'ON_LEAVE':
-      return {
-        label: 'Nghỉ phép',
-        detail: d.leave && d.leave !== 'FULL' ? LEAVE_PART_LABEL[d.leave] : 'cả ngày',
-        icon: '☾',
-        tone: 'leave',
-      };
     case 'HOLIDAY':
-      return { label: 'Ngày lễ', detail: d.holidayName, icon: '★', tone: 'holiday' };
+      return plannedText(d);
     case 'OFF':
       return {
         label: weekdayMon0(d.date) === 6 ? 'Chủ nhật' : 'Ngày nghỉ',
@@ -92,6 +98,17 @@ export function dayText(d: AttendanceDayDto, today: string): DayText {
       // Chỉ còn HÔM NAY (ngày tương lai đã trả EMPTY ở trên): chưa chấm vào.
       return { label: 'Chưa chấm', detail: null, icon: '○', tone: 'muted' };
   }
+}
+
+function plannedText(d: AttendanceDayDto): DayText {
+  if (d.status === 'HOLIDAY')
+    return { label: 'Ngày lễ', detail: d.holidayName, icon: '★', tone: 'holiday' };
+  return {
+    label: 'Nghỉ phép',
+    detail: d.leave && d.leave !== 'FULL' ? LEAVE_PART_LABEL[d.leave] : 'cả ngày',
+    icon: '☾',
+    tone: 'leave',
+  };
 }
 
 const ddMm = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
