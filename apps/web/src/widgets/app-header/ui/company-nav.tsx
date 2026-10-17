@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 
+import { useChatUnread } from '@/entities/chat';
 import { useCompanyPermission } from '@/entities/session';
 import { cn } from '@/shared/lib/cn';
 
@@ -70,6 +71,7 @@ export function CompanyLinks() {
 export function CompanyMenu() {
   const { items, pathname } = useItems();
   const [open, setOpen] = useState(false);
+  const chatUnread = (useChatUnread().data ?? 0) > 0;
   const panelId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -98,8 +100,15 @@ export function CompanyMenu() {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex size-10 items-center justify-center rounded-control text-text hover:bg-bg-subtle md:hidden"
+        className="relative inline-flex size-10 items-center justify-center rounded-control text-text hover:bg-bg-subtle md:hidden"
       >
+        {/* Mốc 6 (§7 E9): có tin chưa đọc ⇒ chấm trên ☰ (chỉ trang trí; số ở ô trang chính / icon ≥ md). */}
+        {chatUnread && !open && (
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 right-1.5 size-2 rounded-full bg-danger"
+          />
+        )}
         <span aria-hidden="true" className="text-lg leading-none">
           {open ? '✕' : '☰'}
         </span>
