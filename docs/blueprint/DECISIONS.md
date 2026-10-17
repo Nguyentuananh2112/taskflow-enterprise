@@ -135,6 +135,14 @@ Trạng thái: ✅ Đã chốt · 🟡 Chờ nghiên cứu Phase 0 xác nhận
 - ADR-138 ✅ (Mốc 3.5) **Migration `company_level` một lần, không chuyển dữ liệu HR**; seed viết lại; DB local reset (đã làm với đồng ý của người dùng 17/10).
 - ADR-139 ✅ (Mốc 3.5) **Trang chính `/w` theo vai trò; trang công ty ở gốc** (`/attendance`, `/leave`, `/hr`, `/admin`…), không có `wsId`; header công ty + menu ☰.
 - ADR-140 ✅ (Mốc 3.5) **Harness test tạo người qua đường production** (`admin:bootstrap --json` → `POST /hr/employees` → `activate`); không chèn DB, không route test-only.
+- ADR-141 ✅ (Mốc 6, `avatar-chat.md`) **Kho tệp: port `IFileStore` + adapter ổ cục bộ; URL `/media` ký HMAC; ảnh mã hóa lại bằng sharp trong worker**: cần máy có ổ lâu dài (chọn hosting trước deploy); khóa ngẫu nhiên có tiền tố module (`chat/…`), sweep chỉ quét namespace của mình; `MEDIA_BASE_URL` https bắt buộc ở staging/production; không quét virus, cấm tệp nén / chạy được; giới hạn 5 MB / 20 MB / 10 tệp / 50 GB.
+- ADR-142 ✅ (Mốc 6) **Avatar**: `users.avatar_version`, 2 biến thể 256/64, trần 24 MP; lỗi `IMAGE_UNREADABLE` / `IMAGE_TOO_COMPLEX` (422); event `user:avatar-changed` chỉ {userId, avatarUrl 64}.
+- ADR-143 ✅ (Mốc 6) **Hội thoại DIRECT / GROUP / WORKSPACE**; chỉ người thuộc công ty còn hiệu lực và đã kích hoạt; nhận lại người cũ thấy lại DIRECT cũ, không tự vào lại nhóm.
+- ADR-144 ✅ (Mốc 6) **Tin nhắn văn bản thuần, idempotent theo `clientMsgId`**; xóa tin ⇒ xóa dòng đính kèm cùng transaction; lệch số đính kèm ⇒ 422 `ATTACHMENT_UNAVAILABLE`; tải tệp qua `POST download-url` (60 s).
+- ADR-145 ✅ (Mốc 6) **Realtime phát tới `user:{id}` của từng người nhận còn quyền**; mất quyền ⇒ `chat:conversation:removed`; đếm chưa đọc.
+- ADR-146 ✅ (Mốc 6) **Admin / HR không có quyền ngầm đọc trò chuyện người khác**; 404 khi không phải người tham gia; "Báo cáo tin nhắn" để sau v1.
+- ADR-147 ✅ (Mốc 6) **Lưu giữ 12 tháng** (tin + tệp); upload bị từ chối vẫn tính ngân sách 200 MB/ngày; xóa theo hạn là bước "chat" của files-sweep mỗi giờ.
+- ADR-148 ✅ (Mốc 6) **Migration tách theo vé** (`20261031000000_avatar`, `20261031000100_chat` — timestamp đặt lúc merge, sau Mốc 5); quy tắc sửa file chung khi chạy song song.
 
 ## Hiệu năng
 - ADR-030 ✅ P95 đọc <150ms, ghi <300ms **không áp dụng cho login/register** (argon2id — ADR-065). Đo bằng k6 ở Phase 5.
