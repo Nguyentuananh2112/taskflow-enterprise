@@ -202,6 +202,38 @@ describe('phạm vi & validate đầu vào của truy vấn (T-028 L3/L4)', () =
   const cursorOf = (kind: string, v: Record<string, unknown>) =>
     Buffer.from(JSON.stringify({ k: kind, v }), 'utf8').toString('base64url');
 
+  it('perf/task-read-raw: phân trang từng task qua ranh giới status (không lọc) ⇒ đúng thứ tự status → rank → id, không trùng/sót', async () => {
+    const { h, t } = await board();
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const res = await h.queries.listTasks({
+        ...h.scope('Mia'),
+        query: { limit: 1, ...(cursor ? { cursor } : {}) },
+      });
+      seen.push(...res.items.map((x) => x.id));
+      cursor = res.page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(seen).toEqual([t.todo1.id, t.todo2.id, t.ip.id, t.done.id]);
+  });
+
+  it('perf/task-read-raw: lọc status + cursor của status KHÁC (client tự chế) ⇒ giữ ngữ nghĩa so sánh bộ (status trước ⇒ cả cột, status sau ⇒ rỗng)', async () => {
+    const { h, t } = await board();
+    const list = (status: string, key: Record<string, unknown>) =>
+      h.queries.listTasks({
+        ...h.scope('Mia'),
+        query: { limit: 50, status, cursor: cursorOf('tasks', key) } as never,
+      });
+    const ids = async (p: ReturnType<typeof list>) => (await p).items.map((x) => x.id);
+    expect(await ids(list('IN_PROGRESS', { status: 'TODO', rank: 'zz', id: P1 }))).toEqual([
+      t.ip.id,
+    ]);
+    expect(await ids(list('IN_PROGRESS', { status: 'DONE', rank: 'a0', id: P1 }))).toEqual([]);
+    expect(await ids(list('TODO', { status: 'TODO', rank: 'a0', id: t.todo1.id }))).toEqual([
+      t.todo2.id,
+    ]);
+  });
+
   it('L4: cursor đúng định dạng nhưng id không phải uuid / rank quá dài ⇒ 400 trên field cursor (không 500)', async () => {
     const h = await createTaskHarness();
     const bad = [
