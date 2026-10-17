@@ -24,6 +24,7 @@ import type {
   ILeaveRepository,
   IWorkCalendarPort,
   LeaveActor,
+  LeaveBalanceRecord,
   LeaveEmployment,
   LeaveRequestRecord,
   WorkCalendarDay,
@@ -134,24 +135,30 @@ export class LeaveKit {
 
   /** Bộ tính số dư cho ĐƯỜNG GHI (trong khóa): đọc repo, tạo lười dòng số dư. */
   calculator(): AnnualBalanceCalculator {
-    return new AnnualBalanceCalculator({
-      policies: this.d.policies,
-      hireDates: this.d.hireDates,
-      company: this.d.company,
-      holdingOf: (userId, year) => this.d.requests.listHolding(userId, year),
-      storedOf: (userId, year) => this.d.requests.getOrCreateBalance(userId, year),
-      calendarOf: (year) => this.yearCalendar(year),
-    });
+    return this.#calc((userId, year) => this.d.requests.getOrCreateBalance(userId, year));
   }
 
-  /** Bộ tính cho ĐƯỜNG ĐỌC: số dư qua read model, KHÔNG tạo dòng (GET không ghi — ADR-131). */
-  readCalculator(read: Pick<ILeaveReadModel, 'findBalance'>): AnnualBalanceCalculator {
+  /**
+   * Bộ tính cho ĐƯỜNG ĐỌC: số dư qua read model, KHÔNG tạo dòng (GET không ghi — ADR-131). `hireDates` thay thế ⇒
+   * "nếu đổi ngày vào công ty thì sao" (T-054 `negativeBalancesIfHireDate`).
+   */
+  readCalculator(
+    read: Pick<ILeaveReadModel, 'findBalance'>,
+    hireDates: ILeaveHireDates = this.d.hireDates,
+  ): AnnualBalanceCalculator {
+    return this.#calc((userId, year) => read.findBalance(userId, year), hireDates);
+  }
+
+  #calc(
+    storedOf: (userId: string, year: number) => Promise<LeaveBalanceRecord | null>,
+    hireDates: ILeaveHireDates = this.d.hireDates,
+  ): AnnualBalanceCalculator {
     return new AnnualBalanceCalculator({
       policies: this.d.policies,
-      hireDates: this.d.hireDates,
+      hireDates,
       company: this.d.company,
       holdingOf: (userId, year) => this.d.requests.listHolding(userId, year),
-      storedOf: (userId, year) => read.findBalance(userId, year),
+      storedOf,
       calendarOf: (year) => this.yearCalendar(year),
     });
   }

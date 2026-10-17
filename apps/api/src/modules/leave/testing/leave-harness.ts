@@ -129,7 +129,7 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
   const employees = new FakeEmployeeDirectory(company, users);
   const queries = new LeaveQueries({ ...deps, readModel: backend.readModel, employees });
   const as = (actorId: string) => ({ actorId });
-  const hooks = new EmploymentLeaveHooks(new LeaveKit(deps));
+  const hooks = new EmploymentLeaveHooks(new LeaveKit(deps), backend.readModel);
 
   /** Đơn có sẵn (không qua use case) — mặc định ANNUAL FULL PENDING của Mia. */
   const seed = async (

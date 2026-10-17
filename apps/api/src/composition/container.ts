@@ -22,8 +22,7 @@ import { companyAdminDeps, employmentCollaborators, workspaceGate } from './comp
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
-import { wireLeave } from './leave-wiring';
-import { wireHrProfile } from './hr-profile-wiring';
+import { wireLeaveAndProfile } from './hr-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
@@ -161,25 +160,13 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
   accountsRef.current = auth.accounts;
-  // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
-  const leave = wireLeave(
+  // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
+  const { leave, hrProfile } = wireLeaveAndProfile(
     { persistence, clock: business, ids, logger },
-    {
-      company: () => ({ ...company, clock: business }),
-      hrAudit: () => company.hrAudit,
-      attendance,
-      notifications,
-      auth,
-    },
+    { company, attendance, notifications, auth },
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
-  // Hồ sơ nhân viên (Mốc 5, T-054): quyền / người / audit ← company; phép âm ← leave (T-057).
-  const hrProfile = wireHrProfile(
-    { persistence, clock: business, logger },
-    { company, notifications, timeZone: () => attendance.timeZoneNow() },
-    { responder, limit },
-  );
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [

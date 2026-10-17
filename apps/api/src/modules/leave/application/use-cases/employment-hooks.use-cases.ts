@@ -1,6 +1,8 @@
 import { countLeaveHalfDays, type CalendarDate } from '../../domain/leave-days';
 import { offboardCleanupPlan } from '../../domain/leave-tenure';
-import { auditView, yearOf, type LeaveKit } from '../leave-kit';
+import { auditView, countingTenure, yearOf, type LeaveKit } from '../leave-kit';
+import type { ILeaveReadModel } from '../ports/leave-read-model.port';
+import { halfDaysToDecimal } from '../../domain/leave-balance';
 import type { LeaveRequestRecord } from '../ports/leave.ports';
 
 /** Ghi chú hệ thống trên đơn bị dọn khi nghỉ việc / nâng Admin (company-level ADR-137 bước 4). */
@@ -16,7 +18,38 @@ export const REHIRE_NOTE = 'Nhận lại — đặt lại điều chỉnh';
  * deadlock với submit đang giữ khóa này và chờ FOR SHARE dòng đó; khóa advisory xact tái nhập nên gọi lại vô hại.
  */
 export class EmploymentLeaveHooks {
-  constructor(private readonly kit: LeaveKit) {}
+  constructor(
+    private readonly kit: LeaveKit,
+    private readonly readModel: Pick<ILeaveReadModel, 'findBalance'>,
+  ) {}
+
+  /**
+   * T-054 PUT hồ sơ (ADR-128/131): nếu `hireDate` của người này đổi thành giá trị mới thì năm HIỆN TẠI và năm SAU còn
+   * lại bao nhiêu — chỉ trả năm `< 0`. CHỈ ĐỌC (không tạo dòng số dư); bên gọi đã giữ policy SHARED rồi leave:<user>.
+   */
+  async negativeBalancesIfHireDate(input: {
+    userId: string;
+    hireDate: CalendarDate | null;
+  }): Promise<{ year: number; remainingDays: number }[]> {
+    const today = await this.kit.today();
+    const current = yearOf(today);
+    const hireDates = {
+      hireDateOf: (userId: string) =>
+        userId === input.userId
+          ? Promise.resolve(input.hireDate)
+          : this.kit.d.hireDates.hireDateOf(userId),
+    };
+    const calc = this.kit.readCalculator(this.readModel, hireDates);
+    const tenure = countingTenure(await this.kit.d.company.employmentOf(input.userId));
+    const out: { year: number; remainingDays: number }[] = [];
+    for (const year of [current, current + 1]) {
+      const view = await calc.compute({ userId: input.userId, year, today, tenure });
+      if (view.balance.remaining < 0) {
+        out.push({ year, remainingDays: halfDaysToDecimal(view.balance.remaining) });
+      }
+    }
+    return out;
+  }
 
   /**
    * HÀNH ĐỘNG HỆ THỐNG khi hoàn tất nghỉ việc / nâng EMPLOYEE→ADMIN (D H1) — không qua bảng chuyển của người dùng:

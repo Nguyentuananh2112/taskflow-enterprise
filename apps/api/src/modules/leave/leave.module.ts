@@ -77,7 +77,7 @@ export function createLeaveModule(d: LeaveModuleDeps): {
     queries,
     approvedLeaves: queries,
     summaries: d.readModel,
-    employment: new EmploymentLeaveHooks(kit),
+    employment: new EmploymentLeaveHooks(kit, d.readModel),
     carryover: new LeaveCarryoverJob(kit, d.employees, d.logger),
   };
 }
