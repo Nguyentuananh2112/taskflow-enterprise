@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import type { APIRequestContext } from '@playwright/test';
 
 import { apiAddMember, apiLogin, apiRegister, type Seeded } from './api';
-import { API_URL, WEB_ORIGIN } from './env';
+import { vnDateOf } from '../../apps/api/test/security/harness/clock';
+
+import { API_URL, E2E_CLOCK_ANCHOR, WEB_ORIGIN } from './env';
 import { newUser, type E2EUser } from './fixtures';
 
 // Mốc 3 (T-042, test-spec-hr §9) — seed chấm công / nghỉ phép CHỈ qua API công khai, theo contract thật:
@@ -111,6 +113,9 @@ export const apiSetGrants = (
   });
 
 export interface TodayCard {
+  serverNow: string;
+  date: string;
+  status: string;
   firstIn: string | null;
   lastOut: string | null;
   inProgress: boolean;
@@ -196,23 +201,22 @@ export const apiPutHoliday = (
 
 // ---------------------------------------------------------------- ngày giờ theo lịch S0
 
-/** YYYY-MM-DD của `d` theo giờ VN. */
-export const vnDate = (d = new Date()) => d.toLocaleDateString('en-CA', { timeZone: VN_TZ });
+/**
+ * "Hôm nay" (YYYY-MM-DD, giờ VN) của API E2E = ngày của mốc `E2E_CLOCK_ANCHOR` (thứ Ba 10:00 VN), KHÔNG phải ngày
+ * máy chạy test. Mốc cách nửa đêm 14 giờ ⇒ thời gian trôi trong một lượt chạy không đổi ngày.
+ */
+export const vnDate = (): string => vnDateOf(E2E_CLOCK_ANCHOR);
 
-/** HH:mm theo giờ VN — khớp cách thẻ chấm công hiển thị (`hourCycle h23`). */
-export const vnHm = (d = new Date()) =>
-  d.toLocaleTimeString('en-GB', {
+/** HH:mm giờ VN của một thời điểm ISO (vd `serverNow`) — khớp cách thẻ chấm công hiển thị (`hourCycle h23`). */
+export const vnHm = (iso: string): string =>
+  new Date(iso).toLocaleTimeString('en-GB', {
     timeZone: VN_TZ,
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   });
 
-/** Hôm nay (giờ VN) là ngày làm việc của S0 (T2–T7)? Thẻ chỉ nhắc "chưa chấm vào" trong ngày làm việc. */
-export const vnIsWorkday = (d = new Date()) =>
-  new Intl.DateTimeFormat('en-US', { timeZone: VN_TZ, weekday: 'short' }).format(d) !== 'Sun';
-
-/** Ngày làm việc S0 (bỏ Chủ nhật) cách hôm nay (VN) ≥ `offset` ngày. */
+/** Ngày làm việc S0 (bỏ Chủ nhật) cách "hôm nay" của mốc ≥ `offset` ngày. */
 export function vnWorkday(offset: number): string {
   const d = new Date(`${vnDate()}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + offset);

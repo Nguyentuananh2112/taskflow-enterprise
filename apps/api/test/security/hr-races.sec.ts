@@ -3,7 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect } from 'vitest';
 
 import { Actors, type Actor } from './harness/actors';
-import { HR, leaveOf, seedHr, setGrants, submitLeave, withKey, workday } from './harness/hr';
+import { SEC_CLOCK_ANCHOR, vnDateOf } from './harness/clock';
+import {
+  HR,
+  hrClockEnv,
+  leaveOf,
+  seedHr,
+  setGrants,
+  submitLeave,
+  withKey,
+  workday,
+} from './harness/hr';
 import { errorEnvelope, type RawResponse } from './harness/http-client';
 import { secCase, useApi } from './harness/suite';
 import { flushRateLimitCounters } from './harness/valkey';
@@ -12,7 +22,8 @@ import { flushRateLimitCounters } from './harness/valkey';
 // mật thay vì `test/integration` vì module chưa có (không import được use case); kiểm cùng bất biến:
 // đúng một bên thắng, bên thua nhận mã đúng, DB không ở trạng thái nửa vời. Pending theo vé (pending.ts).
 
-const api = useApi();
+// Giờ nghiệp vụ neo thứ Ba 10:00 VN (harness/clock.ts) — cùng mốc với workday()/todayVn().
+const api = useApi(hrClockEnv());
 const actors = new Actors(api);
 const RUNS = 20;
 const AREA = 'Mốc 3 HR races';
@@ -22,7 +33,8 @@ const TIMEOUT = 180_000;
  * từ tháng 10 ⇒ hai đơn khác năm, cả hai 201 đúng luật (T-039 gate). Hai khoảng 12 ngày lịch cố định của năm sau
  * (12 ngày lịch có ≤ 2 Chủ nhật ⇒ 10–12 ngày làm việc S0, ws mới không có ngày lễ) ⇒ tổng ≥ 20 > 12, mỗi đơn ≤ 12.
  */
-const NEXT_YEAR = String(new Date().getUTCFullYear() + 1);
+/** Năm sau theo MỐC (không theo giờ máy). Các đơn cần "cùng một năm số dư" dùng ngày cố định của năm này. */
+const NEXT_YEAR = String(Number(vnDateOf(SEC_CLOCK_ANCHOR).slice(0, 4)) + 1);
 /** CC-HR-13: thứ Hai đầu tiên của tháng 6 năm sau và 2 ngày kế (T2, T3, T4 — đều là ngày làm việc S0). */
 function mondaySpan(): [string, string, string] {
   const d = new Date(`${NEXT_YEAR}-06-01T00:00:00Z`);
@@ -220,14 +232,15 @@ describe('Đơn nghỉ song song', () => {
     'submit ANNUAL ‖ HR giảm số dư ⇒ không bao giờ còn > 0 ngày "âm vì đang chờ"',
     AREA,
     async () => {
-      const year = Number(workday(60).slice(0, 4));
+      const year = Number(NEXT_YEAR);
       for (let i = 0; i < RUNS; i += 1) {
         const t = await freshPair();
         const [submit, patch] = await Promise.all([
           submitLeave(actors, t.mia, t.ws, {
             type: 'ANNUAL',
-            startDate: workday(60),
-            endDate: workday(70),
+            // 11 ngày lịch ⇒ 9–10 ngày công S0, cùng năm số dư `year`.
+            startDate: `${NEXT_YEAR}-05-04`,
+            endDate: `${NEXT_YEAR}-05-14`,
           }),
           actors.json('PATCH', HR.balance(t.ws, t.mia.userId, year), t.hana.accessToken, {
             adjustmentDays: -6,
@@ -255,14 +268,15 @@ describe('Đơn nghỉ song song', () => {
     'approve ‖ HR giảm số dư ⇒ approve 422 hoặc PATCH sau; số dư đã dùng không vượt hạn mức',
     AREA,
     async () => {
-      const year = Number(workday(60).slice(0, 4));
+      const year = Number(NEXT_YEAR);
       for (let i = 0; i < RUNS; i += 1) {
         const t = await freshPair();
         const l = leaveOf(
           await submitLeave(actors, t.mia, t.ws, {
             type: 'ANNUAL',
-            startDate: workday(60),
-            endDate: workday(70),
+            // 11 ngày lịch ⇒ 9–10 ngày công S0, cùng năm số dư `year`.
+            startDate: `${NEXT_YEAR}-05-04`,
+            endDate: `${NEXT_YEAR}-05-14`,
           }),
         );
         const [ap] = await Promise.all([
@@ -307,14 +321,14 @@ describe('Đơn nghỉ song song', () => {
     'revoke ‖ người gửi cancel (APPROVED, chưa bắt đầu) ⇒ 1 thắng; số dư trả đúng 1 lần',
     AREA,
     async () => {
-      const year = Number(workday(60).slice(0, 4));
+      const year = Number(NEXT_YEAR);
       for (let i = 0; i < RUNS; i += 1) {
         const t = await freshPair();
         const l = leaveOf(
           await submitLeave(actors, t.mia, t.ws, {
             type: 'ANNUAL',
-            startDate: workday(60),
-            endDate: workday(61),
+            startDate: `${NEXT_YEAR}-05-18`,
+            endDate: `${NEXT_YEAR}-05-19`,
           }),
         );
         const ap = leaveOf(await decide(t.hana, t.ws, l.id, 'approve', l.version));
@@ -392,7 +406,7 @@ describe('Đơn nghỉ song song', () => {
     'đọc số dư lần đầu song song (tạo lười) ⇒ không 500, cùng giá trị',
     AREA,
     async () => {
-      const year = Number(workday(60).slice(0, 4));
+      const year = Number(NEXT_YEAR);
       for (let i = 0; i < RUNS; i += 1) {
         const t = await freshPair();
         const rs = await Promise.all(

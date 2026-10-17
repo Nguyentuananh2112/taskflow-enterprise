@@ -210,6 +210,31 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | AT-22  | tổng tháng (me / HR month) có ngày `NOT_EMPLOYED`                                                                                                                                                             | ngày `NOT_EMPLOYED` tính **0** ở mọi tổng: không vào ngày công, ngày vắng (`ABSENT`), ngày muộn/sớm, giờ làm; người vào giữa tháng không bị đếm vắng các ngày trước `joinedAt`                                                                                                                       |
 | AT-23  | CSV xuất tháng có người vào giữa tháng / đã rời                                                                                                                                                               | ô trạng thái ngày ngoài nhiệm kỳ = `NOT_EMPLOYED`, cột số = 0; tổng cuối dòng khớp AT-22; ngày gia nhập hiện bình thường                                                                                                                                                                             |
 
+## 5b. Đồng hồ tất định & biên giờ — `CLK-HR-*` (tầng S, process API riêng)
+
+**Đồng hồ test (TL d9, 2026-10-17).** API nhận `TEST_CLOCK_ANCHOR` (ISO có offset) CHỈ khi `APP_ENV=test`; môi trường khác có biến này thì API từ chối khởi động. Thực hiện: A, `fix/T-038-test-clock`.
+
+- Giờ nghiệp vụ = mốc + thời gian thực đã trôi kể từ lúc process khởi động. Đồng hồ không đóng băng, vì SD-44 lọc theo ms, CC-HR-02 có replay, và keyset thông báo cần thời gian tiến lên.
+- Đồng hồ được dịch cho attendance, leave, notifications, workspace (`joinedAt` / `leftAt`). Auth/JWT, task, rate limiter, `meta.timestamp` vẫn theo giờ thật.
+
+**Mốc mặc định.** Thứ Ba 10:00 VN kế tiếp, cách hôm nay ≥ 2 ngày (`harness/clock.ts` → `nextVnAnchor`), dùng cho E2E (`E2E_CLOCK_ANCHOR`) và hộp đen (`SEC_CLOCK_ANCHOR`).
+
+- Vì sao không dùng một ngày cố định: mốc nằm trước hôm nay thì mọi dữ liệu đăng ký thật đều "trong tương lai".
+- Hệ quả: thứ trong tuần và giờ trong ngày cố định, nên kỳ vọng tất định (ngày làm việc, trong ca, xa nửa đêm).
+- Mọi helper ngày (`workday`, `todayVn`, `vnDate`, `vnWorkday`, `thisMonth`) tính từ mốc, không từ giờ máy.
+- **Cấm** kỳ vọng rẽ nhánh theo `me/today` hoặc theo giờ chạy test.
+
+**Biên giờ.** Mỗi ca một file `*.sec.ts`, `useApi(hrClockEnv(mốc))` với mốc ngay trước biên; ca chờ giờ SERVER trôi qua biên (poll `me/today`).
+
+| ID        | Mốc (VN)           | Kịch bản                                                              | Kỳ vọng                                                                                                         |
+| --------- | ------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| CLK-HR-01 | thứ Ba 17:29:00    | Mia đã vào, Max chưa vào; chờ qua 17:30 (hết ca S0)                   | trước 17:30: Mia `PRESENT` + `inProgress`, Max `PENDING`; sau: Mia `MISSING_OUT` (không `inProgress`), Max `ABSENT` |
+| CLK-HR-02 | thứ Ba 23:59:00    | Mia vào 23:59; chờ qua 00:00; Mia chấm ra                             | OUT 201, gắn **thứ Ba** (IN còn mở, trước 06:00); `me/today` thứ Tư không có lượt nào (SD-11 ở tầng HTTP)       |
+| CLK-HR-03 | thứ Tư 05:59:00    | HR thêm IN thứ Ba 08:00 (ADJUSTMENT) cho Mia, Max; Mia ra trước 06:00; chờ qua 06:00; Max ra | Mia: OUT gắn thứ Ba; Max: **422** `NOT_CHECKED_IN`, vì IN hôm qua không còn mở sau giờ chốt (SD-12b/12c ở tầng HTTP) |
+| CLK-HR-04 | Chủ nhật 10:00     | `me/today` rồi Mia chấm vào                                            | `isWorkday: false`, `OFF`; chấm vào 201 nhưng vẫn `OFF`, `inProgress: false` (OFF ưu tiên hơn PRESENT)        |
+
+UI (E2E) chạy MỘT mốc (thứ Ba 10:00). Các biên trên kiểm ở tầng HTTP, cùng logic `summarizeDay` / `workDateFor`; web chỉ hiển thị DTO.
+
 ## 6. Grants (`hr:manage`, ADR-119)
 
 | ID    | Tầng | Ca                                                                                          | Kỳ vọng                                                                                                      |

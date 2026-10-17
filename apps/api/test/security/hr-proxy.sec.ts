@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect } from 'vitest';
 
 import { Actors } from './harness/actors';
-import { HR, eventsOf, todayVn } from './harness/hr';
+import { HR, eventsOf, hrClockEnv, todayVn } from './harness/hr';
 import { secCase, useApi } from './harness/suite';
 
 // SEC-HR-23 (test-spec-hr §7, T-042) — process API RIÊNG với TRUST_PROXY_HOPS=0 (suite chính chạy hops=1 để
@@ -11,7 +11,7 @@ import { secCase, useApi } from './harness/suite';
 // công là IP socket (loopback), không phải IP giả. Mọi request cùng một IP ⇒ chỉ đăng ký 2 user (Olivia là OWNER
 // nên có hr:manage để đọc IP qua attendance/events) cho khỏi chạm limiter đăng ký.
 
-const api = useApi({ TRUST_PROXY_HOPS: '0' });
+const api = useApi({ TRUST_PROXY_HOPS: '0', ...hrClockEnv() });
 const actors = new Actors(api);
 const AREA = 'Mốc 3 HR — proxy';
 
