@@ -1,13 +1,15 @@
 import type { AttendanceDayDto } from '@taskflow/contracts';
 
+import { xlsxDate, type CellValue } from '../../../core/export/xlsx/xlsx-writer';
+
 import { daysBetween, weekdayOf, type LocalDate } from '../domain/local-time';
 import { summarizeUsers, type AttendanceDeps } from './attendance-days';
 import { totalsOf } from './attendance-totals';
 import type { RosterEntry } from './use-cases/hr-attendance.queries';
 import { clock, LEAVE_LABEL, STATUS_LABEL, WEEKDAY } from './use-cases/attendance-export.use-case';
 
-/** Một ô bảng tính: chuỗi (ghi nguyên văn, chống injection ở writer), số, hoặc trống. */
-export type ReportCell = string | number | null;
+/** Một ô bảng tính: chuỗi (ghi nguyên văn, chống injection ở writer), số, ngày (`xlsxDate` — serial Excel), trống. */
+export type ReportCell = CellValue;
 
 export interface ReportSheet {
   name: string;
@@ -153,7 +155,7 @@ export function attendanceMonthSheets(
               yield [
                 entry.user.fullName,
                 entry.left ? 'Có' : null,
-                day.date,
+                xlsxDate(day.date),
                 WEEKDAY[weekdayOf(day.date)]!,
                 STATUS_LABEL[day.status],
                 clock(day.firstIn, day) || null,
