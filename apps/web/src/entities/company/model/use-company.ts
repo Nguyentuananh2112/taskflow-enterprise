@@ -1,7 +1,7 @@
 import type { ListEmployeesQuery } from '@taskflow/contracts/company';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
-import { adminApi, employeesApi } from '../api/company.api';
+import { adminApi, employeesApi, profilesApi } from '../api/company.api';
 import { companyKeys } from './query-keys';
 
 const nextCursor = (last: {
@@ -44,5 +44,32 @@ export function useCompanyInfo(enabled: boolean) {
     queryFn: adminApi.company,
     enabled,
     staleTime: 60_000,
+  });
+}
+
+export function useEmployeeProfile(userId: string) {
+  return useQuery({
+    queryKey: companyKeys.profile(userId),
+    queryFn: () => profilesApi.get(userId),
+    staleTime: 0,
+  });
+}
+
+/** Gợi ý phòng ban / chức vụ đã dùng trong công ty (datalist). */
+export function useProfileSuggestions(enabled: boolean) {
+  return useQuery({
+    queryKey: companyKeys.profileSuggestions(),
+    queryFn: profilesApi.suggestions,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useMyProfile(enabled: boolean) {
+  return useQuery({
+    queryKey: companyKeys.myProfile(),
+    queryFn: profilesApi.me,
+    enabled,
+    staleTime: 30_000,
   });
 }

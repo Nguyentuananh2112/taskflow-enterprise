@@ -37,6 +37,8 @@ export const NotificationType = z.enum([
   'ACCESS_CHANGED',
   'OFFBOARD_SCHEDULED',
   'OFFBOARD_CLEANUP',
+  // Mốc 5 (ADR-128): HR sửa hồ sơ của bạn — refId = userId, KHÔNG mang giá trị hồ sơ.
+  'PROFILE_UPDATED',
 ]);
 export type NotificationType = z.infer<typeof NotificationType>;
 
@@ -98,6 +100,8 @@ export const HrAuditAction = z.enum([
   'COMPANY_RENAMED',
   // Mốc 5 (T-057, ADR-131): HR đặt chính sách phép một năm (lý do ở `after.note`).
   'POLICY_SET',
+  // Mốc 5 (ADR-128): hồ sơ nhân viên — before/after KHÔNG có workPhone (chỉ cờ), lý do ở `after.note`.
+  'PROFILE_SET',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

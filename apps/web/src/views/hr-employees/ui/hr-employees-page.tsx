@@ -1,6 +1,6 @@
 'use client';
 
-import type { EmployeeDto, ListEmployeesQuery } from '@taskflow/contracts/company';
+import type { ListEmployeesQuery } from '@taskflow/contracts/company';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -8,7 +8,6 @@ import { useState } from 'react';
 import { useEmployees } from '@/entities/company';
 import { useCompanyToday } from '@/entities/hr';
 import { useCompanyPermission, useSession } from '@/entities/session';
-import { HireDialog, OffboardDialog } from '@/features/employee-manage';
 import { cn } from '@/shared/lib/cn';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value';
 import { Button } from '@/shared/ui/button';
@@ -17,6 +16,7 @@ import { Input } from '@/shared/ui/input';
 import { PageMain } from '@/shared/ui/page';
 import { Skeleton } from '@/shared/ui/skeleton';
 
+import { EmployeeDialog, type DialogState } from './employee-dialog';
 import { EmployeeRow } from './employee-row';
 
 type Status = NonNullable<ListEmployeesQuery['status']>;
@@ -46,9 +46,7 @@ export function HrEmployeesPage() {
   const list = useEmployees({ status, q }, allowed);
   const today = useCompanyToday(allowed).data?.date ?? null;
   // Hộp thoại ở CẤP TRANG (không trong dòng) ⇒ người đổi trạng thái rời bộ lọc vẫn thấy kết quả (F, E2E-HR-19).
-  const [dialog, setDialog] = useState<
-    { kind: 'hire' } | { kind: 'offboard' | 'rehire'; employee: EmployeeDto } | null
-  >(null);
+  const [dialog, setDialog] = useState<DialogState | null>(null);
   const close = () => setDialog(null);
 
   if (company !== null && !allowed) {
@@ -123,6 +121,7 @@ export function HrEmployeesPage() {
               ready={today !== null}
               onOpen={(kind, employee) => setDialog({ kind, employee })}
               locked={!isAdmin && (e.userId === viewerId || e.grants.length > 0)}
+              self={e.userId === viewerId}
             />
           ))}
         </ul>
@@ -137,17 +136,7 @@ export function HrEmployeesPage() {
           Tải thêm
         </Button>
       )}
-      {today && dialog?.kind === 'hire' && <HireDialog today={today} onClose={close} />}
-      {today && dialog?.kind === 'offboard' && (
-        <OffboardDialog employee={dialog.employee} today={today} onClose={close} />
-      )}
-      {today && dialog?.kind === 'rehire' && (
-        <HireDialog
-          today={today}
-          rehire={{ email: dialog.employee.email, fullName: dialog.employee.fullName }}
-          onClose={close}
-        />
-      )}
+      {today && dialog && <EmployeeDialog dialog={dialog} today={today} onClose={close} />}
     </PageMain>
   );
 }
