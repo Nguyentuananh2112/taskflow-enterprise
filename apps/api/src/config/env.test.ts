@@ -269,3 +269,35 @@ describe('job bảo trì (T-033)', () => {
     expect(variablesOf(testEnvVars({ PURGE_INTERVAL_MS: '1000' }))).toEqual(['PURGE_INTERVAL_MS']);
   });
 });
+
+describe('thời hạn lưu dữ liệu cá nhân (T-043, R27)', () => {
+  it('mặc định = phương án B (ngày)', () => {
+    expect(loadEnv(testEnvVars())).toMatchObject({
+      RETENTION_CLIENT_INFO_DAYS: 395,
+      RETENTION_LEAVE_REASON_DAYS: 395,
+      RETENTION_RECORDS_DAYS: 730,
+      RETENTION_NOTIFICATIONS_DAYS: 180,
+      RETENTION_HR_AUDIT_DAYS: 1_826,
+    });
+  });
+
+  it('dưới min (cấu hình nhầm, vd 0 ⇒ xóa sạch) ⇒ app không khởi động', () => {
+    expect(
+      variablesOf(
+        testEnvVars({
+          RETENTION_CLIENT_INFO_DAYS: '0',
+          RETENTION_LEAVE_REASON_DAYS: '29',
+          RETENTION_RECORDS_DAYS: '364',
+          RETENTION_NOTIFICATIONS_DAYS: 'abc',
+          RETENTION_HR_AUDIT_DAYS: '364',
+        }),
+      ),
+    ).toEqual([
+      'RETENTION_CLIENT_INFO_DAYS',
+      'RETENTION_HR_AUDIT_DAYS',
+      'RETENTION_LEAVE_REASON_DAYS',
+      'RETENTION_NOTIFICATIONS_DAYS',
+      'RETENTION_RECORDS_DAYS',
+    ]);
+  });
+});

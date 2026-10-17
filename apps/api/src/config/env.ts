@@ -82,6 +82,15 @@ const EnvSchema = z
     MAINTENANCE_JOBS_ENABLED: z.stringbool().optional(),
     PURGE_INTERVAL_MS: z.coerce.number().int().min(60_000).max(86_400_000).default(3_600_000),
     PURGE_JITTER_MS: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
+    // T-043: job retention XÓA dữ liệu ⇒ cờ riêng; local/test chỉ chạy khi = true (composition tính).
+    RETENTION_JOB_ENABLED: z.stringbool().optional(),
+    // T-043 / R27 (data-retention.md §3): thời hạn lưu dữ liệu cá nhân Mốc 3, đơn vị NGÀY, mặc định =
+    // phương án B. `min` chặn cấu hình nhầm (vd 0 ⇒ xóa sạch).
+    RETENTION_CLIENT_INFO_DAYS: z.coerce.number().int().min(30).max(3_660).default(395),
+    RETENTION_LEAVE_REASON_DAYS: z.coerce.number().int().min(30).max(3_660).default(395),
+    RETENTION_RECORDS_DAYS: z.coerce.number().int().min(365).max(3_660).default(730),
+    RETENTION_NOTIFICATIONS_DAYS: z.coerce.number().int().min(30).max(3_660).default(180),
+    RETENTION_HR_AUDIT_DAYS: z.coerce.number().int().min(365).max(3_660).default(1_826),
     METRICS_TOKEN: z.string().min(32).optional(),
     // T-020/T-024: lưu trữ của MỌI module (auth, workspace, task) — Prisma + Valkey, hoặc `memory`
     // (bộ nhớ, MẤT dữ liệu khi khởi động lại; chỉ local/test). Không còn trạng thái "lai" theo module.

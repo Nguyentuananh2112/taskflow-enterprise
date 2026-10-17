@@ -13,7 +13,6 @@ import {
   type ValkeyCommands,
 } from '../modules/auth/infrastructure/cache/valkey-session-revocation.store';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
-import { PrismaRefreshTokenPurger } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.purger';
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
 import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
@@ -47,8 +46,6 @@ import {
   PrismaAssigneeDirectory,
   PrismaTaskProjectStore,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
-import { PrismaWorkspacePurger } from '../modules/workspace/infrastructure/persistence/prisma/prisma-workspace.purger';
-import { ExclusivePurgeRun } from '../modules/workspace/infrastructure/jobs/exclusive-purge-run';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import { WorkspaceNotificationAudience } from '../modules/workspace/application/adapters/notification-audience';
@@ -60,7 +57,7 @@ import {
   TaskMirroredWorkspaces,
 } from './task-mirrors';
 import { MirroringUserRepository } from './users';
-
+import { prismaMaintenance, type RetentionStores } from './retention-stores';
 import type { StorageKind } from './persistence-guard';
 
 export { assertPersistenceAllowed, type StorageKind } from './persistence-guard';
@@ -94,6 +91,8 @@ export interface Persistence {
   workspacePurger?: IWorkspacePurger;
   /** Dọn refresh token hết hạn (G2 S2) — chỉ có ở Prisma, như `workspacePurger`. */
   refreshTokenPurger?: IRefreshTokenPurger;
+  /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
+  retention?: RetentionStores;
   uow: IUnitOfWork;
 }
 
@@ -222,8 +221,7 @@ export function createPrismaPersistence(d: {
     },
     attendance: createPrismaAttendanceRepositories(db),
     leave,
-    workspacePurger: new ExclusivePurgeRun(db, new PrismaWorkspacePurger(db)),
-    refreshTokenPurger: new PrismaRefreshTokenPurger(db),
+    ...prismaMaintenance(db),
     uow,
   };
 }
