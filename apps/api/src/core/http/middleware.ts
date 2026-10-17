@@ -111,7 +111,14 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
         'X-Client-Id',
         'Idempotency-Key',
       ],
-      exposedHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Policy', 'RateLimit'],
+      // Content-Disposition (T-055, A): web đọc tên file .xlsx của báo cáo khi tải qua fetch.
+      exposedHeaders: [
+        'X-Request-Id',
+        'Retry-After',
+        'RateLimit-Policy',
+        'RateLimit',
+        'Content-Disposition',
+      ],
       maxAge: 600,
     }),
   ];
