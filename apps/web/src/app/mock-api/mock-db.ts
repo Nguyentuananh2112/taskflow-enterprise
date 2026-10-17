@@ -1,6 +1,14 @@
 import type { MembershipDto, UserDto } from '@taskflow/contracts/auth';
 import type { WorkspaceRole } from '@taskflow/contracts/rbac';
 
+import {
+  effectiveCompanyPermissions,
+  type CompanyGrant,
+  type CompanyPermission,
+  type CompanyRole,
+  type MeCompanyDto,
+} from '@taskflow/contracts/company';
+
 import { MockWorkspaces } from './mock-workspaces';
 
 // Trạng thái trong bộ nhớ của mock API (T-019). Mô phỏng ĐÚNG hành vi phiên của server thật
@@ -9,6 +17,12 @@ import { MockWorkspaces } from './mock-workspaces';
 // mật khẩu giữ dạng thô vì đây chỉ là dữ liệu giả trong bộ nhớ của máy dev/test.
 
 type MockUser = UserDto & { password: string; tokenVersion: number };
+/** Dòng `company_members` (ADR-133) — có dòng ⇔ đang thuộc công ty. */
+type CompanyMember = {
+  role: CompanyRole;
+  grants: CompanyGrant[];
+  offboardLastDay: string | null;
+};
 type AccessEntry = { userId: string; tokenVersion: number; expiresAt: number };
 type RefreshEntry = {
   userId: string;
@@ -35,6 +49,9 @@ export class MockDb {
   private readonly users = new Map<string, MockUser>();
   /** Workspace + thành viên (T-034) — nguồn duy nhất cho tên/slug/role/xóa mềm. */
   readonly workspaces: MockWorkspaces;
+  /** Mốc 3.5: MỘT công ty (ADR-133) — mọi user mock là nhân viên trừ khi test đổi role/grant. */
+  companyName = 'Công ty Mẫu';
+  private readonly company = new Map<string, CompanyMember>();
   private readonly access = new Map<string, AccessEntry>();
   private readonly refresh = new Map<string, RefreshEntry>();
 
@@ -63,8 +80,40 @@ export class MockDb {
       tokenVersion: 1,
     };
     this.users.set(user.id, user);
+    // Mọi tài khoản mock là nhân viên (như backfill migration 5); test đổi bằng `setCompanyAccess`.
+    this.company.set(user.id, { role: 'EMPLOYEE', grants: [], offboardLastDay: null });
     const workspaceId = this.createWorkspace(`Workspace của ${input.fullName}`, undefined, user.id);
     return { user, defaultWorkspaceId: workspaceId };
+  }
+
+  /** Đổi vai trò / quyền cấp thêm (như `PUT admin/access/:userId`); ADMIN ⇒ grants rỗng (ADR-134). */
+  setCompanyAccess(userId: string, role: CompanyRole, grants: CompanyGrant[] = []): void {
+    const row = this.company.get(userId);
+    if (row) Object.assign(row, { role, grants: role === 'ADMIN' ? [] : grants });
+  }
+
+  companyPermissionsOf(userId: string): CompanyPermission[] {
+    const row = this.company.get(userId);
+    if (!row) return [];
+    return [...effectiveCompanyPermissions(row.role, row.grants)];
+  }
+
+  companyOf(userId: string): MeCompanyDto | undefined {
+    const row = this.company.get(userId);
+    if (!row) return undefined;
+    return {
+      name: this.companyName,
+      role: row.role,
+      grants: [...row.grants],
+      permissions: this.companyPermissionsOf(userId),
+      status: row.offboardLastDay ? 'OFFBOARDING' : 'ACTIVE',
+      offboardLastDay: row.offboardLastDay,
+    };
+  }
+
+  setOffboarding(userId: string, lastDay: string | null): void {
+    const row = this.company.get(userId);
+    if (row) row.offboardLastDay = lastDay;
   }
 
   /** POST /workspaces và register (ADR-103): người tạo là OWNER; slug trống ⇒ sinh từ tên. */

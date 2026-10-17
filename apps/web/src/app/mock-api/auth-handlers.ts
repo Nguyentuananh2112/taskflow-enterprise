@@ -3,13 +3,14 @@ import {
   ChangePasswordBody,
   LoginBody,
   LoginResponse,
-  MeResponse,
   RegisterBody,
   RegisterResponse,
   UpdateMeBody,
   UserDto,
 } from '@taskflow/contracts/auth';
 import { http, type HttpHandler } from 'msw';
+
+import { MeWithCompanyResponse } from '@/shared/api/pending-contracts/company';
 
 import type { MockDb } from './mock-db';
 import { rejectsOrigin } from './request-guards';
@@ -130,9 +131,13 @@ export function createAuthHandlers(
     http.get(url('/auth/me'), ({ request }) => {
       const auth = authenticate(request);
       if (auth.response) return auth.response;
-      return ok(MeResponse, {
+      const company = db.companyOf(auth.user.id);
+      // ADR-135: không thuộc công ty ⇒ 401 SESSION_REVOKED (không có "đăng nhập mà không thuộc công ty").
+      if (!company) return fail(401, 'SESSION_REVOKED');
+      return ok(MeWithCompanyResponse, {
         user: UserDto.parse(auth.user),
         memberships: db.membershipsOf(auth.user.id),
+        company,
       });
     }),
 
