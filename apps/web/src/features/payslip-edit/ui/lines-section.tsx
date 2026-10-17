@@ -6,9 +6,9 @@ import type { ReactNode } from 'react';
 import { formatVnd } from '@/shared/lib/money';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
+import { MoneyInput } from '@/shared/ui/money-input';
 
 import type { LineDraft } from '../lib/form-state';
-import { MoneyInput } from './money-input';
 
 type Props = Readonly<{
   title: string;

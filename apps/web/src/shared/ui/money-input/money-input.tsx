@@ -1,7 +1,8 @@
 'use client';
 
 import { reformatVndInput } from '@/shared/lib/money';
-import { Input } from '@/shared/ui/input';
+
+import { Input } from '../input';
 
 type Props = Readonly<{ label: string; value: string; onChange: (value: string) => void }>;
 

@@ -19,6 +19,7 @@ export function HomeShortcuts({ enabled }: Readonly<{ enabled: boolean }>) {
         <Skeleton className="h-12 md:h-9 md:w-36" />
         <Skeleton className="h-12 md:h-9 md:w-40" />
         <Skeleton className="h-12 md:h-9 md:w-40" />
+        <Skeleton className="h-12 md:h-9 md:w-28" />
       </div>
     );
   }
