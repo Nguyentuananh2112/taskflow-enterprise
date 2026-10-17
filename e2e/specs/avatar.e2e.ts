@@ -7,13 +7,11 @@ import { API_URL, WEB_ORIGIN } from '../support/env';
 import { expect, loginViaUi, newUser, test, type E2EUser } from '../support/fixtures';
 import { call } from '../support/http';
 import { makePng } from '../support/images';
-import { awaiting } from '../support/pending';
 
-// E2E-CH-01 (test-spec-chat §6, avatar-chat.md ADR-142 / §7 E1–E5; selector H 17–18/10). Cần API thật của T-068
-// (`PUT/DELETE me/avatar`, `DELETE hr/employees/:id/avatar`, `/media/avatars`) ⇒ fixme tới khi E2E_RUN_PENDING chứa
-// T-068 (không xanh giả). Ảnh sinh lúc chạy (makePng). Server mã hóa lại WebP ⇒ không so byte với ảnh gốc.
+// E2E-CH-01 (test-spec-chat §6, avatar-chat.md ADR-142 / §7 E1–E5; selector H 17–18/10). Chạy trên API thật của T-068
+// (`PUT/DELETE me/avatar`, `DELETE hr/employees/:id/avatar`, `/media/avatars`). Ảnh sinh lúc chạy (makePng). Server
+// mã hóa lại WebP ⇒ không so byte với ảnh gốc.
 
-const T068 = 'T-068';
 const AVATAR_IMG = 'img[src*="/media/avatars/"]';
 const DONE = { timeout: 15_000 }; // sharp trong worker + upload
 
@@ -62,7 +60,6 @@ for (const viewport of [
 ]) {
   test.describe(`E2E-CH-01 ảnh đại diện (${viewport.width}px)`, () => {
     test.use({ viewport });
-    test.fixme(awaiting(T068), `[PENDING ${T068}] chờ API avatar thật`);
 
     test('cắt (slider + phím) ⇒ lưu ⇒ hiện ở /account, header, thẻ board, trang thành viên; gỡ ⇒ về chữ cái', async ({
       page,
