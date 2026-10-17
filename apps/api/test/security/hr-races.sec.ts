@@ -25,9 +25,20 @@ import { flushRateLimitCounters } from './harness/valkey';
 // Giờ nghiệp vụ neo thứ Ba 10:00 VN (harness/clock.ts) — cùng mốc với workday()/todayVn().
 const api = useApi(hrClockEnv());
 const actors = new Actors(api);
-const RUNS = 20;
+/**
+ * Số vòng mỗi ca (mặc định 20). SEC_HR_RACE_RUNS=200 để xác nhận race hiếm (vd CC-HR-02 ~1/20 trước d6ac8f7) —
+ * kèm `-t "CC-HR-02"` để chỉ chạy một ca. Timeout ca giãn theo số vòng.
+ */
+const RUNS = (() => {
+  const raw = process.env.SEC_HR_RACE_RUNS;
+  if (raw === undefined) return 20;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1)
+    throw new Error(`SEC_HR_RACE_RUNS phải là số nguyên ≥ 1, nhận "${raw}"`);
+  return n;
+})();
 const AREA = 'Mốc 3 HR races';
-const TIMEOUT = 180_000;
+const TIMEOUT = 180_000 * Math.max(1, Math.ceil(RUNS / 20));
 /**
  * CC-HR-04: hai đơn phải CÙNG năm số dư (mỗi năm 12 ngày riêng). `workday(60..100)` từng vắt sang năm sau khi chạy
  * từ tháng 10 ⇒ hai đơn khác năm, cả hai 201 đúng luật (T-039 gate). Hai khoảng 12 ngày lịch cố định của năm sau
@@ -96,6 +107,8 @@ describe('Chấm công song song', () => {
     '2 check-in song song CÙNG Idempotency-Key ⇒ một 201 + một 200 (replay), cùng firstIn',
     AREA,
     async () => {
+      // Chạy HẾT các vòng rồi mới đánh giá ⇒ biết tổng số vòng đỏ (race hiếm, TL cần đếm), không dừng ở vòng đầu.
+      const red: string[] = [];
       for (let i = 0; i < RUNS; i += 1) {
         const t = await freshPair();
         const key = randomUUID();
@@ -103,14 +116,18 @@ describe('Chấm công song song', () => {
           withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken, key),
           withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken, key),
         ]);
-        expect(statuses(rs), `#${i}`).toEqual([200, 201]);
         // Body = AttendanceTodayDto (không có id lượt chấm — A/E) ⇒ so firstIn: replay không tạo lượt mới.
         const firstIn = rs.map(
           (r) => (r.json as { data: { firstIn: string | null } }).data.firstIn,
         );
-        expect(firstIn[0], `#${i}`).not.toBeNull();
-        expect(firstIn[0], `#${i}`).toBe(firstIn[1]);
+        const st = statuses(rs);
+        if (st[0] !== 200 || st[1] !== 201 || firstIn[0] === null || firstIn[0] !== firstIn[1]) {
+          red.push(
+            `#${String(i)}: [${st.join(', ')}] firstIn ${String(firstIn[0])} / ${String(firstIn[1])}`,
+          );
+        }
       }
+      expect(red, `${String(red.length)}/${String(RUNS)} vòng đỏ`).toEqual([]);
     },
     TIMEOUT,
   );
