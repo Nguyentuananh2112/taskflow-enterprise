@@ -1,5 +1,7 @@
 # T-041b — Web nghỉ phép (`/w/:ws/leave`)
 
+> **Đã merge** — trạng thái cuối, cổng và việc còn mở: `T-041-report.md`. Phần dưới viết trước merge.
+
 Engineer E · 2026-10-16 · branch `feat/T-041b-leave-web` (tách từ `feat/T-041a-attendance-web`).
 
 ## Đã làm
