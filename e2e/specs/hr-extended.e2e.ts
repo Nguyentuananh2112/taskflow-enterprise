@@ -43,6 +43,14 @@ function pastWorkday(back: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Ngày làm việc S0 ngay trước `date`. */
+function workdayBefore(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  while (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Người thuộc công ty (tên duy nhất). `startDate` lùi ⇒ ngày quá khứ thuộc nhiệm kỳ (MISSING_OUT hợp lệ). */
 async function person(
   request: APIRequestContext,
@@ -74,7 +82,8 @@ async function noHorizontalScroll(page: Page, where: string): Promise<void> {
 
 /** Mở chi tiết ngày ở /attendance (lịch tháng mặc định) ⇒ dialog "Ngày …". */
 async function openMyDay(page: Page, date: string): Promise<Locator> {
-  await page.goto('/attendance');
+  // Ngày có thể thuộc THÁNG TRƯỚC (hôm nay là 1–2) ⇒ mở đúng tháng của ngày (F).
+  await page.goto(`/attendance?month=${date.slice(0, 7)}`);
   await calendarDay(page, date).click();
   const dialog = page.getByRole('dialog', { name: new RegExp(`${ddMm(date)}$`) });
   await expect(dialog).toBeVisible();
@@ -150,7 +159,7 @@ test.describe('E2E-HR-20 đơn bổ sung giờ', () => {
     await bell(page).click();
     await expect(page.getByText('Đơn bổ sung giờ của bạn đã được duyệt')).toBeVisible(REALTIME);
     await page.keyboard.press('Escape');
-    await page.goto('/attendance');
+    await page.goto(`/attendance?month=${day.slice(0, 7)}`);
     // Code của E: ngày đủ giờ là "Đi làm" (spec ghi "Có mặt" — báo F); hết "Quên chấm ra".
     await expect(calendarDay(page, day)).toHaveAccessibleName(/, Đi làm(,|$)/);
     await expect(calendarDay(page, day)).not.toHaveAccessibleName(/Quên chấm ra/);
@@ -161,7 +170,9 @@ test.describe('E2E-HR-20 đơn bổ sung giờ', () => {
     browser,
     request,
   }) => {
-    const [day1, day2] = [pastWorkday(1), pastWorkday(2)];
+    // day2 = ngày làm việc TRƯỚC day1 (thứ Hai: pastWorkday(1) và (2) cùng là thứ Bảy — F).
+    const day1 = pastWorkday(1);
+    const day2 = workdayBefore(day1);
     const hana = await person(request, 'hr20b-hana', { hr: true });
     const mia = await person(request, 'hr20b-mia', { startDate: pastWorkday(10) });
     await missingOut(request, hana, mia, day1);
@@ -305,7 +316,9 @@ test.describe('@main E2E-HR-21 hồ sơ nhân viên (360 px)', () => {
     await menu.getByRole('link', { name: 'Hồ sơ của tôi' }).click();
     await expect(emp.page).toHaveURL(/\/my-profile$/);
     await expect(emp.page.getByRole('heading', { level: 1, name: 'Hồ sơ của tôi' })).toBeVisible();
-    await expect(emp.page.locator('dl > div')).toHaveCount(4);
+    for (const label of ['Ngày vào công ty', 'Phòng ban', 'Chức vụ', 'Số điện thoại công việc']) {
+      await expect(emp.page.locator('dl dt', { hasText: label })).toHaveCount(1);
+    }
     await expect(emp.page.locator('dl')).toContainText('Kinh doanh');
     await expect(emp.page.locator('dl').getByRole('textbox')).toHaveCount(0); // chỉ đọc
     await emp.close();
@@ -433,7 +446,7 @@ test.describe('E2E-HR-22 tải 2 file Excel', () => {
     // Ô ngày (TL chốt — ngày thật, a712076f): dòng có tên Mia ở sheet đơn đã duyệt có ô định dạng ngày.
     const dated = leaveWb.sheets.some((s) => {
       const r = rowOf(s.rows, mia.user.fullName);
-      return r >= 0 && s.cells.some((c) => c.row === r + 1 && isDateFormat(c.style.formatCode));
+      return r >= 0 && s.cells.some((c) => c.row === r && isDateFormat(c.style.formatCode));
     });
     expect(dated, 'ô ngày của đơn đã duyệt là ngày thật').toBe(true);
   });
@@ -514,6 +527,8 @@ test.describe('E2E-HR-23 chính sách phép năm sau', () => {
     await api.dispose();
   });
 
+  // Năm sau đang INHERITED / DEFAULT ⇒ không xóa được dòng: khôi phục = PUT CÙNG giá trị (năm sau thành SET, thôi kế
+  // thừa năm nay). Vô hại vì E2E cấm sửa năm nay (§0.4) — F đồng ý 18/10.
   test.afterAll(async ({ playwright }) => {
     if (!original) return;
     const api = await playwright.request.newContext();
@@ -705,6 +720,11 @@ test('E2E-HR-25: XSS ở phòng ban / chức vụ / lý do đơn ⇒ hiện văn
   const card = await hrCorrectionCard(page, mia.user.fullName, day);
   await expect(card.getByText(`Lý do: ${P.reason}`)).toBeVisible();
   await assertInert(page, dialogs, 'tab Bổ sung giờ');
+  // Danh sách /hr/employees hiện phòng ban / chức vụ ngay trong thẻ ⇒ kiểm trước khi mở hộp (F).
+  await page.goto('/hr/employees');
+  await page.getByLabel('Tìm theo tên hoặc email').fill(mia.user.fullName);
+  await expect(page.getByRole('listitem', { name: mia.user.fullName })).toBeVisible();
+  await assertInert(page, dialogs, '/hr/employees');
   const dialog = await openProfile(page, mia.user.fullName);
   await expect(dialog.getByLabel('Phòng ban')).toHaveValue(P.dept);
   await expect(dialog.getByLabel('Chức vụ')).toHaveValue(P.title);
