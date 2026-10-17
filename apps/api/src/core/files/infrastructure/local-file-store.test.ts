@@ -17,6 +17,7 @@ import {
   STALE_TEMP_AGE_MS,
   type LocalFileStoreOptions,
 } from './local-file-store';
+import { storeUsageBytes } from './local-fs';
 
 let root: string;
 
@@ -354,5 +355,19 @@ describe('LocalFileStore.purgeStaleTemp', () => {
     await fsp.utimes(path.join(tmp, 'old'), twoHoursAgo, twoHoursAgo);
     expect(await store.purgeStaleTemp(new Date(Date.now() - 3_600_000))).toBe(1);
     expect(await tmpEntries()).toEqual(['fresh']);
+  });
+});
+
+describe('storeUsageBytes — số đo cho STORAGE_FULL', () => {
+  it('cộng mọi blob (khóa ngẫu nhiên + avatar), bỏ qua tmp/', async () => {
+    const store = await make();
+    await store.put(Buffer.alloc(100), { maxBytes: 1_000 });
+    await store.put(Buffer.alloc(30), {
+      maxBytes: 1_000,
+      key: avatarFileKey('0b6f2c1e-7f6a-4c1d-9a3e-2b1c0d9e8f7a', 1, '64'),
+    });
+    const staged = await store.stage(Buffer.alloc(500), { maxBytes: 1_000 });
+    expect(await storeUsageBytes(root)).toBe(130);
+    await staged.discard();
   });
 });

@@ -9,9 +9,10 @@ import { assertPersistenceAllowed, createMemoryPersistence } from './composition
 import { createPrismaPersistence } from './composition/prisma-persistence';
 import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
 import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
+import { createFiles } from './composition/files-setup';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
-import { createHitLimiter } from './core/http/rate-limit/rate-limit';
+import { createHitLimiter, createRateLimit } from './core/http/rate-limit/rate-limit';
 import { RATE_LIMIT_RULES } from './core/http/rate-limit/rules';
 import { createValkeyStore } from './core/http/rate-limit/store';
 import { CryptoRandom, UuidV7Generator, clocksForEnv } from './core/infrastructure/system';
@@ -63,6 +64,19 @@ export async function startServer(
   const lifecycleRef: { current?: GracefulShutdown } = {};
   const rateLimitStore = (rule: Parameters<typeof createValkeyStore>[1]) =>
     createValkeyStore(valkey, rule);
+  // Mốc 6 (ADR-141): kho tệp — FILE_STORE_DIR không dùng được ⇒ ném ⇒ từ chối khởi động.
+  const files = await createFiles({
+    env,
+    clock,
+    logger,
+    metrics,
+    mediaRateLimit: createRateLimit(RATE_LIMIT_RULES.media[0], {
+      storeFor: rateLimitStore,
+      logger,
+      userIdOf: () => undefined,
+    }),
+    webOrigin: env.CORS_ORIGINS[0] ?? 'http://localhost:3001',
+  });
   const container = createContainer({
     config: {
       ...appConfigFromEnv(env),
@@ -85,6 +99,7 @@ export async function startServer(
     isShuttingDown: () => lifecycleRef.current?.isShuttingDown() ?? false,
     metrics,
     errorReporter: reporter,
+    files,
   });
 
   const server = createHttpServer(container.app);
@@ -164,6 +179,7 @@ export async function startServer(
         ? [{ name: 'maintenance-jobs', close: () => maintenance.stop(env.SHUTDOWN_TIMEOUT_MS / 2) }]
         : []),
       ...(adapter ? [{ name: 'socket.io-adapter', close: () => adapter.close() }] : []),
+      { name: 'image-workers', close: () => files.close() },
       // Prisma ngắt TRƯỚC pool (adapter không tự đóng pool ngoài — core/persistence/database.ts).
       ...(prisma ? [{ name: 'prisma', close: () => prisma.$disconnect() }] : []),
       { name: 'db-pool', close: () => pool.end() },
@@ -181,6 +197,7 @@ export async function startServer(
 
   await listen(server, env.PORT);
   maintenance?.start();
+  files.startHealthChecks();
   const metricsAddress = metricsServer.address();
   logger.info(
     {

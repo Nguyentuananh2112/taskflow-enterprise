@@ -39,7 +39,8 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | — | f5c94890 | `avatarUrl` ở `MemberDto` / `MemberCandidateDto` (H) |
 | 4 | 79e09153 | `IImagePipeline` + `SharpImagePipeline` (pool worker sharp) + `DisabledImagePipeline` |
 | — | 265d08c4, 8d310b3e | contract chat sớm (phần contract của T-069) + parity realtime `PENDING_SERVER_EMIT` (T-070) |
-| 5 | (commit này) | `/media` (`mediaRouter`) + `MediaUrlSigner` + port `IMediaResolver` + luật hạn mức `media-ip` |
+| 5 | f0a8cea3, 03ce1754 | `/media` (`mediaRouter`) + `MediaUrlSigner` + port `IMediaResolver` + luật hạn mức `media-ip` (+ soát B L1) |
+| 6 | (commit này) | env + `.env.example`; `StorageQuota` (507) + `MediaResolverRegistry`; `createFiles` (composition); gắn `/media` trong `app.ts`; `start-server` |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -131,8 +132,31 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - `MediaUrlSigner`: URL tuyệt đối (`MEDIA_BASE_URL` — bước 6), khung `exp` avatar 24 giờ / ảnh chat 1 giờ, tải
   tệp 60 s; chỉ khóa hiện tại ký.
 
+## Bước 6 — env + composition
+
+- **Env** (`env.ts` + `.env.example`, script CI khớp 49 biến): `FILE_STORE_DIR` (tuyệt đối), `FILE_URL_SECRET` /
+  `_PREVIOUS` (≥ 32 byte, khác JWT, `_PREVIOUS` ≠ hiện tại và cần khóa hiện tại), `FILE_STORE_MAX_BYTES` (50 GiB),
+  `MEDIA_CORP`, `MEDIA_BASE_URL`. **Staging/production bắt buộc** `FILE_STORE_DIR`, `FILE_URL_SECRET` (không
+  `test-only-` / `change-me`), `MEDIA_BASE_URL` https. **Chỉ APP_ENV=test** (khác ⇒ từ chối khởi động):
+  `MEDIA_URL_{AVATAR,IMAGE}_BUCKET_SECONDS`, `MEDIA_URL_DOWNLOAD_TTL_SECONDS`, `FILES_ORPHAN_TTL_SECONDS`,
+  `UPLOAD_IDLE_TIMEOUT_MS`, `FILE_STORE_USAGE_CACHE_MS`, `FILES_SWEEP_ON_START`, `FILES_SWEEP_INTERVAL_MS`,
+  `FILES_IMAGE_PIPELINE_DISABLED` (tên đã thống nhất với F). `CHAT_*` thuộc T-069.
+- **Local/test mặc định**: không `FILE_STORE_DIR` ⇒ `<os tmpdir>/taskflow-files`; không `FILE_URL_SECRET` ⇒ khóa
+  ngẫu nhiên mỗi lần khởi động + log `files.url_secret_ephemeral` (quyết định G — không chặn dev/test cũ).
+- **`StorageQuota`**: số đã dùng = duyệt cây kho (bỏ `tmp/`) + cộng ngay sau mỗi commit; đối soát mỗi
+  `FILE_STORE_USAGE_CACHE_MS` (60 s); `rawUpload` kiểm trước khi ghi bản tạm ⇒ 507 `STORAGE_FULL`
+  (+ `Connection: close`, xả có trần); ≥ 90 % ⇒ log `files.storage_nearly_full` (mỗi 5 phút cùng tự kiểm).
+- **`MediaResolverRegistry`**: T-068 / T-069 `register('avatars' | 'chat', resolver)`; chưa đăng ký ⇒ 404.
+- **`createFiles`** dựng kho (từ chối khởi động nếu không dùng được / nằm trong cwd), pipeline (hoặc Disabled),
+  quota, signer, registry, `upload(maxBytes)`, router `/media` + hạn mức IP; gauge `files_image_worker_up`;
+  `startHealthChecks()` sau `listen` (lúc khởi động + mỗi 5 phút, không ảnh hưởng `/readyz`); `close()` khi tắt
+  (trước Prisma/pool).
+- **`app.ts`**: `/api/v1/media` gắn NGAY SAU health, TRƯỚC `requireJsonContentType` / body parser / `no-store` /
+  rate limit toàn cục (test: CSP sandbox, CORP, `Cache-Control: private` không bị helmet / `no-store` đè; lỗi là
+  HTML, không phải JSON envelope).
+
 ## Còn lại
-6 env · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+7 `files-sweep` · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý

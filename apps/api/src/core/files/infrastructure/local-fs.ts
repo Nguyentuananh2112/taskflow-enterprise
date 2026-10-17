@@ -59,3 +59,17 @@ export const isInside = (child: string, parent: string): boolean => {
 
 /** Đi theo symlink / junction (B L-a); đường dẫn chưa tồn tại ⇒ bản resolve. */
 export const real = (p: string): Promise<string> => fsp.realpath(p).catch(() => path.resolve(p));
+
+/** Tổng byte các tệp trong kho, bỏ `tmp/` — số đo của `StorageQuota` (đối soát mỗi `FILE_STORE_USAGE_CACHE_MS`). */
+export async function storeUsageBytes(root: string): Promise<number> {
+  let total = 0;
+  const entries = await fsp.readdir(root, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const dir = path.relative(root, entry.parentPath);
+    if (dir === TMP_DIR || dir.startsWith(`${TMP_DIR}${path.sep}`)) continue;
+    const stat = await fsp.stat(path.join(entry.parentPath, entry.name)).catch(() => undefined);
+    total += stat?.size ?? 0; // vừa bị xóa giữa chừng ⇒ bỏ qua
+  }
+  return total;
+}

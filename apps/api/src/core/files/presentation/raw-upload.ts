@@ -13,6 +13,7 @@ import { parseContentType, RAW_UPLOAD_CONTENT_TYPE } from '../../http/middleware
 import { requireUser } from '../../http/request-user';
 import { decodeUploadName, sanitizeFileName } from '../domain/file-name';
 import type { IFileStore, StagedFile } from '../ports';
+import type { StorageQuota } from '../storage-quota';
 import type { UploadSlots } from '../upload-slots';
 
 /** Kết quả của `rawUpload` cho handler phía sau. Bản tạm tự `discard` khi response đóng (nếu chưa commit). */
@@ -44,6 +45,8 @@ export interface RawUploadOptions {
   drainMaxBytes?: number;
   /** Mặc định `setTimeout` — test thay được. */
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
+  /** Trần kho `FILE_STORE_MAX_BYTES` ⇒ 507 TRƯỚC khi ghi bản tạm; commit cộng ngay vào số đã dùng. */
+  quota?: StorageQuota;
 }
 
 export const DRAIN_TIMEOUT_MS = 5_000;
@@ -93,21 +96,49 @@ export function rawUpload(options: RawUploadOptions): RequestHandler {
     }
     res.once('close', release);
 
-    receive(req, options, setTimer).then(
-      (staged) => {
-        res.once('close', () => void staged.discard());
-        req.upload = { name: sanitizeFileName(decoded.name), staged };
-        next();
-      },
-      (err: unknown) => {
-        if (err instanceof UploadTimeoutError || err instanceof ClientAbortedError) {
-          req.destroy(); // client chậm / đã đi — không có ai nhận response
-          return;
-        }
-        rejectBody(req, res, options, setTimer); // 413 giữa chừng, 507, lỗi đĩa… — body chưa đọc hết
-        next(err);
-      },
-    );
+    const incoming = Number.isFinite(declared) && declared > 0 ? declared : options.maxBytes;
+    (options.quota ? options.quota.ensure(incoming) : Promise.resolve())
+      .then(() => receive(req, options, setTimer))
+      .then(
+        (staged) => {
+          res.once('close', () => void staged.discard());
+          req.upload = {
+            name: sanitizeFileName(decoded.name),
+            staged: counted(staged, options.quota),
+          };
+          next();
+        },
+        (err: unknown) => {
+          if (err instanceof UploadTimeoutError || err instanceof ClientAbortedError) {
+            req.destroy(); // client chậm / đã đi — không có ai nhận response
+            return;
+          }
+          rejectBody(req, res, options, setTimer); // 413 giữa chừng, 507, lỗi đĩa… — body chưa đọc hết
+          next(err);
+        },
+      );
+  };
+}
+
+/** Bọc `commit` để cộng dung lượng vào `StorageQuota` ngay khi blob vào kho (đối soát sau mỗi `cacheMs`). */
+function counted(staged: StagedFile, quota: StorageQuota | undefined): StagedFile {
+  if (!quota) return staged;
+  // Ủy quyền tường minh (không Object.create): LocalStagedFile có private field ⇒ phải gọi trên instance thật.
+  return {
+    get size() {
+      return staged.size;
+    },
+    sizeBytes: staged.sizeBytes,
+    sha256: staged.sha256,
+    head: staged.head,
+    read: (offset, length) => staged.read(offset, length),
+    readAll: () => staged.readAll(),
+    discard: () => staged.discard(),
+    commit: async (key) => {
+      const stored = await staged.commit(key);
+      quota.add(stored.sizeBytes);
+      return stored;
+    },
   };
 }
 

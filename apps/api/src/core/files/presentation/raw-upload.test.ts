@@ -13,6 +13,7 @@ import { AppError } from '../../errors';
 import { requireJsonContentType } from '../../http/middleware';
 import type { FileKey } from '../domain/file-key';
 import { LocalFileStore } from '../infrastructure/local-file-store';
+import { StorageQuota } from '../storage-quota';
 import { UploadSlots } from '../upload-slots';
 import { rawUpload, requireUpload, type RawUploadOptions } from './raw-upload';
 
@@ -78,8 +79,11 @@ function build(over: Partial<RawUploadOptions> = {}) {
     res.json({ name, sizeBytes: staged.sizeBytes, sha256: staged.sha256 });
   });
   app.post('/api/v1/chat/uploads', upload, async (req, res) => {
-    const stored = await requireUpload(req).staged.commit();
-    res.status(201).json({ key: stored.key });
+    const { staged } = requireUpload(req);
+    const head = await staged.read(0, 4); // đọc qua wrapper (quota) — phải gọi được trên instance thật
+    const all = await staged.readAll();
+    const stored = await staged.commit();
+    res.status(201).json({ key: stored.key, head: head.length, size: all.length });
   });
   app.post('/api/v1/other', (_req, res) => res.json({ ok: true }));
   app.use(errors);
@@ -212,6 +216,20 @@ describe('rawUpload — thứ tự lỗi trước khi đọc body', () => {
     expect(slots.inFlight('user-1')).toBe(0);
     const ok = await octet(request(build()).put('/api/v1/me/avatar')).send(Buffer.from('x'));
     expect(ok.status).toBe(200);
+  });
+});
+
+describe('rawUpload — trần kho (SEC-CH-14 vế STORAGE_FULL)', () => {
+  it('kho gần đầy ⇒ 507 STORAGE_FULL trước khi tạo tmp; commit cộng ngay vào số đã dùng', async () => {
+    const quota = new StorageQuota(() => Promise.resolve(0), 25, 60_000);
+    const app = build({ quota });
+    const ok = await octet(request(app).post('/api/v1/chat/uploads')).send(Buffer.alloc(20, 1));
+    expect(ok.status).toBe(201);
+    expect(await quota.usedBytes()).toBe(20);
+    const full = await octet(request(app).post('/api/v1/chat/uploads')).send(Buffer.alloc(10, 1));
+    expect([full.status, (full.body as { code: string }).code]).toEqual([507, 'STORAGE_FULL']);
+    expect(full.headers.connection).toBe('close');
+    expect(await tmpFiles()).toEqual([]);
   });
 });
 
