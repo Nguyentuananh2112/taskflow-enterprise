@@ -12,11 +12,21 @@ const CI = !!process.env.CI;
  * báo HR ⇒ chạy TUẦN TỰ (workers: 1, cả CI) trong project "<trình duyệt>-hr"; các spec khác giữ song song. Giữa hai
  * trình duyệt vẫn có thể chạy cùng lúc — ca đã khẳng định theo thông báo của chính ca, ngày lễ theo dải reserveDate().
  */
-const HR_SPECS = /(hr|company)\.e2e\.ts$/;
-function withHrLane<P extends { name: string }>(project: P) {
+// Mốc 5: hr-extended.e2e.ts cùng dữ liệu một công ty ⇒ cùng lane tuần tự (F soát c000228b).
+// Mốc 4: payroll.e2e.ts — bảng lương cả công ty, MỘT kỳ (tháng trước) cho cả lượt ⇒ lane tuần tự, và CHỈ một trình
+// duyệt (chromium): trình duyệt thứ hai tạo người sau khi bảng đã có / đã phát hành ⇒ không có phiếu (test-spec-payroll §0.4).
+const HR_SPECS = /(hr|hr-extended|company|payroll)\.e2e\.ts$/;
+const PAYROLL_SPEC = /payroll\.e2e\.ts$/;
+function withHrLane<P extends { name: string }>(project: P, { payroll = false } = {}) {
   return [
     { ...project, testIgnore: HR_SPECS },
-    { ...project, name: `${project.name}-hr`, testMatch: HR_SPECS, workers: 1 },
+    {
+      ...project,
+      name: `${project.name}-hr`,
+      testMatch: HR_SPECS,
+      ...(payroll ? {} : { testIgnore: PAYROLL_SPEC }),
+      workers: 1,
+    },
   ];
 }
 
@@ -38,7 +48,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    ...withHrLane({ name: 'chromium', use: { ...devices['Desktop Chrome'] } }),
+    ...withHrLane({ name: 'chromium', use: { ...devices['Desktop Chrome'] } }, { payroll: true }),
     // F2: Firefox + viewport mobile. CI chạy đủ; local chỉ luồng chính (@main) để nhẹ máy.
     ...(CI || process.env.E2E_FIREFOX === '1'
       ? withHrLane({
