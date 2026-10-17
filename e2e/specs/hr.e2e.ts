@@ -812,4 +812,29 @@ test.describe('T-045 dialog nhắc chấm công', () => {
     await expect(checkinPrompt(vic.page)).toHaveCount(0);
     await vic.close();
   });
+
+  test(`E2E-HR-13 [${T045}]: đăng xuất rồi đăng nhập lại trong ngày ⇒ dialog hiện lại (45d8b36 xóa khóa "đã hiện" khi đăng xuất — hành vi chấp nhận)`, async ({
+    page,
+    request,
+  }) => {
+    const w = await seedHrWorld(request, 'hr13');
+    await loginViaUi(page, w.mia.user);
+    await page.goto(projectsPath(w));
+    const dialog = checkinPrompt(page);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await page
+      .getByRole('navigation', { name: 'Tài khoản' })
+      .getByRole('button', { name: 'Đăng xuất', exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/login/);
+    await loginViaUi(page, w.mia.user);
+    await page.goto(projectsPath(w));
+    await expect(dialog).toBeVisible();
+    // Vẫn không tự chấm.
+    const today = await apiMyToday(request, w.olivia, await refreshed(request, w.mia));
+    expect(today.firstIn).toBeNull();
+  });
 });
