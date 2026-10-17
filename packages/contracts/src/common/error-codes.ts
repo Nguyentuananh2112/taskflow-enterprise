@@ -73,6 +73,14 @@ export const BusinessRule = z.enum([
   // IMAGE_TOO_COMPLEX (web: "Ảnh quá lớn hoặc phức tạp, hãy chọn ảnh nhỏ hơn").
   'IMAGE_UNREADABLE',
   'IMAGE_TOO_COMPLEX',
+  // Mốc 6 — trò chuyện (ADR-143/144, avatar-chat.md §4). NOT_ACTIVE_MEMBER / IDEMPOTENCY_KEY_REUSED dùng lại.
+  'SELF_DIRECT',
+  'RECIPIENT_INACTIVE',
+  'NOT_GROUP',
+  'EDIT_WINDOW_PASSED',
+  'REPLY_OTHER_CONVERSATION',
+  'GROUP_TOO_LARGE',
+  'TOO_MANY_ATTACHMENTS',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
