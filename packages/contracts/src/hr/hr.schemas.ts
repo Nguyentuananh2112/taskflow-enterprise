@@ -100,6 +100,8 @@ export const HrAuditAction = z.enum([
   'COMPANY_RENAMED',
   // Mốc 5 (ADR-128): hồ sơ nhân viên — before/after KHÔNG có workPhone (chỉ cờ), lý do ở `after.note`.
   'PROFILE_SET',
+  // Mốc 5 (T-057, ADR-131): HR đặt chính sách phép một năm (lý do ở `after.note`).
+  'POLICY_SET',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

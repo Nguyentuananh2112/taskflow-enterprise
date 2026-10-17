@@ -40,7 +40,17 @@ function parametersOf(
 const STATUS_TEXT: Record<number, string> = { 200: 'OK', 201: 'Đã tạo', 204: 'Không có nội dung' };
 
 function successResponse(route: ApiRoute): Json {
-  const { status, data, paged, csv } = route.response;
+  const { status, data, paged, csv, xlsx } = route.response;
+  if (xlsx) {
+    return {
+      description: 'Bảng tính .xlsx (`Content-Disposition: attachment`) — ADR-130',
+      content: {
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+          schema: { type: 'string', format: 'binary' },
+        },
+      },
+    };
+  }
   if (csv) {
     return {
       description: 'CSV UTF-8 có BOM (`Content-Disposition: attachment`)',
