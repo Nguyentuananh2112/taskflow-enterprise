@@ -68,6 +68,11 @@ const DayFlags = {
   absentHalf: z.boolean(),
   /** IN rồi, chưa OUT, chưa quá giờ kết thúc ⇒ thẻ "đang làm". */
   inProgress: z.boolean(),
+  /**
+   * PENDING vì chưa IN dù đã tới giờ vào ca (nghỉ AM ⇒ giờ hết nghỉ trưa) ⇒ web hiện "Chưa chấm công", không phải
+   * "Chưa tới giờ". Status vẫn PENDING tới hết ca (ABSENT chỉ sau giờ kết ca); các status khác luôn `false`.
+   */
+  notCheckedInYet: z.boolean(),
   firstIn: IsoDateTime.nullable(),
   /** OUT sau 00:00 vẫn thuộc ngày trước (giờ chốt 06:00) ⇒ web hiển thị "00:30 (+1)". */
   lastOut: IsoDateTime.nullable(),

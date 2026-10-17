@@ -23,6 +23,7 @@ const day = (date: string, over: Partial<AttendanceDayDto> = {}): AttendanceDayD
   early: false,
   absentHalf: false,
   inProgress: false,
+  notCheckedInYet: false,
   firstIn: null,
   lastOut: null,
   leave: null,

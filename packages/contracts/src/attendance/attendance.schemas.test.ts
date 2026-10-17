@@ -33,6 +33,7 @@ const today = {
   early: false,
   absentHalf: false,
   inProgress: true,
+  notCheckedInYet: false,
   firstIn: '2026-11-17T00:55:00.000Z',
   lastOut: null,
   leave: null,

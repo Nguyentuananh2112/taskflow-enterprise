@@ -19,6 +19,7 @@ const base: AttendanceDayDto = {
   early: false,
   absentHalf: false,
   inProgress: false,
+  notCheckedInYet: false,
   firstIn: null,
   lastOut: null,
   leave: null,

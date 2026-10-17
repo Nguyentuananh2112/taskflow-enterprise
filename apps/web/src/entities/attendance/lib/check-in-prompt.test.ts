@@ -17,6 +17,7 @@ const base: AttendanceTodayDto = {
   firstIn: null,
   lastOut: null,
   inProgress: false,
+  notCheckedInYet: false,
   late: false,
   early: false,
   leave: null,
