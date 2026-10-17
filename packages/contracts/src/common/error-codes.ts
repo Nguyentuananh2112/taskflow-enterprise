@@ -81,6 +81,8 @@ export const BusinessRule = z.enum([
   'REPLY_OTHER_CONVERSATION',
   'GROUP_TOO_LARGE',
   'TOO_MANY_ATTACHMENTS',
+  // Lưới an toàn của store (B soát T-069a M1): đính kèm mất giữa lúc claim và lúc gắn (purge mồ côi) ⇒ rollback tin.
+  'ATTACHMENT_UNAVAILABLE',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
