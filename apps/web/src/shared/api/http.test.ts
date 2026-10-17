@@ -271,7 +271,7 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     expect(auth.onSessionEnded).toHaveBeenCalledWith('revoked');
   });
 
-  it('SESSION_REVOKED (nghỉ việc / không còn thuộc công ty — ADR-135) ⇒ KHÔNG refresh, kết thúc phiên "revoked"', async () => {
+  it('SEC-HR-67 (tầng http): 401 SESSION_REVOKED (nghỉ việc / không còn thuộc công ty — ADR-135) ⇒ KHÔNG refresh, kết thúc phiên "revoked"', async () => {
     const auth = fakeAuth();
     const { http } = setup([fail(401, 'SESSION_REVOKED')], auth);
     await expect(http.get('/attendance/me/today', { schema: Item })).rejects.toMatchObject({
