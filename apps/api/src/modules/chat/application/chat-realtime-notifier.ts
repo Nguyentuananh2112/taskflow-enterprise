@@ -92,6 +92,24 @@ export class ChatRealtimeNotifier implements IChatNotifier {
     });
   }
 
+  /**
+   * Mất quyền workspace (bị bớt / tự rời / nghỉ việc / ws xóa mềm — TL, T-070): `removed` cho phòng chat của ws tới
+   * ĐÚNG những người mất quyền. Phòng chưa từng mở ⇒ không phát. Chỉ id hội thoại — không nội dung.
+   */
+  async workspaceAccessLost(e: {
+    workspaceId: string;
+    userIds: readonly string[];
+    actorId: string;
+  }): Promise<void> {
+    const room = await this.d.conversations.findByWorkspace(e.workspaceId);
+    if (!room) return;
+    await this.conversationRemoved({
+      conversationId: room.id,
+      userIds: e.userIds,
+      actorId: e.actorId,
+    });
+  }
+
   /** `chat:typing` (port `IChatTypingAccess` của core): có quyền ⇒ người nhận; không ⇒ null. */
   async typingRecipients(conversationId: string, userId: string): Promise<string[] | null> {
     const now = this.d.clock.now();

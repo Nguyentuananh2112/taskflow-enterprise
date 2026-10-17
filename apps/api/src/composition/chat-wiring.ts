@@ -17,6 +17,7 @@ import { chatMedia, chatMediaResolver, chatUploadProcessor } from './chat-files'
 import { chatSweepTask } from './chat-sweep';
 import type { FilesBundle } from './files-setup';
 import type { AvatarRefs } from './avatar-refs';
+import type { WorkspaceLostHook } from './late-realtime';
 import type { Persistence } from './persistence';
 
 /** Trần ADR-141: tệp chat 20 MB; 200 MB / người / ngày. */
@@ -64,8 +65,8 @@ export function chatRouters(
     limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
     /** Giờ nghiệp vụ. */
     business: IClock;
-    /** Gateway (trễ) — T-070. */
-    realtime: IChatEventSink;
+    /** Gateway (trễ) — T-070; hook mất quyền workspace ⇒ `chat:conversation:removed`. */
+    realtime: IChatEventSink & { onWorkspaceAccessLost(hook: WorkspaceLostHook): void };
   },
 ): { routers: { path: string; router: Router }[]; typing?: IChatTypingAccess } {
   if (!d.files) return { routers: [] };
@@ -104,6 +105,7 @@ export function chatRouters(
     sink: x.realtime,
     clock: x.business,
   });
+  x.realtime.onWorkspaceAccessLost((e) => notifier.workspaceAccessLost(e));
   const chat = createChatModule({
     repos,
     users,

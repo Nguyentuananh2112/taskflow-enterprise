@@ -40,10 +40,28 @@
 | Gộp: chat, composition, core, HTTP chat / avatar / realtime, parity OpenAPI + realtime, contract, files | **835/835** (73 file) |
 | tsc, eslint, prettier, dependency-cruiser | sạch |
 
+## T-070b — `chat:conversation:removed` khi mất quyền workspace (TL)
+
+- **Hook ở composition, không sửa module workspace.** `LateBoundRealtime.onWorkspaceAccessLost` chạy SAU hai lời gọi
+  mà workspace vốn đã làm sau commit:
+  - `revokeWorkspaceAccess`: bị bớt; tự rời; nghỉ việc qua `WorkspaceExit` (T-062), sau đó auth còn
+    `disconnectUser`;
+  - `closeWorkspace`: ws xóa mềm.
+  Lỗi của hook chat bị nuốt, không ảnh hưởng event workspace.
+- **`ChatRealtimeNotifier.workspaceAccessLost`:** `findByWorkspace` (D, 7a93ff12) ⇒ phòng chưa từng mở thì không phát;
+  có phòng ⇒ `removed {conversationId}` tới ĐÚNG những người mất quyền. Chỉ id, không nội dung.
+- **Lưu trữ ws:** Admin chỉ lưu trữ được ws không còn thành viên (`workspace_has_members`), nên không có ai cần báo.
+- **Nghỉ việc ⇒ nhóm / DIRECT:** socket bị ngắt khi hoàn tất (`disconnectUser`), REST 401 `SESSION_REVOKED`; web xóa
+  cache chat khi `SESSION_REVOKED` (§7). Không cần event.
+- **Test:**
+  - `chat-workspace-realtime.http.test.ts` 3/3: bị bớt ⇒ người đó nhận, người ở lại không; tự rời; xóa mềm ⇒ mọi
+    thành viên nhận; phòng chưa mở ⇒ không phát.
+  - Unit `workspaceAccessLost` 1/1.
+  - Bộ gộp 853/853.
+- **B (L, ghi nhận):** `conversationUpdated` gọi `summaryFor` riêng từng người. Hiện chỉ phát ở lệnh quản trị nhóm /
+  tạo hội thoại (≤ 100 người), không phát mỗi tin, nên chấp nhận được. Nếu sau này phát mỗi tin thì phải gom bằng
+  một truy vấn.
+
 ## Còn mở
 
-- **Workspace xóa mềm / thành viên rời ws ⇒ chưa phát `chat:conversation:removed`.** Việc này cần hook ở module
-  workspace, nằm ngoài phạm vi chat. REST trả 404 ngay và tin kế tiếp không tới, vì người nhận được tính lúc phát.
-  Web xử lý 404 bằng cách bỏ hội thoại. Nếu TL muốn có event, đó là việc nhỏ ở workspace (gọi
-  `notifier.conversationRemoved`).
 - Test 2 socket / 2 tab ở tầng I (redis-adapter) và E2E chạy theo cổng TL / F.

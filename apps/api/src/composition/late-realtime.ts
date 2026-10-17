@@ -10,6 +10,12 @@ import {
   type WorkspaceRole,
 } from '../core/realtime/ports';
 
+export type WorkspaceLostHook = (e: {
+  workspaceId: string;
+  userIds: readonly string[];
+  actorId: string;
+}) => Promise<void>;
+
 type Notifications = Pick<
   RealtimeGateway,
   | 'disconnectSession'
@@ -31,6 +37,23 @@ type Notifications = Pick<
  */
 export class LateBoundRealtime implements Notifications {
   #target: Notifications | undefined;
+  #onWorkspaceLost: WorkspaceLostHook | undefined;
+
+  /**
+   * Mốc 6 (T-070, TL): chat đăng ký — mất quyền workspace (bị bớt / tự rời / nghỉ việc qua WorkspaceExit / ws xóa
+   * mềm) ⇒ `chat:conversation:removed` cho phòng chat của ws. Workspace vốn gọi hai hàm dưới SAU commit ⇒ không sửa
+   * module workspace; lỗi của chat không ảnh hưởng event workspace (chạy sau, nuốt lỗi).
+   */
+  onWorkspaceAccessLost(hook: WorkspaceLostHook): void {
+    this.#onWorkspaceLost = hook;
+  }
+
+  async #workspaceLost(workspaceId: string, userIds: readonly string[], meta: RealtimeEventMeta) {
+    if (userIds.length === 0) return;
+    await this.#onWorkspaceLost?.({ workspaceId, userIds, actorId: meta.actorId }).catch(
+      () => undefined,
+    );
+  }
 
   bind(target: Notifications): void {
     this.#target = target;
@@ -44,11 +67,12 @@ export class LateBoundRealtime implements Notifications {
     return this.#target?.disconnectUser(userId) ?? Promise.resolve();
   }
 
-  revokeWorkspaceAccess(
+  async revokeWorkspaceAccess(
     input: { userId: string; workspaceId: string; projectIds: string[] },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    return this.#target?.revokeWorkspaceAccess(input, meta) ?? Promise.resolve();
+    await this.#target?.revokeWorkspaceAccess(input, meta);
+    await this.#workspaceLost(input.workspaceId, [input.userId], meta);
   }
 
   notifyRoleChanged(
@@ -80,11 +104,12 @@ export class LateBoundRealtime implements Notifications {
     return this.#target?.emitToProject(input, meta) ?? Promise.resolve();
   }
 
-  closeWorkspace(
+  async closeWorkspace(
     input: { workspaceId: string; projectIds: string[]; memberUserIds: string[] },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    return this.#target?.closeWorkspace(input, meta) ?? Promise.resolve();
+    await this.#target?.closeWorkspace(input, meta);
+    await this.#workspaceLost(input.workspaceId, input.memberUserIds, meta);
   }
 
   broadcastAvatarChanged(

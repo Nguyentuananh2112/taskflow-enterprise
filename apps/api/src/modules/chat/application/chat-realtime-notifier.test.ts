@@ -65,4 +65,21 @@ describe('ChatRealtimeNotifier (ADR-145, T-070)', () => {
     expect(await n.typingRecipients(dm.id, U.Lan)).toBeNull();
     expect(sorted((await n.typingRecipients(dm.id, U.Mia)) ?? [])).toEqual(sorted([U.Mia, U.Vic]));
   });
+  it('workspaceAccessLost: phòng ws đã mở ⇒ removed tới đúng người mất quyền; chưa mở ⇒ không phát', async () => {
+    const { k, n, emitted, open } = setup();
+    const WS = '00000000-0000-7000-8000-00000000c0a1';
+    await n.workspaceAccessLost({ workspaceId: WS, userIds: [U.Vic], actorId: U.Mia });
+    expect(emitted).toEqual([]);
+    k.dir.workspaces.set(WS, { name: 'Sao Mai', active: true, memberIds: [U.Mia, U.Vic] });
+    const room = (await open.workspace({ actorId: U.Mia, workspaceId: WS })).conversation;
+    await n.workspaceAccessLost({ workspaceId: WS, userIds: [U.Vic], actorId: U.Mia });
+    expect(emitted).toEqual([
+      {
+        userIds: [U.Vic],
+        type: 'chat:conversation:removed',
+        data: { conversationId: room.id },
+        meta: { actorId: U.Mia },
+      },
+    ]);
+  });
 });
