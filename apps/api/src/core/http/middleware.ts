@@ -110,6 +110,8 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
         'X-Request-Id',
         'X-Client-Id',
         'Idempotency-Key',
+        // Mốc 6 (ADR-141): tên gốc của upload nhị phân — thiếu ⇒ preflight của trình duyệt chặn upload thật.
+        'X-Upload-Name',
       ],
       exposedHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Policy', 'RateLimit'],
       maxAge: 600,
