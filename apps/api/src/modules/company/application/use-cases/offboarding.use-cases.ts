@@ -44,7 +44,7 @@ export class ScheduleOffboardingUseCase {
     const scheduled = await d.uow.run(async () => {
       const { actor, target } = await authorizeOnEmployee(d, input.actorId, input.userId);
       if (target.role === 'ADMIN') {
-        await d.members.lockAdmins();
+        // `company:admins` đã khóa trong authorizeOnEmployee (bậc 2 trước bậc 5).
         const others = (await d.members.listAdmins()).filter(
           (a) => a.userId !== target.userId && a.offboardLastDay === null,
         );

@@ -48,6 +48,17 @@ export class CompleteOffboardingUseCase {
       await d.members.lockEmployeeWork(userId);
       const m = await d.members.find(userId); // đọc lại sau khóa: lịch có thể vừa bị hủy / đổi
       if (!m?.offboardAccessUntil || m.offboardAccessUntil.getTime() > now.getTime()) return false;
+      if (m.role === 'ADMIN') {
+        // A review MEDIUM-2: Admin khác có thể đã bị hạ / có lịch nghỉ sau khi lên lịch cho người này ⇒ không hoàn
+        // tất (không xóa), log lỗi; lượt sau thử lại khi đã có Admin khác.
+        const others = (await d.members.listAdmins()).filter(
+          (a) => a.userId !== userId && a.offboardLastDay === null,
+        );
+        if (others.length === 0) {
+          d.logger.error({ userId }, 'company.offboard_last_admin_blocked');
+          return false;
+        }
+      }
       const actorId = m.offboardScheduledById ?? userId;
       const c = d.collaborators();
       if (m.role === 'EMPLOYEE' && m.offboardLastDay) {

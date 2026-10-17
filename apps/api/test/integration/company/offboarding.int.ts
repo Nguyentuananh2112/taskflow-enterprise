@@ -9,7 +9,10 @@ import { CompanyAccess } from '../../../src/modules/company/application/company-
 import { HrAuditWriter } from '../../../src/modules/company/application/hr-audit-writer';
 import type { ICompanyAccounts } from '../../../src/modules/company/application/ports/accounts.port';
 import type { EmploymentCollaborators } from '../../../src/modules/company/application/ports/employment-collaborators.port';
+import { AdminAccessUseCases } from '../../../src/modules/company/application/use-cases/admin-access.use-cases';
 import { CompleteOffboardingUseCase } from '../../../src/modules/company/application/use-cases/complete-offboarding.use-case';
+import { ScheduleOffboardingUseCase } from '../../../src/modules/company/application/use-cases/offboarding.use-cases';
+import { AppError } from '../../../src/core/errors';
 import { PrismaCompanyMembers } from '../../../src/modules/company/infrastructure/prisma/prisma-company';
 import { PrismaCompanyOffboarding } from '../../../src/modules/company/infrastructure/prisma/prisma-company-offboarding';
 import { PrismaHrAuditLog } from '../../../src/modules/company/infrastructure/prisma/prisma-hr-audit-log';
@@ -49,7 +52,7 @@ beforeEach(async () => {
 });
 afterAll(disconnectTestPrisma);
 
-function completer() {
+function offboardingDeps() {
   const uow = new RecordingUnitOfWork();
   const db = () => uow.db();
   const clock = new FakeClock(NOW);
@@ -72,7 +75,7 @@ function completer() {
     revokeActivations: () => Promise.resolve(0),
     revokeSessions: () => Promise.resolve(),
   } as unknown as ICompanyAccounts;
-  return new CompleteOffboardingUseCase({
+  return {
     access: new CompanyAccess({ members, clock }),
     members,
     offboarding: new PrismaCompanyOffboarding(db),
@@ -84,8 +87,10 @@ function completer() {
     clock,
     timeZone: () => Promise.resolve('Asia/Ho_Chi_Minh'),
     logger: new SpyLogger(),
-  });
+  };
 }
+
+const completer = () => new CompleteOffboardingUseCase(offboardingDeps());
 
 const scheduleDue = () =>
   testPrisma().companyMember.update({
@@ -189,4 +194,70 @@ describe('CompleteOffboardingUseCase trên Postgres', () => {
     expect(completed).toBe(true);
     expect(await testPrisma().companyMember.findUnique({ where: { userId: mia } })).toBeNull();
   });
+});
+
+describe('A review T-062 HIGH-1: lên lịch nghỉ cho Admin ‖ PUT /admin/access hạ chính Admin đó', () => {
+  it('thứ tự khóa company:admins → dòng ở cả hai lệnh ⇒ không deadlock (40P01) / 500 qua nhiều lượt', async () => {
+    const p = testPrisma();
+    const admin = async (name: string) => {
+      const u = await p.user.create({
+        data: { email: `${name}-${randomUUID()}@example.test`, fullName: name, passwordHash: 'x' },
+      });
+      await p.companyMember.create({ data: { userId: u.id, role: 'ADMIN' } });
+      return u.id;
+    };
+    const [a, b, x] = [await admin('a'), await admin('b'), await admin('x')];
+    for (let round = 0; round < 8; round += 1) {
+      await p.companyMember.update({
+        where: { userId: x },
+        data: {
+          role: 'ADMIN',
+          startDate: null,
+          offboardLastDay: null,
+          offboardAccessUntil: null,
+          offboardScheduledById: null,
+        },
+      });
+      const version = (await p.companyMember.findUniqueOrThrow({ where: { userId: x } })).version;
+      const sd = offboardingDeps();
+      const schedule = new ScheduleOffboardingUseCase(sd, new CompleteOffboardingUseCase(sd));
+      const ad = offboardingDeps();
+      const access = new AdminAccessUseCases({
+        access: ad.access,
+        members: ad.members,
+        accounts: {
+          profiles: () => Promise.resolve(new Map()),
+          revokeSessions: () => Promise.resolve(),
+        },
+        audit: ad.audit,
+        offboardLeave: { offboardCleanup: () => Promise.resolve({ cancelled: 0, revoked: 0 }) },
+        events: {
+          accessChanged: () => Promise.resolve(),
+          pushAccessChanged: () => Promise.resolve(),
+        },
+        uow: ad.uow,
+        ids: ad.ids,
+        clock: ad.clock,
+        timeZone: ad.timeZone,
+      });
+      const results = await Promise.allSettled([
+        schedule.execute({ actorId: b, userId: x, lastDay: '2026-11-20' }),
+        access.set({
+          actorId: a,
+          userId: x,
+          role: 'EMPLOYEE',
+          grants: [],
+          expectedVersion: version,
+        }),
+      ]);
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          // Chỉ được thua bằng lỗi nghiệp vụ (409 version / 403 / 404) — không phải deadlock / lỗi DB.
+          expect(r.reason, String(r.reason)).toBeInstanceOf(AppError);
+          expect((r.reason as AppError).statusCode).toBeLessThan(500);
+        }
+      }
+      expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
+    }
+  }, 120_000);
 });

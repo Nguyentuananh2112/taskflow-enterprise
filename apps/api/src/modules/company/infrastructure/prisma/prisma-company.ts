@@ -205,14 +205,22 @@ export class PrismaCompanyTenureReader implements ICompanyTenureReader {
     // Tuần tự (không Promise.all): trong transaction tương tác client chỉ chạy một truy vấn một lúc.
     const current = await this.db().companyMember.findMany({
       where: { role: 'EMPLOYEE', startDate: { lte: to }, ...users },
-      select: { userId: true, startDate: true },
+      select: { userId: true, startDate: true, offboardLastDay: true },
     });
     const past = await this.db().companyMemberDeparture.findMany({
       where: { role: 'EMPLOYEE', firstDay: { lte: to }, lastDay: { gte: from }, ...users },
       select: { userId: true, firstDay: true, lastDay: true },
     });
     return [
-      ...current.map((m) => ({ userId: m.userId, from: dateOnly(m.startDate)!, until: null })),
+      // A review T-062 MEDIUM-1: có lịch nghỉ ⇒ nhiệm kỳ kết thúc ở `offboard_last_day` (như departure sắp ghi) — khe
+      // từ ngày sau lastDay tới lúc hoàn tất không bị tính là ngày làm.
+      ...current
+        .map((m) => ({
+          userId: m.userId,
+          from: dateOnly(m.startDate)!,
+          until: dateOnly(m.offboardLastDay),
+        }))
+        .filter((t) => t.until === null || t.until >= q.from),
       ...past.map((d) => ({
         userId: d.userId,
         from: dateOnly(d.firstDay)!,

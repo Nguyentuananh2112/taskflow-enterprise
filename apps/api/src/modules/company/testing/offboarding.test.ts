@@ -156,3 +156,34 @@ describe('CompleteOffboardingUseCase (ADR-137 Hoàn tất)', () => {
     expect(store.departures()).toHaveLength(1);
   });
 });
+
+describe('A review T-062', () => {
+  it('MEDIUM-2: Admin cuối (Admin khác đều có lịch nghỉ / không còn) ⇒ không hoàn tất, dòng còn; có Admin khác ⇒ hoàn tất', async () => {
+    const ADMIN_X = id(3);
+    store.upsertMember(
+      member({
+        userId: ADMIN_X,
+        role: 'ADMIN',
+        startDate: null,
+        offboardLastDay: '2026-11-01',
+        offboardAccessUntil: new Date('2026-11-01T23:00:00.000Z'),
+        offboardScheduledById: HR,
+      }),
+    );
+    expect(await completer.completeOne(ADMIN_X)).toBe(false);
+    expect(await store.find(ADMIN_X)).not.toBeNull();
+    store.upsertMember(member({ userId: id(4), role: 'ADMIN', startDate: null }));
+    expect(await completer.completeOne(ADMIN_X)).toBe(true);
+    expect(store.locks[0]).toBe('taskflow:company:admins'); // bậc 2 trước leave / punch
+    expect(store.departures().filter((d) => d.userId === ADMIN_X)).toEqual([]); // Admin không có nhiệm kỳ nhân viên
+  });
+
+  it('MEDIUM-1: người có lịch nghỉ ⇒ nhiệm kỳ hiện tại kết thúc ở ngày làm cuối (ngày sau đó không thuộc nhiệm kỳ)', async () => {
+    expect(await store.tenuresOf({ userIds: [MIA], from: '2026-10-01', to: '2026-11-30' })).toEqual(
+      [{ userId: MIA, from: '2026-10-01', until: '2026-11-01' }],
+    );
+    expect(await store.tenuresOf({ userIds: [MIA], from: '2026-11-02', to: '2026-11-30' })).toEqual(
+      [],
+    );
+  });
+});
