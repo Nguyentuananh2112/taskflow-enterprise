@@ -16,7 +16,15 @@ import { Button } from '@/shared/ui/button';
 import { AttendanceShortcuts } from './attendance-shortcuts';
 import { CARD_FRAME, CardNote, CardSkeleton } from './card-frame';
 
-type Props = Readonly<{ wsId: string; enabled: boolean }>;
+type Props = Readonly<{
+  wsId: string;
+  enabled: boolean;
+  /**
+   * Quyền chưa biết (workspace đang tải) ⇒ vẫn giữ chỗ bằng skeleton — tránh thẻ "xuất hiện" sau đó đẩy danh sách
+   * dự án xuống (E2E-HR-14, demo TL d9). Biết là VIEWER ⇒ không có thẻ.
+   */
+  pending?: boolean;
+}>;
 
 const clockFormat = (timeZone: string) =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -36,11 +44,11 @@ const dayFormat = (timeZone: string) =>
   });
 
 /** Thẻ Chấm công đầu trang danh sách dự án (attendance-leave.md §6). Ẩn với VIEWER (`enabled`). */
-export function AttendanceCard({ wsId, enabled }: Props) {
+export function AttendanceCard({ wsId, enabled, pending = false }: Props) {
   const today = useAttendanceToday(wsId, enabled);
   const clock = useServerClock(today.data?.serverNow, today.dataUpdatedAt);
   const canManageHr = usePermission(wsId).can('hr:manage');
-  if (!enabled) return null;
+  if (!enabled) return pending ? <CardSkeleton /> : null;
   if (!today.data) {
     return today.isError ? (
       // Cùng khung ⇒ "Thử lại" thành công không đẩy danh sách dự án.
