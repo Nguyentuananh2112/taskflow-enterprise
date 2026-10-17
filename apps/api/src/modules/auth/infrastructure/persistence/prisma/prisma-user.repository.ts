@@ -25,6 +25,16 @@ export class PrismaUserRepository implements IUserRepository {
     return row ? User.reconstitute(row) : null;
   }
 
+  async findManyByIds(ids: readonly string[]): Promise<User[]> {
+    // `in: []` không khớp dòng nào (khác `OR: []` khớp MỌI dòng) — vẫn bỏ qua truy vấn cho rẻ.
+    if (ids.length === 0) return [];
+    const rows = await this.db().user.findMany({
+      where: { id: { in: [...ids] } },
+      select: USER_COLUMNS,
+    });
+    return rows.map((r) => User.reconstitute(r));
+  }
+
   async findByEmail(email: Email): Promise<User | null> {
     const row = await this.db().user.findUnique({
       where: { email: email.value },

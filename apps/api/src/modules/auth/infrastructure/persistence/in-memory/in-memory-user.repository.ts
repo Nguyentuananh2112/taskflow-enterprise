@@ -15,6 +15,13 @@ export class InMemoryUserRepository implements IUserRepository {
     return Promise.resolve(row ? User.reconstitute(row) : null);
   }
 
+  findManyByIds(ids: readonly string[]): Promise<User[]> {
+    const wanted = new Set(ids);
+    return Promise.resolve(
+      [...this.#rows.values()].filter((r) => wanted.has(r.id)).map((r) => User.reconstitute(r)),
+    );
+  }
+
   findByEmail(email: Email): Promise<User | null> {
     const row = [...this.#rows.values()].find((r) => r.email === email.value);
     return Promise.resolve(row ? User.reconstitute(row) : null);

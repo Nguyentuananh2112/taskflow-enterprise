@@ -8,6 +8,8 @@ import type { User } from '../../domain/user';
  */
 export interface IUserRepository {
   findById(id: string): Promise<User | null>;
+  /** Nhiều user MỘT truy vấn (kể cả đã xóa — bên gọi tự quyết); `[]` ⇒ `[]`, không truy vấn. Thứ tự bất kỳ. */
+  findManyByIds(ids: readonly string[]): Promise<User[]>;
   findByEmail(email: Email): Promise<User | null>;
   /**
    * Thêm user mới. Email trùng ⇒ ném `EmailAlreadyExistsError` từ **unique constraint** (không

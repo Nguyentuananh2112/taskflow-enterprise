@@ -10,6 +10,12 @@ export interface ICompanyAccounts {
   findById(
     userId: string,
   ): Promise<{ userId: string; fullName: string; deleted: boolean; hasPassword: boolean } | null>;
+  /** Hồ sơ nhiều tài khoản MỘT truy vấn (email là PII — chỉ route quản trị). `[]` ⇒ Map rỗng. */
+  profiles(
+    userIds: readonly string[],
+  ): Promise<
+    ReadonlyMap<string, { fullName: string; email: string; hasPassword: boolean; deleted: boolean }>
+  >;
   /** User `password_hash` null (chờ kích hoạt). */
   createPending(input: { email: string; fullName: string }): Promise<{ userId: string }>;
   /** Thu hồi token sống cũ rồi cấp token mới (ADR-137 điều 2). */
