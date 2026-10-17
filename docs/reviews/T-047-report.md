@@ -3,6 +3,20 @@
 Nhánh `feat/T-047-outside-retention`, dựng trên `feat/T-046-totals` (TL d9). Nguồn: yêu cầu của B sau T-043b (R27),
 TL d9 chốt + đính chính 2026-10-17.
 
+## Trạng thái
+
+**Đã vào main** (2026-10-17) qua nhánh web của E: `7eb8fb4` (Merge feat/T-046-attendance-calendar c4f4bea), cuối chuỗi
+`eee812c`. TL: verify + E2E xanh.
+
+| Nhánh | Commit (sau rebase lên `2af333a`) |
+|---|---|
+| `feat/T-046-totals` | `e417691` totals me?month + HR · `a160e66` ADJUSTMENT / void trả totals |
+| `feat/T-047-outside-retention` | `878f38d` OUTSIDE_RETENTION · `387c353` LOW-1 + report · `9bf8ea4` nhãn "Ngoài thời hạn lưu" |
+
+Rebase lên `2af333a` (đã có CC-HR-02 `d6ac8f7` + T-045) sạch, không xung đột. Sau rebase (exit code):
+`install --frozen-lockfile` 0 · `prisma generate` 0 · `typecheck` 0 · `lint` 0 · `lint:deps` api 0 / web 0 ·
+`check-env-example` 0 · `pnpm test` 0. Verify / integration / security / E2E do TL chạy ở lượt merge.
+
 ## Hành vi
 
 - CHỈ áp khi job retention thật sự chạy ở process: `isRetentionActive(env, persistence)` (maintenance-setup) = có
@@ -14,6 +28,9 @@ TL d9 chốt + đính chính 2026-10-17.
   lễ; tổng tháng tính 0. CSV: "Ngoài thời hạn lưu".
 - 422 `OUTSIDE_RETENTION`: ADJUSTMENT `date` < mốc; void lượt có `workDate` < mốc; PUT / DELETE ngày lễ `date` < mốc
   (kể cả OWNER có lý do). Thứ tự lỗi: 404 ws / 403 / luật self → 404 tài nguyên con (user, attendance_event) → 422.
+
+- Web (E, T-046 calendar): ô RETENTION_EXPIRED dùng nhãn "Ngoài thời hạn lưu"; thông điệp tiếng Việt cho 422
+  OUTSIDE_RETENTION ở `ec7e436` (fix/T-043b-retention-web). `timesheet-cache` không tự cộng tổng — lấy `totals` server.
 
 ## Review bảo mật (B @9344baf — APPROVE, không HIGH/MEDIUM)
 
