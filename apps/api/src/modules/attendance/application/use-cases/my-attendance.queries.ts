@@ -1,14 +1,16 @@
 import type { AttendanceMonthDto, AttendanceTodayDto, YearMonth } from '@taskflow/contracts';
 
 import { effectiveSchedule } from '../../domain/work-schedule';
-import { localToday, summarizeRange, todayCard, type AttendanceDeps } from '../attendance-days';
+import {
+  lastDayOf,
+  localToday,
+  summarizeRange,
+  todayCard,
+  type AttendanceDeps,
+} from '../attendance-days';
 import { totalsOf } from '../attendance-totals';
 
-/** Ngày cuối của tháng `YYYY-MM`. */
-export function lastDayOf(month: YearMonth): string {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-}
+export { lastDayOf } from '../attendance-days';
 
 /** `GET attendance/me/today` · `GET attendance/me?month=` — chỉ dữ liệu của chính người gọi. */
 export class MyAttendanceQueries {

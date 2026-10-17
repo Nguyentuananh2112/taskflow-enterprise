@@ -61,7 +61,13 @@ export function createHrAttendanceHandlers(baseUrl: string, hr: MockHr): HttpHan
   const change = (wsId: string, userId: string, date: string, id: string) => {
     const event = attendance.events(wsId, userId, date).find((e) => e.id === id);
     if (!event) throw new Error('mock: lượt vừa ghi không tồn tại');
-    return { event, day: hr.day(wsId, userId, date) };
+    // Như API (T-046): kèm tổng THÁNG của người đó do "server" tính — web không tự cộng.
+    const month = monthDays(date.slice(0, 7)).map((d) => hr.day(wsId, userId, d));
+    return {
+      event,
+      day: hr.day(wsId, userId, date),
+      totals: totalsOf(month, attendance.today()),
+    };
   };
 
   return [

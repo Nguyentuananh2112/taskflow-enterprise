@@ -123,7 +123,23 @@ describe('attendance contracts', () => {
   it('AttendanceEventChangeDto: { event, day }', () => {
     const { serverNow: _s, isHoliday: _h, schedule: _sc, ...day } = today;
     const row = { ...day, holidayName: null, workedMin: 0, lateMin: 0, earlyMin: 0 };
-    const change = { event, day: row };
+    const change = {
+      event,
+      day: row,
+      totals: {
+        workedMin: 0,
+        lateDays: 0,
+        lateMin: 0,
+        earlyDays: 0,
+        earlyMin: 0,
+        absentDays: 0,
+        leaveDays: 0,
+        missingOutDays: 0,
+        presentDays: 0,
+        upcomingLeaveDays: 0,
+        throughDate: '2026-11-17',
+      },
+    };
     expect(AttendanceEventChangeDto.parse(change)).toEqual(change);
   });
 

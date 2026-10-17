@@ -26,6 +26,12 @@ export interface AttendanceDeps {
   uow: IUnitOfWork;
 }
 
+/** Ngày cuối của tháng `YYYY-MM`. */
+export function lastDayOf(month: string): LocalDate {
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
 /** Múi giờ của lịch mặc định (workspace chưa lưu lịch nào). */
 export const DEFAULT_TIMEZONE = DEFAULT_SCHEDULE.timezone;
 

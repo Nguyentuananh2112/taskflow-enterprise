@@ -199,6 +199,8 @@ export type VoidAttendanceBody = z.infer<typeof VoidAttendanceBody>;
 export const AttendanceEventChangeDto = z.object({
   event: AttendanceEventDto,
   day: AttendanceDayDto,
+  /** Tổng THÁNG của `day` (người đó) tính lại ở server — web thay dòng tổng, không tự cộng (T-046, TL d9). */
+  totals: AttendanceTotalsDto,
 });
 export type AttendanceEventChangeDto = z.infer<typeof AttendanceEventChangeDto>;
 

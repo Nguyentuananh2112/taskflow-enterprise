@@ -9,7 +9,8 @@ import { ResourceConflictError, ResourceNotFoundError } from '../../../../core/e
 import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
 import { effectiveSchedule } from '../../domain/work-schedule';
 import { toEventDtos } from '../attendance-event-dto';
-import { summarizeRange, type AttendanceDeps } from '../attendance-days';
+import type { AttendanceDeps } from '../attendance-days';
+import { monthTotalsOf } from '../attendance-totals';
 import type { AttendanceEventRecord } from '../ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
@@ -183,13 +184,12 @@ export class AttendanceEventsUseCases {
   async #change(workspaceId: string, id: string): Promise<AttendanceEventChangeDto> {
     const event = (await this.d.events.findById(workspaceId, id))!;
     const [dto] = await this.#toDtos([event]);
-    const [day] = await summarizeRange(this.d, {
+    const { day, totals } = await monthTotalsOf(this.d, {
       workspaceId,
       userId: event.userId,
-      from: event.workDate,
-      to: event.workDate,
+      date: event.workDate,
     });
-    return { event: dto!, day: day! };
+    return { event: dto!, day, totals };
   }
 
   #toDtos(events: AttendanceEventRecord[]): Promise<AttendanceEventDto[]> {

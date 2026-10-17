@@ -43,6 +43,10 @@ describe('AttendanceEventsUseCases', () => {
       ip: null,
     });
     expect(r.day).toMatchObject({ date: '2026-11-17', firstIn: r.event.occurredAt });
+    // T-046 (TL d9): tổng tháng của người đó do SERVER tính (web không tự cộng) — khớp me?month.
+    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    expect(r.totals).toEqual(month.totals);
+    expect(r.totals).toMatchObject({ presentDays: 1, throughDate: '2026-11-17' });
     expect(t.audit).toEqual([
       expect.objectContaining({
         action: 'EVENT_ADJUST',
@@ -65,6 +69,8 @@ describe('AttendanceEventsUseCases', () => {
       workDate: '2026-11-17',
       occurredAt: vnTime('2026-11-18 00:30').toISOString(),
     });
+    // Tổng của THÁNG chứa workDate (không phải tháng của occurredAt).
+    expect(r.totals.throughDate).toBe('2026-11-18');
   });
 
   it('AT-13 Hana tự điều chỉnh cho chính mình ⇒ 403; Olivia (OWNER) cho chính mình ⇒ được + audit, không tự thông báo', async () => {
@@ -109,6 +115,11 @@ describe('AttendanceEventsUseCases', () => {
       voidedAt: vnTime('2026-11-17 10:00').toISOString(),
     });
     expect(r.day.firstIn).toBeNull();
+    // Hủy IN duy nhất của hôm nay ⇒ tổng tháng tính lại: không còn ngày đi làm.
+    expect(r.totals).toMatchObject({ presentDays: 0, lateDays: 0, throughDate: '2026-11-17' });
+    expect(r.totals).toEqual(
+      (await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' })).totals,
+    );
     expect(await t.backend.eventRows()).toHaveLength(1);
     expect(t.audit.map((a) => a.action)).toEqual(['EVENT_VOID']);
     expect(t.notified).toEqual([{ recipientId: MIA, eventId: id, actorId: HANA }]);

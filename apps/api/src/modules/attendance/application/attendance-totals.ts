@@ -1,6 +1,7 @@
 import type { AttendanceDayDto, AttendanceTotalsDto } from '@taskflow/contracts';
 
 import type { LocalDate } from '../domain/local-time';
+import { lastDayOf, localToday, summarizeRange, type AttendanceDeps } from './attendance-days';
 
 /**
  * Tổng tháng của một người — CÙNG một hàm cho `me?month=` và bảng HR / CSV (T-046, TL d9). Chỉ đếm ngày
@@ -46,4 +47,26 @@ export function totalsOf(days: readonly AttendanceDayDto[], today: LocalDate): A
     t.leaveDays += leaveOf(d);
   }
   return t;
+}
+
+/**
+ * Cả tháng chứa `date` của một người + tổng tháng (T-046): sau ADJUSTMENT / hủy lượt, server trả cả ô ngày lẫn dòng
+ * tổng đã tính lại để web thay đúng chỗ, KHÔNG tự cộng. Một lần tính cả tháng (ô ngày lấy từ đó).
+ */
+export async function monthTotalsOf(
+  d: AttendanceDeps,
+  q: { workspaceId: string; userId: string; date: LocalDate },
+): Promise<{ day: AttendanceDayDto; totals: AttendanceTotalsDto }> {
+  const month = q.date.slice(0, 7);
+  const [days, versions] = await Promise.all([
+    summarizeRange(d, {
+      workspaceId: q.workspaceId,
+      userId: q.userId,
+      from: `${month}-01`,
+      to: lastDayOf(month),
+    }),
+    d.calendar.scheduleVersions(q.workspaceId),
+  ]);
+  const today = localToday(versions, d.clock.now()).date;
+  return { day: days.find((x) => x.date === q.date)!, totals: totalsOf(days, today) };
 }
