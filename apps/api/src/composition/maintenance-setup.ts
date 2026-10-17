@@ -54,7 +54,9 @@ export function maintenanceJobs(d: {
     jobs.push({
       name: LEAVE_CARRYOVER_JOB,
       intervalMs: env.LEAVE_CARRYOVER_INTERVAL_MS ?? 3_600_000,
-      jitterMs: env.LEAVE_CARRYOVER_INTERVAL_MS === undefined ? 300_000 : 0,
+      // Lượt đầu 5–10 s sau khởi động ở mọi môi trường (F 18/10: jitter áp cả lượt đầu). v1 một instance, job
+      // idempotent + khóa ⇒ không cần dàn trải 5 phút.
+      jitterMs: env.LEAVE_CARRYOVER_INTERVAL_MS === undefined ? 5_000 : 0,
       firstRunAfterMs: 5_000,
       run: async (signal) => {
         await carryover.runOnce(signal);
