@@ -82,6 +82,16 @@ function operationOf(route: ApiRoute): Json {
           },
         }
       : {}),
+    ...(route.binaryBody
+      ? {
+          requestBody: {
+            required: true,
+            content: {
+              'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+            },
+          },
+        }
+      : {}),
     responses: {
       [String(route.response.status)]: successResponse(route),
       ...(route.response.alsoOk

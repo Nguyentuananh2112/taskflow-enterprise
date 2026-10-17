@@ -94,6 +94,13 @@ export class HrController {
     });
   };
 
+  /** Mốc 6 (ADR-142): gỡ ảnh đại diện không phù hợp — 204 (kể cả khi không có ảnh). */
+  removeAvatar = async (req: Request, res: Response) => {
+    const { userId } = req.params as EmployeeParams;
+    await this.d.employment.removeAvatar.execute({ actorId: requireUser(req).id, userId });
+    res.status(204).end();
+  };
+
   cancel = async (req: Request, res: Response) => {
     const { userId } = req.params as EmployeeParams;
     await this.d.employment.cancel.execute({ actorId: requireUser(req).id, userId });
@@ -144,5 +151,13 @@ export function hrRoutes(d: {
     c.schedule,
   );
   router.delete('/employees/:userId/offboarding', ...authed, one, c.cancel);
+  // Mốc 6: chung bucket hạn mức ảnh đại diện (10 / giờ / người thao tác, fail-closed — B).
+  router.delete(
+    '/employees/:userId/avatar',
+    ...authed,
+    ...d.limit(RATE_LIMIT_RULES.avatar),
+    one,
+    c.removeAvatar,
+  );
   return router;
 }

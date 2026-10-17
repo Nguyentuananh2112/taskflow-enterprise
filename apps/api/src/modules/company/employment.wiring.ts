@@ -13,13 +13,14 @@ import { BootstrapAdminUseCase } from './application/use-cases/bootstrap-admin.u
 import { HireEmployeeUseCase } from './application/use-cases/hire-employee.use-case';
 import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
-import { EmployeeQueries } from './application/use-cases/employees.queries';
+import { EmployeeQueries, type IEmployeeAvatars } from './application/use-cases/employees.queries';
 import { CompleteOffboardingUseCase } from './application/use-cases/complete-offboarding.use-case';
 import {
   CancelOffboardingUseCase,
   ScheduleOffboardingUseCase,
 } from './application/use-cases/offboarding.use-cases';
 import { ReissueActivationUseCase } from './application/use-cases/reissue-activation.use-case';
+import { RemoveEmployeeAvatarUseCase } from './application/use-cases/employee-avatar.use-case';
 import type { CompanyPermission } from './domain/roles';
 
 /**
@@ -41,6 +42,7 @@ export function createEmployment(d: {
   timeZone: () => Promise<string>;
   logger: ILogger;
   permissionsOf(userId: string): Promise<ReadonlySet<CompanyPermission> | null>;
+  avatars?: IEmployeeAvatars | undefined;
 }) {
   const completer = new CompleteOffboardingUseCase(d);
   return {
@@ -51,6 +53,7 @@ export function createEmployment(d: {
     cancel: new CancelOffboardingUseCase(d),
     completer,
     reissue: new ReissueActivationUseCase(d),
+    removeAvatar: new RemoveEmployeeAvatarUseCase(d),
   };
 }
 
@@ -70,5 +73,6 @@ export function lateAccounts(ref: { current: ICompanyAccounts | null }): ICompan
     revokeActivations: (userId) => of().revokeActivations(userId),
     createPending: (input) => of().createPending(input),
     issueActivation: (input) => of().issueActivation(input),
+    removeAvatar: (input) => of().removeAvatar(input),
   };
 }

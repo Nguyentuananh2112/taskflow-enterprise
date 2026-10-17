@@ -195,6 +195,11 @@ export const RATE_LIMIT_RULES = {
    * rộng; Valkey lỗi ⇒ cho qua (chữ ký + kiểm DB vẫn chặn truy cập trái phép).
    */
   media: [rule({ id: 'media-ip', windowMs: MINUTE, limit: 600, key: 'ip', failMode: 'open' })],
+  /**
+   * Ảnh đại diện (ADR-142): đặt / gỡ — kể cả HR gỡ cho người khác — CHUNG một bucket 10 / giờ / user. Fail-closed
+   * (B): đặt ảnh tốn đĩa + CPU worker sharp; một quy tắc cho cả nhóm cho đơn giản.
+   */
+  avatar: [rule({ id: 'avatar-user', windowMs: HOUR, limit: 10, key: 'user', failMode: 'closed' })],
 } as const satisfies Record<string, readonly RateLimitRule[]>;
 
 /** `project:join`: 30 lần/phút/socket — đếm trong bộ nhớ của socket (trạng thái gắn với kết nối). */

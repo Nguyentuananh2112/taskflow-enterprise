@@ -20,6 +20,13 @@ export interface EmployeeView {
   startDate: LocalDate | null;
   offboardLastDay: LocalDate | null;
   version: number | null;
+  /** Mốc 6: có ⇒ web hiện "Gỡ ảnh đại diện" (T-071). Chỉ gắn khi có `avatars`. */
+  avatarUrl?: string | null;
+}
+
+/** Mốc 6 (ADR-142): URL ký variant 64 theo lô — chỉ người còn thuộc công ty có ảnh. */
+export interface IEmployeeAvatars {
+  urlsOf(userIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 export type EmployeeStatusFilter = 'active' | 'pending' | 'offboarding' | 'left';
@@ -53,6 +60,7 @@ export class EmployeeQueries {
       accounts: ICompanyAccounts;
       permissionsOf(userId: string): Promise<ReadonlySet<CompanyPermission> | null>;
       uow: IUnitOfWork;
+      avatars?: IEmployeeAvatars | undefined;
     },
   ) {}
 
@@ -114,14 +122,17 @@ export class EmployeeQueries {
         ...members.map((m) => m.userId),
         ...departed.map((m) => m.userId),
       ]);
+      const avatars = await this.d.avatars?.urlsOf(members.map((m) => m.userId));
+      const withAvatar = (v: EmployeeView): EmployeeView =>
+        avatars ? { ...v, avatarUrl: avatars.get(v.userId) ?? null } : v;
       const out: EmployeeView[] = [];
       for (const m of members) {
         const p = profiles.get(m.userId);
-        if (p && !p.deleted) out.push(currentView(m, p));
+        if (p && !p.deleted) out.push(withAvatar(currentView(m, p)));
       }
       for (const m of departed) {
         const p = profiles.get(m.userId);
-        if (p && !p.deleted) out.push(leftView(m, p));
+        if (p && !p.deleted) out.push(withAvatar(leftView(m, p))); // đã nghỉ ⇒ null (ADR-142)
       }
       return out;
     });

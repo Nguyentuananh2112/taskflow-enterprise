@@ -80,6 +80,7 @@ import {
   MeResponse,
   UpdateMeBody,
   UserDto,
+  AvatarUploadResponseDto,
 } from '../auth/auth.schemas';
 import type { ErrorCode } from '../common/error-codes';
 import {
@@ -127,6 +128,9 @@ export type Security = 'bearer' | 'refreshCookie' | 'none';
 export type Tag =
   'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'company' | 'notifications';
 
+/** `X-Upload-Name` = `encodeURIComponent(tên gốc)` — ≤ 255 byte UTF-8 sau giải mã (ADR-141). */
+const AvatarUploadHeaders = z.object({ 'x-upload-name': z.string().min(1).max(765) });
+
 export interface ApiRoute {
   method: HttpMethod;
   /** Tương đối `/api/v1`, tham số dạng `{wsId}` (OpenAPI). */
@@ -139,6 +143,8 @@ export interface ApiRoute {
   body?: z.ZodType;
   /** Header bắt buộc (vd `Idempotency-Key`) ⇒ `parameter` `in: header`. */
   headers?: z.ZodObject;
+  /** Mốc 6 (ADR-141): thân NHỊ PHÂN `application/octet-stream` (upload) thay cho JSON. */
+  binaryBody?: true;
   /**
    * 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`; `csv` ⇒ thân `text/csv` (không
    * envelope); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
@@ -372,6 +378,16 @@ export const API_ROUTES: readonly ApiRoute[] = [
     errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'VALIDATION_ERROR', 'RESOURCE_NOT_FOUND'],
   },
   {
+    method: 'delete',
+    path: '/hr/employees/{userId}/avatar',
+    summary: 'Gỡ ảnh đại diện không phù hợp của nhân viên — audit AVATAR_REMOVED (Mốc 6)',
+    tag: 'hr',
+    security: 'bearer',
+    params: EmployeeParams,
+    response: { status: 204 },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'VALIDATION_ERROR', 'RESOURCE_NOT_FOUND'],
+  },
+  {
     method: 'post',
     path: '/auth/refresh',
     summary: 'Xoay refresh token (cookie + kiểm Origin)',
@@ -413,6 +429,36 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     body: UpdateMeBody,
     response: { status: 200, data: UserDto },
+  },
+  {
+    method: 'put',
+    path: '/me/avatar',
+    summary: 'Đặt ảnh đại diện — thân nhị phân ≤ 5 MB, tên gốc trong X-Upload-Name (Mốc 6)',
+    tag: 'auth',
+    security: 'bearer',
+    headers: AvatarUploadHeaders,
+    binaryBody: true,
+    response: { status: 200, data: AvatarUploadResponseDto },
+    errors: [
+      'SESSION_REVOKED',
+      'INVALID_UPLOAD_NAME',
+      'PAYLOAD_TOO_LARGE',
+      'UNSUPPORTED_MEDIA_TYPE',
+      'UNSUPPORTED_FILE_TYPE',
+      'BUSINESS_RULE_VIOLATION',
+      'IMAGE_PROCESSING_BUSY',
+      'IMAGE_PROCESSING_UNAVAILABLE',
+      'STORAGE_FULL',
+    ],
+  },
+  {
+    method: 'delete',
+    path: '/me/avatar',
+    summary: 'Gỡ ảnh đại diện của chính mình (Mốc 6)',
+    tag: 'auth',
+    security: 'bearer',
+    response: { status: 204 },
+    errors: ['SESSION_REVOKED'],
   },
   {
     method: 'post',

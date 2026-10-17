@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import * as fsp from 'node:fs/promises';
 import path from 'node:path';
 
@@ -72,4 +73,60 @@ export async function storeUsageBytes(root: string): Promise<number> {
     total += stat?.size ?? 0; // vừa bị xóa giữa chừng ⇒ bỏ qua
   }
   return total;
+}
+
+/** Mọi tệp dưới `<root>/<sub>` kèm đường dẫn tương đối dùng `/` và mốc sửa đổi (bỏ qua tệp biến mất giữa chừng). */
+export async function* walkFiles(
+  root: string,
+  sub: string,
+): AsyncGenerator<{ relative: string; modifiedAt: Date }> {
+  const base = path.join(root, sub);
+  const entries = await fsp.readdir(base, { recursive: true, withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const full = path.join(entry.parentPath, entry.name);
+    const stat = await fsp.stat(full).catch(() => undefined);
+    if (stat)
+      yield {
+        relative: path.relative(root, full).split(path.sep).join('/'),
+        modifiedAt: stat.mtime,
+      };
+  }
+}
+
+/**
+ * Kiểm thư mục kho lúc khởi động — sai ⇒ `FileStoreConfigError` (từ chối khởi động). Hard link: `commit` đặt tệp
+ * bằng `link` (không ghi đè); FAT/exFAT, mount mạng, bind mount Docker Desktop không có ⇒ phát hiện ngay (B L-d).
+ */
+export async function prepareStoreRoot(
+  root: string,
+  options: Pick<LocalFileStoreOptions, 'forbiddenParents'>,
+  fs: Pick<FileStoreFs, 'link'>,
+): Promise<string> {
+  if (!path.isAbsolute(root)) throw new FileStoreConfigError('phải là đường dẫn tuyệt đối');
+  const resolved = await real(root);
+  const parents = await Promise.all((options.forbiddenParents ?? []).map(real));
+  if (parents.some((p) => isInside(resolved, p))) {
+    throw new FileStoreConfigError('nằm trong thư mục ứng dụng');
+  }
+  const stat = await fsp.stat(resolved).catch(() => undefined);
+  if (!stat?.isDirectory()) throw new FileStoreConfigError('không tồn tại hoặc không phải thư mục');
+  const tmp = path.join(resolved, TMP_DIR);
+  const tag = randomBytes(6).toString('hex');
+  const probe = path.join(tmp, `.probe-${tag}`);
+  try {
+    await fsp.mkdir(tmp, { recursive: true });
+    await fsp.writeFile(probe, '', { flag: 'wx' });
+  } catch {
+    throw new FileStoreConfigError('không ghi được');
+  }
+  try {
+    await fs.link(probe, `${probe}-link`);
+  } catch {
+    throw new FileStoreConfigError('hệ thống tệp không hỗ trợ hard link (cần ext4/xfs/NTFS)');
+  } finally {
+    await fsp.unlink(`${probe}-link`).catch(() => undefined);
+    await fsp.unlink(probe).catch(() => undefined);
+  }
+  return resolved;
 }

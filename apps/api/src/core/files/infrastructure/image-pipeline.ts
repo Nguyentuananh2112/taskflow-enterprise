@@ -2,8 +2,6 @@ import {
   ImageProcessingBusyError,
   ImageProcessingUnavailableError,
   imageTooComplexError,
-  imageUnreadableError,
-  UnsupportedFileTypeError,
 } from '../../errors';
 import type { ImageType } from '../domain/sniff-type';
 import type { IImagePipeline, ImageVariant, ImageVariantSpec } from '../ports';
@@ -12,7 +10,11 @@ import {
   IMAGE_POOL_SIZE,
   IMAGE_TIMEOUT_MS,
   IMAGE_WORKER_IDLE_MS,
+  ERRORS,
   sharpWorkerFactory,
+  type Job,
+  type Reply,
+  type Slot,
   type WorkerLike,
 } from './sharp-worker';
 
@@ -31,29 +33,6 @@ export interface ImagePipelineOptions {
 
 /** Worker chết trước khi sẵn sàng chừng này lần liên tiếp ⇒ coi như không nạp được sharp. */
 const MAX_SPAWN_FAILURES = 2;
-
-type Reply =
-  { id: number; ok: true; variants: ImageVariant[] } | { id: number; ok: false; error: string };
-interface Job {
-  id: number;
-  message: Record<string, unknown>;
-  resolve: (v: ImageVariant[]) => void;
-  reject: (e: unknown) => void;
-}
-interface Slot {
-  worker: WorkerLike;
-  ready: boolean;
-  dead: boolean;
-  job?: Job | undefined;
-  timer?: NodeJS.Timeout | undefined;
-  idle?: NodeJS.Timeout | undefined;
-}
-
-const ERRORS: Readonly<Record<string, () => Error>> = {
-  FORMAT_MISMATCH: () => new UnsupportedFileTypeError(),
-  TOO_COMPLEX: () => imageTooComplexError(),
-  UNREADABLE: () => imageUnreadableError(),
-};
 
 /**
  * Pool worker sharp (ADR-141): mỗi worker một việc; đầy (đang chạy + chờ ≥ pool + hàng chờ) ⇒ 503 BUSY; quá giờ ⇒
@@ -86,9 +65,15 @@ export class SharpImagePipeline implements IImagePipeline {
     return this.#slots.length;
   }
 
-  transform(input: Buffer, expected: ImageType, variants: readonly ImageVariantSpec[]) {
+  transform(
+    input: Buffer,
+    expected: ImageType,
+    variants: readonly ImageVariantSpec[],
+    options: { maxPixels?: number } = {},
+  ) {
+    const maxPixels = options.maxPixels ?? 0;
     return this.#enqueue(
-      { kind: 'transform', input: Uint8Array.from(input), expected, variants },
+      { kind: 'transform', input: Uint8Array.from(input), expected, variants, maxPixels },
       true,
     );
   }
