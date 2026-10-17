@@ -8,12 +8,14 @@ const detail = (error: unknown, key: 'rule' | 'reason') =>
 
 const BY_RULE: Readonly<Record<string, string>> = {
   START_DATE_OUT_OF_RANGE: 'Ngày vào làm phải trong 31 ngày qua và không sau hôm nay.',
-  LAST_DAY_OUT_OF_RANGE: 'Ngày làm cuối phải trong khoảng 31 ngày trước đến 90 ngày tới.',
+  LAST_DAY_OUT_OF_RANGE:
+    'Ngày làm cuối phải trong khoảng 31 ngày trước đến 90 ngày tới, và không trước ngày vào làm.',
   EMAIL_UNAVAILABLE: 'Email này thuộc một tài khoản đã xóa — dùng email khác.',
   ALREADY_ACTIVATED: 'Người này đã kích hoạt tài khoản — không cần link nữa.',
 };
 const BY_REASON: Readonly<Record<string, string>> = {
   already_employee: 'Email này đang là nhân viên của công ty.',
+  last_admin: 'Đây là Quản trị viên cuối cùng — hãy cấp thêm một Quản trị viên trước.',
 };
 
 /** Câu lỗi bằng lời thường cho thao tác nhân viên (không mã kỹ thuật). */

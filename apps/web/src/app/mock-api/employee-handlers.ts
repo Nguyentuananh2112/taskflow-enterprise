@@ -13,6 +13,7 @@ import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
 
 import type { MockHr } from './mock-hr';
+import { soleOwnerWorkspacesOf, toEmployee } from './employee-view';
 import { requireCompany } from './mock-guard';
 import { fail, ok, paginate, parseBody, parseQuery } from './respond';
 
@@ -42,32 +43,7 @@ export function createEmployeeHandlers(baseUrl: string, hr: MockHr): HttpHandler
   const linkOf = (request: Request, token: string) =>
     `${request.headers.get('origin') ?? 'http://localhost:3000'}/activate#t=${token}`;
 
-  const employee = (userId: string): EmployeeDto | undefined => {
-    const user = db.getUser(userId);
-    if (!user) return undefined;
-    const row = company.row(userId);
-    if (row?.role === 'ADMIN') return undefined; // Admin không phải nhân viên (ADR-134)
-    const left = !row && company.departures.has(userId);
-    if (!row && !left) return undefined;
-    const status: EmployeeStatus = !row
-      ? 'LEFT'
-      : user.password === ''
-        ? 'PENDING_ACTIVATION'
-        : row.offboardLastDay
-          ? 'OFFBOARDING'
-          : 'ACTIVE';
-    return {
-      userId,
-      fullName: user.fullName,
-      email: user.email,
-      status,
-      grants: row ? [...row.grants] : [],
-      startDate: row?.startDate ?? null,
-      offboardLastDay:
-        row?.offboardLastDay ?? (left ? (company.departures.get(userId)?.lastDay ?? null) : null),
-      version: row?.version ?? null,
-    };
-  };
+  const employee = (userId: string, withAdmin = false) => toEmployee(db, userId, withAdmin);
   const all = () =>
     [...new Set([...company.members().map(([id]) => id), ...company.departures.keys()])]
       .flatMap((id) => employee(id) ?? [])
@@ -75,10 +51,15 @@ export function createEmployeeHandlers(baseUrl: string, hr: MockHr): HttpHandler
         (a, b) => a.fullName.localeCompare(b.fullName, 'vi') || a.userId.localeCompare(b.userId),
       );
 
-  /** Ngày làm cuối đã qua ⇒ hoàn tất ngay (access_until = 06:00 ngày sau — mock coi qua ngày là xong). */
+  /**
+   * `access_until` (06:00 ngày sau ngày làm cuối, giờ lịch +07:00 — ADR-137) đã qua ⇒ hoàn tất ngay, như server làm
+   * trong request (thay cho job mỗi phút).
+   */
   const settle = () => {
     for (const [id, row] of company.members()) {
-      if (row.offboardLastDay && row.offboardLastDay < today()) company.remove(id);
+      const until =
+        row.offboardLastDay && Date.parse(`${shift(row.offboardLastDay, 1)}T06:00:00+07:00`);
+      if (until && until <= db.now()) company.remove(id);
     }
   };
 
@@ -166,29 +147,35 @@ export function createEmployeeHandlers(baseUrl: string, hr: MockHr): HttpHandler
       const body = await parseBody(request, ScheduleOffboardingBody);
       if (body.response) return body.response;
       const id = Uuid.safeParse(params.userId);
-      const e = id.success ? employee(id.data) : undefined;
+      const e = id.success ? employee(id.data, true) : undefined;
       if (!e || e.status === 'LEFT') return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'user' });
-      // HR không tác động chính mình / người giữ grant (Admin làm được — ADR-137).
-      if (ctx.ok.company.role !== 'ADMIN' && (e.userId === ctx.ok.user.id || e.grants.length > 0)) {
+      const targetAdmin = company.row(e.userId)?.role === 'ADMIN';
+      // HR không tác động chính mình / Admin / người giữ grant (Admin làm được — ADR-137, B T-062).
+      if (
+        ctx.ok.company.role !== 'ADMIN' &&
+        (e.userId === ctx.ok.user.id || e.grants.length > 0 || targetAdmin)
+      ) {
         return fail(403, 'FORBIDDEN_ACCESS', { required: 'company:admin' });
       }
+      const admins = company.members().filter(([, r]) => r.role === 'ADMIN').length;
+      if (targetAdmin && admins <= 1)
+        return fail(409, 'RESOURCE_CONFLICT', { reason: 'last_admin' });
       const { lastDay } = body.data;
-      if (lastDay < shift(today(), -31) || lastDay > shift(today(), 90))
+      // Ngoài [hôm nay − 31, + 90] HOẶC trước ngày vào làm ⇒ cùng một luật (B T-062).
+      if (
+        lastDay < shift(today(), -31) ||
+        lastDay > shift(today(), 90) ||
+        (e.startDate !== null && lastDay < e.startDate)
+      )
         return rule('LAST_DAY_OUT_OF_RANGE');
       company.setOffboarding(e.userId, lastDay);
-      const soleOwnerWorkspaces = db.workspaces
-        .activeOf(e.userId)
-        .filter(({ workspace, member }) => {
-          const owners = db.workspaces.membersOf(workspace.id).filter((m) => m.role === 'OWNER');
-          return member.role === 'OWNER' && owners.length === 1;
-        })
-        .map(({ workspace }) => ({ id: workspace.id, name: workspace.name }));
+      const soleOwnerWorkspaces = soleOwnerWorkspacesOf(db, e.userId);
       const pendingLeaveCount = hr.leave.items.filter(
         (l) => l.userId === e.userId && l.status === 'PENDING',
       ).length;
       settle();
       return ok(OffboardingResponse, {
-        employee: employee(e.userId) ?? e,
+        employee: employee(e.userId, true) ?? e,
         warnings: { pendingLeaveCount, soleOwnerWorkspaces },
       });
     }),

@@ -84,7 +84,8 @@ export function OffboardDialog({ employee, today, onClose }: Props) {
           label="Ngày làm cuối"
           type="date"
           required
-          min={shiftDate(today, -31)}
+          // Không trước ngày vào làm (B T-062: cùng luật LAST_DAY_OUT_OF_RANGE).
+          min={[shiftDate(today, -31), employee.startDate ?? ''].sort().at(-1)}
           max={shiftDate(today, 90)}
           value={lastDay}
           onChange={(e) => setLastDay(e.target.value)}
