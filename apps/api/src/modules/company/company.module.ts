@@ -26,7 +26,9 @@ import {
   RenameCompanyUseCase,
 } from './application/use-cases/company-profile.use-cases';
 import { CompanyController, companyRoutes } from './presentation/company.routes';
+import { HrAuditController, hrAuditRoutes } from './presentation/hr-audit.routes';
 import { HrController, hrRoutes } from './presentation/hr.routes';
+import { ListHrAuditLogsQuery } from './application/list-hr-audit-logs.query';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -84,6 +86,8 @@ export interface CompanyModule {
   hrRoutes(authenticate: RequestHandler): Router;
   /** Router `/api/v1/company` (đọc tên; Admin đổi tên). */
   companyRoutes(authenticate: RequestHandler): Router;
+  /** Router `/api/v1/hr/audit-logs` (chỉ Admin). */
+  hrAuditRoutes(authenticate: RequestHandler): Router;
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
     isActive(userId: string): Promise<boolean>;
@@ -165,6 +169,16 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     hrRoutes: (authenticate) =>
       hrRoutes({
         controller: new HrController({ hire, responder: d.responder }),
+        authenticate,
+        limit: d.limit,
+      }),
+    hrAuditRoutes: (authenticate) =>
+      hrAuditRoutes({
+        controller: new HrAuditController({
+          list: new ListHrAuditLogsQuery({ hrAudit, access }),
+          responder: d.responder,
+        }),
+        permissionsOf,
         authenticate,
         limit: d.limit,
       }),

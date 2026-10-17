@@ -19,6 +19,7 @@ import {
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { COMPANY_PATH } from '../modules/company/presentation/company.routes';
+import { HR_AUDIT_PATH } from '../modules/company/presentation/hr-audit.routes';
 import { HR_PATH } from '../modules/company/presentation/hr.routes';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
@@ -169,6 +170,7 @@ export function createContainer(d: ContainerDeps): Container {
     { path: '/auth', router: auth.router },
     { path: HR_PATH, router: company.hrRoutes(auth.authenticate) },
     { path: COMPANY_PATH, router: company.companyRoutes(auth.authenticate) },
+    { path: HR_AUDIT_PATH, router: company.hrAuditRoutes(auth.authenticate) },
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },

@@ -32,8 +32,11 @@ interface LeaveDto {
   decidedBy: { id: string; fullName: string } | null;
 }
 
-/** HrAuditLog cấp công ty — route đọc (`GET /hr/audit-logs`) chưa có ⇒ đọc thẳng store bộ nhớ. */
-const auditRows = async () => (await t.persistence.company.hrAudit.list({ limit: 100 })).items;
+/** HrAuditLog cấp công ty qua `GET /hr/audit-logs` (chỉ Admin — Olivia). */
+const auditRows = async () =>
+  envelopeOf<{ action: string; after: Record<string, unknown> | null }[]>(
+    await request(t.app).get('/api/v1/hr/audit-logs?limit=100').set(olivia.auth),
+  ).data ?? [];
 
 beforeEach(async () => {
   t = createTestApp(); // nhân viên có nhiệm kỳ từ 01/11/2026 (giờ nghiệp vụ của harness)

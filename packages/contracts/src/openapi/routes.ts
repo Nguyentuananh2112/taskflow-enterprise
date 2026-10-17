@@ -25,6 +25,8 @@ import {
 } from '../attendance/attendance.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
+  HrAuditLogDto,
+  ListHrAuditLogsQuery,
   ListNotificationsQuery,
   NotificationDto,
   NotificationParams,
@@ -180,6 +182,17 @@ export const API_ROUTES: readonly ApiRoute[] = [
       'ORIGIN_NOT_ALLOWED',
       'RATE_LIMITED',
     ],
+  },
+  {
+    method: 'get',
+    path: '/hr/audit-logs',
+    summary:
+      'Nhật ký thao tác nhân sự cấp công ty — chỉ Admin (không chứa lý do đơn nghỉ). Mới nhất trước',
+    tag: 'hr',
+    security: 'bearer',
+    query: ListHrAuditLogsQuery,
+    response: { status: 200, data: z.array(HrAuditLogDto), paged: true },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
   },
   // ---------- công ty (Mốc 3.5, ADR-133/139) ----------
   {
