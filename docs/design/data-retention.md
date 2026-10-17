@@ -41,12 +41,15 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 | D5 nhiệm kỳ đã kết thúc | xóa cùng D2 | **xóa cùng D2 (2 năm)** — cần cho bảng công chừng nào còn lượt chấm | 10 năm |
 | D6 thông báo | 90 ngày | **180 ngày** | 1 năm |
 | D7 HrAuditLog | 2 năm | **5 năm** (không chứa D1/D3) | 10 năm |
+| D10 lương (Mốc 4) — bảng lương, phiếu, hồ sơ lương, audit `PAYROLL_*` | — | **ngoài mọi bước trên**; hạn lưu chứng từ lương riêng (đề xuất 10 năm — Luật Kế toán, kế toán xác nhận) | — |
 
 **Khuyến nghị B** vì:
 - 13 tháng phủ thời hiệu tranh chấp 1 năm cộng 1 tháng xử lý;
 - dữ liệu nhạy cảm D3 không sống lâu hơn nhu cầu đối chiếu;
 - app giữ đủ 2 năm cho HR xem lại và xuất lại, nghĩa vụ 5–10 năm do hồ sơ CSV của kế toán gánh;
 - D7 dài hơn D2 để giữ trách nhiệm giải trình cho thao tác quản trị, mà không giữ lại dữ liệu nhạy cảm.
+
+**D10 (Mốc 4, TL chốt 18/10):** phiếu lương là chứng từ kế toán ⇒ không theo D2/D7. Lý do sửa công / lý do điều chỉnh (có thể nhắc sức khỏe) nằm trên phiếu và trong `after.note` của audit `PAYROLL_*` ⇒ giữ cùng hạn phiếu (không scrub theo D3). Giảm thiểu: form sửa công nhắc "Nhân viên sẽ thấy lý do này — không ghi chẩn đoán/bệnh"; chỉ kế toán, Admin và chính nhân viên đọc được; không vào thông báo / log / Sentry. Mẫu thông báo §5 cần thêm 1 câu về lương trước khi deploy Mốc 4.
 
 Hạn chế của B, cần người dùng chấp nhận: sau 2 năm HR không xuất lại được bảng công cũ từ app; phải lấy từ kho CSV của kế toán.
 
