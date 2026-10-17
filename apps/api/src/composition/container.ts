@@ -18,7 +18,7 @@ import {
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
-import { HR_PATH } from '../modules/company/presentation/hr.routes';
+import { companyAdminDeps } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
@@ -87,6 +87,12 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
+    ...companyAdminDeps(
+      () => notifications,
+      realtime,
+      () => leave.employment,
+      () => workspace.adminWorkspaces,
+    ),
   });
   // Trước Workspace: publisher là port ghi thông báo (cùng UoW) cho leave / attendance / company.
   const notifications = createNotificationsModule({
@@ -171,7 +177,7 @@ export function createContainer(d: ContainerDeps): Container {
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
-    { path: HR_PATH, router: company.hrRoutes(auth.authenticate) },
+    ...company.routers(auth.authenticate),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },

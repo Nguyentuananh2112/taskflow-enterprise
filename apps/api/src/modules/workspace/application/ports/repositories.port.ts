@@ -23,6 +23,11 @@ export interface IWorkspaceRepository {
    * deleted_at IS NOT NULL AND purge_at > now` — `false` khi không thỏa (đã purge/quá hạn/chưa xóa).
    */
   restoreIfWithinGrace(id: string, now: Date): Promise<boolean>;
+  /**
+   * Mốc 3.5 (T-061a): `UPDATE … SET archived_at = at, version + 1 WHERE id AND deleted_at IS NULL AND archived_at IS
+   * NULL` — `false` khi đã xóa mềm / đã lưu trữ / không có.
+   */
+  archive(id: string, at: Date): Promise<boolean>;
   /** Id workspace có `purge_at <= now`, tối đa `limit` (job purge, ADR-095). */
   listPurgeable(now: Date, limit: number): Promise<string[]>;
 }

@@ -48,14 +48,20 @@ import {
   SubmitLeaveBody,
 } from '../leave';
 import {
+  AccessDto,
   ActivateBody,
+  AdminWorkspaceDto,
+  AdminWorkspaceParams,
+  AssignWorkspaceOwnerBody,
   ActivateResponse,
   ActivationInspectBody,
   ActivationInspectResponse,
+  EmployeeParams,
   HireEmployeeBody,
   HireEmployeeResponse,
   MemberCandidateDto,
   MemberCandidatesQuery,
+  SetAccessBody,
 } from '../company/company.schemas';
 import {
   AuthTokenDto,
@@ -196,6 +202,77 @@ export const API_ROUTES: readonly ApiRoute[] = [
       'BUSINESS_RULE_VIOLATION',
       'RATE_LIMITED',
     ],
+  },
+  // ---------- quản trị công ty (T-061a, company-level ADR-134) ----------
+  {
+    method: 'get',
+    path: '/admin/access',
+    summary:
+      'Quyền công ty của mọi người đang thuộc công ty (company:admin) — role, grants, trạng thái; có email',
+    tag: 'hr',
+    security: 'bearer',
+    response: { status: 200, data: z.array(AccessDto) },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  {
+    method: 'put',
+    path: '/admin/access/{userId}',
+    summary:
+      'Đổi role ADMIN↔EMPLOYEE / grants (company:grant). Nâng Admin đóng nhiệm kỳ chấm công hôm nay; hạ Admin mở nhiệm kỳ từ ngày mai; thu hồi phiên khi đổi role. Tự đổi mình ⇒ 403; Admin cuối ⇒ 409 last_admin',
+    tag: 'hr',
+    security: 'bearer',
+    params: EmployeeParams,
+    body: SetAccessBody,
+    response: { status: 200, data: AccessDto },
+    errors: [
+      'SESSION_REVOKED',
+      'FORBIDDEN_ACCESS',
+      'VALIDATION_ERROR',
+      'RESOURCE_NOT_FOUND',
+      'VERSION_CONFLICT',
+      'RESOURCE_CONFLICT',
+      'BUSINESS_RULE_VIOLATION',
+    ],
+  },
+  {
+    method: 'get',
+    path: '/admin/workspaces',
+    summary:
+      'Mọi workspace cho Admin (company:admin): tên, OWNER, số thành viên, cờ mồ côi (+ thành viên còn lại khi mồ côi), xóa mềm / lưu trữ — KHÔNG dự án / task',
+    tag: 'hr',
+    security: 'bearer',
+    response: { status: 200, data: z.array(AdminWorkspaceDto) },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  {
+    method: 'post',
+    path: '/admin/workspaces/{id}/owner',
+    summary:
+      'Giao OWNER cho thành viên hiện tại của ws mồ côi (người đó còn thuộc công ty, không có lịch nghỉ). Ws còn OWNER / đã xóa ⇒ 409; không là thành viên ⇒ 422 NOT_WORKSPACE_MEMBER',
+    tag: 'hr',
+    security: 'bearer',
+    params: AdminWorkspaceParams,
+    body: AssignWorkspaceOwnerBody,
+    response: { status: 200, data: AdminWorkspaceDto },
+    errors: [
+      'SESSION_REVOKED',
+      'FORBIDDEN_ACCESS',
+      'VALIDATION_ERROR',
+      'RESOURCE_NOT_FOUND',
+      'RESOURCE_CONFLICT',
+      'BUSINESS_RULE_VIOLATION',
+    ],
+  },
+  {
+    method: 'post',
+    path: '/admin/workspaces/{id}/archive',
+    summary:
+      'Lưu trữ ws 0 thành viên (không purge, giữ dữ liệu; đã lưu trữ ⇒ trả như cũ). Còn thành viên ⇒ 409 workspace_has_members',
+    tag: 'hr',
+    security: 'bearer',
+    params: AdminWorkspaceParams,
+    response: { status: 200, data: AdminWorkspaceDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'RESOURCE_NOT_FOUND', 'RESOURCE_CONFLICT'],
   },
   {
     method: 'post',

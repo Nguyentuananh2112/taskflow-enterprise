@@ -26,6 +26,22 @@ export interface ICompanyMemberRepository {
    * `null` ⇒ không còn dòng / không còn là EMPLOYEE.
    */
   promoteToAdmin(userId: string, at: Date): Promise<CompanyMemberSnapshot | null>;
+  /** Mọi thành viên hiện tại (Admin + nhân viên), sắp theo `userId` — danh sách quyền của Admin (T-061a). */
+  listAll(): Promise<CompanyMemberSnapshot[]>;
+  /** Đổi grants của EMPLOYEE, `version + 1` — có điều kiện vẫn là EMPLOYEE; `null` ⇒ không còn / không phải EMPLOYEE. */
+  setGrants(
+    userId: string,
+    grants: CompanyMemberSnapshot['grants'],
+    at: Date,
+  ): Promise<CompanyMemberSnapshot | null>;
+  /**
+   * ADMIN → EMPLOYEE (T-061a, CO-09): `role = EMPLOYEE`, `start_date` = nhiệm kỳ MỚI, grants mới, `version + 1` — có
+   * điều kiện vẫn là ADMIN; `null` ⇒ không còn / không phải ADMIN.
+   */
+  demoteToEmployee(
+    userId: string,
+    input: { startDate: LocalDate; grants: CompanyMemberSnapshot['grants']; at: Date },
+  ): Promise<CompanyMemberSnapshot | null>;
   /** Đóng một nhiệm kỳ (`company_member_departures`) — CÙNG transaction với thay đổi dòng. */
   recordDeparture(d: {
     id: string;

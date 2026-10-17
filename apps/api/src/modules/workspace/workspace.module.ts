@@ -1,3 +1,4 @@
+import { AdminWorkspaceOps } from './application/use-cases/admin-workspace-ops';
 import type { RequestHandler, Router } from 'express';
 
 import type { IClock, IIdGenerator, IRandom } from '../../core/domain';
@@ -97,6 +98,8 @@ export interface WorkspaceModule {
   accessChecker: WorkspaceProjectAccessChecker;
   provisioner: DefaultWorkspaceProvisioner;
   membershipReader: WorkspaceMembershipReader;
+  /** T-061a: dữ liệu workspace cho Admin công ty (`IAdminWorkspaces` của company — khớp cấu trúc). */
+  adminWorkspaces: AdminWorkspaceOps;
 }
 
 /** Composition của module Workspace/Member/Project (ADR-016). */
@@ -183,5 +186,13 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     }),
     provisioner: new DefaultWorkspaceProvisioner({ creator, projects, random, ids, clock }),
     membershipReader: new WorkspaceMembershipReader({ queries }),
+    adminWorkspaces: new AdminWorkspaceOps({
+      workspaces,
+      memberships,
+      queries,
+      notifier,
+      uow,
+      clock,
+    }),
   };
 }
