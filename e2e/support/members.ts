@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-import type { E2EUser } from './fixtures';
+import { awaiting, test, type E2EUser } from './fixtures';
 
 /**
  * T-065c (E @8934d52): thêm thành viên ws bằng combobox "Tìm nhân viên" — chỉ người thuộc công ty (ADR-134), thay ô
@@ -12,6 +12,7 @@ export async function addMemberViaUi(
   member: E2EUser,
   roleLabel: string,
 ): Promise<void> {
+  test.fixme(awaiting('T-061a'), '[PENDING T-061a] GET member-candidates — API A');
   const form = page.getByRole('form', { name: 'Thêm thành viên' });
   const add = form.getByRole('button', { name: 'Thêm', exact: true });
   await expect(add).toBeDisabled();

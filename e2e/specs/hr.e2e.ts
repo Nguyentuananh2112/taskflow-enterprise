@@ -325,7 +325,10 @@ test(`E2E-HR-03 / E2E-HR-18 [${T065B}]: Ada cấp "Quản lý nhân sự" cho Mi
   browser,
   request,
 }) => {
-  test.fixme(awaiting(T065B), `[PENDING ${T065B}] trang /admin/access (web E)`);
+  test.fixme(
+    awaiting(T065B) || awaiting('T-061a'),
+    `[PENDING ${T065B} + T-061a] /admin/access (web E + API A)`,
+  );
   const w = await seedHrWorld(request, 'hr03', { hanaIsHr: false });
   const miaName = w.mia.user.fullName;
   const mia = await openAs(browser, w.mia.user);

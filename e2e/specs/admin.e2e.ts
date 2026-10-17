@@ -28,7 +28,10 @@ test('T-034: thêm thành viên bằng combobox nhân viên (+ email lạ ⇒ kh
   page,
   request,
 }) => {
-  test.fixme(awaiting('T-065c'), '[PENDING T-065c] combobox thêm thành viên (web E)');
+  test.fixme(
+    awaiting('T-065c') || awaiting('T-061a'),
+    '[PENDING T-065c + T-061a] combobox thêm thành viên (web E) + member-candidates (API A)',
+  );
   const a = newUser('adm-add');
   const b = newUser('adm-add-b');
   const sa = await apiRegister(request, a);
