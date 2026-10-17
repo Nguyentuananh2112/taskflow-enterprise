@@ -1,9 +1,13 @@
-import type { RealtimeGateway } from '../core/realtime/gateway';
-import type {
-  CompanyGrant,
-  CompanyRole,
-  RealtimeEventMeta,
-  WorkspaceRole,
+import type { ChatEmission, IChatTypingAccess } from '../core/realtime/chat-realtime';
+import type { RealtimeGateway, RealtimeGatewayOptions } from '../core/realtime/gateway';
+import {
+  companyGatedSocketAuthenticator,
+  socketAuthenticatorFrom,
+  type CompanyGrant,
+  type ISocketAuthenticator,
+  type CompanyRole,
+  type RealtimeEventMeta,
+  type WorkspaceRole,
 } from '../core/realtime/ports';
 
 type Notifications = Pick<
@@ -17,6 +21,7 @@ type Notifications = Pick<
   | 'closeWorkspace'
   | 'emitToProject'
   | 'broadcastAvatarChanged'
+  | 'emitChat'
 >;
 
 /**
@@ -88,4 +93,31 @@ export class LateBoundRealtime implements Notifications {
   ): Promise<void> {
     return this.#target?.broadcastAvatarChanged(input, meta) ?? Promise.resolve();
   }
+
+  emitChat(e: ChatEmission): Promise<void> {
+    return this.#target?.emitChat(e) ?? Promise.resolve();
+  }
+}
+
+/** Socket chỉ cho người còn thuộc công ty (ADR-135): authenticator của auth + cổng công ty ở handshake. */
+export function gatedSocketAuth(
+  authenticator: Parameters<typeof socketAuthenticatorFrom>[0],
+  gate: { isActive(userId: string): Promise<boolean> },
+): ISocketAuthenticator {
+  return companyGatedSocketAuthenticator(socketAuthenticatorFrom(authenticator), (userId) =>
+    gate.isActive(userId),
+  );
+}
+
+export type GatewayWiring = Pick<
+  RealtimeGatewayOptions,
+  'authenticator' | 'accessChecker' | 'chatTyping'
+>;
+
+export function gatewayOptions(
+  authenticator: ISocketAuthenticator,
+  accessChecker: RealtimeGatewayOptions['accessChecker'],
+  chatTyping: IChatTypingAccess | undefined,
+): GatewayWiring {
+  return { authenticator, accessChecker, ...(chatTyping ? { chatTyping } : {}) };
 }

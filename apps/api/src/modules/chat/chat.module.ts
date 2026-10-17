@@ -25,6 +25,7 @@ import { chatRoutes } from './presentation/chat.routes';
 
 export { CHAT_PATH } from './presentation/chat.routes';
 export { noopChatNotifier } from './application/ports/chat-collaborators.port';
+export { ChatRealtimeNotifier, type IChatEventSink } from './application/chat-realtime-notifier';
 export type {
   ChatUserRef,
   IChatMedia,

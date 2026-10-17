@@ -4,12 +4,13 @@ import type { IClock, IIdGenerator } from '../core/domain';
 import { UploadByteBudget } from '../core/files/upload-byte-budget';
 import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
+import type { IChatTypingAccess } from '../core/realtime/chat-realtime';
 import type { ILogger } from '../core/logging/logger';
 import {
   CHAT_PATH,
   createChatModule,
-  noopChatNotifier,
-  type IChatNotifier,
+  ChatRealtimeNotifier,
+  type IChatEventSink,
   type IChatUserRefs,
 } from '../modules/chat/chat.module';
 import { chatMedia, chatMediaResolver, chatUploadProcessor } from './chat-files';
@@ -44,7 +45,8 @@ export function chatSettingsFromEnv(env: {
 
 /**
  * Module chat (T-069) — chỉ khi có kho tệp (URL ảnh, upload); test HTTP cũ không có ⇒ không mount `/chat`. Tên + ảnh
- * người dùng: reader tên của Task + `avatarRefs` (T-068, một truy vấn / lô); realtime T-070 thay `notifier`.
+ * người dùng: reader tên của Task + `avatarRefs` (T-068). Realtime (T-070): event qua gateway trễ; `typing` cho
+ * `RealtimeGatewayOptions.chatTyping`.
  */
 export function chatRouters(
   d: {
@@ -62,10 +64,11 @@ export function chatRouters(
     limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
     /** Giờ nghiệp vụ. */
     business: IClock;
-    notifier?: IChatNotifier;
+    /** Gateway (trễ) — T-070. */
+    realtime: IChatEventSink;
   },
-): { path: string; router: Router }[] {
-  if (!d.files) return [];
+): { routers: { path: string; router: Router }[]; typing?: IChatTypingAccess } {
+  if (!d.files) return { routers: [] };
   const { files } = d;
   const { persistence } = x;
   const repos = persistence.chat;
@@ -95,11 +98,17 @@ export function chatRouters(
       );
     },
   };
+  const notifier = new ChatRealtimeNotifier({
+    conversations: repos.conversations,
+    users,
+    sink: x.realtime,
+    clock: x.business,
+  });
   const chat = createChatModule({
     repos,
     users,
     media: chatMedia(files.store, files.signer),
-    notifier: x.notifier ?? noopChatNotifier,
+    notifier,
     processor: chatUploadProcessor(files),
     budget: new UploadByteBudget(
       files.byteCounter,
@@ -119,5 +128,8 @@ export function chatRouters(
     editWindowSeconds: d.chat?.editWindowSeconds,
     sendHourly: d.chat?.sendHourly,
   });
-  return [{ path: CHAT_PATH, router: chat.router }];
+  return {
+    routers: [{ path: CHAT_PATH, router: chat.router }],
+    typing: { recipients: (id, userId) => notifier.typingRecipients(id, userId) },
+  };
 }
