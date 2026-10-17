@@ -46,6 +46,15 @@ export function fail(status: number, code: ErrorCode, details: unknown = null, i
 }
 
 /**
+ * TẠM (Mốc 6): mã lỗi API sẽ có nhưng `ErrorCode` của contracts trên nhánh này chưa có (G thêm ở T-067 — chưa gộp) — cùng vỏ envelope,
+ * không parse enum. Contracts có mã ⇒ chuyển sang `fail`.
+ */
+export function failUnlisted(status: number, code: string, message: string, init: Init = {}) {
+  const body = { success: false, error: { code, message, details: null }, meta: meta() };
+  return HttpResponse.json(body, { status, headers: init.headers ?? {} });
+}
+
+/**
  * Validate body bằng schema contracts, y như server (ADR-081, ADR-096: issue không chứa `input`).
  * Trả `{ data }` hoặc `{ response }` 400 VALIDATION_ERROR.
  */

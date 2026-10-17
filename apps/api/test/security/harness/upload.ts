@@ -129,10 +129,11 @@ function toRaw(
 export function media(
   api: ApiUnderTest,
   signedUrl: string,
+  headers: Record<string, string> = {},
 ): Promise<RawResponse & { body: Buffer }> {
   const url = new URL(signedUrl, api.baseUrl);
   return new Promise((resolve, reject) => {
-    const req = httpRequest(url, { method: 'GET', agent: false }, (res) => {
+    const req = httpRequest(url, { method: 'GET', headers, agent: false }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () => resolve(toRaw(res.statusCode ?? 0, res.headers, Buffer.concat(chunks))));

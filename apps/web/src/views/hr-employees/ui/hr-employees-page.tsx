@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useEmployees } from '@/entities/company';
 import { useCompanyToday } from '@/entities/hr';
 import { useCompanyPermission, useSession } from '@/entities/session';
+import { RemoveAvatarDialog } from '@/features/avatar-remove';
 import { HireDialog, OffboardDialog } from '@/features/employee-manage';
 import { cn } from '@/shared/lib/cn';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value';
@@ -47,7 +48,7 @@ export function HrEmployeesPage() {
   const today = useCompanyToday(allowed).data?.date ?? null;
   // Hộp thoại ở CẤP TRANG (không trong dòng) ⇒ người đổi trạng thái rời bộ lọc vẫn thấy kết quả (F, E2E-HR-19).
   const [dialog, setDialog] = useState<
-    { kind: 'hire' } | { kind: 'offboard' | 'rehire'; employee: EmployeeDto } | null
+    { kind: 'hire' } | { kind: 'offboard' | 'rehire' | 'avatar'; employee: EmployeeDto } | null
   >(null);
   const close = () => setDialog(null);
 
@@ -121,7 +122,9 @@ export function HrEmployeesPage() {
               key={e.userId}
               employee={e}
               ready={today !== null}
+              self={e.userId === viewerId}
               onOpen={(kind, employee) => setDialog({ kind, employee })}
+              onRemoveAvatar={(employee) => setDialog({ kind: 'avatar', employee })}
               locked={!isAdmin && (e.userId === viewerId || e.grants.length > 0)}
             />
           ))}
@@ -136,6 +139,9 @@ export function HrEmployeesPage() {
         >
           Tải thêm
         </Button>
+      )}
+      {dialog?.kind === 'avatar' && (
+        <RemoveAvatarDialog employee={dialog.employee} onClose={close} />
       )}
       {today && dialog?.kind === 'hire' && <HireDialog today={today} onClose={close} />}
       {today && dialog?.kind === 'offboard' && (
