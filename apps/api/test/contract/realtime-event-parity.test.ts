@@ -30,14 +30,29 @@ const SERVER_EVENTS_RECORD: Record<keyof ServerToClientEvents, true> = {
   'company:access-changed': true,
   'notification:new': true,
   'user:avatar-changed': true,
+  'chat:message:new': true,
+  'chat:message:updated': true,
+  'chat:read': true,
+  'chat:conversation:updated': true,
+  'chat:conversation:removed': true,
+  'chat:typing': true,
 };
 const SERVER_EVENTS = new Set<string>(Object.keys(SERVER_EVENTS_RECORD));
 /**
  * Event đã vào hợp đồng SỚM (để web dựng mock — Mốc 6) nhưng chỗ emit thuộc vé sau. PHẢI rỗng ở cổng gộp
  * cuối của nhánh tích hợp; server đã emit mà còn trong danh sách ⇒ test đỏ (buộc xóa).
  */
-const PENDING_SERVER_EMIT: Readonly<Record<string, string>> = { 'user:avatar-changed': 'T-068' };
-const CLIENT_EVENTS = new Set(['project:join', 'project:leave', 'auth:renew']);
+const PENDING_SERVER_EMIT: Readonly<Record<string, string>> = {
+  'user:avatar-changed': 'T-068',
+  'chat:message:new': 'T-070',
+  'chat:message:updated': 'T-070',
+  'chat:read': 'T-070',
+  'chat:conversation:updated': 'T-070',
+  'chat:conversation:removed': 'T-070',
+  'chat:typing': 'T-070',
+};
+// `chat:typing` hai chiều (cùng tên client→server và server→client — ADR-145).
+const CLIENT_EVENTS = new Set(['project:join', 'project:leave', 'auth:renew', 'chat:typing']);
 const EVENT = String.raw`([a-z]+:[a-z-]+)`;
 
 function sourceFiles(dir: string, keep: (path: string) => boolean = () => true): string[] {
