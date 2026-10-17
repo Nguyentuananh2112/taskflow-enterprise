@@ -112,6 +112,32 @@ describe('bảng công tháng', () => {
     expect(await screen.findByRole('dialog', { name: /, 17\/10$/ })).toBeTruthy();
   });
 
+  it('chi tiết ngày: "‹ Ngày trước" / "Ngày sau ›" đổi ngày ngay trong dialog, không vượt khỏi tháng', async () => {
+    open();
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    const u = userEvent.setup({ delay: null });
+    const title = () => screen.getByRole('dialog').querySelector('h2')?.textContent;
+    await u.click(within(table).getByRole('button', { name: /^Ngày 15\/10/ }));
+    await screen.findByRole('dialog', { name: /15\/10$/ });
+    await u.click(screen.getByRole('button', { name: 'Ngày sau ›' }));
+    expect(title()).toMatch(/16\/10$/);
+    await u.click(screen.getByRole('button', { name: '‹ Ngày trước' }));
+    await u.click(screen.getByRole('button', { name: '‹ Ngày trước' }));
+    expect(title()).toMatch(/14\/10$/);
+    await u.keyboard('{Escape}');
+    await u.click(within(table).getByRole('button', { name: /^Ngày 1\/10/ }));
+    await screen.findByRole('dialog', { name: /01\/10$/ });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '‹ Ngày trước' }).disabled).toBe(
+      true,
+    );
+    await u.keyboard('{Escape}');
+    await u.click(within(table).getByRole('button', { name: /^Ngày 31\/10/ }));
+    await screen.findByRole('dialog', { name: /31\/10$/ });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Ngày sau ›' }).disabled).toBe(
+      true,
+    );
+  });
+
   it('chuyển "Danh sách" ⇒ bảng có tiêu đề hàng, câu chữ đời thường; NHỚ lựa chọn khi vào lại', async () => {
     open();
     await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });

@@ -18,6 +18,8 @@ type Props = Readonly<{
   /** Hàng nút cuối (Hủy / Xác nhận). */
   footer?: ReactNode;
   className?: string;
+  /** Ghi đè cỡ chữ tiêu đề (vd ngày trong chi tiết ngày in to hơn). */
+  titleClassName?: string;
 }>;
 
 export function Dialog({
@@ -29,6 +31,7 @@ export function Dialog({
   children,
   footer,
   className,
+  titleClassName,
 }: Props) {
   return (
     <RadixDialog.Root
@@ -47,7 +50,9 @@ export function Dialog({
           )}
         >
           <div className="flex flex-col gap-1">
-            <RadixDialog.Title className="text-lg font-semibold">{title}</RadixDialog.Title>
+            <RadixDialog.Title className={cn('text-lg font-semibold', titleClassName)}>
+              {title}
+            </RadixDialog.Title>
             {description && (
               <RadixDialog.Description className="text-sm text-text-muted">
                 {description}

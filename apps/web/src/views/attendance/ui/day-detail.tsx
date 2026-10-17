@@ -10,24 +10,51 @@ import {
   duration,
   useMyAttendanceEvents,
 } from '@/entities/attendance';
+import { Button } from '@/shared/ui/button';
 import { Dialog } from '@/shared/ui/dialog';
 
 type Props = Readonly<{
   wsId: string;
   day: AttendanceDayDto | null;
+  /** Mọi ngày của tháng đang xem — "Ngày trước / Ngày sau" không vượt khỏi tháng. */
+  days: readonly AttendanceDayDto[];
   today: string;
+  onSelectDay: (date: string) => void;
   onClose: () => void;
 }>;
 
 /** Panel chi tiết một ngày (T-046): Giờ vào / Giờ ra / Số giờ làm bằng lời thường + lượt chấm của chính mình. */
-export function DayDetail({ wsId, day, today, onClose }: Props) {
+export function DayDetail({ wsId, day, days, today, onSelectDay, onClose }: Props) {
   const events = useMyAttendanceEvents(wsId, day?.date ?? null);
   const text = day ? dayText(day, today) : null;
+  const index = day ? days.findIndex((d) => d.date === day.date) : -1;
+  const prev = index > 0 ? days[index - 1] : undefined;
+  const next = index >= 0 ? days[index + 1] : undefined;
   return (
     <Dialog
       open={day !== null}
       onOpenChange={(open) => !open && onClose()}
       title={day ? `Ngày ${dayLabel(day.date)}` : 'Chi tiết ngày'}
+      titleClassName="text-2xl"
+      // Lỡ bấm nhầm ô ⇒ đổi ngày ngay trong dialog; cũng để xem lần lượt từng ngày (demo TL d9).
+      footer={
+        <div className="flex w-full justify-between gap-2">
+          <Button
+            variant="secondary"
+            disabled={!prev}
+            onClick={() => prev && onSelectDay(prev.date)}
+          >
+            ‹ Ngày trước
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!next}
+            onClick={() => next && onSelectDay(next.date)}
+          >
+            Ngày sau ›
+          </Button>
+        </div>
+      }
       {...(text?.label
         ? { description: [text.label, text.detail].filter(Boolean).join(' · ') }
         : {})}
