@@ -37,6 +37,11 @@ export function createMemberHandlers(
 ): HttpHandler[] {
   const base = `${baseUrl}/workspaces/:wsId/members`;
   const ws = db.workspaces;
+  // Mốc 6 (ADR-142): URL hiện tại (variant 64); không có ảnh ⇒ không thêm trường (giữ DTO cũ của các test trước).
+  const withAvatar = (userId: string) => {
+    const avatarUrl = db.company.avatarOf(userId);
+    return avatarUrl ? { avatarUrl } : {};
+  };
   const toDto = (wsId: string, userId: string): MemberDto => {
     const row = db.membersOf(wsId).find((m) => m.user.id === userId);
     if (!row) throw new Error('mock: thành viên không tồn tại');
@@ -46,6 +51,7 @@ export function createMemberHandlers(
       fullName: row.user.fullName,
       role: row.membership.role,
       joinedAt: row.joinedAt,
+      ...withAvatar(row.user.id),
     };
   };
   const ownersOf = (wsId: string) => ws.membersOf(wsId).filter((m) => m.role === 'OWNER');
@@ -88,7 +94,7 @@ export function createMemberHandlers(
         .flatMap(([id]) => {
           const u = db.getUser(id);
           return u && `${u.fullName} ${u.email}`.toLowerCase().includes(q)
-            ? [{ id, fullName: u.fullName, email: u.email }]
+            ? [{ id, fullName: u.fullName, email: u.email, ...withAvatar(id) }]
             : [];
         })
         .sort((a, b) => a.fullName.localeCompare(b.fullName, 'vi'))
