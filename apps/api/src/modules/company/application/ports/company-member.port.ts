@@ -74,6 +74,12 @@ export interface ICompanyRepository {
   get(): Promise<CompanyProfile | null>;
   /** Tạo dòng `companies` nếu chưa có (bootstrap); đã có ⇒ giữ nguyên tên cũ. */
   ensure(name: string, at: Date): Promise<CompanyProfile>;
+  /** Đổi tên khi `version` khớp (ADR-010) ⇒ bản mới (`version + 1`); lệch / chưa có dòng ⇒ `null`. */
+  rename(input: {
+    name: string;
+    expectedVersion: number;
+    at: Date;
+  }): Promise<CompanyProfile | null>;
 }
 
 /** Một nhiệm kỳ EMPLOYEE theo NGÀY (ADR-133, A C1): `until = null` ⇒ đang làm. */

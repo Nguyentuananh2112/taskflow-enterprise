@@ -25,6 +25,8 @@ import {
 } from '../attendance/attendance.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
+  HrAuditLogDto,
+  ListHrAuditLogsQuery,
   ListNotificationsQuery,
   NotificationDto,
   NotificationParams,
@@ -59,6 +61,7 @@ import {
   EmployeeDto,
   EmployeeParams,
   HireEmployeeBody,
+  CompanyDto,
   HireEmployeeResponse,
   ListEmployeesQuery,
   MemberCandidateDto,
@@ -67,6 +70,7 @@ import {
   ReissueActivationResponse,
   ScheduleOffboardingBody,
   SetAccessBody,
+  UpdateCompanyBody,
 } from '../company/company.schemas';
 import {
   AuthTokenDto,
@@ -120,7 +124,8 @@ import {
  */
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type Security = 'bearer' | 'refreshCookie' | 'none';
-export type Tag = 'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'notifications';
+export type Tag =
+  'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'company' | 'notifications';
 
 export interface ApiRoute {
   method: HttpMethod;
@@ -190,6 +195,37 @@ export const API_ROUTES: readonly ApiRoute[] = [
       'ORIGIN_NOT_ALLOWED',
       'RATE_LIMITED',
     ],
+  },
+  {
+    method: 'get',
+    path: '/hr/audit-logs',
+    summary:
+      'Nhật ký thao tác nhân sự cấp công ty — chỉ Admin (không chứa lý do đơn nghỉ). Mới nhất trước',
+    tag: 'hr',
+    security: 'bearer',
+    query: ListHrAuditLogsQuery,
+    response: { status: 200, data: z.array(HrAuditLogDto), paged: true },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS'],
+  },
+  // ---------- công ty (Mốc 3.5, ADR-133/139) ----------
+  {
+    method: 'get',
+    path: '/company',
+    summary: 'Tên công ty (header mọi trang) — mọi người đang thuộc công ty',
+    tag: 'company',
+    security: 'bearer',
+    response: { status: 200, data: CompanyDto },
+    errors: ['SESSION_REVOKED', 'RESOURCE_NOT_FOUND'],
+  },
+  {
+    method: 'patch',
+    path: '/company',
+    summary: 'Đổi tên công ty (company:admin, expectedVersion) — audit COMPANY_RENAMED',
+    tag: 'company',
+    security: 'bearer',
+    body: UpdateCompanyBody,
+    response: { status: 200, data: CompanyDto },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'RESOURCE_NOT_FOUND', 'VERSION_CONFLICT'],
   },
   {
     method: 'post',

@@ -55,3 +55,20 @@ export function createEmployment(d: {
 }
 
 export type Employment = ReturnType<typeof createEmployment>;
+
+/** Tài khoản của auth (auth dựng SAU company — cần cổng công ty) ⇒ proxy đọc `current` lúc chạy request. */
+export function lateAccounts(ref: { current: ICompanyAccounts | null }): ICompanyAccounts {
+  const of = (): ICompanyAccounts => {
+    if (!ref.current) throw new Error('company: chưa nối port tài khoản (composition)');
+    return ref.current;
+  };
+  return {
+    findByEmail: (email) => of().findByEmail(email),
+    findById: (userId) => of().findById(userId),
+    profiles: (userIds) => of().profiles(userIds),
+    revokeSessions: (userId, reason) => of().revokeSessions(userId, reason),
+    revokeActivations: (userId) => of().revokeActivations(userId),
+    createPending: (input) => of().createPending(input),
+    issueActivation: (input) => of().issueActivation(input),
+  };
+}

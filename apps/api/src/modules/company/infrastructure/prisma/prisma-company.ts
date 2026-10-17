@@ -2,11 +2,9 @@ import { ResourceConflictError } from '../../../../core/errors';
 import { uniqueConstraintOf } from '../../../../core/persistence/unique-constraint';
 import type { Prisma } from '../../../../generated/prisma/client';
 import type {
-  CompanyProfile,
   CompanyTenure,
   CompanyTenureQuery,
   ICompanyMemberRepository,
-  ICompanyRepository,
   ICompanyTenureReader,
   NewCompanyMember,
 } from '../../application/ports/company-member.port';
@@ -29,29 +27,7 @@ const byUserThenFrom = (a: CompanyTenure, b: CompanyTenure) =>
         ? 1
         : 0;
 
-/** Id cố định của dòng công ty duy nhất (CHECK `companies_single_row`). */
-export const COMPANY_ID = 1;
-
-export class PrismaCompany implements ICompanyRepository {
-  constructor(private readonly db: DbProvider) {}
-
-  get(): Promise<CompanyProfile | null> {
-    return this.db().company.findUnique({
-      where: { id: COMPANY_ID },
-      select: { name: true, version: true },
-    });
-  }
-
-  async ensure(name: string, at: Date): Promise<CompanyProfile> {
-    // ON CONFLICT DO NOTHING: hai bootstrap đồng thời đã tuần tự hóa bằng khóa `company:admins`, vẫn an toàn.
-    await this.db().$executeRaw`
-      INSERT INTO companies (id, name, version, updated_at) VALUES (${COMPANY_ID}, ${name}, 1, ${at})
-      ON CONFLICT (id) DO NOTHING`;
-    const row = await this.get();
-    if (!row) throw new Error('companies: không đọc lại được dòng vừa tạo');
-    return row;
-  }
-}
+export { COMPANY_ID, PrismaCompany } from './prisma-company-profile';
 
 const toSnapshot = (r: Prisma.CompanyMemberGetPayload<object>): CompanyMemberSnapshot => ({
   userId: r.userId,

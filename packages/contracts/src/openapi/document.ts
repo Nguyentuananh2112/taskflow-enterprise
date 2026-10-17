@@ -151,6 +151,7 @@ export function buildOpenApiDocument(options: OpenApiOptions): Json {
       'projects',
       'tasks',
       'hr',
+      'company',
       'notifications',
       'system',
     ].map((name) => ({

@@ -22,11 +22,12 @@ import type {
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
+import { companyProfileRouters } from './company-profile-routers';
 import { ADMIN_PATH, createAdminRouter } from './presentation/admin.routes';
 import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
-import { createEmployment } from './employment.wiring';
+import { createEmployment, lateAccounts } from './employment.wiring';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -91,7 +92,10 @@ export interface CompanyModule {
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
   /** Job hoàn tất nghỉ việc mỗi phút (R40) — composition đăng ký vào scheduler bảo trì. */
   completeDueOffboardings(signal?: AbortSignal): Promise<{ completed: number; failed: number }>;
-  /** Router của company kèm đường gắn dưới `/api/v1`: `/hr` (T-061/T-062), `/admin` (T-061a). */
+  /**
+   * Router của company kèm đường gắn dưới `/api/v1`: `/hr` (T-061/T-062), `/hr/audit-logs` (chỉ Admin), `/admin`
+   * (T-061a), `/company` (đọc tên; Admin đổi tên).
+   */
   routers(authenticate: RequestHandler): { path: string; router: Router }[];
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
@@ -112,19 +116,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
   const { clock, ids } = d;
   const access = new CompanyAccess({ members, clock });
   const audit = new HrAuditWriter({ hrAudit, ids, clock });
-  const accounts: ICompanyAccounts = {
-    findByEmail: (email) => accountsOf().findByEmail(email),
-    findById: (userId) => accountsOf().findById(userId),
-    profiles: (userIds) => accountsOf().profiles(userIds),
-    revokeSessions: (userId, reason) => accountsOf().revokeSessions(userId, reason),
-    revokeActivations: (userId) => accountsOf().revokeActivations(userId),
-    createPending: (input) => accountsOf().createPending(input),
-    issueActivation: (input) => accountsOf().issueActivation(input),
-  };
-  function accountsOf(): ICompanyAccounts {
-    if (!d.accounts.current) throw new Error('company: chưa nối port tài khoản (composition)');
-    return d.accounts.current;
-  }
+  const accounts = lateAccounts(d.accounts);
   const timeZone = d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE));
   const active = async (userId: string) => {
     const m = await members.find(userId);
@@ -183,6 +175,10 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
           limit: d.limit,
         }),
       },
+      ...companyProfileRouters(
+        { ...d, company: d.repos.company, hrAudit, access, audit, permissionsOf },
+        authenticate,
+      ),
       {
         path: ADMIN_PATH,
         router: createAdminRouter({
