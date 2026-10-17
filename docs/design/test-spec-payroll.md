@@ -113,7 +113,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | PE-04 | Quinn nghỉ `last_day` = ngày cuối tháng | có phiếu tháng đó, không có phiếu tháng sau |
 | PE-05 | nghỉ tháng M, nhận lại tháng M+2 | tháng M+1 không có phiếu |
 | PE-06 | "Thêm người còn thiếu": người có đoạn EMPLOYEE giao kỳ được thêm sau khi tạo nháp ⇒ thêm đúng người đó, người đã có không bị nhân đôi, chạy 2 lần idempotent | đúng |
-| PE-07 | người thiếu hồ sơ lương / thiếu `hireDate` ⇒ vẫn có dòng, gắn cờ; phát hành ⇒ 422 `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (`MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`) — A đề xuất 18/10, chờ TL | đúng |
+| PE-07 | người thiếu hồ sơ lương / thiếu `hireDate` ⇒ vẫn có dòng, gắn cờ; phát hành ⇒ 422 `BUSINESS_RULE_VIOLATION` rule `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (TL chốt 18/10; enum reason lấy từ contracts — ít nhất `MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`) | đúng |
 
 ## 5. SN — thâm niên (U `completedYears` / `seniorityAllowanceOf` + S)
 
@@ -152,7 +152,7 @@ Một ca U = một bảng `{ngày ⇒ trạng thái, phép nửa ngày, lịch, 
 | RD-01 | I + S | tạo nháp kỳ M (M đã kết thúc) ⇒ 201; tạo lại ⇒ cùng bảng (idempotent, unique `(period)`) | đúng |
 | RD-02 | S | tạo nháp tháng hiện tại / tương lai ⇒ 422 `PERIOD_NOT_ENDED` | đúng |
 | RD-03 | A + S | sửa phiếu với `lockVersion` cũ ⇒ 409 `VERSION_CONFLICT`; sửa công không lý do ⇒ 400; bước 0,5 ngày (số lẻ nửa ngày được, 0,25 ⇒ 400) | đúng |
-| RD-04 | A + S | phát hành bị chặn ⇒ 422 `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (`MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`) — A đề xuất 18/10, chờ TL; bảng có 3 người, mỗi người một tổ hợp lý do (1 người 2 lý do) ⇒ body liệt kê đủ; còn MISSING_OUT ⇒ chỉ cảnh báo ở preview / modal, **không** chặn; phát hành thành công đếm 1, lần 2 ⇒ 409 | đúng |
+| RD-04 | A + S | phát hành bị chặn ⇒ 422 `BUSINESS_RULE_VIOLATION` rule `PUBLISH_BLOCKED`, `details.blockers = [{userId, reasons[]}]` sắp theo `userId`, **đủ mọi phiếu bị chặn và mọi lý do** (TL chốt 18/10; enum reason lấy từ contracts — ít nhất `MISSING_SALARY_PROFILE`, `MISSING_HIRE_DATE`, `HIRE_DATE_AFTER_PERIOD`, `NEGATIVE_NET_PAY`). Bảng 3 người bị chặn, mỗi người một tổ hợp (Mia: thiếu hồ sơ lương; Max: thiếu `hireDate` **và** âm lương; Quinn: `hireDate` sau kỳ) + 1 người hợp lệ ⇒ `blockers` có đúng 3 phần tử, đủ lý do, người hợp lệ không có mặt, không phiếu nào đổi trạng thái; nếu contracts đưa "đã đổi — cần tính lại" (mức thâm niên / `hireDate`) vào enum thì thêm vế: đổi mức khi nháp ⇒ mọi phiếu bị chặn với reason đó tới khi Tính lại công. MISSING_OUT: theo `payroll.md` chỉ là cảnh báo ở preview / modal, **không** chặn — nếu enum có reason này thì báo TL (lệch thiết kế). Sửa hết lý do ⇒ phát hành 200 đếm 1, lần 2 ⇒ 409 | đúng |
 | RD-05 | I + S | phiếu PUBLISHED bất biến: mọi lệnh sửa ⇒ 409/422; UPDATE thẳng cột tiền bằng SQL ⇒ trigger chặn (I) | đúng |
 | RD-06 | I (+ K nếu có env §1.3) | kỳ có ngày quá retention ⇒ Tính lại công 422 `ATTENDANCE_RETENTION_EXPIRED`; bản điều chỉnh copy `paidHalfDays` của bản trước | đúng |
 | RD-07 | A + S | "Tính lại công" preview ⇒ "N người thay đổi"; áp ⇒ đúng N phiếu đổi; override có lý do được giữ | khớp |
@@ -245,5 +245,5 @@ Selector theo E (T-050) — chờ E gửi.
 
 1. ~~A: CSV hay .xlsx~~ — **chốt (TL 18/10):** .xlsx qua `ISpreadsheetWriter` (bộ ghi `fflate` dùng chung, luật ADR-130), không CSV. Đã sửa §1.1, RD-12.
 2. ~~A: job nhắc~~ — **chốt (A 18/10):** job maintenance interval + `PAYROLL_REMINDER_ON_START` / `PAYROLL_REMINDER_INTERVAL_MS` test-only. Đã sửa §1.3, CLK-PAY-02.
-3. **A đề xuất 18/10, chờ TL** (lệch `payroll.md` ADR-125 "422 `NEGATIVE_NET_PAY`"): `PERIOD_NOT_ENDED` (RD-02), `NO_WORKING_DAYS` (SD-03), `PUBLISH_BLOCKED` + `details.blockers` (PE-07, RD-04) với `NEGATIVE_NET_PAY` là một reason. F ủng hộ: một body liệt kê đủ lý do thì dễ kiểm và dễ cho web hiện "ghi rõ lý do". TL giữ rule riêng ⇒ RD-04 thêm vế "chỉ âm lương ⇒ 422 `NEGATIVE_NET_PAY`".
+3. ~~Mã lỗi~~ — **chốt (A đề xuất, TL 18/10):** `PERIOD_NOT_ENDED` (RD-02), `NO_WORKING_DAYS` (SD-03), `PUBLISH_BLOCKED` + `details.blockers` (PE-07, RD-04), `NEGATIVE_NET_PAY` là một reason (A sửa ADR-125). Enum reason cuối cùng theo contracts T-048/T-049.
 4. **B (T-048):** route + DTO (contracts) để dựng `PAYROLL` ở harness; sửa công đi qua route payroll (override trên phiếu) hay route attendance?
