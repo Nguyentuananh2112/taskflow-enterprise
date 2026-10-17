@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect } from 'vitest';
 
 import { useCompanyApi } from './harness/company';
+import { addDays } from './harness/clock';
 import {
   HR,
   adjust,
@@ -23,51 +24,37 @@ import { errorEnvelope } from './harness/http-client';
 import { openSocket, connected } from './harness/socket';
 import { secCase } from './harness/suite';
 
-// SEC-HR-* (docs/design/test-spec-hr.md §7, T-042). Viết TRƯỚC khi có route: mọi ca khai báo pending
-// theo vé backend (harness/pending.ts) ⇒ gỡ mục đó khi vé merge là ca tự chạy. Thứ tự lỗi §0.3.
+// SEC-HR-* (test-spec-hr §7, T-042) chuyển sang Mốc 3.5 "cấp công ty" (test-spec-company §6.1, T-066): một công ty
+// ⇒ không còn cách ly W1/W2 cho chấm công / nghỉ phép; quyền HR là grant công ty `HR_MANAGE`; Admin (Ada) không
+// phải nhân viên. Thứ tự lỗi §0.3: 401 (không thuộc công ty) → 403 (thiếu quyền) → 400 → 404.
 
 // Giờ nghiệp vụ neo thứ Ba 10:00 VN (harness/clock.ts) — cùng mốc với workday()/todayVn().
 const { api, actors } = useCompanyApi(hrClockEnv());
 let seeded: Promise<HrTenant> | undefined;
 const hr = () => (seeded ??= seedHr(actors));
-/** Thành viên MỚI của ws chung — ca cần "chưa chấm vào hôm nay" không phụ thuộc thứ tự ca khác đã check-in. */
-async function newcomer(t: HrTenant, label: string) {
-  const who = await actors.register(`hr-${label}`);
-  await actors.addMember(t.olivia, t.ws, who, 'MEMBER');
-  return who;
-}
+/** Nhân viên MỚI — ca cần "chưa chấm vào hôm nay" không phụ thuộc thứ tự ca khác đã check-in. */
+const newcomer = (label: string) => actors.createUser(`hr-${label}`);
 
-const NIL_WS = '00000000-0000-7000-8000-000000000000';
-const AREA = 'Mốc 3 HR';
+const AREA = 'Mốc 3.5 HR';
+const YEAR = () => Number(todayVn().slice(0, 4));
 
-describe('Cách ly tenant & thứ tự lỗi', () => {
+describe('Quyền & thứ tự lỗi', () => {
   secCase(
     'SEC-HR-01',
-    'Otto (W2) gọi route chấm công/nghỉ của W1 ⇒ 404 giống ws không tồn tại',
+    'Otto (nhân viên, không grant) gọi route hr:manage ⇒ 403 (§6.1 R: một công ty — "W2 ⇒ 404" hết nghĩa)',
     AREA,
     async () => {
       const t = await hr();
-      const routes: [string, (ws: string) => string][] = [
-        ['GET', (ws) => HR.meToday(ws)],
-        ['GET', (ws) => HR.month(ws, thisMonth())],
-        ['GET', (ws) => HR.myLeaveRequests(ws)],
-        ['POST', (ws) => HR.checkIn(ws)],
+      const routes: [string, string][] = [
+        ['GET', HR.today],
+        ['GET', HR.month(thisMonth())],
+        ['GET', HR.eventsOf(t.mia.userId, todayVn())],
+        ['GET', HR.exportCsv(thisMonth())],
+        ['GET', `${HR.leaveRequests}?status=PENDING`],
       ];
       for (const [method, path] of routes) {
-        const res = await actors.json(
-          method,
-          path(t.ws),
-          t.otto.accessToken,
-          method === 'GET' ? undefined : {},
-        );
-        const missing = await actors.json(
-          method,
-          path(NIL_WS),
-          t.otto.accessToken,
-          method === 'GET' ? undefined : {},
-        );
-        expect(res.status, `${method} ${path(t.ws)}`).toBe(404);
-        expect(errorEnvelope(res).error).toEqual(errorEnvelope(missing).error);
+        const res = await actors.json(method, path, t.otto.accessToken);
+        expect(res.status, `${method} ${path}`).toBe(403);
       }
     },
   );
@@ -79,10 +66,10 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
     async () => {
       const t = await hr();
       const calls: [string, string, unknown?][] = [
-        ['GET', HR.month(t.ws, thisMonth())],
-        ['GET', HR.exportCsv(t.ws, thisMonth())],
-        ['GET', HR.today(t.ws)],
-        ['POST', HR.events(t.ws), { bogus: true }],
+        ['GET', HR.month(thisMonth())],
+        ['GET', HR.exportCsv(thisMonth())],
+        ['GET', HR.today],
+        ['POST', HR.events, { bogus: true }],
       ];
       for (const [method, path, body] of calls) {
         expect(
@@ -93,14 +80,13 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
     },
   );
 
-  // Vế leave của SEC-HR-02 — tách riêng vì route leave-balances thuộc T-039 (gate T-038: 404 khi chưa mount).
   secCase(
     'SEC-HR-02b',
-    'Mia gọi PATCH leave-balances (hr:manage) với body sai ⇒ 403, không 400',
+    'Mia gọi PATCH leave/balances (hr:manage) với body sai ⇒ 403, không 400',
     AREA,
     async () => {
       const t = await hr();
-      const path = HR.balance(t.ws, t.max.userId, Number(todayVn().slice(0, 4)));
+      const path = HR.balance(t.max.userId, YEAR());
       const res = await actors.json('PATCH', path, t.mia.accessToken, { adjustmentDays: 'x' });
       expect(res.status, `PATCH ${path}`).toBe(403);
     },
@@ -112,10 +98,10 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
     AREA,
     async () => {
       const t = await hr();
-      await withKey(api, 'POST', HR.checkIn(t.ws), t.max.accessToken);
+      await withKey(api, 'POST', HR.checkIn, t.max.accessToken);
       const res = await actors.json(
         'GET',
-        `${HR.me(t.ws, thisMonth())}&userId=${t.max.userId}`,
+        `${HR.me(thisMonth())}&userId=${t.max.userId}`,
         t.mia.accessToken,
       );
       expect([200, 400]).toContain(res.status);
@@ -125,45 +111,37 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
 
   secCase(
     'SEC-HR-04',
-    'IDOR: Hana (W1) approve đơn / void lượt chấm của W2 ⇒ 404',
+    'IDOR giữa người (§6.1 R): Max (không grant) duyệt đơn / hủy lượt chấm của Mia ⇒ 403; Hana với id không tồn tại ⇒ 404',
     AREA,
     async () => {
       const t = await hr();
-      const leaveW2 = leaveOf(
-        await submitLeave(actors, t.otto, t.wsB, {
+      const leave = leaveOf(
+        await submitLeave(actors, t.mia, {
           type: 'UNPAID',
           startDate: workday(40),
           endDate: workday(40),
         }),
       );
-      // Id lượt chấm THẬT của W2: Otto (OWNER W2) thêm ADJUSTMENT ⇒ 201 AttendanceEventDto (f8ddb7b).
-      const adj = await adjust(actors, t.otto, t.wsB, t.otto.userId, 'IN');
-      expect(adj.status, 'đối chứng: ADJUSTMENT trong W2').toBe(201);
-      const inW2Id = eventIdOf(adj);
-      expect(
-        (
-          await actors.json(
-            'POST',
-            HR.leaveAction(t.ws, leaveW2.id, 'approve'),
-            t.hana.accessToken,
-            { expectedVersion: leaveW2.version },
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await actors.json('POST', HR.voidEvent(t.ws, inW2Id), t.hana.accessToken, {
-            reason: 'idor',
-          })
-        ).status,
-      ).toBe(404);
+      const adj = await adjust(actors, t.hana, t.mia.userId, 'IN');
+      expect(adj.status, `đối chứng: ADJUSTMENT cho Mia: ${adj.text.slice(0, 200)}`).toBe(201);
+      const eventId = eventIdOf(adj);
+      const approve = (by: typeof t.max, id: string, version: number) =>
+        actors.json('POST', HR.leaveAction(id, 'approve'), by.accessToken, {
+          expectedVersion: version,
+        });
+      const voidIt = (by: typeof t.max, id: string) =>
+        actors.json('POST', HR.voidEvent(id), by.accessToken, { reason: 'idor' });
+      expect((await approve(t.max, leave.id, leave.version)).status).toBe(403);
+      expect((await voidIt(t.max, eventId)).status).toBe(403);
+      expect((await approve(t.hana, randomUUID(), 1)).status).toBe(404);
+      expect((await voidIt(t.hana, randomUUID())).status).toBe(404);
     },
   );
 
   secCase('SEC-HR-05', 'Max hủy đơn của Mia ⇒ 404 (không lộ id tồn tại)', AREA, async () => {
     const t = await hr();
     const own = leaveOf(
-      await submitLeave(actors, t.mia, t.ws, {
+      await submitLeave(actors, t.mia, {
         type: 'UNPAID',
         startDate: workday(41),
         endDate: workday(41),
@@ -171,44 +149,49 @@ describe('Cách ly tenant & thứ tự lỗi', () => {
     );
     expect(
       (
-        await actors.json('POST', HR.leaveAction(t.ws, own.id, 'cancel'), t.max.accessToken, {
+        await actors.json('POST', HR.leaveAction(own.id, 'cancel'), t.max.accessToken, {
           expectedVersion: own.version,
         })
       ).status,
     ).toBe(404);
   });
 
-  secCase('SEC-HR-06', 'Vic (VIEWER) chấm công / gửi đơn ⇒ 403', AREA, async () => {
-    const t = await hr();
-    expect((await withKey(api, 'POST', HR.checkIn(t.ws), t.vic.accessToken)).status).toBe(403);
-    expect(
-      (
-        await submitLeave(actors, t.vic, t.ws, {
-          type: 'UNPAID',
-          startDate: workday(42),
-          endDate: workday(42),
-        })
-      ).status,
-    ).toBe(403);
-  });
+  secCase(
+    'SEC-HR-06',
+    'ĐẢO (§6.1): Vic (VIEWER dự án) là nhân viên ⇒ chấm công / gửi đơn 201; Ada (Admin, không attendance:self / leave:self) ⇒ 403',
+    AREA,
+    async () => {
+      const t = await hr();
+      expect((await withKey(api, 'POST', HR.checkIn, t.vic.accessToken)).status).toBe(201);
+      const body = { type: 'UNPAID', startDate: workday(42), endDate: workday(42) };
+      expect((await submitLeave(actors, t.vic, body)).status).toBe(201);
+      expect((await withKey(api, 'POST', HR.checkIn, t.ada.accessToken)).status).toBe(403);
+      expect((await submitLeave(actors, t.ada, body)).status).toBe(403);
+    },
+  );
 
-  secCase('SEC-HR-25', 'PATCH leave-balances với userId của W2 ⇒ 404', AREA, async () => {
-    const t = await hr();
-    const res = await actors.json(
-      'PATCH',
-      HR.balance(t.ws, t.otto.userId, Number(todayVn().slice(0, 4))),
-      t.hana.accessToken,
-      { adjustmentDays: 1, note: 'idor' },
-    );
-    expect(res.status).toBe(404);
-  });
+  secCase(
+    'SEC-HR-25',
+    'PATCH leave/balances với userId chưa từng là nhân viên (Ada — Admin; id ngẫu nhiên) ⇒ 404',
+    AREA,
+    async () => {
+      const t = await hr();
+      for (const userId of [t.ada.userId, randomUUID()]) {
+        const res = await actors.json('PATCH', HR.balance(userId, YEAR()), t.hana.accessToken, {
+          adjustmentDays: 1,
+          note: 'idor',
+        });
+        expect(res.status, userId).toBe(404);
+      }
+    },
+  );
 });
 
 describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
   secCase('SEC-HR-07', 'Hana tự duyệt / tự adjust / tự PATCH số dư ⇒ 403 cả ba', AREA, async () => {
     const t = await hr();
     const own = leaveOf(
-      await submitLeave(actors, t.hana, t.ws, {
+      await submitLeave(actors, t.hana, {
         type: 'UNPAID',
         startDate: workday(43),
         endDate: workday(43),
@@ -216,74 +199,71 @@ describe('Không tự xử lý dữ liệu của mình (B-H1) & grants', () => {
     );
     expect(
       (
-        await actors.json('POST', HR.leaveAction(t.ws, own.id, 'approve'), t.hana.accessToken, {
+        await actors.json('POST', HR.leaveAction(own.id, 'approve'), t.hana.accessToken, {
           expectedVersion: own.version,
         })
       ).status,
     ).toBe(403);
-    expect(
-      (await adjust(actors, t.hana, t.ws, t.hana.userId, 'IN', '08:00', 'tự sửa')).status,
-    ).toBe(403);
+    expect((await adjust(actors, t.hana, t.hana.userId, 'IN', '08:00', 'tự sửa')).status).toBe(403);
     expect(
       (
-        await actors.json(
-          'PATCH',
-          HR.balance(t.ws, t.hana.userId, Number(todayVn().slice(0, 4))),
-          t.hana.accessToken,
-          { adjustmentDays: 5, note: 'tự cộng' },
-        )
+        await actors.json('PATCH', HR.balance(t.hana.userId, YEAR()), t.hana.accessToken, {
+          adjustmentDays: 5,
+          note: 'tự cộng',
+        })
       ).status,
     ).toBe(403);
   });
 
   secCase(
     'SEC-HR-08',
-    'Pam (PM) và Hana (HR) cấp grant ⇒ 403 (hr:grant chỉ OWNER)',
+    'Mia và Hana (HR) cấp grant qua admin/access ⇒ 403 (company:grant chỉ Admin — §6.1 ⇒ SEC-HR-30/31)',
     AREA,
     async () => {
       const t = await hr();
-      expect((await setGrants(actors, t.pam, t.ws, t.max.userId, ['HR_MANAGE'])).status).toBe(403);
-      expect((await setGrants(actors, t.hana, t.ws, t.max.userId, ['HR_MANAGE'])).status).toBe(403);
+      expect((await setGrants(actors, t.max.userId, ['HR_MANAGE'], t.mia)).status).toBe(403);
+      expect((await setGrants(actors, t.max.userId, ['HR_MANAGE'], t.hana)).status).toBe(403);
     },
   );
 
   secCase(
     'SEC-HR-09',
-    'Thu grant của Hana ⇒ CÙNG access token mất quyền ngay request kế tiếp',
+    'Ada thu grant của Hana ⇒ CÙNG access token mất hr:manage ngay request kế tiếp',
     AREA,
     async () => {
-      const t = await seedHr(actors); // tenant riêng: ca này đổi quyền
-      expect((await actors.json('GET', HR.today(t.ws), t.hana.accessToken)).status).toBe(200); // đối chứng
-      expect((await setGrants(actors, t.olivia, t.ws, t.hana.userId, [])).status).toBe(200);
-      expect((await actors.json('GET', HR.today(t.ws), t.hana.accessToken)).status).toBe(403);
+      const t = await seedHr(actors); // bối cảnh riêng: ca này đổi quyền
+      expect((await actors.json('GET', HR.today, t.hana.accessToken)).status).toBe(200); // đối chứng
+      expect((await setGrants(actors, t.hana.userId, [])).status).toBe(200);
+      expect((await actors.json('GET', HR.today, t.hana.accessToken)).status).toBe(403);
     },
   );
 
   secCase(
     'SEC-HR-27',
-    'Grant cho OWNER (kể cả [] — thu) và cho VIEWER ⇒ 422 GRANT_NOT_ALLOWED (SetMemberGrantsBody, T-037 f3523e3)',
+    'Grant cho ADMIN ⇒ 422 GRANT_NOT_ALLOWED (Admin ngầm có mọi quyền — §6.1 R); đặt [] cho nhân viên ⇒ 200',
     AREA,
     async () => {
       const t = await hr();
-      const cases: [string, string, string[]][] = [
-        ['OWNER cấp', t.olivia.userId, ['HR_MANAGE']],
-        ['OWNER thu', t.olivia.userId, []],
-        ['VIEWER cấp', t.vic.userId, ['HR_MANAGE']],
-      ];
-      for (const [tag, userId, grants] of cases) {
-        const res = await setGrants(actors, t.olivia, t.ws, userId, grants);
-        expect(res.status, tag).toBe(422);
-        const { code, details } = errorEnvelope(res).error as {
-          code: string;
-          details?: { rule?: string };
-        };
-        expect([code, details?.rule], tag).toEqual([
-          'BUSINESS_RULE_VIOLATION',
-          'GRANT_NOT_ALLOWED',
-        ]);
-      }
-      // Đối chứng: đặt [] cho MEMBER (Max) là hợp lệ ⇒ 200 + MemberDto có grants [].
-      const ok = await setGrants(actors, t.olivia, t.ws, t.max.userId, []);
+      const ada2 = await actors.createUser('hr-ada2', { admin: true });
+      const version = async (userId: string) =>
+        (
+          (await actors.json('GET', HR.access, t.ada.accessToken)).json as {
+            data: { userId: string; version: number }[];
+          }
+        ).data.find((r) => r.userId === userId)?.version ?? 0;
+      const res = await actors.json('PUT', HR.accessOf(ada2.userId), t.ada.accessToken, {
+        role: 'ADMIN',
+        grants: ['HR_MANAGE'],
+        expectedVersion: await version(ada2.userId),
+      });
+      expect(res.status, res.text.slice(0, 200)).toBe(422);
+      const { code, details } = errorEnvelope(res).error as {
+        code: string;
+        details?: { rule?: string };
+      };
+      expect([code, details?.rule]).toEqual(['BUSINESS_RULE_VIOLATION', 'GRANT_NOT_ALLOWED']);
+      // Đối chứng: đặt [] cho nhân viên (Max) là hợp lệ ⇒ 200 + AccessDto có grants [].
+      const ok = await setGrants(actors, t.max.userId, []);
       expect(ok.status).toBe(200);
       expect((ok.json as { data: { grants: string[] } }).data.grants).toEqual([]);
     },
@@ -296,7 +276,7 @@ describe('CSV xuất bảng công (OWASP, B-L2..L4)', () => {
     'CSV injection: ô chữ bắt đầu bằng = + - @ \\t \\r có tiền tố \', mọi ô bọc ", " nhân đôi',
     AREA,
     async () => {
-      const t = await seedHr(actors);
+      const t = await hr();
       for (const name of [
         '=HYPERLINK("http://x")',
         '+1+1',
@@ -305,12 +285,11 @@ describe('CSV xuất bảng công (OWASP, B-L2..L4)', () => {
         '\tTAB',
         'Có "nháy"',
       ]) {
-        const u = await actors.register('csv');
+        const u = await actors.createUser('csv');
         await actors.json('PATCH', '/auth/me', u.accessToken, { fullName: name });
-        await actors.addMember(t.olivia, t.ws, u, 'MEMBER');
-        await withKey(api, 'POST', HR.checkIn(t.ws), u.accessToken);
+        await withKey(api, 'POST', HR.checkIn, u.accessToken);
       }
-      const res = await actors.json('GET', HR.exportCsv(t.ws, thisMonth()), t.hana.accessToken);
+      const res = await actors.json('GET', HR.exportCsv(thisMonth()), t.hana.accessToken);
       expect(res.status).toBe(200);
       for (const raw of ['=HYPERLINK', '+1+1', '-2', '@SUM']) {
         expect(res.text, raw).toContain(`"'${raw}`);
@@ -326,17 +305,17 @@ describe('CSV xuất bảng công (OWASP, B-L2..L4)', () => {
     AREA,
     async () => {
       const t = await hr();
-      expect(
-        (await actors.json('GET', HR.exportCsv(t.ws, '../../etc'), t.hana.accessToken)).status,
-      ).toBe(400);
-      await submitLeave(actors, t.mia, t.ws, {
+      expect((await actors.json('GET', HR.exportCsv('../../etc'), t.hana.accessToken)).status).toBe(
+        400,
+      );
+      await submitLeave(actors, t.mia, {
         type: 'SICK',
         startDate: workday(44),
         endDate: workday(44),
         reason: 'BÍ-MẬT-SỨC-KHỎE',
       });
-      await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
-      const res = await actors.json('GET', HR.exportCsv(t.ws, thisMonth()), t.hana.accessToken);
+      await withKey(api, 'POST', HR.checkIn, t.mia.accessToken);
+      const res = await actors.json('GET', HR.exportCsv(thisMonth()), t.hana.accessToken);
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('no-store');
       expect(String(res.headers['content-disposition'])).toMatch(
@@ -348,20 +327,14 @@ describe('CSV xuất bảng công (OWASP, B-L2..L4)', () => {
     },
   );
 
-  secCase(
-    'SEC-HR-13',
-    'CSV: mỗi lần xuất có giới hạn theo user + ws ⇒ quá thì 429',
-    AREA,
-    async () => {
-      const t = await hr();
-      let last = 200;
-      for (let i = 0; i < 40 && last !== 429; i += 1) {
-        last = (await actors.json('GET', HR.exportCsv(t.ws, thisMonth()), t.hana.accessToken))
-          .status;
-      }
-      expect(last).toBe(429);
-    },
-  );
+  secCase('SEC-HR-13', 'CSV: giới hạn theo user ⇒ quá thì 429', AREA, async () => {
+    const t = await hr();
+    let last = 200;
+    for (let i = 0; i < 40 && last !== 429; i += 1) {
+      last = (await actors.json('GET', HR.exportCsv(thisMonth()), t.hana.accessToken)).status;
+    }
+    expect(last).toBe(429);
+  });
 });
 
 describe('Dữ liệu cá nhân / nhạy cảm', () => {
@@ -371,19 +344,17 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
     AREA,
     async () => {
       const t = await hr();
-      await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
-      const mine = eventsOf(
-        await actors.json('GET', HR.myEvents(t.ws, todayVn()), t.mia.accessToken),
-      );
+      await withKey(api, 'POST', HR.checkIn, t.mia.accessToken);
+      const mine = eventsOf(await actors.json('GET', HR.myEvents(todayVn()), t.mia.accessToken));
       expect(mine.length).toBeGreaterThan(0);
       expect(mine.every((e) => e.userId === t.mia.userId && e.ip !== null)).toBe(true);
       const byHr = eventsOf(
-        await actors.json('GET', HR.eventsOf(t.ws, t.mia.userId, todayVn()), t.hana.accessToken),
+        await actors.json('GET', HR.eventsOf(t.mia.userId, todayVn()), t.hana.accessToken),
       );
       expect(byHr.map((e) => e.id)).toEqual(
         expect.arrayContaining(mine.map((e) => e.id)) as unknown,
       );
-      const maxView = await actors.json('GET', HR.myEvents(t.ws, todayVn()), t.max.accessToken);
+      const maxView = await actors.json('GET', HR.myEvents(todayVn()), t.max.accessToken);
       expect(maxView.text).not.toContain(t.mia.userId);
     },
   );
@@ -394,10 +365,10 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
     AREA,
     async () => {
       const t = await hr();
-      await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
+      await withKey(api, 'POST', HR.checkIn, t.mia.accessToken);
       const res = await actors.json(
         'GET',
-        `${HR.myEvents(t.ws, todayVn())}&userId=${t.mia.userId}`,
+        `${HR.myEvents(todayVn())}&userId=${t.mia.userId}`,
         t.max.accessToken,
       );
       expect([200, 400]).toContain(res.status);
@@ -408,29 +379,30 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
 
   secCase(
     'SEC-HR-29',
-    'Thành viên thường gọi attendance/events (lượt thô có IP/UA) ⇒ 403; userId chưa từng có dữ liệu ⇒ 404 (HR)',
+    'Nhân viên thường gọi attendance/events (lượt thô có IP/UA) ⇒ 403; userId chưa từng có nhiệm kỳ ⇒ 404 (HR)',
     AREA,
     async () => {
       const t = await hr();
       expect(
-        (await actors.json('GET', HR.eventsOf(t.ws, t.max.userId, todayVn()), t.mia.accessToken))
-          .status,
+        (await actors.json('GET', HR.eventsOf(t.max.userId, todayVn()), t.mia.accessToken)).status,
       ).toBe(403);
-      expect(
-        (await actors.json('GET', HR.eventsOf(t.ws, randomUUID(), todayVn()), t.hana.accessToken))
-          .status,
-      ).toBe(404);
+      for (const userId of [randomUUID(), t.ada.userId]) {
+        expect(
+          (await actors.json('GET', HR.eventsOf(userId, todayVn()), t.hana.accessToken)).status,
+          userId,
+        ).toBe(404);
+      }
     },
   );
 
   secCase(
     'SEC-HR-15',
-    'Lý do nghỉ: không trong thông báo, không trong log process',
+    'Lý do nghỉ: không trong thông báo, không trong log process, không trong danh sách của người khác',
     AREA,
     async () => {
       const t = await hr();
       const secret = `LÝ-DO-${Date.now()}`;
-      await submitLeave(actors, t.mia, t.ws, {
+      await submitLeave(actors, t.mia, {
         type: 'SICK',
         startDate: workday(45),
         endDate: workday(45),
@@ -440,58 +412,46 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
       expect(notes.text).not.toContain(secret);
       expect(api.logs().join('\n')).not.toContain(secret);
       // Max (không phải người gửi, không HR) không đọc được lý do qua danh sách của mình.
-      expect(
-        (await actors.json('GET', HR.myLeaveRequests(t.ws), t.max.accessToken)).text,
-      ).not.toContain(secret);
-      // HrAuditLog (LEAVE_SUBMIT): before/after KHÔNG chép `reason` (B-H2).
-      expect(
-        (await actors.json('GET', HR.auditLogs(t.ws), t.olivia.accessToken)).text,
-      ).not.toContain(secret);
+      expect((await actors.json('GET', HR.myLeaveRequests, t.max.accessToken)).text).not.toContain(
+        secret,
+      );
+      // HrAuditLog không chép `reason` (B-H2): ở SEC-HR-16 (route hr/audit-logs).
     },
   );
 
   secCase(
     'SEC-HR-16',
-    'HrAuditLog chỉ OWNER đọc (hr:grant): Olivia 200 thấy GRANT của Hana; Hana (HR) 403; Mia 403; Otto 404 như ws không tồn tại',
+    'HrAuditLog chỉ Admin đọc (ADR-136): Ada 200 thấy GRANT_SET của Hana, không chép lý do nghỉ; Hana (HR) 403; Mia 403; cursor endpoint khác ⇒ 400',
     AREA,
     async () => {
-      const t = await seedHr(actors); // seed cấp HR_MANAGE cho Hana ⇒ có đúng 1 mục GRANT
-      const own = await actors.json('GET', HR.auditLogs(t.ws), t.olivia.accessToken);
-      expect(own.status).toBe(200);
+      const t = await seedHr(actors); // seed cấp HR_MANAGE cho Hana ⇒ có mục GRANT của Hana
+      const secret = `AUDIT-LÝ-DO-${Date.now()}`;
+      await submitLeave(actors, t.mia, {
+        type: 'SICK',
+        startDate: workday(49),
+        endDate: workday(49),
+        reason: secret,
+      });
+      const own = await actors.json('GET', HR.auditLogs, t.ada.accessToken);
+      expect(own.status, own.text.slice(0, 200)).toBe(200);
+      expect(own.text).not.toContain(secret);
       const rows = (
         own.json as {
-          data: {
-            action: string;
-            targetUserId: string | null;
-            after: { grants?: string[] } | null;
-          }[];
+          data: { action: string; targetUserId: string | null; after: unknown }[];
         }
       ).data;
       expect(rows).toContainEqual(
-        expect.objectContaining({
-          action: 'GRANT',
-          targetUserId: t.hana.userId,
-          after: expect.objectContaining({ grants: ['HR_MANAGE'] }) as unknown,
-        }),
+        expect.objectContaining({ action: 'GRANT_SET', targetUserId: t.hana.userId }),
       );
-      expect((await actors.json('GET', HR.auditLogs(t.ws), t.hana.accessToken)).status).toBe(403);
-      expect((await actors.json('GET', HR.auditLogs(t.ws), t.mia.accessToken)).status).toBe(403);
-      const foreign = await actors.json('GET', HR.auditLogs(t.ws), t.otto.accessToken);
-      const missing = await actors.json('GET', HR.auditLogs(NIL_WS), t.otto.accessToken);
-      expect(foreign.status).toBe(404);
-      expect(errorEnvelope(foreign).error).toEqual(errorEnvelope(missing).error);
+      expect((await actors.json('GET', HR.auditLogs, t.hana.accessToken)).status).toBe(403);
+      expect((await actors.json('GET', HR.auditLogs, t.mia.accessToken)).status).toBe(403);
       // cursor HỢP LỆ của endpoint khác (định dạng core/http/cursor.ts: { k, v }) ⇒ 400 (kind riêng — B).
       const otherCursor = Buffer.from(
         JSON.stringify({ k: 'members', v: { after: t.mia.userId } }),
       ).toString('base64url');
       expect(
-        (
-          await actors.json(
-            'GET',
-            `${HR.auditLogs(t.ws)}?cursor=${otherCursor}`,
-            t.olivia.accessToken,
-          )
-        ).status,
+        (await actors.json('GET', `${HR.auditLogs}?cursor=${otherCursor}`, t.ada.accessToken))
+          .status,
       ).toBe(400);
     },
   );
@@ -500,7 +460,14 @@ describe('Dữ liệu cá nhân / nhạy cảm', () => {
 describe('Thông báo (ADR-123, B-M3)', () => {
   secCase('SEC-HR-17', 'Đánh dấu đã đọc thông báo của người khác ⇒ 404', AREA, async () => {
     const t = await hr();
-    await submitLeave(actors, t.mia, t.ws, {
+    const before = new Set(
+      (
+        (await actors.json('GET', HR.notifications, t.hana.accessToken)).json as {
+          data: { id: string }[];
+        }
+      ).data.map((n) => n.id),
+    );
+    await submitLeave(actors, t.mia, {
       type: 'UNPAID',
       startDate: workday(46),
       endDate: workday(46),
@@ -508,8 +475,9 @@ describe('Thông báo (ADR-123, B-M3)', () => {
     const list = (await actors.json('GET', HR.notifications, t.hana.accessToken)).json as {
       data: { id: string }[];
     };
-    const id = list.data[0]?.id;
-    expect(id, 'Hana có thông báo LEAVE_SUBMITTED').toBeDefined();
+    // Một công ty: HR nhận thông báo của mọi ca ⇒ lấy thông báo MỚI của ca này (§0.4).
+    const id = list.data.find((n) => !before.has(n.id))?.id;
+    expect(id, 'Hana có thông báo LEAVE_SUBMITTED mới').toBeDefined();
     expect(
       (await actors.json('POST', HR.notificationRead(id ?? ''), t.mia.accessToken, {})).status,
     ).toBe(404);
@@ -517,21 +485,17 @@ describe('Thông báo (ADR-123, B-M3)', () => {
 
   secCase(
     'SEC-HR-18',
-    'Bị xóa khỏi ws ⇒ danh sách không còn thông báo của ws đó',
+    '§6.1 R: người đã nghỉ việc (ngày làm cuối đã qua ⇒ hoàn tất ngay) ⇒ me/notifications 401 SESSION_REVOKED',
     AREA,
     async () => {
       const t = await seedHr(actors);
-      await withKey(api, 'POST', HR.checkIn(t.ws), t.mia.accessToken);
-      await adjust(actors, t.hana, t.ws, t.mia.userId, 'OUT', '17:30', 'quên chấm ra');
-      expect((await actors.json('GET', HR.notifications, t.mia.accessToken)).text).toContain(t.ws);
-      await actors.json(
-        'DELETE',
-        `/workspaces/${t.ws}/members/${t.mia.userId}`,
-        t.olivia.accessToken,
-      );
-      expect((await actors.json('GET', HR.notifications, t.mia.accessToken)).text).not.toContain(
-        t.ws,
-      );
+      await adjust(actors, t.hana, t.mia.userId, 'OUT', '17:30', 'quên chấm ra');
+      expect((await actors.json('GET', HR.notifications, t.mia.accessToken)).status).toBe(200);
+      const off = await actors.offboardRaw(t.hana, t.mia.userId, addDays(todayVn(), -1));
+      expect(off.status, off.text.slice(0, 200)).toBe(200);
+      const after = await actors.json('GET', HR.notifications, t.mia.accessToken);
+      expect(after.status).toBe(401);
+      expect(errorEnvelope(after).error.code).toBe('SESSION_REVOKED');
     },
   );
 
@@ -541,7 +505,7 @@ describe('Thông báo (ADR-123, B-M3)', () => {
     AREA,
     async () => {
       const t = await seedHr(actors);
-      await submitLeave(actors, t.mia, t.ws, {
+      await submitLeave(actors, t.mia, {
         type: 'UNPAID',
         startDate: workday(47),
         endDate: workday(47),
@@ -549,7 +513,7 @@ describe('Thông báo (ADR-123, B-M3)', () => {
       expect((await actors.json('GET', HR.notifications, t.hana.accessToken)).text).toContain(
         'LEAVE_SUBMITTED',
       );
-      await setGrants(actors, t.olivia, t.ws, t.hana.userId, []);
+      expect((await setGrants(actors, t.hana.userId, [])).status).toBe(200);
       expect((await actors.json('GET', HR.notifications, t.hana.accessToken)).text).not.toContain(
         'LEAVE_SUBMITTED',
       );
@@ -558,7 +522,7 @@ describe('Thông báo (ADR-123, B-M3)', () => {
 
   secCase(
     'SEC-HR-20',
-    'notification:new chỉ tới user:{id}, payload chỉ id + loại (không lý do)',
+    'notification:new chỉ tới user:{id}, payload chỉ id + loại (không lý do, không workspaceId — §6.1)',
     AREA,
     async () => {
       const t = await hr();
@@ -571,7 +535,7 @@ describe('Thông báo (ADR-123, B-M3)', () => {
       hanaSock.on('notification:new', (p: Record<string, unknown>) => hanaGot.push(p));
       maxSock.on('notification:new', (p: Record<string, unknown>) => maxGot.push(p));
       const secret = `RT-${Date.now()}`;
-      const sent = await submitLeave(actors, t.mia, t.ws, {
+      const sent = await submitLeave(actors, t.mia, {
         type: 'SICK',
         startDate: workday(48),
         endDate: workday(48),
@@ -580,16 +544,11 @@ describe('Thông báo (ADR-123, B-M3)', () => {
       expect(sent.status, sent.text.slice(0, 200)).toBe(201);
       await expect.poll(() => hanaGot.length, { timeout: 5_000 }).toBeGreaterThan(0);
       expect(JSON.stringify(hanaGot)).not.toContain(secret);
-      // Vỏ realtime chung (eventId, type, occurredAt, actorId, originClientId, data); `data` CHỈ id + loại + ws
-      // (contracts NotificationNewEvent, ADR-123).
+      // Vỏ realtime chung (eventId, type, occurredAt, actorId, originClientId, data); `data` CHỈ id + loại.
       const event = hanaGot[0] as { type?: string; data?: Record<string, unknown> };
       expect(event.type).toBe('notification:new');
-      expect(Object.keys(event.data ?? {}).sort()).toEqual([
-        'notificationId',
-        'type',
-        'workspaceId',
-      ]);
-      expect(event.data).toMatchObject({ type: 'LEAVE_SUBMITTED', workspaceId: t.ws });
+      expect(Object.keys(event.data ?? {}).sort()).toEqual(['notificationId', 'type']);
+      expect(event.data).toMatchObject({ type: 'LEAVE_SUBMITTED' });
       expect(maxGot).toHaveLength(0);
       hanaSock.close();
       maxSock.close();
@@ -603,10 +562,9 @@ describe('Biên HTTP', () => {
     'CORS preflight cho phép Idempotency-Key từ origin hợp lệ',
     AREA,
     async () => {
-      const t = await hr();
       const res = await api.request({
         method: 'OPTIONS',
-        path: `/api/v1${HR.checkIn(t.ws)}`,
+        path: `/api/v1${HR.checkIn}`,
         headers: {
           origin: api.webOrigin,
           'access-control-request-method': 'POST',
@@ -625,8 +583,8 @@ describe('Biên HTTP', () => {
     AREA,
     async () => {
       const t = await hr();
-      const nora = await newcomer(t, 'nora');
-      const res = await withKey(api, 'POST', HR.checkIn(t.ws), nora.accessToken, undefined, {
+      const nora = await newcomer('nora');
+      const res = await withKey(api, 'POST', HR.checkIn, nora.accessToken, undefined, {
         occurredAt: '2000-01-01T00:00:00Z',
         source: 'DEVICE',
         workDate: '2000-01-01',
@@ -635,15 +593,13 @@ describe('Biên HTTP', () => {
       // lượt ghi phải là WEB, ngày công hôm nay, giờ server — không lấy gì từ body.
       expect([400, 201], `status ${String(res.status)}`).toContain(res.status);
       if (res.status === 201) {
-        const own = eventsOf(
-          await actors.json('GET', HR.myEvents(t.ws, todayVn()), nora.accessToken),
-        );
+        const own = eventsOf(await actors.json('GET', HR.myEvents(todayVn()), nora.accessToken));
         expect(own).toHaveLength(1);
         expect(own[0]).toMatchObject({ kind: 'IN', source: 'WEB', workDate: todayVn() });
         expect(own.some((e) => e.workDate === '2000-01-01')).toBe(false);
       }
       // HR cũng không gửi được thời điểm UTC: ADJUSTMENT nhận date + time theo lịch, `occurredAt` ⇒ 400 (aac6aaa).
-      const adj = await actors.json('POST', HR.events(t.ws), t.hana.accessToken, {
+      const adj = await actors.json('POST', HR.events, t.hana.accessToken, {
         userId: t.max.userId,
         kind: 'IN',
         date: todayVn(),
@@ -658,11 +614,10 @@ describe('Biên HTTP', () => {
   // SEC-HR-23 ở hr-proxy.sec.ts (process API riêng TRUST_PROXY_HOPS=0).
 
   secCase('SEC-HR-24', 'User-Agent 10 KB ⇒ cắt ≤ 256, không 500', AREA, async () => {
-    const t = await hr();
-    const uma = await newcomer(t, 'uma');
+    const uma = await newcomer('uma');
     const res = await api.request({
       method: 'POST',
-      path: `/api/v1${HR.checkIn(t.ws)}`,
+      path: `/api/v1${HR.checkIn}`,
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${uma.accessToken}`,
@@ -680,11 +635,10 @@ describe('Biên HTTP', () => {
     'Idempotency-Key giống hệt của user khác ⇒ người thứ hai nhận 201 (lượt của chính họ), không phải 200 replay',
     AREA,
     async () => {
-      const t = await hr();
-      const [ann, ben] = await Promise.all([newcomer(t, 'ann'), newcomer(t, 'ben')]);
+      const [ann, ben] = await Promise.all([newcomer('ann'), newcomer('ben')]);
       const key = randomUUID();
-      const a = await withKey(api, 'POST', HR.checkIn(t.ws), ann.accessToken, key);
-      const b = await withKey(api, 'POST', HR.checkIn(t.ws), ben.accessToken, key);
+      const a = await withKey(api, 'POST', HR.checkIn, ann.accessToken, key);
+      const b = await withKey(api, 'POST', HR.checkIn, ben.accessToken, key);
       expect([a.status, b.status]).toEqual([201, 201]);
       const firstIn = (r: typeof a) =>
         (r.json as { data: { firstIn: string | null } }).data.firstIn;
