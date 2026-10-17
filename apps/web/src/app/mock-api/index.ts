@@ -13,6 +13,8 @@ import { MockBoard } from './mock-board';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
 import { MockPayroll } from './mock-payroll';
+import { createPayrollEditHandlers } from './payroll-edit-handlers';
+import { createPayrollRunHandlers } from './payroll-run-handlers';
 import { createPayslipHandlers } from './payslip-handlers';
 import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
@@ -81,6 +83,8 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createEmployeeHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
       ...createPayslipHandlers(baseUrl, payroll, db),
+      ...createPayrollEditHandlers(baseUrl, payroll, db),
+      ...createPayrollRunHandlers(baseUrl, payroll, db, attendance.today),
     ],
   };
 }

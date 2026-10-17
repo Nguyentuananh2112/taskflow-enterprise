@@ -6,11 +6,13 @@ import {
   seniorityAllowanceOf,
   type PayslipDto,
   type PayslipLineInput,
+  type PublishBlockReason,
   type SalaryProfileVersionDto,
 } from '@taskflow/contracts/payroll';
 
 import { COMPANY_SCOPE } from './mock-guard';
 import type { MockHr } from './mock-hr';
+import { daysOf, workday } from './payroll-days';
 
 // Phiếu lương (payroll.md v4, contract T-048) — bản RÚT GỌN: công = 2 nửa mỗi ngày Có mặt / lễ ngày làm (phép có
 // lương không mô phỏng), công chuẩn = số ngày T2–T7 của tháng. Tiền tính bằng CHÍNH `computePayslip` của contracts.
@@ -27,17 +29,11 @@ export type MockRun = {
   slips: Map<string, MockPayslip[]>;
 };
 
-const daysOf = (period: string) => {
-  const last = Number(periodLastDay(period).slice(8));
-  return Array.from({ length: last }, (_, i) => `${period}-${String(i + 1).padStart(2, '0')}`);
-};
-const workday = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay() !== 0;
-
 export class MockPayroll {
   settings = {
     seniorityPerYear: 500_000,
     version: 1,
-    updatedAt: null as string | null,
+    updatedAt: '2026-01-01T00:00:00.000Z',
     updatedBy: null as UserRefDto | null,
   };
   readonly profiles = new Map<string, SalaryProfileVersionDto[]>();
@@ -71,6 +67,8 @@ export class MockPayroll {
     edit: Partial<Pick<MockPayslip, 'note' | 'overrideHalfDays' | 'overrideReason'>> & {
       lines?: PayslipLineInput[];
       revision?: number;
+      /** Bản điều chỉnh copy công của bản trước (ADR-127). */
+      paidHalfDays?: number;
       lockVersion?: number;
     } = {},
   ): MockPayslip {
@@ -78,7 +76,7 @@ export class MockPayroll {
     const hireDate = this.hireDateOf(user.id);
     const years = hireDate ? (completedYears(hireDate, periodLastDay(run.period)) ?? 0) : 0;
     const seniorityAllowance = seniorityAllowanceOf(run.seniorityPerYear, years);
-    const paidHalfDays = this.paidHalfDays(user.id, run.period);
+    const paidHalfDays = edit.paidHalfDays ?? this.paidHalfDays(user.id, run.period);
     const overrideHalfDays = edit.overrideHalfDays ?? null;
     const lines = (edit.lines ?? []).map((l) => ({ ...l, id: crypto.randomUUID() }));
     const totals = computePayslip({
@@ -146,6 +144,25 @@ export class MockPayroll {
   }
 
   current = (run: MockRun, userId: string) => run.slips.get(userId)?.at(-1);
+
+  /** Lý do chặn phát hành (ADR-125, TL 18/10) — chỉ trên NHÁP; MISSING_OUT không chặn. */
+  blockReasons(run: MockRun, s: MockPayslip): PublishBlockReason[] {
+    if (run.status !== 'DRAFT') return [];
+    const out: PublishBlockReason[] = [];
+    if (s.netPay < 0) out.push('NEGATIVE_NET_PAY');
+    if (s.baseSalary === null) out.push('MISSING_SALARY_PROFILE');
+    if (s.hireDate === null) out.push('MISSING_HIRE_DATE');
+    else if (s.hireDate > periodLastDay(run.period)) out.push('HIRE_DATE_AFTER_PERIOD');
+    if (run.seniorityPerYear !== this.settings.seniorityPerYear) out.push('SENIORITY_RATE_CHANGED');
+    return out;
+  }
+
+  /** Ngày quên chấm ra trong kỳ (việc còn lại / cảnh báo modal). */
+  missingOut(userId: string, period: string): string[] {
+    return daysOf(period).filter(
+      (d) => this.hr.day(COMPANY_SCOPE, userId, d).status === 'MISSING_OUT',
+    );
+  }
 
   publish(run: MockRun, by: UserRefDto): void {
     run.status = 'PUBLISHED';
