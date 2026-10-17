@@ -48,6 +48,25 @@ export interface StagedFile extends RandomAccessSource {
   discard(): Promise<void>;
 }
 
+/**
+ * Kiểm DB MỖI lần phục vụ `/media` SAU khi chữ ký đúng (ADR-141, B M4, F-03h): avatar còn đúng `version` và
+ * chủ còn thuộc công ty; đính kèm còn gắn tin CHƯA xóa, chưa hết retention. Không còn ⇒ `null` ⇒ 404.
+ * Adapter Prisma ở T-068 (avatar) / T-069 (chat).
+ */
+export interface IMediaResolver {
+  resolve(target: {
+    kind: 'avatars' | 'chat';
+    id: string;
+    variant: string;
+    version: number;
+  }): Promise<ResolvedMedia | null>;
+}
+
+export type ResolvedMedia =
+  | { key: FileKey; as: 'image' }
+  /** Tệp tải xuống — `name` đã làm sạch, dùng cho `Content-Disposition`. */
+  | { key: FileKey; as: 'download'; name: string };
+
 export class FileMissingError extends Error {
   constructor(readonly key: FileKey) {
     super('Blob không còn trên đĩa');

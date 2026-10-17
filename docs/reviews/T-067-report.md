@@ -39,6 +39,7 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | — | f5c94890 | `avatarUrl` ở `MemberDto` / `MemberCandidateDto` (H) |
 | 4 | 79e09153 | `IImagePipeline` + `SharpImagePipeline` (pool worker sharp) + `DisabledImagePipeline` |
 | — | 265d08c4, 8d310b3e | contract chat sớm (phần contract của T-069) + parity realtime `PENDING_SERVER_EMIT` (T-070) |
+| 5 | (commit này) | `/media` (`mediaRouter`) + `MediaUrlSigner` + port `IMediaResolver` + luật hạn mức `media-ip` |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -104,8 +105,27 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
   - **L:** `failOn` — đang hỏi lại B (theo tài liệu sharp, `truncated` lỏng hơn `error`; chặn JPEG cắt cụt cần
     `warning`). Đề xuất giữ `error` như ADR-141 (ảnh cắt cụt chỉ là chất lượng, không phải bảo mật).
 
+## Bước 5 — `/media`
+
+- `GET /api/v1/media/:kind/:id/:variant?v&exp&sig`, không Bearer. Thứ tự: zod (kind / uuid / variant theo kind /
+  query strict) ⇒ chữ ký constant-time (`_PREVIOUS` để kiểm) — sai / hết hạn ⇒ 404 **không chạm DB, không chạm
+  đĩa** (log debug `media.sig_invalid {kind, variant, reason}`, không query) ⇒ `IMediaResolver` kiểm DB mỗi lần
+  (adapter Prisma ở T-068 / T-069) ⇒ mở blob (mất ⇒ 404 + `media.blob_missing`) ⇒ `pipeline(stream, res)` —
+  client hủy ⇒ stream blob bị đóng (test, B L-b).
+- Header: `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Referrer-Policy: no-referrer`,
+  CORP theo `MEDIA_CORP`. Ảnh: `image/webp`, `inline`, `private, max-age=<giây còn lại của URL>`, ETag theo
+  `(kind, id, variant, version)`, 304 khi trùng. Tệp: `application/octet-stream`, `attachment` + `filename*`,
+  `no-store`, `Content-Length`.
+- Mọi lỗi (404 / 429 / 500) trả MỘT trang HTML tối giản giống hệt nhau, không script; "Quay lại" là link
+  thường về origin web (đổi so với ý định `history.back()` — `javascript:` bị CSP `sandbox` chặn).
+- Hạn mức `RATE_LIMIT_RULES.media` 600 / phút / IP, fail-open (chữ ký + DB vẫn chặn); 429 kèm `Retry-After`.
+- Query `/media` không vào log app (pino chỉ ghi path) và Sentry API (allow-list bỏ query — `sentry.ts`).
+  Log Caddy + Sentry web: B / H (SEC-CH-20/25).
+- `MediaUrlSigner`: URL tuyệt đối (`MEDIA_BASE_URL` — bước 6), khung `exp` avatar 24 giờ / ảnh chat 1 giờ, tải
+  tệp 60 s; chỉ khóa hiện tại ký.
+
 ## Còn lại
-5 `/media` · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+6 env · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý
