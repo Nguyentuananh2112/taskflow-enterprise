@@ -42,6 +42,15 @@ export function notificationText(n: NotificationDto): string {
     // Mốc 5 (ADR-128): không mang giá trị hồ sơ — chi tiết ở trang Hồ sơ của tôi.
     case 'PROFILE_UPDATED':
       return 'Hồ sơ nhân sự của bạn đã được cập nhật';
+    // Mốc 5 (ADR-129): không mang lý do của nhân viên (B-H2) — chi tiết ở trang chấm công / tab Nhân sự.
+    case 'CORRECTION_SUBMITTED':
+      return `${who} gửi đơn bổ sung giờ`;
+    case 'CORRECTION_APPROVED':
+      return 'Đơn bổ sung giờ của bạn đã được duyệt';
+    case 'CORRECTION_REJECTED':
+      return 'Đơn bổ sung giờ của bạn bị từ chối';
+    case 'CORRECTION_CANCELLED':
+      return `${who} đã hủy đơn bổ sung giờ`;
   }
 }
 
@@ -64,5 +73,11 @@ export function notificationHref(n: NotificationDto): string {
       return '/hr?tab=leave';
     case 'PROFILE_UPDATED':
       return '/my-profile';
+    case 'CORRECTION_SUBMITTED':
+    case 'CORRECTION_CANCELLED':
+      return '/hr?tab=corrections';
+    case 'CORRECTION_APPROVED':
+    case 'CORRECTION_REJECTED':
+      return '/attendance';
   }
 }
