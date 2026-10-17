@@ -10,8 +10,9 @@
 //   - WORKSPACE: không có participant — thành viên = `workspace_members` hiện tại của ws chưa xóa mềm / chưa lưu trữ,
 //     thuộc công ty hoạt động.
 
-export type ConversationKind = 'DIRECT' | 'GROUP' | 'WORKSPACE';
-export type ChatParticipantRole = 'OWNER' | 'MEMBER';
+import type { ChatParticipantRole, ConversationKind } from '../../domain/chat-conversation';
+
+export type { ChatParticipantRole, ConversationKind };
 
 export interface ConversationRecord {
   readonly id: string;
