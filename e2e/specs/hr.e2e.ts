@@ -905,8 +905,15 @@ test.describe('Ổn định bố cục /projects', () => {
   test.use({ checkinPrompt: 'keep' });
 
   // Ba bề rộng: thẻ Chấm công đổi bố cục theo breakpoint (360: xếp dọc, cao ~457 px) ⇒ chỗ giữ phải đúng ở từng cỡ.
-  for (const width of [360, 768, 1280]) {
-    test(`E2E-HR-14 [${T045}] @${String(width)}px: /projects — thẻ Chấm công tải, dialog nhắc, chấm vào: không phần tử nào trong <main> dịch dọc > ${String(MAX_SHIFT_PX)} px`, async ({
+  // Mia (MEMBER, 3 lối tắt) ở 3 bề rộng + Hana (hr:manage, thêm lối tắt "Nhân sự" ⇒ thẻ cao hơn) ở 360.
+  const cases = [
+    { width: 360, who: 'mia' },
+    { width: 768, who: 'mia' },
+    { width: 1280, who: 'mia' },
+    { width: 360, who: 'hana' },
+  ] as const;
+  for (const { width, who } of cases) {
+    test(`E2E-HR-14 [${T045}] @${String(width)}px ${who}: /projects — thẻ Chấm công tải, dialog nhắc, chấm vào: không phần tử nào trong <main> dịch dọc > ${String(MAX_SHIFT_PX)} px`, async ({
       page,
       request,
     }) => {
@@ -951,8 +958,8 @@ test.describe('Ổn định bố cục /projects', () => {
         }
       });
 
-      const w = await seedHrWorld(request, `hr14-${String(width)}`);
-      await loginViaUi(page, w.mia.user);
+      const w = await seedHrWorld(request, `hr14-${String(width)}-${who}`);
+      await loginViaUi(page, w[who].user);
       await page.goto(projectsPath(w));
       const card = attendanceCard(page);
       const prompt = checkinPrompt(page);
@@ -979,7 +986,7 @@ test.describe('Ổn định bố cục /projects', () => {
       const big = moves.filter((m) => Math.abs(m.dy) > MAX_SHIFT_PX);
       expect(
         big,
-        `@${String(width)}px — phần tử trong <main> dịch > ${String(MAX_SHIFT_PX)} px: ${JSON.stringify(big)}`,
+        `@${String(width)}px ${who} — phần tử trong <main> dịch > ${String(MAX_SHIFT_PX)} px: ${JSON.stringify(big)}`,
       ).toEqual([]);
     });
   }
