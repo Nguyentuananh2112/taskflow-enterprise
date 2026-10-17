@@ -2,11 +2,15 @@ import { FakeUnitOfWork } from '../../../../test/support/fake-unit-of-work';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type { ILeaveReadModel } from '../application/ports/leave-read-model.port';
 import type {
+  ILeavePolicyStore,
   ILeaveRepository,
   LeaveBalanceRecord,
+  LeavePolicyRow,
   LeaveRequestRecord,
 } from '../application/ports/leave.ports';
 import type { HalfDays } from '../domain/leave-days';
+import type { LeavePolicy } from '../domain/leave-policy';
+import { InMemoryLeavePolicyStore } from '../infrastructure/persistence/in-memory/in-memory-leave-policy.store';
 import { InMemoryLeaveRepository } from '../infrastructure/persistence/in-memory/in-memory-leave.repository';
 
 /**
@@ -18,6 +22,8 @@ export interface LeaveBackend {
   readonly uow: IUnitOfWork & { readonly commits: number; readonly rollbacks: number };
   readonly requests: ILeaveRepository;
   readonly readModel: ILeaveReadModel;
+  /** Chính sách phép (T-057). */
+  readonly policies: ILeavePolicyStore;
   /** Dựng sẵn user của fixture (FK ở bản Prisma); InMemory: không làm gì. */
   prepare(fixture: { users: readonly string[] }): Promise<void>;
   seed(record: LeaveRequestRecord): Promise<void>;
@@ -26,10 +32,12 @@ export interface LeaveBackend {
 
 export function inMemoryLeaveBackend(): LeaveBackend {
   const requests = new InMemoryLeaveRepository();
+  const policies = new InMemoryLeavePolicyStore();
   return {
-    uow: new FakeUnitOfWork(requests),
+    uow: new FakeUnitOfWork(requests, policies),
     requests,
     readModel: requests,
+    policies,
     prepare: () => Promise.resolve(),
     seed: (record) => {
       requests.seed(record);
@@ -72,5 +80,38 @@ export class RecordingLeaveRepository implements ILeaveRepository {
   }
   setBalanceAdjustment(userId: string, year: number, adjustment: HalfDays): Promise<void> {
     return this.inner.setBalanceAdjustment(userId, year, adjustment);
+  }
+  setCarried(
+    userId: string,
+    year: number,
+    carried: HalfDays,
+    mode: 'ifNull' | 'overwrite',
+  ): Promise<void> {
+    return this.inner.setCarried(userId, year, carried, mode);
+  }
+}
+
+/** Bọc store chính sách: khóa ghi vào CÙNG danh sách với khóa user ⇒ test kiểm thứ tự policy → leave:<user>. */
+export class RecordingLeavePolicyStore implements ILeavePolicyStore {
+  constructor(
+    private readonly inner: ILeavePolicyStore,
+    private readonly locks: string[],
+  ) {}
+
+  lock(mode: 'shared' | 'exclusive'): Promise<void> {
+    this.locks.push(`taskflow:leave-policy:${mode}`);
+    return this.inner.lock(mode);
+  }
+  list(): Promise<LeavePolicyRow[]> {
+    return this.inner.list();
+  }
+  put(input: {
+    year: number;
+    policy: LeavePolicy;
+    expectedVersion: number;
+    updatedById: string;
+    at: Date;
+  }): Promise<LeavePolicyRow | null> {
+    return this.inner.put(input);
   }
 }

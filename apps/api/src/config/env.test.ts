@@ -176,6 +176,27 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     }
   });
 
+  it('T-057 LEAVE_CARRYOVER_ON_START / LEAVE_CARRYOVER_INTERVAL_MS: CHỈ APP_ENV=test; interval ≥ 1000', () => {
+    const env = loadEnv(
+      testEnvVars({
+        APP_ENV: 'test',
+        LEAVE_CARRYOVER_ON_START: 'true',
+        LEAVE_CARRYOVER_INTERVAL_MS: '1000',
+      }),
+    );
+    expect([env.LEAVE_CARRYOVER_ON_START, env.LEAVE_CARRYOVER_INTERVAL_MS]).toEqual([true, 1000]);
+    expect(
+      variablesOf(testEnvVars({ APP_ENV: 'test', LEAVE_CARRYOVER_INTERVAL_MS: '999' })),
+    ).toEqual(['LEAVE_CARRYOVER_INTERVAL_MS']);
+    for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS']) {
+      const value = key.endsWith('MS') ? '5000' : 'true';
+      expect(
+        variablesOf(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'development', [key]: value })),
+        key,
+      ).toEqual([key]);
+    }
+  });
+
   it.each(['local', 'staging', 'production'])(
     'JWT_ACCESS_TTL_SECONDS ở APP_ENV=%s ⇒ từ chối khởi động (không âm thầm bỏ qua)',
     (appEnv) => {

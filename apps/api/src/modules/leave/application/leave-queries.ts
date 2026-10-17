@@ -2,7 +2,6 @@ import type { PageMeta } from '@taskflow/contracts';
 import * as z from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../../core/http/cursor';
-import { DEFAULT_ENTITLED_HALF_DAYS } from '../domain/leave-balance';
 import {
   countLeaveHalfDays,
   leaveDatesWithin,
@@ -16,7 +15,6 @@ import {
   PERMISSION_HR_MANAGE,
   PERMISSION_LEAVE_SELF,
   countingTenure,
-  summarizeStored,
   type LeaveCommandDeps,
   type LeaveScope,
 } from './leave-kit';
@@ -82,19 +80,18 @@ export class LeaveQueries {
   async myBalance(scope: LeaveScope, year: number): Promise<LeaveBalanceDto> {
     await this.#kit.requireActor(scope.actorId, PERMISSION_LEAVE_SELF);
     const { actorId } = scope;
-    const [stored, holding, calendar, employment] = await Promise.all([
-      this.d.readModel.findBalance(actorId, year),
-      this.d.requests.listHolding(actorId, year),
-      this.#kit.yearCalendar(year),
+    const [employment, today] = await Promise.all([
       this.d.company.employmentOf(actorId),
+      this.#kit.today(),
     ]);
-    const balance = summarizeStored(
-      stored ?? { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 },
-      holding,
-      calendar,
-      { tenure: countingTenure(employment) },
+    return toBalanceDto(
+      await this.#kit.readCalculator(this.d.readModel).compute({
+        userId: actorId,
+        year,
+        today,
+        tenure: countingTenure(employment),
+      }),
     );
-    return toBalanceDto(year, balance);
   }
 
   /** `GET leave-balances?year=` (HR) — mọi nhân viên hiện tại, sắp theo tên. */

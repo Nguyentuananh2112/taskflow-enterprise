@@ -3,9 +3,10 @@ import type {
   LeaveBalanceRecord,
   LeaveRequestRecord,
 } from '../../../application/ports/leave.ports';
-import { halfDaysFromDecimal, halfDaysToDecimal } from '../../../domain/leave-balance';
+import { halfDaysToDecimal } from '../../../domain/leave-balance';
 import type { HalfDays } from '../../../domain/leave-days';
 import { fromDateOnly, toDateOnly, type DbProvider } from './db';
+import { BALANCE_SELECT, balanceFromRow } from './balance-row';
 
 type Row = Awaited<ReturnType<ReturnType<DbProvider>['leaveRequest']['findFirstOrThrow']>>;
 
@@ -113,12 +114,9 @@ export class PrismaLeaveRepository implements ILeaveRepository {
       ON CONFLICT (user_id, year) DO NOTHING`;
     const row = await this.db().leaveBalance.findUniqueOrThrow({
       where: { userId_year: { userId, year } },
-      select: { entitledDays: true, adjustmentDays: true },
+      select: BALANCE_SELECT,
     });
-    return {
-      entitled: halfDaysFromDecimal(row.entitledDays),
-      adjustment: halfDaysFromDecimal(row.adjustmentDays),
-    };
+    return balanceFromRow(row);
   }
 
   async setBalanceAdjustment(userId: string, year: number, adjustment: HalfDays): Promise<void> {
@@ -128,5 +126,26 @@ export class PrismaLeaveRepository implements ILeaveRepository {
       VALUES (${userId}::uuid, ${year}, ${days})
       ON CONFLICT (user_id, year)
       DO UPDATE SET adjustment_days = EXCLUDED.adjustment_days, version = leave_balances.version + 1`;
+  }
+
+  /** ADR-131: tạo dòng nếu chưa có, rồi ghi — `ifNull` chỉ khi đang NULL (idempotent cho đường ghi / job). */
+  async setCarried(
+    userId: string,
+    year: number,
+    carried: HalfDays,
+    mode: 'ifNull' | 'overwrite',
+  ): Promise<void> {
+    const days = halfDaysToDecimal(carried);
+    await this.db().$executeRaw`
+      INSERT INTO leave_balances (user_id, year) VALUES (${userId}::uuid, ${year})
+      ON CONFLICT (user_id, year) DO NOTHING`;
+    await (mode === 'ifNull'
+      ? this.db().$executeRaw`
+          UPDATE leave_balances SET carried_over_days = ${days}, version = version + 1
+           WHERE user_id = ${userId}::uuid AND year = ${year} AND carried_over_days IS NULL`
+      : this.db().$executeRaw`
+          UPDATE leave_balances SET carried_over_days = ${days}, version = version + 1
+           WHERE user_id = ${userId}::uuid AND year = ${year}
+             AND carried_over_days IS DISTINCT FROM ${days}`);
   }
 }

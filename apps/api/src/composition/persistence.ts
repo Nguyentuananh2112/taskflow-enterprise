@@ -14,6 +14,7 @@ import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/
 import type { HrProfileRepositories } from '../modules/hr-profile/hr-profile.module';
 import { InMemoryEmployeeProfiles } from '../modules/hr-profile/infrastructure/in-memory/in-memory-employee-profiles';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeavePolicyStore } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave-policy.store';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import {
   createInMemoryNotificationStore,
@@ -101,7 +102,13 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const attendance = createInMemoryAttendanceRepositories();
   const leaveStore = new InMemoryLeaveRepository();
   const profiles = new InMemoryEmployeeProfiles();
-  const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
+  const leavePolicies = new InMemoryLeavePolicyStore();
+  const leave = memoryLeaveRepositories(
+    leaveStore,
+    leavePolicies,
+    companyStore,
+    task.db.state.users,
+  );
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -119,6 +126,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       attendance.corrections,
       leaveStore,
       profiles,
+      leavePolicies,
     ],
     logger,
   );

@@ -4,6 +4,7 @@ import { halfDaysToDecimal, type LeaveType } from '../domain/leave-balance';
 import type { CalendarDate, HalfDays, LeaveDayPart } from '../domain/leave-days';
 import type { LeaveStatus } from '../domain/leave-status';
 import type { LeaveRequestRecord } from './ports/leave.ports';
+import type { BalanceView } from './annual-balance';
 
 export interface LeaveRequestDto {
   id: string;
@@ -37,6 +38,16 @@ export interface LeaveBalanceDto {
   pendingDays: number;
   /** Có thể âm (Q4: HR giảm số dư sau khi đơn đã duyệt). */
   remainingDays: number;
+  // T-057 phân rã (ADR-131) — khớp `LeaveBalanceBreakdown` của contracts (test parity DTO).
+  baseDays: number;
+  seniorityBonusDays: number;
+  seniorityYears: number | null;
+  entitledSource: 'POLICY' | 'OVERRIDE';
+  missingHireDate: boolean;
+  carriedOverDays: number;
+  carriedFinal: boolean;
+  carriedExpiresOn: CalendarDate | null;
+  carriedUsableDays: number;
 }
 
 /** Một dòng số dư theo người (HR: `GET leave-balances?year=`, kết quả `PATCH leave-balances/:userId/:year`). */
@@ -77,22 +88,24 @@ export function toLeaveDto(
   };
 }
 
-export function toBalanceDto(
-  year: number,
-  b: {
-    entitled: HalfDays;
-    adjustment: HalfDays;
-    used: HalfDays;
-    pending: HalfDays;
-    remaining: HalfDays;
-  },
-): LeaveBalanceDto {
+/** Số dư + phân rã T-057 (ADR-131) — giữ trường cũ, nửa ngày ⇒ thập phân ở biên. */
+export function toBalanceDto(v: BalanceView): LeaveBalanceDto {
+  const d = halfDaysToDecimal;
   return {
-    year,
-    entitledDays: halfDaysToDecimal(b.entitled),
-    adjustmentDays: halfDaysToDecimal(b.adjustment),
-    usedDays: halfDaysToDecimal(b.used),
-    pendingDays: halfDaysToDecimal(b.pending),
-    remainingDays: halfDaysToDecimal(b.remaining),
+    year: v.year,
+    entitledDays: d(v.entitlement.entitled),
+    adjustmentDays: d(v.adjustment),
+    usedDays: d(v.used),
+    pendingDays: d(v.pending),
+    remainingDays: d(v.balance.remaining),
+    baseDays: d(v.entitlement.base),
+    seniorityBonusDays: d(v.entitlement.bonus),
+    seniorityYears: v.entitlement.seniorityYears,
+    entitledSource: v.entitlement.source,
+    missingHireDate: v.entitlement.missingHireDate,
+    carriedOverDays: d(v.carried),
+    carriedFinal: v.carriedFinal,
+    carriedExpiresOn: v.expiresOn,
+    carriedUsableDays: d(v.balance.carriedUsable),
   };
 }

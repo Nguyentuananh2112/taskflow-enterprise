@@ -29,7 +29,7 @@ export class CancelLeaveUseCase {
     if (!found || found.userId !== actorId) throw new ResourceNotFoundError('leave_request');
 
     return d.uow.run(async () => {
-      await d.requests.lockUser(actorId);
+      await this.kit.lockFor(actorId); // policy SHARED → leave:<user> (ADR-131/136)
       await this.kit.requireActor(actorId, PERMISSION_LEAVE_SELF);
       await d.company.assertActiveEmployee(actorId);
       const record = await this.kit.reload(input.requestId, input.expectedVersion);
@@ -47,6 +47,7 @@ export class CancelLeaveUseCase {
         updatedAt: d.clock.now(),
       };
       await this.kit.save(next, record, halfDays);
+      await this.kit.refreshNextCarried(actorId, yearOf(record.startDate), today);
       await d.audit.record({
         actorId,
         action: 'LEAVE_CANCEL',

@@ -155,6 +155,7 @@ model User {
   leaveRequests           LeaveRequest[]    @relation("LeaveRequester")
   leaveRequestsDecided    LeaveRequest[]    @relation("LeaveDecider")
   leaveBalances           LeaveBalance[]
+  leavePoliciesUpdated    LeavePolicy[]     @relation("LeavePolicyUpdater")
   notificationsReceived   Notification[]    @relation("NotificationRecipient")
   notificationsActed      Notification[]    @relation("NotificationActor")
   hrAuditLogs             HrAuditLog[]
@@ -478,16 +479,39 @@ model LeaveRequest {
 }
 
 model LeaveBalance {
-  userId         String  @map("user_id") @db.Uuid
-  year           Int
-  entitledDays   Decimal @default(12) @map("entitled_days") @db.Decimal(4, 1)
-  adjustmentDays Decimal @default(0) @map("adjustment_days") @db.Decimal(4, 1)
-  version        Int     @default(1)
+  userId          String   @map("user_id") @db.Uuid
+  year            Int
+  /// T-057 (ADR-131): NULL = theo chính sách năm (tính khi đọc); khác NULL = ghi đè cố định.
+  entitledDays    Decimal? @map("entitled_days") @db.Decimal(4, 1)
+  adjustmentDays  Decimal  @default(0) @map("adjustment_days") @db.Decimal(4, 1)
+  /// Phép năm trước chuyển sang, chụp ở đường ghi / job 01/01; NULL = chưa chụp (đọc ⇒ tính tạm).
+  carriedOverDays Decimal? @map("carried_over_days") @db.Decimal(4, 1)
+  version         Int      @default(1)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@id([userId, year])
   @@map("leave_balances")
+}
+
+/// Chính sách phép một năm cho cả công ty (T-057, ADR-131). Năm chưa có dòng ⇒ dòng gần nhất trước đó, không có ⇒
+/// mức luật. Giới hạn = CHECK của migration (không thấp hơn luật: 12 ngày, +1 mỗi ≤ 5 năm).
+model LeavePolicy {
+  year                 Int      @id
+  annualDays           Decimal  @default(12) @map("annual_days") @db.Decimal(4, 1)
+  seniorityStepYears   Int      @default(5) @map("seniority_step_years")
+  seniorityBonusDays   Decimal  @default(1) @map("seniority_bonus_days") @db.Decimal(3, 1)
+  carryOverEnabled     Boolean  @default(false) @map("carry_over_enabled")
+  carryOverMaxDays     Decimal  @default(0) @map("carry_over_max_days") @db.Decimal(4, 1)
+  carryOverExpiryMonth Int      @default(3) @map("carry_over_expiry_month")
+  version              Int      @default(1)
+  updatedById          String   @map("updated_by_id") @db.Uuid
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User @relation("LeavePolicyUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([updatedById])
+  @@map("leave_policies")
 }
 
 /// ADR-123: thông báo bền — ghi cùng transaction với thay đổi; payload chỉ id + loại.

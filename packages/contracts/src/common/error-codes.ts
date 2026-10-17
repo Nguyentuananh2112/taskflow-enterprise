@@ -64,6 +64,8 @@ export const BusinessRule = z.enum([
   'ALREADY_ACTIVATED',
   // Mốc 5 (T-054, ADR-128): `hireDate` sau "hôm nay" của giờ nghiệp vụ — cùng kiểu START_DATE_OUT_OF_RANGE.
   'HIRE_DATE_IN_FUTURE',
+  // Mốc 5 (T-057, ADR-131): chính sách phép năm đã qua chỉ đọc.
+  'POLICY_YEAR_LOCKED',
   // Mốc 5 (hr-extended ADR-129/130, T-056): đơn bổ sung giờ + xuất Excel bảng công.
   'CORRECTION_DATE_OUT_OF_RANGE',
   'CORRECTION_IN_FUTURE',

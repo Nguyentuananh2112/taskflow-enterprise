@@ -120,7 +120,7 @@ describe('LeaveQueries — danh sách đơn (thiết kế §5)', () => {
 describe('LeaveQueries — số dư của tôi (LB-01/02/08)', () => {
   it('năm chưa có bản ghi ⇒ 12 ngày; GET KHÔNG tạo bản ghi (không ghi trong request đọc)', async () => {
     const h = await createLeaveHarness();
-    await expect(h.queries.myBalance(h.as(U.Mia), 2026)).resolves.toEqual({
+    await expect(h.queries.myBalance(h.as(U.Mia), 2026)).resolves.toMatchObject({
       year: 2026,
       entitledDays: 12,
       adjustmentDays: 0,
@@ -144,7 +144,7 @@ describe('LeaveQueries — số dư của tôi (LB-01/02/08)', () => {
     });
     await h.seed({ id: id(4), status: 'APPROVED', startDate: '2027-01-04', endDate: '2027-01-04' });
     await h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -14 }); // nửa ngày
-    await expect(h.queries.myBalance(h.as(U.Mia), 2026)).resolves.toEqual({
+    await expect(h.queries.myBalance(h.as(U.Mia), 2026)).resolves.toMatchObject({
       year: 2026,
       entitledDays: 12,
       adjustmentDays: -7,

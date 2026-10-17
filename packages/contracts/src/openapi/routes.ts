@@ -50,12 +50,18 @@ import {
   LeaveBalanceParams,
   LeaveBalanceQuery,
   LeaveBalanceRowDto,
+  LeaveExportQuery,
+  LeavePolicyDto,
+  LeavePolicyParams,
+  LeavePolicyQuery,
   LeavePreviewDto,
   LeavePreviewQuery,
   LeaveRequestDto,
   LeaveRequestParams,
   ListLeaveBalancesQuery,
   ListLeaveRequestsQuery,
+  PutLeavePolicyBody,
+  PutLeavePolicyResponse,
   RevokeLeaveBody,
   SubmitLeaveBody,
 } from '../leave';
@@ -165,6 +171,7 @@ export interface ApiRoute {
     data?: z.ZodType;
     paged?: boolean;
     csv?: boolean;
+    /** Thân `.xlsx` (không envelope) — ADR-130. */
     xlsx?: boolean;
     alsoOk?: boolean;
   };
@@ -712,6 +719,40 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     query: AttendanceCompanyMonthQuery,
     response: { status: 200, data: z.array(AttendanceMemberMonthDto), paged: true },
+  },
+  // ---------- chính sách phép + báo cáo phép (Mốc 5, T-057, ADR-130/131) ----------
+  {
+    method: 'get',
+    path: '/leave/policy',
+    summary:
+      'Chính sách phép của một năm (hr:manage) — dòng riêng, kế thừa năm gần nhất, hoặc mức luật',
+    tag: 'hr',
+    security: 'bearer',
+    query: LeavePolicyQuery,
+    response: { status: 200, data: LeavePolicyDto },
+  },
+  {
+    method: 'put',
+    path: '/leave/policy/{year}',
+    summary:
+      'Đặt chính sách phép năm hiện tại / năm sau (hr:manage, expectedVersion; 0 = tạo) — trả nhân viên bị âm phép',
+    tag: 'hr',
+    security: 'bearer',
+    params: LeavePolicyParams,
+    body: PutLeavePolicyBody,
+    response: { status: 200, data: PutLeavePolicyResponse },
+    errors: ['BUSINESS_RULE_VIOLATION', 'VERSION_CONFLICT'],
+  },
+  {
+    method: 'get',
+    path: '/leave/export.xlsx',
+    summary:
+      'Báo cáo phép .xlsx (hr:manage) — số dư phân rã + đơn đã duyệt trong khoảng, audit EXPORT',
+    tag: 'hr',
+    security: 'bearer',
+    query: LeaveExportQuery,
+    response: { status: 200, xlsx: true },
+    errors: ['RATE_LIMITED'],
   },
   {
     method: 'get',
