@@ -54,6 +54,7 @@
     "prom-client": "catalog:",
     "rate-limit-redis": "catalog:",
     "redis": "catalog:",
+    "sharp": "catalog:",
     "socket.io": "catalog:",
     "zod": "catalog:"
   },

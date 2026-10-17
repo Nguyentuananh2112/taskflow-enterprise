@@ -36,6 +36,20 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | — | b37ff159 | `X-Upload-Name` trong CORS + test preflight |
 | 3 | (commit này) | `rawUpload` + ngoại lệ content-type đúng cặp method + path + `UploadSlots` |
 
+## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
+
+- Ghim chính xác `sharp: 0.35.5` trong catalog; `apps/api` dùng `catalog:`.
+- `pnpm why sharp -r`: **Found 1 version of sharp** (0.35.5, qua `next` và `apps/api`);
+  `pnpm why @img/sharp-libvips-linux-x64 -r`: **1 version** (1.3.4).
+- Lockfile diff: chỉ thêm `catalogs.sharp`, importer `apps/api` → `sharp: catalog:`, và bỏ cờ `optional` của
+  `sharp` / `@img/colour` (giờ là dependency trực tiếp của API). Không có gói mới.
+- Integrity lockfile = registry (`npm view <pkg> dist.integrity`): `sharp@0.35.5`, `@img/sharp-linux-x64@0.35.5`,
+  `@img/sharp-libvips-linux-x64@1.3.4`, `@img/sharp-win32-x64@0.35.5` — **MATCH** cả 4 (sharp =
+  `sha512-Ywn4OnzG…`, trùng giá trị B kiểm).
+- `pnpm audit --prod`: **No known vulnerabilities found** (exit 0).
+- `pnpm peers check`: chỉ cảnh báo có sẵn `@babel/core` của `@sentry/bundler-plugins` — không liên quan sharp.
+- NOTICE LGPL-3.0 của libvips: `THIRD_PARTY_NOTICES.md` (liên kết động, không sửa libvips, link mã nguồn).
+
 ## Quyết định tự đưa ra ở bước 3
 
 - **Trần đồng thời 3 upload / người** đếm trong bộ nhớ tiến trình (`UploadSlots`), vì v1 chạy một instance
