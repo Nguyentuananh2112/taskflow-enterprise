@@ -34,6 +34,8 @@ export interface RunRow {
   user: { id: string; fullName: string };
   netPay: number;
   blockReasons: string[];
+  /** Phiếu của chính người gọi (luật self ⇒ chỉ đọc). */
+  own: boolean;
 }
 export interface Run {
   period: string;
@@ -190,6 +192,11 @@ export const linesOf = (p: Payslip): Line[] =>
  * thiếu hồ sơ lương / `hireDate` ⇒ PUBLISH_BLOCKED cho cả bảng ⇒ ca phát hành không xanh được. Bổ sung TỐI THIỂU cho
  * người KHÔNG do suite tạo: hồ sơ lương (bảng `salary_profiles` — ca HR không đọc) và `hireDate` chỉ khi đang THIẾU
  * hoặc sau kỳ, rồi "Tính lại công". Chạy ở beforeAll khi lane HR (tuần tự) đã xong các file trước.
+ *
+ * Vì sao là NGOẠI LỆ của §0.4 ("chỉ sửa người do ca tạo" — F + TL duyệt 18/10): bảng lương là MỘT kỳ cho cả công ty
+ * và PUBLISH_BLOCKED chặn CẢ bảng ⇒ không có cách nào khác để phát hành thật. Giới hạn để không vỡ ca HR chạy song
+ * song trên CI (firefox-hr / mobile-hr): chỉ PUT `hireDate` khi server báo thiếu / sau kỳ — người đã có `hireDate`
+ * hợp lệ (hồ sơ version > 0) KHÔNG bị chạm; bỏ qua dòng `own` (luật self của Kế toán ⇒ 403).
  */
 export async function apiUnblockOthers(
   request: APIRequestContext,
@@ -198,7 +205,9 @@ export async function apiUnblockOthers(
   mine: ReadonlySet<string>,
 ): Promise<Run> {
   const run = await apiRun(request, accountant, period);
-  const others = run.payslips.filter((r) => !mine.has(r.user.id) && r.blockReasons.length > 0);
+  const others = run.payslips.filter(
+    (r) => !mine.has(r.user.id) && !r.own && r.blockReasons.length > 0,
+  );
   for (const row of others) {
     if (row.blockReasons.includes('MISSING_SALARY_PROFILE')) {
       await apiAddSalaryProfile(request, accountant, row.user.id, period, 5_000_000);
