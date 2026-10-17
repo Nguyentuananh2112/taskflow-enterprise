@@ -237,12 +237,27 @@ async function lap(label, root, sig, expectSig) {
       `DẤU HIỆU SAI ở ${label} (${root}): ${sigCount} chunk chứa dấu hiệu — dừng toàn bộ`,
     );
   }
+  const buildId = readFileSync(join(webOf(root), '.next', 'BUILD_ID'), 'utf8').trim();
   const cpu = await waitQuietCpu();
   const server = await startServer(root);
   const browser = await chromium.launch();
   try {
+    // Dấu hiệu bản build ĐANG PHỤC VỤ (perf-board-mount-result.md: build lồng nhau ⇒ đo nhầm bản): HTML của
+    // server phải mang BUILD_ID của đúng thư mục này, không thì dừng toàn bộ.
+    const html = await (await fetch(`${BASE}/login`)).text();
+    if (!html.includes(buildId)) {
+      throw new Error(`BUILD_ID ${buildId} của ${root} không có trong HTML đang phục vụ — dừng`);
+    }
     const m = await measureOnce(browser);
-    const row = { at: new Date().toISOString(), label, sig: sigCount, cpu, tasks: TASKS, ...m };
+    const row = {
+      at: new Date().toISOString(),
+      label,
+      buildId,
+      sig: sigCount,
+      cpu,
+      tasks: TASKS,
+      ...m,
+    };
     appendFileSync(OUT, `${JSON.stringify(row)}\n`);
     console.log(JSON.stringify(row));
     return row;
