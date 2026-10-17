@@ -97,16 +97,13 @@ export function entitlementOf(input: {
     tenure !== null &&
     tenure.from <= endOfYear(year) &&
     (tenure.until === null || tenure.until >= startOfYear(year));
-  const effective = !covers
-    ? null
-    : hireDate !== null && hireDate > tenure.from
-      ? hireDate
-      : tenure.from;
+  // Ngày hiệu lực max(hireDate, tenure.from) sau 31/12/Y ⇔ (đã có `covers`: tenure.from ≤ 31/12/Y) hireDate sau 31/12/Y.
+  const counts = covers && !(hireDate !== null && hireDate > endOfYear(year));
   const bonus =
-    effective === null || effective > endOfYear(year) || seniorityYears === null
-      ? 0
-      : policy.seniorityBonus * Math.floor(seniorityYears / policy.seniorityStepYears);
-  const base = effective === null || effective > endOfYear(year) ? 0 : policy.annual + bonus;
+    counts && seniorityYears !== null
+      ? policy.seniorityBonus * Math.floor(seniorityYears / policy.seniorityStepYears)
+      : 0;
+  const base = counts ? policy.annual + bonus : 0;
   if (input.override !== null) {
     return {
       base,

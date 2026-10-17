@@ -253,6 +253,60 @@ describe('LP-07/08 hạn phép chuyển sang và kiểm số dư', () => {
   });
 });
 
+describe('biên (Stryker leave-domain)', () => {
+  it('resolvePolicy không phụ thuộc thứ tự dòng', () => {
+    const rows = [
+      { year: 2026, policy: P({ annual: 30 }) },
+      { year: 2024, policy: P({ annual: 28 }) },
+    ];
+    expect(resolvePolicy(rows, 2027)).toMatchObject({ fromYear: 2026, policy: { annual: 30 } });
+    expect(resolvePolicy(rows, 2025)).toMatchObject({ fromYear: 2024, policy: { annual: 28 } });
+  });
+
+  it('nhiệm kỳ kết thúc ĐÚNG 01/01/Y vẫn giao năm Y; ngày vào đúng 31/12/Y vẫn tính; không giao ⇒ bonus 0', () => {
+    const ent = (tenure: { from: string; until: string | null } | null, hireDate: string | null) =>
+      entitlementOf({ policy: P(), year: 2026, hireDate, tenure, override: null });
+    expect(ent({ from: '2020-01-01', until: '2026-01-01' }, null).entitled).toBe(24);
+    expect(ent({ from: '2026-03-01', until: null }, '2026-12-31').entitled).toBe(24);
+    expect(ent(null, '2010-01-01')).toMatchObject({ base: 0, bonus: 0, seniorityYears: 16 });
+    expect(ent({ from: '2020-01-01', until: '2025-12-31' }, '2010-01-01')).toMatchObject({
+      base: 0,
+      bonus: 0,
+    });
+    expect(ent({ from: '2026-03-01', until: null }, '2027-01-01')).toMatchObject({
+      base: 0,
+      bonus: 0,
+    });
+  });
+
+  it('liên tục: một trong nhiều nhiệm kỳ đủ; bắt đầu ĐÚNG 31/12/(Y−1) vẫn liên tục', () => {
+    expect(
+      continuousInto(
+        [
+          { from: '2019-01-01', until: '2020-06-30' },
+          { from: '2024-03-01', until: null },
+        ],
+        2026,
+      ),
+    ).toBe(true);
+    expect(continuousInto([{ from: '2025-12-31', until: null }], 2026)).toBe(true);
+  });
+
+  it('đúng NGÀY hết hạn phép chuyển sang vẫn dùng được', () => {
+    expect(
+      annualBalance({
+        entitled: 24,
+        adjustment: 0,
+        carried: 6,
+        usedEarly: 4,
+        usedLate: 0,
+        today: '2026-03-31',
+        expiresOn: '2026-03-31',
+      }),
+    ).toMatchObject({ carriedUsable: 2, remaining: 26 });
+  });
+});
+
 // ---------------------------------------------------------------- property test (PRNG có seed — tất định)
 
 function prng(seed: number) {
