@@ -1,7 +1,7 @@
 import type { AttendanceTodayDto } from '@taskflow/contracts/attendance';
 import { describe, expect, it } from 'vitest';
 
-import { greetingAt, minuteOfDay, shouldPromptCheckIn } from './check-in-prompt';
+import { callName, greetingAt, minuteOfDay, shouldPromptCheckIn } from './check-in-prompt';
 
 // Thứ 5 2026-10-15, lịch Asia/Ho_Chi_Minh 08:00–17:30.
 const at = (hhmm: string) => Date.parse(`2026-10-15T${hhmm}:00+07:00`);
@@ -69,5 +69,19 @@ describe('greetingAt', () => {
     [18 * 60, 'Chào buổi tối'],
   ])('%i phút ⇒ %s', (minute, text) => {
     expect(greetingAt(minute)).toBe(text);
+  });
+});
+
+describe('callName — tên gọi trong lời chào (demo TL: "Chào buổi chiều, mẫu)!")', () => {
+  it.each([
+    ['Olivia (dữ liệu mẫu)', 'Olivia'],
+    ['Nguyễn Văn An', 'An'],
+    ['  Trần   Thị  Lan ', 'Lan'],
+    ['Lan', 'Lan'],
+    ['Hana [HR] Lê', 'Lê'],
+    ['(dữ liệu mẫu)', null],
+    ['   ', null],
+  ])('%j ⇒ %j', (fullName, expected) => {
+    expect(callName(fullName)).toBe(expected);
   });
 });

@@ -120,7 +120,9 @@ function DayCell({ day, today, tabbable, buttonRef, onKeyDown, onFocus, onSelect
     .filter(Boolean)
     .join(', ');
   return (
-    <td aria-current={isToday ? 'date' : undefined} className="h-full p-0 align-top">
+    // KHÔNG dùng height:100% ở <td>/<button> trong bảng (demo TL: ô cuối tháng đè lên ô khác ⇒ bấm 17 mở 31/10) —
+    // ô dùng chiều cao tối thiểu cố định, nằm gọn trong <td>.
+    <td aria-current={isToday ? 'date' : undefined} className="p-0 align-top">
       <button
         ref={buttonRef}
         type="button"
@@ -130,7 +132,7 @@ function DayCell({ day, today, tabbable, buttonRef, onKeyDown, onFocus, onSelect
         onFocus={onFocus}
         onClick={onSelect}
         className={cn(
-          'flex h-full min-h-12 w-full flex-col items-start gap-0.5 rounded-control border border-l-4 border-border p-1.5 text-left sm:min-h-20',
+          'relative flex min-h-12 w-full flex-col items-start gap-0.5 rounded-control border border-l-4 border-border p-1.5 text-left sm:min-h-20',
           tone.cell,
           // Tương lai không có gì đã biết trước: số ngày màu chữ phụ (token đạt AA) thay vì làm mờ cả ô.
           future && !text.label && 'text-text-muted',

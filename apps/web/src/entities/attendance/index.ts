@@ -1,5 +1,5 @@
 export { attendanceApi } from './api/attendance.api';
-export { greetingAt, minuteOfDay, shouldPromptCheckIn } from './lib/check-in-prompt';
+export { callName, greetingAt, minuteOfDay, shouldPromptCheckIn } from './lib/check-in-prompt';
 export { DAY_STATUS, LEAVE_PART_LABEL } from './lib/labels';
 export { calendarWeeks, clockShort, dayText, employmentNote } from './lib/calendar';
 export { dateIn, dayLabel, duration, minutesToClock, shiftMonth, timeOfDay } from './lib/time';

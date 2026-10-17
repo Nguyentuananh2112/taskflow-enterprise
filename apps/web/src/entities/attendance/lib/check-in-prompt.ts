@@ -31,3 +31,17 @@ export function greetingAt(minute: number): string {
   if (minute < 18 * 60) return 'Chào buổi chiều';
   return 'Chào buổi tối';
 }
+
+/**
+ * Tên gọi trong lời chào: bỏ phần trong ngoặc ("Olivia (dữ liệu mẫu)" ⇒ "Olivia"), tên tiếng Việt lấy TỪ CUỐI
+ * ("Nguyễn Văn An" ⇒ "An"); không còn chữ nào ⇒ `null` (lời chào không kèm tên).
+ */
+export function callName(fullName: string): string | null {
+  const words = fullName
+    .replace(/[([{][^)\]}]*[)\]}]/g, ' ')
+    .replace(/[()[\]{}]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.at(-1) ?? null;
+}

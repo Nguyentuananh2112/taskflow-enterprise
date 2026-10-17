@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -87,6 +87,29 @@ describe('bảng công tháng', () => {
     expect((document.activeElement as HTMLButtonElement).tabIndex).toBe(0);
     await u.keyboard('{Enter}');
     expect(await screen.findByRole('dialog', { name: /^Ngày .*08\/10/ })).toBeTruthy();
+  });
+
+  it('bấm ô ngày N ⇒ dialog đúng ngày N, kể cả sau khi đi bằng phím mũi tên (demo TL: bấm 17 mở 31/10)', async () => {
+    open();
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    const u = userEvent.setup({ delay: null });
+    const cell = (n: number) =>
+      within(table).getByRole('button', { name: new RegExp(`^Ngày ${n}/10`) });
+    for (const n of [17, 1, 31, 9]) {
+      await u.click(cell(n));
+      expect(
+        await screen.findByRole('dialog', {
+          name: new RegExp(`, ${String(n).padStart(2, '0')}/10$`),
+        }),
+      ).toBeTruthy();
+      await u.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    }
+    // Đi bằng phím rồi BẤM chuột vào ô khác ⇒ vẫn đúng ô được bấm (roving tabindex không ghi đè).
+    cell(15).focus();
+    await u.keyboard('{ArrowRight}{ArrowDown}');
+    await u.click(cell(17));
+    expect(await screen.findByRole('dialog', { name: /, 17\/10$/ })).toBeTruthy();
   });
 
   it('chuyển "Danh sách" ⇒ bảng có tiêu đề hàng, câu chữ đời thường; NHỚ lựa chọn khi vào lại', async () => {
