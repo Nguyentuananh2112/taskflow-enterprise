@@ -37,7 +37,7 @@ export async function lockOwnersAndReloadActor(
   const owners = await memberships.lockOwners(actor.workspaceId);
   const me = await memberships.find(actor.workspaceId, actor.userId);
   if (!me) throw new ResourceNotFoundError('workspace');
-  const fresh: Actor = { ...actor, role: me.role, grants: [...me.grants] }; // ADR-119: grants mới nhất
+  const fresh: Actor = { ...actor, role: me.role };
   if (permission) requirePermission(fresh, permission);
   return { owners, actor: fresh };
 }

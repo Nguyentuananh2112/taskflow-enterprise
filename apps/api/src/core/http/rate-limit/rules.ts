@@ -63,7 +63,20 @@ export const RATE_LIMIT_RULES = {
       countOnlyStatuses: [401],
     }),
   ],
-  register: [rule({ id: 'register-ip', windowMs: HOUR, limit: 5, key: 'ip', failMode: 'closed' })],
+  /**
+   * `inspect` + `activate` (ADR-137, SEC-HR-57): CHUNG một bộ đếm theo IP, chỉ đếm lần sai (400 / 410) —
+   * 10 lần / 15 phút, lần 11 ⇒ 429. Fail-closed như login (dò token không được tự do khi Valkey chết).
+   */
+  activation: [
+    rule({
+      id: 'activation-ip',
+      windowMs: 15 * MINUTE,
+      limit: 10,
+      key: 'ip',
+      failMode: 'closed',
+      countOnlyStatuses: [400, 410],
+    }),
+  ],
   refresh: [
     rule({ id: 'refresh-ip', windowMs: 5 * MINUTE, limit: 60, key: 'ip', failMode: 'closed' }),
   ],
@@ -83,6 +96,10 @@ export const RATE_LIMIT_RULES = {
   ],
   updateMe: [
     rule({ id: 'update-me-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),
+  ],
+  /** `POST /hr/employees` — 30/giờ/actor (thiết kế Mốc 3.5 §5). */
+  hireEmployee: [
+    rule({ id: 'hire-employee-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),
   ],
   addMember: [
     rule({ id: 'add-member-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),

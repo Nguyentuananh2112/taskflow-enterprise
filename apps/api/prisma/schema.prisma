@@ -49,17 +49,26 @@ enum RefreshTokenRevokeReason {
   REUSE_DETECTED
   PASSWORD_CHANGED
   USER_DELETED
+  OFFBOARDED // Mốc 3.5: nghỉ việc công ty (ADR-137)
 }
 
-// ---- Mốc 3 (attendance-leave.md §3, ADR-119…123) ----
-enum MemberGrant {
-  HR_MANAGE // ADR-119: quyền "Quản lý nhân sự" cấp thêm theo thành viên
+// ---- Mốc 3.5 (company-level.md, ADR-133…140): một công ty ----
+enum CompanyRole {
+  ADMIN // quản trị — KHÔNG phải nhân viên (không chấm công / xin nghỉ)
+  EMPLOYEE
 }
 
-enum MemberDepartureReason {
-  REMOVED // bị OWNER / PM xóa
-  LEFT // tự rời
+enum CompanyGrant {
+  HR_MANAGE
+  PAYROLL_MANAGE // dùng từ Mốc 4; khai sẵn cho parity
 }
+
+enum DepartureReason {
+  OFFBOARDED // nghỉ việc
+  ROLE_CHANGED // nâng EMPLOYEE → ADMIN: đóng nhiệm kỳ chấm công
+}
+
+// ---- Mốc 3 (attendance-leave.md §3, ADR-120…123) ----
 
 enum AttendanceKind {
   IN
@@ -101,14 +110,15 @@ enum NotificationType {
   LEAVE_CANCELLED
   LEAVE_REVOKED
   ATTENDANCE_ADJUSTED
-  HR_GRANTED
-  HR_REVOKED
+  ACCESS_CHANGED // Mốc 3.5: đổi role / grant công ty (thay HR_GRANTED / HR_REVOKED)
+  OFFBOARD_SCHEDULED
+  OFFBOARD_CLEANUP
 }
 
 model User {
   id                String    @id @default(uuid(7)) @db.Uuid
   email             String    @unique @db.VarChar(254) // trim+lowercase+NFC ở app; CHECK (email = lower(email)) bằng SQL tay
-  passwordHash      String    @map("password_hash") // argon2id PHC string `$argon2id$v=19$…` (ADR-065)
+  passwordHash      String?   @map("password_hash") // NULL = chờ kích hoạt (ADR-137); argon2id PHC string `$argon2id$v=19$…` (ADR-065)
   fullName          String    @map("full_name") @db.VarChar(100)
   tokenVersion      Int       @default(0) @map("token_version") // ADR-025
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
@@ -126,17 +136,23 @@ model User {
 
   // Mốc 3: mọi tham chiếu tới users là Restrict (như actor của TaskAuditLog — D3) — lịch sử công / đơn /
   // số dư không mất khi rời workspace; v1 không xóa cứng user (D2 ẩn danh hóa).
-  attendanceEvents        AttendanceEvent[]          @relation("AttendanceUser")
-  attendanceEventsCreated AttendanceEvent[]          @relation("AttendanceCreator")
-  attendanceEventsVoided  AttendanceEvent[]          @relation("AttendanceVoider")
-  workSchedulesCreated    WorkSchedule[]             @relation("ScheduleCreator")
-  leaveRequests           LeaveRequest[]             @relation("LeaveRequester")
-  leaveRequestsDecided    LeaveRequest[]             @relation("LeaveDecider")
+  attendanceEvents        AttendanceEvent[] @relation("AttendanceUser")
+  attendanceEventsCreated AttendanceEvent[] @relation("AttendanceCreator")
+  attendanceEventsVoided  AttendanceEvent[] @relation("AttendanceVoider")
+  workSchedulesCreated    WorkSchedule[]    @relation("ScheduleCreator")
+  leaveRequests           LeaveRequest[]    @relation("LeaveRequester")
+  leaveRequestsDecided    LeaveRequest[]    @relation("LeaveDecider")
   leaveBalances           LeaveBalance[]
-  notificationsReceived   Notification[]             @relation("NotificationRecipient")
-  notificationsActed      Notification[]             @relation("NotificationActor")
+  notificationsReceived   Notification[]    @relation("NotificationRecipient")
+  notificationsActed      Notification[]    @relation("NotificationActor")
   hrAuditLogs             HrAuditLog[]
-  memberDepartures        WorkspaceMemberDeparture[]
+
+  // Mốc 3.5
+  companyMember          CompanyMember?           @relation("CompanyMemberUser")
+  offboardsScheduled     CompanyMember[]          @relation("OffboardScheduler")
+  companyDepartures      CompanyMemberDeparture[]
+  activationTokens       AccountActivationToken[] @relation("ActivationTokenUser")
+  activationTokensIssued AccountActivationToken[] @relation("ActivationTokenCreator")
 
   @@map("users")
 }
@@ -175,19 +191,11 @@ model Workspace {
   version     Int       @default(1) // ADR-110: optimistic lock — mọi ghi là UPDATE … WHERE version
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(3) // Mốc 3.5: Admin lưu trữ ws mồ côi 0 thành viên (ADR-134)
 
-  deletedBy        User?                      @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
-  members          WorkspaceMember[]
-  projects         Project[]
-  // Mốc 3 — cascade theo purge workspace (ADR-047)
-  workSchedules    WorkSchedule[]
-  holidays         Holiday[]
-  attendanceEvents AttendanceEvent[]
-  leaveRequests    LeaveRequest[]
-  leaveBalances    LeaveBalance[]
-  notifications    Notification[]
-  hrAuditLogs      HrAuditLog[]
-  memberDepartures WorkspaceMemberDeparture[]
+  deletedBy User?             @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
+  members   WorkspaceMember[]
+  projects  Project[]
 
   @@index([purgeAt], map: "workspaces_purge_at_idx", where: raw("purge_at IS NOT NULL")) // partialIndexes (ADR-062)
   @@index([deletedById])
@@ -199,7 +207,6 @@ model WorkspaceMember {
   workspaceId String        @map("workspace_id") @db.Uuid
   userId      String        @map("user_id") @db.Uuid
   role        WorkspaceRole @default(MEMBER)
-  grants      MemberGrant[] @default([]) // ADR-119: quyền hiệu lực = ROLE_PERMISSIONS[role] ∪ GRANT_PERMISSIONS[grants]; OWNER luôn [] (B-M2)
   joinedAt    DateTime      @default(now()) @map("joined_at") @db.Timestamptz(3)
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -212,25 +219,77 @@ model WorkspaceMember {
   @@map("workspace_members")
 }
 
-/// T-037b: nhiệm kỳ ĐÃ KẾT THÚC của thành viên (rời = xóa dòng workspace_members ⇒ ghi lại ở đây CÙNG
-/// transaction). Nhiệm kỳ hiện tại = workspace_members.joined_at. Bảng công dùng để không tính "Vắng"
-/// ngoài nhiệm kỳ. Purge workspace ⇒ cascade (không ghi departure).
-model WorkspaceMemberDeparture {
-  id          String                @id @db.Uuid
-  workspaceId String                @map("workspace_id") @db.Uuid
-  userId      String                @map("user_id") @db.Uuid
-  role        WorkspaceRole // role lúc rời — VIEWER không phải nhân viên (bảng công bỏ qua)
-  joinedAt    DateTime              @map("joined_at") @db.Timestamptz(3)
-  leftAt      DateTime              @map("left_at") @db.Timestamptz(3)
-  reason      MemberDepartureReason
+// ---------------------------------------------------------------- Mốc 3.5: công ty (ADR-133…137)
+// CHECK constraint: SQL tay trong migration company_level.
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+/// Đúng MỘT dòng (CHECK id = 1) — tạo bởi `admin:bootstrap` / seed.
+model Company {
+  id        Int      @id @db.SmallInt
+  name      String   @db.VarChar(100)
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  @@index([workspaceId, leftAt])
-  @@index([workspaceId, userId])
+  @@map("companies")
+}
+
+/// Dòng tồn tại ⇔ đang thuộc công ty (kể cả chờ kích hoạt, đang có lịch nghỉ). Nghỉ việc = xóa dòng + departure
+/// cùng transaction. Nhiệm kỳ chấm công = thời gian có role EMPLOYEE (`start_date`, theo NGÀY).
+model CompanyMember {
+  userId                String         @id @map("user_id") @db.Uuid
+  role                  CompanyRole
+  grants                CompanyGrant[] @default([]) // chỉ EMPLOYEE (CHECK)
+  startDate             DateTime?      @map("start_date") @db.Date // EMPLOYEE ⇔ khác null (CHECK)
+  offboardLastDay       DateTime?      @map("offboard_last_day") @db.Date
+  offboardAccessUntil   DateTime?      @map("offboard_access_until") @db.Timestamptz(3) // 06:00 ngày sau last_day theo lịch
+  offboardScheduledById String?        @map("offboard_scheduled_by_id") @db.Uuid
+  version               Int            @default(1)
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user                User  @relation("CompanyMemberUser", fields: [userId], references: [id], onDelete: Restrict)
+  offboardScheduledBy User? @relation("OffboardScheduler", fields: [offboardScheduledById], references: [id], onDelete: Restrict)
+
+  @@index([offboardAccessUntil], map: "company_members_offboard_access_until_idx", where: raw("offboard_access_until IS NOT NULL")) // job hoàn tất mỗi phút
+  @@index([role]) // last-admin guard
+  @@index([offboardScheduledById])
+  @@map("company_members")
+}
+
+/// Nhiệm kỳ EMPLOYEE đã đóng (nghỉ việc / nâng lên Admin). `left_at` chỉ để audit; nhiệm kỳ so theo ngày.
+model CompanyMemberDeparture {
+  id       String          @id @db.Uuid
+  userId   String          @map("user_id") @db.Uuid
+  role     CompanyRole
+  firstDay DateTime        @map("first_day") @db.Date
+  lastDay  DateTime        @map("last_day") @db.Date
+  leftAt   DateTime        @map("left_at") @db.Timestamptz(3)
+  reason   DepartureReason
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
   @@index([userId])
-  @@map("workspace_member_departures")
+  @@index([lastDay])
+  @@map("company_member_departures")
+}
+
+/// ADR-137: token kích hoạt — DB chỉ lưu SHA-256; một lần; mỗi user ≤ 1 token sống.
+model AccountActivationToken {
+  id          String    @id @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid // NULL = do `admin:bootstrap` cấp
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user      User  @relation("ActivationTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("ActivationTokenCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([userId], map: "account_activation_tokens_live_key", where: raw("used_at IS NULL AND revoked_at IS NULL"))
+  @@index([expiresAt])
+  @@index([createdById])
+  @@map("account_activation_tokens")
 }
 
 model Project {
@@ -306,14 +365,13 @@ model TaskAuditLog {
 }
 
 // ---------------------------------------------------------------- Mốc 3: chấm công & nghỉ phép
-// Không FK tới workspace_members (attendance-leave.md §3, A#2): "là thành viên" kiểm ở tầng ứng dụng lúc ghi.
+// Mốc 3.5 (ADR-136): thuộc CÔNG TY — không còn `workspace_id`; purge workspace không đụng dữ liệu HR.
 // CHECK constraint: SQL tay trong migration 20261017000000_hr_attendance_leave. Không seed lịch: lịch mặc định là hằng số
 // của domain attendance (Tech Lead, T-037) — dòng work_schedules chỉ có khi HR lưu.
 
 /// ADR-120/121: lịch làm việc có phiên bản theo ngày hiệu lực; múi giờ nằm trong phiên bản.
 model WorkSchedule {
   id            String   @id @default(uuid(7)) @db.Uuid
-  workspaceId   String   @map("workspace_id") @db.Uuid
   effectiveFrom DateTime @map("effective_from") @db.Date
   timezone      String   @default("Asia/Ho_Chi_Minh") @db.VarChar(64) // IANA, kiểm ở app (Intl.supportedValuesOf)
   workdays      Int // bitmask: bit0 = T2 … bit6 = CN
@@ -325,29 +383,23 @@ model WorkSchedule {
   createdById   String   @map("created_by_id") @db.Uuid // HR lưu lịch (không có bản seed — lịch mặc định là hằng số của domain attendance)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy User      @relation("ScheduleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy User @relation("ScheduleCreator", fields: [createdById], references: [id], onDelete: Restrict)
 
-  @@unique([workspaceId, effectiveFrom])
+  @@unique([effectiveFrom])
   @@index([createdById])
   @@map("work_schedules")
 }
 
 model Holiday {
-  workspaceId String   @map("workspace_id") @db.Uuid
-  date        DateTime @db.Date
-  name        String   @db.VarChar(100)
+  date DateTime @id @db.Date
+  name String   @db.VarChar(100)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  @@id([workspaceId, date])
   @@map("holidays")
 }
 
 /// ADR-121: log sự kiện bất biến — chỉ thêm; sai ⇒ HR hủy (voided*) + thêm lượt ADJUSTMENT.
 model AttendanceEvent {
   id             String           @id @default(uuid(7)) @db.Uuid
-  workspaceId    String           @map("workspace_id") @db.Uuid
   userId         String           @map("user_id") @db.Uuid
   kind           AttendanceKind
   source         AttendanceSource
@@ -363,16 +415,14 @@ model AttendanceEvent {
   voidedById     String?          @map("voided_by_id") @db.Uuid
   voidReason     String?          @map("void_reason") @db.VarChar(500)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation("AttendanceUser", fields: [userId], references: [id], onDelete: Restrict)
-  createdBy User      @relation("AttendanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  voidedBy  User?     @relation("AttendanceVoider", fields: [voidedById], references: [id], onDelete: Restrict)
+  user      User  @relation("AttendanceUser", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy User  @relation("AttendanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  voidedBy  User? @relation("AttendanceVoider", fields: [voidedById], references: [id], onDelete: Restrict)
 
-  @@unique([workspaceId, userId, workDate], map: "attendance_events_web_in_once_key", where: raw("kind = 'IN' AND source = 'WEB' AND voided_at IS NULL"))
-  @@unique([workspaceId, userId, source, idempotencyKey], map: "attendance_events_idempotency_key", where: raw("idempotency_key IS NOT NULL"))
-  @@index([workspaceId, workDate])
-  @@index([workspaceId, userId, workDate])
-  @@index([userId])
+  @@unique([userId, workDate], map: "attendance_events_web_in_once_key", where: raw("kind = 'IN' AND source = 'WEB' AND voided_at IS NULL"))
+  @@unique([userId, source, idempotencyKey], map: "attendance_events_idempotency_key", where: raw("idempotency_key IS NOT NULL"))
+  @@index([workDate])
+  @@index([userId, workDate])
   @@index([createdById])
   @@index([voidedById])
   @@map("attendance_events")
@@ -381,7 +431,6 @@ model AttendanceEvent {
 /// ADR-122: số ngày KHÔNG lưu — tính khi đọc từ lịch + ngày lễ (D-H3a).
 model LeaveRequest {
   id           String       @id @default(uuid(7)) @db.Uuid
-  workspaceId  String       @map("workspace_id") @db.Uuid
   userId       String       @map("user_id") @db.Uuid
   type         LeaveType
   startDate    DateTime     @map("start_date") @db.Date
@@ -396,37 +445,32 @@ model LeaveRequest {
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Restrict)
-  decidedBy User?     @relation("LeaveDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+  user      User  @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Restrict)
+  decidedBy User? @relation("LeaveDecider", fields: [decidedById], references: [id], onDelete: Restrict)
 
-  @@index([workspaceId, status])
-  @@index([workspaceId, userId, startDate])
-  @@index([userId])
+  @@index([status, startDate, id])
+  @@index([status, createdAt, id])
+  @@index([userId, startDate])
   @@index([decidedById])
   @@map("leave_requests")
 }
 
 model LeaveBalance {
-  workspaceId    String  @map("workspace_id") @db.Uuid
   userId         String  @map("user_id") @db.Uuid
   year           Int
   entitledDays   Decimal @default(12) @map("entitled_days") @db.Decimal(4, 1)
   adjustmentDays Decimal @default(0) @map("adjustment_days") @db.Decimal(4, 1)
   version        Int     @default(1)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@id([workspaceId, userId, year])
-  @@index([userId])
+  @@id([userId, year])
   @@map("leave_balances")
 }
 
 /// ADR-123: thông báo bền — ghi cùng transaction với thay đổi; payload chỉ id + loại.
 model Notification {
   id          String           @id @default(uuid(7)) @db.Uuid
-  workspaceId String           @map("workspace_id") @db.Uuid
   recipientId String           @map("recipient_id") @db.Uuid
   type        NotificationType
   refId       String           @map("ref_id") @db.Uuid // id đơn / lượt chấm / thành viên — không FK (đa hình)
@@ -434,21 +478,18 @@ model Notification {
   readAt      DateTime?        @map("read_at") @db.Timestamptz(3)
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  recipient User      @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
-  actor     User?     @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Restrict)
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Restrict)
 
   @@index([recipientId, readAt, createdAt])
-  @@index([workspaceId])
   @@index([actorId])
   @@map("notifications")
 }
 
-/// Như TaskAuditLog: chỉ thêm. Chỉ OWNER đọc (B-L1); before/after KHÔNG chép `reason` của đơn nghỉ (B-H2).
+/// Như TaskAuditLog: chỉ thêm. Chỉ Admin đọc (Mốc 3.5); before/after KHÔNG chép `reason` của đơn nghỉ (B-H2).
 model HrAuditLog {
   id           String   @id @default(uuid(7)) @db.Uuid
-  workspaceId  String   @map("workspace_id") @db.Uuid
-  actorId      String   @map("actor_id") @db.Uuid
+  actorId      String?  @map("actor_id") @db.Uuid // NULL = `admin:bootstrap` (CLI, không có người)
   action       String   @db.VarChar(32) // GRANT/REVOKE, SCHEDULE_SET, HOLIDAY_SET/DELETE, EVENT_ADJUST/VOID, LEAVE_*, BALANCE_ADJUST, EXPORT — tập giá trị chốt ở contracts
   targetUserId String?  @map("target_user_id") @db.Uuid // không FK (như D5)
   refId        String?  @map("ref_id") @db.Uuid
@@ -457,10 +498,9 @@ model HrAuditLog {
   requestId    String?  @map("request_id") @db.VarChar(64)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  actor     User      @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
 
-  @@index([workspaceId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@index([actorId])
   @@map("hr_audit_logs")
 }

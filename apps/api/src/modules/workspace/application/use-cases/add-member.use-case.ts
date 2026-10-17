@@ -5,16 +5,10 @@ import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import { assertWorkspaceLive } from '../workspace-guard';
 import { Membership } from '../../domain/membership';
 import { isWorkspaceRole, type WorkspaceRole } from '../../domain/roles';
-import type { IUserDirectory } from '../ports/collaborators.port';
+import type { ICompanyMembershipGate, IUserDirectory } from '../ports/collaborators.port';
 import type { IMembershipRepository, IWorkspaceRepository } from '../ports/repositories.port';
 import { lockOwnersAndReloadActor } from './owner-guard';
-import {
-  normalizeEmail,
-  requirePermission,
-  toMemberView,
-  type Actor,
-  type MemberView,
-} from '../workspace-shared';
+import { requirePermission, toMemberView, type Actor, type MemberView } from '../workspace-shared';
 
 /** Role người gọi được phép cấp (security.md 3.2): PM chỉ cấp MEMBER/VIEWER, OWNER cấp bất kỳ. */
 function canGrant(actorRole: WorkspaceRole, role: WorkspaceRole): boolean {
@@ -31,13 +25,17 @@ export function parseRole(raw: string): WorkspaceRole {
   return raw;
 }
 
-/** `POST /workspaces/:wsId/members` — thêm user ĐÃ có tài khoản (lời mời qua email: sau v1). */
+/**
+ * `POST /workspaces/:wsId/members` — Mốc 3.5 (ADR-134): chọn người trong công ty theo `userId` (combobox
+ * `member-candidates`), không còn nhập email tự do. Không thuộc công ty / đã nghỉ ⇒ 404 user (như không có).
+ */
 export class AddMemberUseCase {
   constructor(
     private readonly d: {
       memberships: IMembershipRepository;
       workspaces: IWorkspaceRepository;
       users: IUserDirectory;
+      company: ICompanyMembershipGate;
       uow: IUnitOfWork;
       ids: IIdGenerator;
       clock: IClock;
@@ -45,15 +43,15 @@ export class AddMemberUseCase {
     },
   ) {}
 
-  async execute(actor: Actor, input: { email: string; role: string }): Promise<MemberView> {
+  async execute(actor: Actor, input: { userId: string; role: string }): Promise<MemberView> {
     requirePermission(actor, 'member:add');
     const role = parseRole(input.role);
     // Kiểm quyền cấp role TRƯỚC khi tra user (MEM-03): không tốn truy vấn, không lộ email tồn tại.
     if (!canGrant(actor.role, role)) throw new ForbiddenError('member:add');
 
-    // Email không có tài khoản ⇒ 404 user (security.md 6.5, ADR-090; bù bằng rate limit 30/giờ).
-    const user = await this.d.users.findByEmail(normalizeEmail(input.email));
-    if (!user) throw new ResourceNotFoundError('user');
+    // Không có / không còn thuộc công ty ⇒ cùng 404 user (rate limit 30/giờ như trước).
+    const user = await this.d.users.findById(input.userId);
+    if (!user || !(await this.d.company.isActive(user.id))) throw new ResourceNotFoundError('user');
 
     return this.d.uow.run(async () => {
       // X6: role của người gọi đọc lại sau khóa owners — PM vừa bị hạ / xóa không thêm được ai.

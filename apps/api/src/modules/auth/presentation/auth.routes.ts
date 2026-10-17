@@ -1,4 +1,10 @@
-import { ChangePasswordBody, LoginBody, RegisterBody, UpdateMeBody } from '@taskflow/contracts';
+import {
+  ActivateBody,
+  ActivationInspectBody,
+  ChangePasswordBody,
+  LoginBody,
+  UpdateMeBody,
+} from '@taskflow/contracts';
 import { Router, type RequestHandler } from 'express';
 
 import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
@@ -30,11 +36,21 @@ export function authRoutes(d: AuthRouteDeps): Router {
   const authed = [d.authenticate, ...d.limit(RATE_LIMIT_RULES.authenticated)];
   router.use(noStore);
 
+  // Mốc 3.5 (ADR-137): KHÔNG còn `/register` — tài khoản do HR / `admin:bootstrap` tạo, người dùng kích hoạt.
+  // Công khai: Origin cho phép + hạn mức IP chung cho inspect / activate (SEC-HR-57), TRƯỚC validate.
   router.post(
-    '/register',
-    ...d.limit(RATE_LIMIT_RULES.register),
-    validate({ body: RegisterBody }),
-    c.register,
+    '/activation/inspect',
+    d.requireAllowedOrigin,
+    ...d.limit(RATE_LIMIT_RULES.activation),
+    validate({ body: ActivationInspectBody }),
+    c.inspectActivation,
+  );
+  router.post(
+    '/activate',
+    d.requireAllowedOrigin,
+    ...d.limit(RATE_LIMIT_RULES.activation),
+    validate({ body: ActivateBody }),
+    c.activate,
   );
   // ADR-108: limiter IP trước validate; limiter theo email (chỉ đếm 401) SAU validate.
   router.post(

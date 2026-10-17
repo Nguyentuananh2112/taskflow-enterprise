@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 
 import {
   AttendanceKind,
+  CompanyGrant,
+  CompanyRole,
   AttendanceSource,
   LeaveDayPart,
   LeaveStatus,
   LeaveType,
-  MemberGrant,
   NotificationType,
   TaskAuditAction,
   TaskPriority,
@@ -37,7 +38,8 @@ describe('Prisma enum ↔ @taskflow/contracts', () => {
     ['TaskStatus', TaskStatus.options],
     ['TaskPriority', TaskPriority.options],
     ['TaskAuditAction', TaskAuditAction.options],
-    ['MemberGrant', MemberGrant.options],
+    ['CompanyRole', CompanyRole.options],
+    ['CompanyGrant', CompanyGrant.options],
     ['AttendanceKind', AttendanceKind.options],
     ['AttendanceSource', AttendanceSource.options],
     ['LeaveType', LeaveType.options],

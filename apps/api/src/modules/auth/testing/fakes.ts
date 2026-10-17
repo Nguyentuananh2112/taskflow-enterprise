@@ -1,7 +1,7 @@
-import { ResourceConflictError } from '../../../core/errors';
 import type {
+  ICompanySessionGate,
   IMembershipReader,
-  IWorkspaceProvisioner,
+  MeCompanyView,
   MembershipView,
 } from '../application/ports/collaborators.port';
 import type { IPasswordHasher } from '../application/ports/password-hasher.port';
@@ -32,27 +32,32 @@ export class FakePasswordHasher implements IPasswordHasher {
   }
 }
 
-/** Module Workspace giả: ghi lời gọi, có thể ném trùng slug N lần đầu (REG-11/12). */
-export class FakeWorkspaceProvisioner implements IWorkspaceProvisioner {
-  readonly calls: {
-    input: Parameters<IWorkspaceProvisioner['provisionDefault']>[0];
-    inTransaction: boolean;
-  }[] = [];
-  slugConflicts = 0;
-  #seq = 0;
+/**
+ * Module company giả: mặc định MỌI user là nhân viên đang làm; `revoked` = không còn thuộc công ty / quá
+ * `access_until` (Mốc 3.5).
+ */
+export class FakeCompanyGate implements ICompanySessionGate {
+  readonly revoked = new Set<string>();
+  name: string | null = 'Công ty Test';
 
-  constructor(private readonly uow: { readonly inTransaction: boolean }) {}
+  isActive(userId: string): Promise<boolean> {
+    return Promise.resolve(!this.revoked.has(userId));
+  }
 
-  provisionDefault(
-    input: Parameters<IWorkspaceProvisioner['provisionDefault']>[0],
-  ): Promise<{ workspaceId: string }> {
-    this.calls.push({ input, inTransaction: this.uow.inTransaction });
-    if (this.slugConflicts > 0) {
-      this.slugConflicts -= 1;
-      return Promise.reject(new ResourceConflictError({ reason: 'taken', field: 'slug' }));
-    }
-    this.#seq += 1;
-    return Promise.resolve({ workspaceId: `ws-${this.#seq}` });
+  meOf(userId: string): Promise<MeCompanyView | null> {
+    if (this.revoked.has(userId)) return Promise.resolve(null);
+    return Promise.resolve({
+      name: this.name,
+      role: 'EMPLOYEE',
+      grants: [],
+      permissions: ['attendance:self', 'leave:self', 'workspace:create'],
+      status: 'ACTIVE',
+      offboardLastDay: null,
+    });
+  }
+
+  companyName(): Promise<string | null> {
+    return Promise.resolve(this.name);
   }
 }
 

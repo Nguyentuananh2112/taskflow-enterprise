@@ -33,7 +33,6 @@ const B: RetentionPolicy = {
   hrAuditDays: 1826,
 };
 
-let ws: string;
 let user: string;
 
 beforeEach(async () => {
@@ -48,7 +47,6 @@ beforeEach(async () => {
       },
     })
   ).id;
-  ws = (await prisma.workspace.create({ data: { name: 'W', slug: 'w-ret' } })).id;
 });
 afterAll(disconnectTestPrisma);
 
@@ -61,7 +59,6 @@ function instance(policy: RetentionPolicy = B) {
 const event = (occurredAt: Date, workDate = occurredAt, kind: 'IN' | 'OUT' = 'OUT') =>
   testPrisma().attendanceEvent.create({
     data: {
-      workspaceId: ws,
       userId: user,
       kind,
       source: 'WEB',
@@ -81,7 +78,6 @@ const leave = (
 ) =>
   testPrisma().leaveRequest.create({
     data: {
-      workspaceId: ws,
       userId: user,
       type: 'SICK',
       startDate: new Date(start),
@@ -147,7 +143,7 @@ describe('job retention (T-043, phương án B)', () => {
     await leave('2023-12-29', '2023-12-29', 'APPROVED');
     const sameYear = await leave('2024-01-02', '2024-01-02', 'APPROVED');
     for (const year of [2023, 2024]) {
-      await testPrisma().leaveBalance.create({ data: { workspaceId: ws, userId: user, year } });
+      await testPrisma().leaveBalance.create({ data: { userId: user, year } });
     }
     await instance().job.execute();
     expect((await testPrisma().leaveRequest.findMany()).map((r) => r.id)).toEqual([sameYear.id]);
@@ -156,31 +152,31 @@ describe('job retention (T-043, phương án B)', () => {
 
   it('D5 / D6 / D7: departures 730, thông báo 180, HrAuditLog 1826 ngày — biên ±1 ngày', async () => {
     const prisma = testPrisma();
-    const dep = (leftAt: Date) =>
-      prisma.workspaceMemberDeparture.create({
+    // Mốc 3.5: nhiệm kỳ công ty, mốc theo NGÀY `last_day` (cùng mốc với attendance).
+    const dep = (lastDay: Date) =>
+      prisma.companyMemberDeparture.create({
         data: {
           id: randomUUID(),
-          workspaceId: ws,
           userId: user,
-          role: 'MEMBER',
-          joinedAt: ago(2000),
-          leftAt,
-          reason: 'LEFT',
+          role: 'EMPLOYEE',
+          firstDay: new Date(ago(2000).toISOString().slice(0, 10)),
+          lastDay: new Date(lastDay.toISOString().slice(0, 10)),
+          leftAt: lastDay,
+          reason: 'OFFBOARDED',
         },
       });
     const note = (createdAt: Date) =>
       prisma.notification.create({
         data: {
-          workspaceId: ws,
           recipientId: user,
-          type: 'HR_GRANTED',
+          type: 'ACCESS_CHANGED',
           refId: randomUUID(),
           createdAt,
         },
       });
     const audit = (createdAt: Date) =>
       prisma.hrAuditLog.create({
-        data: { id: randomUUID(), workspaceId: ws, actorId: user, action: 'GRANT', createdAt },
+        data: { id: randomUUID(), actorId: user, action: 'GRANT', createdAt },
       });
     await Promise.all([dep(ago(731)), note(ago(181)), audit(ago(1827))]);
     const [depNew, noteNew, auditNew] = await Promise.all([
@@ -189,9 +185,7 @@ describe('job retention (T-043, phương án B)', () => {
       audit(ago(1825)),
     ]);
     await instance().job.execute();
-    expect((await prisma.workspaceMemberDeparture.findMany()).map((r) => r.id)).toEqual([
-      depNew.id,
-    ]);
+    expect((await prisma.companyMemberDeparture.findMany()).map((r) => r.id)).toEqual([depNew.id]);
     expect((await prisma.notification.findMany()).map((r) => r.id)).toEqual([noteNew.id]);
     expect((await prisma.hrAuditLog.findMany()).map((r) => r.id)).toEqual([auditNew.id]);
   });
@@ -202,7 +196,6 @@ describe('job retention (T-043, phương án B)', () => {
       prisma.hrAuditLog.create({
         data: {
           id: randomUUID(),
-          workspaceId: ws,
           actorId: user,
           action: 'LEAVE_REVOKE',
           before: { status: 'APPROVED', note: 'cũ' },

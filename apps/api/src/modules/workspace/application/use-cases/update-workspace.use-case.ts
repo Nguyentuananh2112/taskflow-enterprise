@@ -50,7 +50,7 @@ export class UpdateWorkspaceUseCase {
       }
       // ADR-110: có điều kiện version + chưa xóa (X2). Trùng slug ⇒ 409 từ unique constraint.
       await saveWorkspaceOrFail(this.d.workspaces, ws);
-      return toWorkspaceView(ws.toSnapshot(), actor.role, actor.grants);
+      return toWorkspaceView(ws.toSnapshot(), actor.role);
     });
   }
 }

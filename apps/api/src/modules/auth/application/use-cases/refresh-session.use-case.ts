@@ -1,5 +1,9 @@
 import type { IClock } from '../../../../core/domain';
-import { RefreshInProgressError, RefreshTokenInvalidError } from '../../../../core/errors';
+import {
+  RefreshInProgressError,
+  RefreshTokenInvalidError,
+  SessionRevokedError,
+} from '../../../../core/errors';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { RefreshToken, SessionMeta } from '../../domain/refresh-token';
@@ -10,7 +14,7 @@ import {
   writeRevocationOrFail,
   type UserView,
 } from '../auth-shared';
-import type { IAuthRealtimeNotifier } from '../ports/collaborators.port';
+import type { IAuthRealtimeNotifier, ICompanySessionGate } from '../ports/collaborators.port';
 import type { IRefreshTokenFactory } from '../ports/refresh-token-factory.port';
 import type { IRefreshTokenRepository } from '../ports/refresh-token-repository.port';
 import type { ISessionRevocationStore } from '../ports/session-revocation-store.port';
@@ -30,6 +34,7 @@ export interface RefreshSessionDeps {
   issuer: SessionIssuer;
   store: ISessionRevocationStore;
   notifier: IAuthRealtimeNotifier;
+  company: ICompanySessionGate;
   uow: IUnitOfWork;
   clock: IClock;
   logger: ILogger;
@@ -70,6 +75,9 @@ export class RefreshSessionUseCase {
       const tokenVersion = await this.d.users.lockTokenVersion(token.userId);
       const user = tokenVersion === null ? null : await this.d.users.findById(token.userId);
       if (tokenVersion === null || !user || user.isDeleted) throw new RefreshTokenInvalidError();
+      // SEC-HR-69 (B HIGH-2a): quá `access_until` / không còn thuộc công ty ⇒ 401 SESSION_REVOKED, KHÔNG
+      // cấp access token, KHÔNG xoay — kể cả khi job hoàn tất nghỉ việc chưa kịp thu hồi refresh token.
+      if (!(await this.d.company.isActive(user.id))) throw new SessionRevokedError();
       // Thêm token mới TRƯỚC (FK replaced_by_id), rồi xoay có điều kiện; thua race ⇒ rollback cả hai.
       const { session, tokenId } = await this.d.issuer.continueFamily(
         { id: user.id, tokenVersion },

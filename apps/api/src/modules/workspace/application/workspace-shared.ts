@@ -5,7 +5,6 @@ import {
   roleAllows,
   type ParentPermission,
   type Permission,
-  type MemberGrant,
   type WorkspaceRole,
 } from '../domain/roles';
 import type { WorkspaceSnapshot } from '../domain/workspace';
@@ -20,13 +19,11 @@ export interface Actor {
   userId: string;
   workspaceId: string;
   role: WorkspaceRole;
-  /** ADR-119 — đọc cùng truy vấn membership (`WorkspaceAccess`); thiếu ⇒ coi như `[]`. */
-  grants?: readonly MemberGrant[];
 }
 
 /** Đã là member ⇒ thấy được tài nguyên ⇒ thiếu quyền trả 403 không lộ gì thêm (security.md 4.2). */
 export function requirePermission(actor: Actor, permission: Permission | ParentPermission): void {
-  if (!roleAllows(actor.role, permission, actor.grants ?? [])) throw new ForbiddenError(permission);
+  if (!roleAllows(actor.role, permission)) throw new ForbiddenError(permission);
 }
 
 /** Cùng quy tắc chuẩn hóa với `Email` của module auth (trim → NFC → lowercase). */
@@ -39,7 +36,6 @@ export interface WorkspaceView {
   name: string;
   slug: string;
   myRole: WorkspaceRole;
-  myGrants: MemberGrant[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,7 +53,6 @@ export interface MemberView {
   email: string;
   fullName: string;
   role: WorkspaceRole;
-  grants: MemberGrant[];
   joinedAt: Date;
 }
 
@@ -73,17 +68,12 @@ export interface ProjectView {
   updatedAt: Date;
 }
 
-export function toWorkspaceView(
-  ws: WorkspaceSnapshot,
-  myRole: WorkspaceRole,
-  myGrants: readonly MemberGrant[] = [],
-): WorkspaceView {
+export function toWorkspaceView(ws: WorkspaceSnapshot, myRole: WorkspaceRole): WorkspaceView {
   return {
     id: ws.id,
     name: ws.name,
     slug: ws.slug,
     myRole,
-    myGrants: [...myGrants],
     createdAt: ws.createdAt,
     updatedAt: ws.updatedAt,
   };
@@ -103,7 +93,6 @@ export function toMemberView(
     email: user.email,
     fullName: user.fullName,
     role: m.role,
-    grants: [...(m.grants ?? [])],
     joinedAt: m.joinedAt,
   };
 }

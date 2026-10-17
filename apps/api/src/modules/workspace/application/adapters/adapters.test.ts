@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeRandom } from '../../../../../test/support';
 import { ResourceConflictError, ResourceNotFoundError } from '../../../../core/errors';
@@ -26,7 +26,7 @@ beforeEach(() => {
   h = createWorkspaceHarness(new FakeRandom({ ints: [...suffix('def456'), ...suffix('abc123')] }));
 });
 
-describe('DefaultWorkspaceProvisioner (implements IWorkspaceProvisioner của auth)', () => {
+describe('DefaultWorkspaceProvisioner (seed / helper test — Mốc 3.5 bỏ register)', () => {
   // Register chèn user TRƯỚC provisioner trong cùng transaction ⇒ fixture phải có user (FK thật ở Postgres).
   const provision = async (ownerFullName: string, attempt = 0) => {
     const ownerId = await h.user('Alice');
@@ -106,7 +106,6 @@ describe('WorkspaceAccess (lõi của middleware loadMembership) + ProjectAccess
       userId: uid('pam'),
       workspaceId: A,
       role: 'PM',
-      grants: [], // GR-11: đọc cùng dòng membership
     });
     const errs = [
       await caught(access.resolveActor(A, uid('bob'))),
@@ -152,18 +151,21 @@ describe('WorkspaceAccess (lõi của middleware loadMembership) + ProjectAccess
   });
 });
 
-describe('GR-11: loadMembership đọc grants từ CÙNG dòng membership (ADR-119)', () => {
-  it('resolveActor của HR: đúng 1 lần đọc membership, không lời gọi repo nào khác, có grants', async () => {
-    const { A } = await givenWorkspaceA(h, { Hana: 'MEMBER' });
-    const m = (await h.memberships.find(A, uid('hana')))!;
-    m.setGrants(['HR_MANAGE'], h.clock.now());
-    await h.memberships.save(m);
-
-    const spies = (['find', 'findForShare', 'lockOwners', 'listUserIds'] as const).map((k) =>
-      vi.spyOn(h.memberships, k),
-    );
-    const actor = await new WorkspaceAccess(h).resolveActor(A, uid('hana'));
-    expect(actor).toMatchObject({ role: 'MEMBER', grants: ['HR_MANAGE'] });
-    expect(spies.map((s) => s.mock.calls.length)).toEqual([1, 0, 0, 0]);
+describe('HIGH-2 (Mốc 3.5): loadMembership / project:join chặn người không còn thuộc công ty', () => {
+  it('đã nghỉ / quá access_until ⇒ resolveActor 404 workspace, canAccessProject false — dù còn dòng membership', async () => {
+    const { A } = await givenWorkspaceA(h);
+    const web = await h.project(A, 'WEB');
+    h.company.revoked.add(uid('pam'));
+    const err = await caught(new WorkspaceAccess(h).resolveActor(A, uid('pam')));
+    expect(err).toBeInstanceOf(ResourceNotFoundError);
+    expect((err as ResourceNotFoundError).details).toEqual({ resource: 'workspace' });
+    expect(
+      await new WorkspaceProjectAccessChecker(h).canAccessProject({
+        userId: uid('pam'),
+        workspaceId: A,
+        projectId: web,
+      }),
+    ).toBe(false);
+    expect(await h.roleOf(A, 'Pam')).toBe('PM'); // membership chưa bị xóa (job hoàn tất làm sau)
   });
 });

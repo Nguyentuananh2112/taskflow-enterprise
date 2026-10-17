@@ -8,7 +8,14 @@ export const REFRESH_ROTATION_GRACE_MS = 10_000;
 const USER_AGENT_MAX = 255;
 
 export type RefreshTokenRevokeReason =
-  'ROTATED' | 'LOGOUT' | 'LOGOUT_ALL' | 'REUSE_DETECTED' | 'PASSWORD_CHANGED' | 'USER_DELETED';
+  | 'ROTATED'
+  | 'LOGOUT'
+  | 'LOGOUT_ALL'
+  | 'REUSE_DETECTED'
+  | 'PASSWORD_CHANGED'
+  | 'USER_DELETED'
+  /** Mốc 3.5: nghỉ việc / đổi vai trò Admin (thu hồi phiên ADR-105 — T-062). */
+  | 'OFFBOARDED';
 
 /**
  * Kết quả khi client trình token:

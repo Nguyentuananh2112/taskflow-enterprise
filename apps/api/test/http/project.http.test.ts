@@ -56,7 +56,7 @@ describe('projects', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'MEMBER' });
+      .send({ userId: bob.id, role: 'MEMBER' });
     expect(
       (await createProject(bob, alice.workspaceId, { name: 'x', keyPrefix: 'XX' })).status,
     ).toBe(403);
@@ -134,7 +134,7 @@ describe('projects', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'VIEWER' });
+      .send({ userId: bob.id, role: 'VIEWER' });
     const missing = '0199e5a2-7c1e-7cc3-9a3b-ffffffffffff';
     const existing =
       (envelopeOf<{ id: string }[]>(

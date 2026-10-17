@@ -1,7 +1,5 @@
-import type { ILeaveNotifier } from '../modules/leave/application/ports/leave.ports';
 import type { ILeaveSummaryReader, NotificationPublisher } from '../modules/notifications';
 import type { INotificationContextReader } from '../modules/notifications/application/ports';
-import type { IHrGrantNotifier } from '../modules/workspace/application/ports/collaborators.port';
 
 /** Tên người dùng theo id — `IUserRefReader` (auth Prisma / bản sao InMemory của Task) dùng chung. */
 export interface UserRefs {
@@ -19,57 +17,63 @@ export function notificationContextFrom(d: {
   return {
     actorNames: async (ids) =>
       new Map([...(await d.users.findRefs(ids))].map(([id, ref]) => [id, ref.fullName])),
-    leaveSummaries: (refs) => d.leaves.leaveSummaries(refs),
+    leaveSummaries: (refIds) => d.leaves.leaveSummaries(refIds),
   };
 }
 
+/**
+ * TẠM (T-061, `tsconfig.exclusions.json`): module leave đang loại khỏi build tới khi T-064 rebase — DTO thông báo
+ * chưa có tóm tắt đơn (`leave: null`). D thay bằng `leave.readModel` khi gỡ dòng leave khỏi danh sách loại tạm.
+ */
+export const noLeaveSummaries: ILeaveSummaryReader = {
+  leaveSummaries: () => Promise.resolve(new Map()),
+};
+
 // ---------------------------------------------------------------- port của module dùng (ADR-093)
-// Leave (T-039): kiểu thật `ILeaveNotifier`. Attendance: chữ ký sao theo cấu trúc từ nhánh T-038
-// (`attendance/application/ports/collaborators.port.ts` — AttendanceNotifier) tới khi T-038 merge.
+// Chữ ký sao THEO CẤU TRÚC từ port của leave (D, T-064 — `ILeaveNotifier`) và attendance (A, T-063 —
+// `AttendanceNotifier`), cấp công ty: KHÔNG còn workspaceId (ADR-136).
+
+type LeaveNotificationType =
+  | 'LEAVE_SUBMITTED'
+  | 'LEAVE_APPROVED'
+  | 'LEAVE_REJECTED'
+  | 'LEAVE_CANCELLED'
+  | 'LEAVE_REVOKED'
+  | 'OFFBOARD_CLEANUP';
+
+export interface LeaveNotifierPort {
+  notify(input: {
+    type: LeaveNotificationType;
+    /** id đơn; với OFFBOARD_CLEANUP = userId người nghỉ. */
+    requestId: string;
+    actorId: string;
+    recipient: { kind: 'user'; userId: string } | { kind: 'hr' };
+  }): Promise<void>;
+}
 
 export interface AttendanceNotifierPort {
-  attendanceAdjusted(q: {
-    workspaceId: string;
-    recipientId: string;
-    eventId: string;
-    actorId: string;
-  }): Promise<void>;
+  attendanceAdjusted(q: { recipientId: string; eventId: string; actorId: string }): Promise<void>;
 }
 
 type Publisher = Pick<NotificationPublisher, 'notify'>;
 
-/** `ILeaveNotifier` (D): `hr` ⇒ mọi người có `hr:manage` hiện tại trừ actor; `refId` = id đơn. */
-export function leaveNotifierFrom(publisher: Publisher): ILeaveNotifier {
+/** Leave: `hr` ⇒ mọi người có `hr:manage` hiện tại (Admin + HR) trừ actor; `refId` = id đơn. */
+export function leaveNotifierFrom(publisher: Publisher): LeaveNotifierPort {
   return {
-    notify: ({ workspaceId, type, requestId, actorId, recipient }) =>
-      publisher.notify({ workspaceId, type, refId: requestId, actorId, recipient }),
+    notify: ({ type, requestId, actorId, recipient }) =>
+      publisher.notify({ type, refId: requestId, actorId, recipient }),
   };
 }
 
-/** `AttendanceNotifier` (A): HR thêm / hủy lượt chấm của nhân viên ⇒ ATTENDANCE_ADJUSTED, `refId` = id lượt. */
+/** Attendance: HR thêm / hủy lượt chấm của nhân viên ⇒ ATTENDANCE_ADJUSTED, `refId` = id lượt. */
 export function attendanceNotifierFrom(publisher: Publisher): AttendanceNotifierPort {
   return {
-    attendanceAdjusted: ({ workspaceId, recipientId, eventId, actorId }) =>
+    attendanceAdjusted: ({ recipientId, eventId, actorId }) =>
       publisher.notify({
-        workspaceId,
         type: 'ATTENDANCE_ADJUSTED',
         refId: eventId,
         actorId,
         recipient: { kind: 'user', userId: recipientId },
-      }),
-  };
-}
-
-/** `IHrGrantNotifier` (Workspace, GR-04 / GR-09): cấp ⇒ HR_GRANTED, thu ⇒ HR_REVOKED; `refId` = membership. */
-export function hrGrantNotifierFrom(publisher: Publisher): IHrGrantNotifier {
-  return {
-    grantsChanged: ({ workspaceId, userId, actorId, added, membershipId }) =>
-      publisher.notify({
-        workspaceId,
-        type: added ? 'HR_GRANTED' : 'HR_REVOKED',
-        refId: membershipId,
-        actorId,
-        recipient: { kind: 'user', userId },
       }),
   };
 }

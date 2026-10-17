@@ -1,5 +1,10 @@
 import type { RealtimeGateway } from '../core/realtime/gateway';
-import type { MemberGrant, RealtimeEventMeta, WorkspaceRole } from '../core/realtime/ports';
+import type {
+  CompanyGrant,
+  CompanyRole,
+  RealtimeEventMeta,
+  WorkspaceRole,
+} from '../core/realtime/ports';
 
 type Notifications = Pick<
   RealtimeGateway,
@@ -7,7 +12,7 @@ type Notifications = Pick<
   | 'disconnectUser'
   | 'revokeWorkspaceAccess'
   | 'notifyRoleChanged'
-  | 'notifyGrantsChanged'
+  | 'notifyCompanyAccessChanged'
   | 'notifyNotification'
   | 'closeWorkspace'
   | 'emitToProject'
@@ -47,15 +52,15 @@ export class LateBoundRealtime implements Notifications {
     return this.#target?.notifyRoleChanged(input, meta) ?? Promise.resolve();
   }
 
-  notifyGrantsChanged(
-    input: { userId: string; workspaceId: string; grants: readonly MemberGrant[] },
+  notifyCompanyAccessChanged(
+    input: { userId: string; role: CompanyRole; grants: readonly CompanyGrant[] },
     meta: RealtimeEventMeta,
   ): Promise<void> {
-    return this.#target?.notifyGrantsChanged(input, meta) ?? Promise.resolve();
+    return this.#target?.notifyCompanyAccessChanged(input, meta) ?? Promise.resolve();
   }
 
   notifyNotification(
-    input: { recipientId: string; notificationId: string; type: string; workspaceId: string },
+    input: { recipientId: string; notificationId: string; type: string },
     meta: RealtimeEventMeta,
   ): Promise<void> {
     return this.#target?.notifyNotification(input, meta) ?? Promise.resolve();

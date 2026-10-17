@@ -73,7 +73,7 @@ describe('project:updated qua gateway thật', () => {
     await request(t.app)
       .post(`/api/v1/workspaces/${alice.workspaceId}/members`)
       .set(alice.auth)
-      .send({ email: bob.email, role: 'VIEWER' });
+      .send({ userId: bob.id, role: 'VIEWER' });
     const projectId = await firstProjectId(alice);
     const bobSocket = connect(bob.token);
     const carolSocket = connect(carol.token);

@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy && prisma db execute --file ../../docker/migrate/grant-app.sql",
     "db:seed": "prisma db seed",
+    "admin:bootstrap": "node --env-file-if-exists=.env --import tsx src/cli/admin-bootstrap.ts",
     "db:check-drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
     "test:integration": "prisma generate --no-hints && vitest run --config vitest.integration.config.ts",
     "mutation:core-errors": "stryker run stryker/core-errors.config.mjs",

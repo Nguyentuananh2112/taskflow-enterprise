@@ -10,29 +10,22 @@ import type { INotificationStore, NotificationKey } from '../../application/port
 export type DbProvider = () => Prisma.TransactionClient;
 
 /**
- * Cùng điều kiện với `isVisible` (domain): `recipient_id = me` LUÔN có trong WHERE (B-M3); mỗi ws đang là
- * thành viên: `created_at ≥ joinedAt` của nhiệm kỳ hiện tại (T-040b), ẩn loại HR khi không có `hr:manage`
- * (B-H3b); ws khác ⇒ không khớp.
+ * Cùng điều kiện với `isVisible` (domain): `recipient_id = me` LUÔN có trong WHERE (B-M3);
+ * `created_at ≥ since` (tư cách công ty hiện tại — T-040b L3); không `hr:manage` ⇒ ẩn loại HR (B-H3b).
+ * Không còn thuộc công ty ⇒ điều kiện luôn sai TƯỜNG MINH (`id IN ()` — không dựa vào `OR: []`, vốn KHỚP
+ * MỌI DÒNG trong Prisma, SEC-HR-18).
  */
 export function visibleWhere(scope: VisibilityScope): Prisma.NotificationWhereInput {
+  if (!scope.access) return { recipientId: scope.recipientId, id: { in: [] } };
   return {
     recipientId: scope.recipientId,
-    // Mỗi ws một nhánh (số ws của một người nhỏ, ≤ 100). KHÔNG còn ws nào ⇒ điều kiện luôn sai TƯỜNG MINH:
-    // `OR: []` của Prisma KHỚP MỌI DÒNG (đã thấy trên Postgres — SEC-HR-18), còn `in: []` thì không khớp.
-    OR:
-      scope.workspaces.length === 0
-        ? [{ workspaceId: { in: [] } }]
-        : scope.workspaces.map((w) => ({
-            workspaceId: w.workspaceId,
-            createdAt: { gte: w.since },
-            ...(w.hr ? {} : { type: { notIn: [...HR_AUDIENCE_TYPES] } }),
-          })),
+    createdAt: { gte: scope.access.since },
+    ...(scope.access.hr ? {} : { type: { notIn: [...HR_AUDIENCE_TYPES] } }),
   };
 }
 
 const SELECT = {
   id: true,
-  workspaceId: true,
   recipientId: true,
   type: true,
   refId: true,

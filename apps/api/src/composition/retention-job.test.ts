@@ -32,7 +32,7 @@ function fakeStores(remaining: Record<string, number> = {}, locked = true) {
       deleteRequestsBeforeYear: take('deleteRequestsBeforeYear'),
       deleteBalancesBeforeYear: take('deleteBalancesBeforeYear'),
     },
-    workspace: {
+    company: {
       deleteDepartures: take('deleteDepartures'),
       deleteHrAuditLogs: take('deleteHrAuditLogs'),
       scrubHrAuditNotes: take('scrubHrAuditNotes'),
@@ -54,7 +54,7 @@ describe('retentionSteps — mốc tính theo phương án B (NOW = 2026-12-01)'
       ['deleteEvents', '2024-12-01'],
       ['deleteRequestsBeforeYear', 2024],
       ['deleteBalancesBeforeYear', 2024],
-      ['deleteDepartures', new Date('2024-12-01T00:00:00.000Z')],
+      ['deleteDepartures', '2024-12-01'],
       ['deleteNotifications', new Date('2026-06-04T00:00:00.000Z')],
       ['deleteHrAuditLogs', new Date('2021-12-01T00:00:00.000Z')],
       ['scrubClientInfo', new Date('2025-11-01T00:00:00.000Z')],

@@ -33,22 +33,22 @@ export const NotificationType = z.enum([
   'LEAVE_CANCELLED',
   'LEAVE_REVOKED',
   'ATTENDANCE_ADJUSTED',
-  'HR_GRANTED',
-  'HR_REVOKED',
+  // Mốc 3.5: HR_GRANTED / HR_REVOKED (grant theo workspace) ⇒ ACCESS_CHANGED; nghỉ việc.
+  'ACCESS_CHANGED',
+  'OFFBOARD_SCHEDULED',
+  'OFFBOARD_CLEANUP',
 ]);
 export type NotificationType = z.infer<typeof NotificationType>;
 
 /**
  * `GET /api/v1/me/notifications` — ngữ cảnh tối thiểu join sẵn lúc đọc (góp ý E). `leave` KHÔNG có
- * lý do (có thể là dữ liệu sức khỏe — B-H2). Chỉ thông báo của workspace còn là thành viên; loại
+ * lý do (có thể là dữ liệu sức khỏe — B-H2). Chỉ thông báo của tư cách công ty hiện tại; loại
  * "dành cho HR" lọc theo quyền HIỆN TẠI (B-H3b).
  */
 export const NotificationDto = z.object({
   id: Uuid,
   type: NotificationType,
   refId: Uuid,
-  workspaceId: Uuid,
-  workspaceName: z.string(),
   actor: z.object({ id: Uuid, fullName: z.string() }).nullable(),
   leave: z.object({ type: LeaveType, startDate: DateOnly, endDate: DateOnly }).nullable(),
   readAt: IsoDateTime.nullable(),
@@ -72,8 +72,6 @@ export type UnreadNotificationCountDto = z.infer<typeof UnreadNotificationCountD
 // ---------------------------------------------------------------- HrAuditLog (B-L1: chỉ OWNER đọc)
 
 export const HrAuditAction = z.enum([
-  'GRANT',
-  'REVOKE',
   'SCHEDULE_SET',
   'HOLIDAY_SET',
   'HOLIDAY_DELETE',
@@ -85,6 +83,18 @@ export const HrAuditAction = z.enum([
   'LEAVE_REVOKE',
   'BALANCE_ADJUST',
   'EXPORT',
+  // Mốc 3.5 (company-level.md §3): GRANT / REVOKE theo workspace bỏ.
+  'COMPANY_ROLE_SET',
+  'GRANT_SET',
+  'EMPLOYEE_HIRED',
+  'EMPLOYEE_REHIRED',
+  'EMPLOYEE_OFFBOARD_SCHEDULED',
+  'EMPLOYEE_OFFBOARD_CANCELLED',
+  'EMPLOYEE_OFFBOARD_COMPLETED',
+  'OFFBOARD_CLEANUP',
+  'ACTIVATION_LINK_ISSUED',
+  'WORKSPACE_OWNER_ASSIGNED',
+  'WORKSPACE_ARCHIVED',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 
@@ -92,7 +102,8 @@ export type HrAuditAction = z.infer<typeof HrAuditAction>;
 export const HrAuditLogDto = z.object({
   id: Uuid,
   action: HrAuditAction,
-  actor: z.object({ id: Uuid, fullName: z.string() }),
+  /** null = `admin:bootstrap` (CLI — không có người). */
+  actor: z.object({ id: Uuid, fullName: z.string() }).nullable(),
   targetUserId: Uuid.nullable(),
   refId: Uuid.nullable(),
   before: z.record(z.string(), z.unknown()).nullable(),
@@ -101,7 +112,7 @@ export const HrAuditLogDto = z.object({
 });
 export type HrAuditLogDto = z.infer<typeof HrAuditLogDto>;
 
-/** `GET /workspaces/:wsId/hr-audit-logs` — chỉ OWNER (`hr:grant`); mới nhất trước (createdAt, id giảm dần). */
+/** `GET /hr/audit-logs` — chỉ Admin (`company:admin`); mới nhất trước (createdAt, id giảm dần). */
 export const ListHrAuditLogsQuery = z.object({
   cursor: Cursor.optional(),
   limit: limitQuery(100, 50),

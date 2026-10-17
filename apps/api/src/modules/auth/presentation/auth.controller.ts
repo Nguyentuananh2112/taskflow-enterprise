@@ -1,29 +1,34 @@
 import type {
+  ActivateBody,
+  ActivationInspectBody,
   ChangePasswordBody,
   LoginBody,
-  RegisterBody,
   UpdateMeBody,
 } from '@taskflow/contracts';
 import type { Request, Response } from 'express';
 
-import { RefreshTokenInvalidError } from '../../../core/errors';
+import { RefreshTokenInvalidError, SessionRevokedError } from '../../../core/errors';
 import type { HttpResponder } from '../../../core/http/envelope';
 import type { ILogger } from '../../../core/logging/logger';
 import { requireUser, sessionMetaOf } from '../../../core/http/request-user';
 import type { IssuedSession } from '../application/session-issuer';
+import type {
+  ActivateAccountUseCase,
+  InspectActivationQuery,
+} from '../application/use-cases/activation.use-cases';
 import type { ChangePasswordUseCase } from '../application/use-cases/change-password.use-case';
 import type { GetMeQuery } from '../application/use-cases/get-me.query';
 import type { LoginUseCase } from '../application/use-cases/login.use-case';
 import type { LogoutAllUseCase } from '../application/use-cases/logout-all.use-case';
 import type { LogoutUseCase } from '../application/use-cases/logout.use-case';
 import type { RefreshSessionUseCase } from '../application/use-cases/refresh-session.use-case';
-import type { RegisterUseCase } from '../application/use-cases/register.use-case';
 import type { UpdateMeUseCase } from '../application/use-cases/update-me.use-case';
 import { MAX_REFRESH_COOKIES, type RefreshCookie } from './refresh-cookie';
 
 export interface AuthControllerDeps {
-  register: Pick<RegisterUseCase, 'execute'>;
   login: Pick<LoginUseCase, 'execute'>;
+  inspectActivation: Pick<InspectActivationQuery, 'execute'>;
+  activate: Pick<ActivateAccountUseCase, 'execute'>;
   refresh: Pick<RefreshSessionUseCase, 'execute'>;
   logout: Pick<LogoutUseCase, 'execute'>;
   logoutAll: Pick<LogoutAllUseCase, 'execute'>;
@@ -44,15 +49,15 @@ export class AuthController {
     return { accessToken: session.accessToken, expiresIn: session.expiresIn };
   }
 
-  register = async (req: Request, res: Response) => {
-    const body = req.body as RegisterBody;
-    const result = await this.d.register.execute({ ...body, meta: sessionMetaOf(req) });
-    const tokens = this.#issue(res, result.session);
-    this.d.responder.created(res, {
-      ...tokens,
-      user: result.user,
-      defaultWorkspaceId: result.defaultWorkspaceId,
-    });
+  inspectActivation = async (req: Request, res: Response) => {
+    const { token } = req.body as ActivationInspectBody;
+    this.d.responder.ok(res, await this.d.inspectActivation.execute({ token }));
+  };
+
+  activate = async (req: Request, res: Response) => {
+    const body = req.body as ActivateBody;
+    const result = await this.d.activate.execute({ ...body, meta: sessionMetaOf(req) });
+    this.d.responder.ok(res, { ...this.#issue(res, result.session), user: result.user });
   };
 
   login = async (req: Request, res: Response) => {
@@ -72,7 +77,10 @@ export class AuthController {
       });
       this.d.responder.ok(res, this.#issue(res, result.session));
     } catch (err) {
-      if (err instanceof RefreshTokenInvalidError) this.d.cookie.clear(res);
+      // Hết quyền công ty (SEC-HR-69) cũng xóa cookie: phiên này không bao giờ refresh được nữa.
+      if (err instanceof RefreshTokenInvalidError || err instanceof SessionRevokedError) {
+        this.d.cookie.clear(res);
+      }
       throw err;
     }
   };

@@ -10,7 +10,7 @@ import {
   MemberCandidatesQuery,
   SetAccessBody,
   effectiveCompanyPermissions,
-} from './company.schemas';
+} from './index';
 
 const ID = '0199e5a2-7c1e-7cc3-9a3b-000000000001';
 

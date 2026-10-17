@@ -9,4 +9,4 @@ export type {
   RealtimeEventMeta,
 } from './application/ports/collaborators.port';
 export type { Actor } from './application/workspace-shared';
-export type { MemberGrant, Permission, WorkspaceRole } from './domain/roles';
+export type { Permission, WorkspaceRole } from './domain/roles';

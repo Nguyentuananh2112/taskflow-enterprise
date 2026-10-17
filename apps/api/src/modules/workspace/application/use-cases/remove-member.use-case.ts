@@ -1,4 +1,3 @@
-import type { IClock, IIdGenerator } from '../../../../core/domain';
 import { ForbiddenError } from '../../../../core/errors';
 import type { ILogger } from '../../../../core/logging/logger';
 import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
@@ -12,7 +11,6 @@ import type {
   IProjectRepository,
   IWorkspaceRepository,
 } from '../ports/repositories.port';
-import type { IMemberDepartureLog } from '../ports/tenure.port';
 import { requirePermission, type Actor } from '../workspace-shared';
 import { assertNotLastOwner, lockOwnersAndLoadTarget } from './owner-guard';
 
@@ -21,9 +19,6 @@ export interface RemoveMemberDeps {
   workspaces: IWorkspaceRepository;
   projects: IProjectRepository;
   cleaner: ITaskAssignmentCleaner;
-  departures: IMemberDepartureLog;
-  ids: IIdGenerator;
-  clock: IClock;
   notifier: IWorkspaceRealtimeNotifier;
   uow: IUnitOfWork;
   logger: ILogger;
@@ -58,16 +53,6 @@ export class RemoveMemberUseCase {
       }
       assertNotLastOwner(owners, target);
 
-      // T-037b: nhiệm kỳ vừa kết thúc — CÙNG transaction với lệnh xóa (rollback ⇒ không có dòng).
-      await this.d.departures.record({
-        id: this.d.ids.next(),
-        workspaceId: actor.workspaceId,
-        userId: target.userId,
-        role: target.role,
-        joinedAt: target.joinedAt,
-        leftAt: this.d.clock.now(),
-        reason: isSelf ? 'LEFT' : 'REMOVED',
-      });
       await this.d.memberships.remove(actor.workspaceId, target.userId);
       const projectIds = await this.d.projects.listIds(actor.workspaceId);
       const meta = { actorId: actor.userId, originClientId: input.originClientId ?? null };

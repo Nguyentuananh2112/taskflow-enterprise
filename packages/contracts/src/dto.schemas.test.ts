@@ -16,7 +16,6 @@ import {
   ProjectDto,
   ProjectUpdatedEvent,
   RateLimitedDetails,
-  RegisterResponse,
   RemoveMemberResponse,
   ResourceConflictDetails,
   TaskDeletedEvent,
@@ -40,13 +39,9 @@ const project = {
 };
 
 describe('DTO auth/workspace/member', () => {
-  it('RegisterResponse cần defaultWorkspaceId; LoginResponse thì không', () => {
+  it('LoginResponse: token + user', () => {
     const tokens = { accessToken: 'jwt', expiresIn: 900 };
     expect(LoginResponse.safeParse({ ...tokens, user }).success).toBe(true);
-    expect(RegisterResponse.safeParse({ ...tokens, user }).success).toBe(false);
-    expect(RegisterResponse.safeParse({ ...tokens, user, defaultWorkspaceId: ID }).success).toBe(
-      true,
-    );
     expect(LoginResponse.safeParse({ ...tokens, expiresIn: 0, user }).success).toBe(false);
   });
 
