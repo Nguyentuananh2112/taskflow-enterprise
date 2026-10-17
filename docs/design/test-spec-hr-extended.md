@@ -136,16 +136,16 @@ Mọi ca tải: `expectXlsxHeaders` + `readXlsx` + `expectSafeWorkbook`.
 
 | Mã | Tầng | Ca | Mong đợi |
 |---|---|---|---|
-| XL-01 | S | `attendance/export.xlsx` có sheet "Tổng hợp", "Theo ngày", "Giờ vào – ra" (đúng thứ tự); `leave/export.xlsx` có "Số phép", "Đơn đã duyệt" | đúng |
+| XL-01 | S | `attendance/export.xlsx` có sheet "Tổng hợp", "Theo ngày", "Giờ vào – ra" (đúng thứ tự); `leave/export.xlsx` có "Số dư YYYY", "Đơn đã duyệt" (TL chấp nhận tên của D, 18/10) | đúng |
 | XL-02 | S | dòng của Mia: tổng công = `totalsOf` qua `attendance?month`; số phép = `leave/balances?year` (`entitled`, `used`, `remaining`…) | khớp từng số |
-| XL-03 | S | ô số là số (`t` vắng, `value` number), ô ngày là serial + style ngày (`isDateFormat`), ô chữ `inlineStr` | đúng |
+| XL-03 | S | ô số là số (`t` vắng, `value` number), ô ngày là serial + style ngày (`isDateFormat`), ô chữ `inlineStr` — **TL chốt 18/10:** ngày là ngày thật (serial + numFmt dd/mm/yyyy); D thêm kiểu ngày vào writer, A và D dùng; ca khẳng định khi có | đúng |
 | XL-04 | S | Quinn nghỉ giữa kỳ: có nhãn "đã nghỉ", ngày sau `lastDay` không tính; ngày ngoài retention "Ngoài thời hạn lưu"; Ada không có dòng; Admin từng là nhân viên ⇒ chỉ ngày thuộc nhiệm kỳ EMPLOYEE cũ | đúng |
 | XL-05 | S (nightly/CI) + S (local) | **nightly** (`SEC_NIGHTLY=1`, không vào cổng local — ADR-107): 1 000 người × 31 ngày, RSS API tăng < 100 MB, < 30 s. **Local**: `EXPORT_MAX_EMPLOYEES=3` ⇒ người thứ 4 ⇒ 422 `EXPORT_TOO_LARGE`, **không header xlsx**, không audit `EXPORT`, có log; tương tự `EXPORT_MAX_LEAVE_ROWS` cho báo cáo phép | đúng |
 | XL-06 | H (B) | port đọc giả ném lỗi ở lô 2 ⇒ `res.socket.destroy()`, client nhận kết nối bị cắt (`download().aborted`), không `end()`; audit `EXPORT` đã ghi | đúng |
 | XL-07 | S | `EXPORT_BATCH_SIZE=1`, `EXPORT_BATCH_DELAY_MS=300`: trong lúc xuất, HR thêm/hủy lượt của người ở lô sau ⇒ tổng trong file = trạng thái lúc bắt đầu (REPEATABLE READ) | đúng |
 | XL-08 | thủ công (F, 1 lần) | file bịa mở trên Excel vi-VN + LibreOffice: không cảnh báo sửa file, dấu tiếng Việt đúng, ngày dd/mm/yyyy, ô `=…` hiện nguyên văn, lưu lại thành CSV không thành công thức. Ghi kết quả + ảnh chụp (dữ liệu bịa) vào `docs/reviews/T-059-xlsx-manual.md` | đạt |
 | XL-09 | S | `leave/export.xlsx?year&from&to`: `from > to` ⇒ 400; vắt năm ⇒ 400; mặc định cả năm; tên file `nghi-phep-YYYY.xlsx` | đúng |
-| XL-10 | S | audit `EXPORT` đúng 1 dòng / lần tải thành công, `after = {report, period, from?, to?, rows, format: 'xlsx'}`; 400/422/429 không audit | đúng |
+| XL-10 | S | audit `EXPORT` đúng 1 dòng / lần tải thành công, `after = {report, period, from?, to?, rows, format: 'xlsx'}` — báo cáo phép `{report:'LEAVE_YEAR', period:'YYYY', from, to, rows, format:'xlsx'}` (TL chốt 18/10); 400/422/429 không audit | đúng |
 
 ## 5. LP — chính sách & số dư phép (ADR-131)
 
