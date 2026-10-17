@@ -629,7 +629,7 @@ model ChatAttachment {
   sha256       String             @db.Char(64)
   width        Int?
   height       Int?
-  fileKey      String             @map("file_key") @db.VarChar(128)
+  fileKey      String             @unique @map("file_key") @db.VarChar(128) // một blob ⇔ một dòng (B M3)
   previewKey   String?            @map("preview_key") @db.VarChar(128)
   thumbKey     String?            @map("thumb_key") @db.VarChar(128)
   createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -640,5 +640,7 @@ model ChatAttachment {
   @@index([messageId])
   @@index([createdAt], map: "chat_attachments_orphan_created_at_idx", where: raw("message_id IS NULL"))
   @@index([uploaderId, createdAt])
+  @@index([previewKey]) // files-sweep existingBlobKeys (B M3)
+  @@index([thumbKey])
   @@map("chat_attachments")
 }

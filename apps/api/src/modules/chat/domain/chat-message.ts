@@ -39,6 +39,14 @@ export function assertSameRequest(existingHash: string, incomingHash: string): v
   }
 }
 
+/** Store chat: đính kèm không còn gắn được (mất giữa claim và gắn — B M1) ⇒ 422, rollback cả tin. */
+export function attachmentUnavailable(): BusinessRuleViolationError {
+  return new BusinessRuleViolationError(
+    'ATTACHMENT_UNAVAILABLE',
+    'Có tệp đính kèm không còn dùng được — hãy tải lên lại.',
+  );
+}
+
 export function assertAttachmentCount(n: number): void {
   if (n > MAX_ATTACHMENTS) {
     throw new BusinessRuleViolationError('TOO_MANY_ATTACHMENTS', 'Tối đa 10 tệp mỗi tin.', {

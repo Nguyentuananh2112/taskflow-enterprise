@@ -33,6 +33,15 @@ describe('migration chat — CHECK', () => {
         'chat_conversations_direct_key_chk',
       ],
       [{ lastMessageAt: NOW }, 'chat_conversations_last_message_chk'],
+      // B M2: đúng hai uuid VÀ thứ tự nhỏ:lớn — "lớn:nhỏ" bị chặn (không sinh DM thứ hai cho cùng cặp).
+      [
+        { kind: 'DIRECT', title: null, directKey: `${U.Vic}:${U.Mia}` },
+        'chat_conversations_direct_key_chk',
+      ],
+      [
+        { kind: 'DIRECT', title: null, directKey: `${U.Mia}:${U.Mia}` },
+        'chat_conversations_direct_key_chk',
+      ],
     ] as const) {
       await expect(conv(data), chk).rejects.toThrow(new RegExp(chk));
     }
@@ -64,11 +73,20 @@ describe('migration chat — CHECK', () => {
           mime: 'application/pdf',
           sizeBytes: 1,
           sha256: 'b'.repeat(64),
-          fileKey: 'k',
+          fileKey: 'a'.repeat(26),
           ...data,
         } as never,
       });
     await expect(att({ sizeBytes: -1 })).rejects.toThrow(/chat_attachments_size_chk/);
+    await expect(att({ sizeBytes: 20 * 1024 * 1024 + 1 })).rejects.toThrow(
+      /chat_attachments_size_chk/,
+    );
+    await expect(att({ fileKey: '../../etc/passwd' })).rejects.toThrow(/chat_attachments_keys_chk/);
+    await expect(att({ thumbKey: 'K'.repeat(26) })).rejects.toThrow(/chat_attachments_keys_chk/);
+    await att({ id: cid(93) });
+    await expect(att({ id: cid(94) })).rejects.toThrow(
+      /chat_attachments_file_key_key|Unique constraint/,
+    ); // một blob ⇔ một dòng
     await expect(att({ width: 10 })).rejects.toThrow(/chat_attachments_dims_chk/);
     await expect(att({ sha256: 'x' })).rejects.toThrow(/chat_attachments_sha256_chk/);
     await expect(
