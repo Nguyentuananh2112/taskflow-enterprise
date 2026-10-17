@@ -9,7 +9,7 @@ import {
   periodLastDay,
   salaryByDays,
   seniorityAllowanceOf,
-  type PayslipLineInput,
+  type PayslipMathLine,
 } from './payslip-math';
 
 // payroll.md §7 — PR (computePayslip) + SN (thâm niên) phần hàm thuần (T-049).
@@ -54,7 +54,7 @@ describe('salaryByDays — half-up MỘT lần trên lương cơ bản', () => {
 });
 
 describe('computePayslip (ADR-125)', () => {
-  const line = (section: PayslipLineInput['section'], amount: number): PayslipLineInput => ({
+  const line = (section: PayslipMathLine['section'], amount: number): PayslipMathLine => ({
     section,
     amount,
   });
