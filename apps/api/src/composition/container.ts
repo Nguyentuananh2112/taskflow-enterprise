@@ -17,8 +17,8 @@ import {
   createNotificationsModule,
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
-import type { EmploymentCollaborators, ICompanyAccounts } from '../modules/company';
-import { HR_PATH } from '../modules/company/presentation/hr.routes';
+import type { ICompanyAccounts } from '../modules/company';
+import { companyAdminDeps, employmentCollaborators } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
@@ -78,7 +78,6 @@ export function createContainer(d: ContainerDeps): Container {
   // Mốc 3.5 (ADR-133…137): quyền công ty đọc DB mỗi lần, `access_until` theo giờ nghiệp vụ (R31).
   // Auth cần cổng công ty; company cần tài khoản của auth (thêm nhân viên) ⇒ tham chiếu trễ một chiều.
   const accountsRef: { current: ICompanyAccounts | null } = { current: null };
-  const employmentRef: { current: EmploymentCollaborators | null } = { current: null };
   const company = createCompanyModule({
     repos: persistence.company,
     ids,
@@ -88,7 +87,13 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
-    collaborators: employmentRef,
+    collaborators: () => employmentCollaborators({ workspace, leave, notifications, realtime }),
+    ...companyAdminDeps(
+      () => notifications,
+      realtime,
+      () => leave.employment,
+      () => workspace.adminWorkspaces,
+    ),
   });
   // Trước Workspace: publisher là port ghi thông báo (cùng UoW) cho leave / attendance / company.
   const notifications = createNotificationsModule({
@@ -105,8 +110,13 @@ export function createContainer(d: ContainerDeps): Container {
     repos: persistence.workspace,
     users: new AuthUserDirectory(persistence.auth.users),
     notifier: realtime,
-    // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`.
-    company: company.sessionGate,
+    // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
+    // người chưa có lịch nghỉ (ADR-134).
+    company: {
+      isActive: (userId) => company.sessionGate.isActive(userId),
+      canJoinWorkspace: async (userId) =>
+        (await company.members.find(userId))?.offboardLastDay === null,
+    },
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
@@ -164,19 +174,11 @@ export function createContainer(d: ContainerDeps): Container {
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
-  // T-062: vòng đời nhân viên ← workspace (rời ws), leave (dọn / nhận lại), notifications, realtime.
-  employmentRef.current = {
-    workspaceExit: workspace.exit,
-    offboardLeave: leave.employment,
-    rehireLeave: leave.employment,
-    notifier: notifications.publisher,
-    realtime,
-  };
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
-    { path: HR_PATH, router: company.hrRoutes(auth.authenticate) },
+    ...company.routers(auth.authenticate),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },

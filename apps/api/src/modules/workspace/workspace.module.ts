@@ -1,3 +1,4 @@
+import { AdminWorkspaceOps } from './application/use-cases/admin-workspace-ops';
 import type { RequestHandler, Router } from 'express';
 
 import type { IClock, IIdGenerator, IRandom } from '../../core/domain';
@@ -13,6 +14,7 @@ import { WorkspaceExit } from './application/adapters/workspace-exit';
 import type {
   ITaskAssignmentCleaner,
   ICompanyMembershipGate,
+  IMemberCandidateDirectory,
   IUserDirectory,
   IWorkspaceRealtimeNotifier,
 } from './application/ports/collaborators.port';
@@ -27,6 +29,7 @@ import { ChangeMemberRoleUseCase } from './application/use-cases/change-member-r
 import { CreateProjectUseCase } from './application/use-cases/create-project.use-case';
 import { CreateWorkspaceUseCase } from './application/use-cases/create-workspace.use-case';
 import { DeleteWorkspaceUseCase } from './application/use-cases/delete-workspace.use-case';
+import { ListMemberCandidatesQuery } from './application/use-cases/list-member-candidates.query';
 import { ListMembersQuery } from './application/use-cases/list-members.query';
 import { GetProjectQuery, ListProjectsQuery } from './application/use-cases/project.queries';
 import { RemoveMemberUseCase } from './application/use-cases/remove-member.use-case';
@@ -58,6 +61,8 @@ export interface WorkspaceRepositories {
   memberships: IMembershipRepository;
   projects: IProjectRepository;
   queries: IWorkspaceQueries;
+  /** `member-candidates` — đọc bảng công ty (Prisma) / store công ty (bộ nhớ), nối ở composition. */
+  candidates: IMemberCandidateDirectory;
 }
 
 /** Repository InMemory (dev/test); `directory` cần được đồng bộ với user của auth (composition root). */
@@ -96,11 +101,13 @@ export interface WorkspaceModule {
   membershipReader: WorkspaceMembershipReader;
   /** `IWorkspaceExitPort` của company — rời mọi ws khi hoàn tất nghỉ việc (T-062). */
   exit: WorkspaceExit;
+  /** T-061a: dữ liệu workspace cho Admin công ty (`IAdminWorkspaces` của company — khớp cấu trúc). */
+  adminWorkspaces: AdminWorkspaceOps;
 }
 
 /** Composition của module Workspace/Member/Project (ADR-016). */
 export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
-  const { workspaces, memberships, projects, queries } = d.repos;
+  const { workspaces, memberships, projects, queries, candidates } = d.repos;
   const { uow, ids, clock, random, logger, notifier, cleaner, users, company } = d;
   const creator = new WorkspaceCreator({ workspaces, memberships, ids, clock });
   const access = new WorkspaceAccess({ workspaces, memberships, company });
@@ -121,6 +128,7 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
     }),
     restore: new RestoreWorkspaceUseCase({ workspaces, memberships, uow, clock, logger }),
     listMembers: new ListMembersQuery({ queries }),
+    memberCandidates: new ListMemberCandidatesQuery({ candidates }),
     addMember: new AddMemberUseCase({
       memberships,
       workspaces,
@@ -190,6 +198,14 @@ export function createWorkspaceModule(d: WorkspaceModuleDeps): WorkspaceModule {
       notifier,
       uow,
       logger,
+    }),
+    adminWorkspaces: new AdminWorkspaceOps({
+      workspaces,
+      memberships,
+      queries,
+      notifier,
+      uow,
+      clock,
     }),
   };
 }

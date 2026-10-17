@@ -162,3 +162,17 @@ describe('CO-04 offboardCleanup — hành động hệ thống (D H1)', () => {
     expect(h.audit.entries).toEqual([]);
   });
 });
+
+describe('pendingCount — cảnh báo khi HR lên lịch nghỉ việc (T-062)', () => {
+  it('chỉ đếm PENDING của đúng người đó (mọi năm); APPROVED / REJECTED / người khác không tính', async () => {
+    const h = await createLeaveHarness();
+    await h.seed({ id: id(1), startDate: '2026-11-20', endDate: '2026-11-20' });
+    await h.seed({ id: id(2), startDate: '2027-01-05', endDate: '2027-01-05' });
+    await h.seed({ id: id(3), status: 'APPROVED', startDate: '2026-11-25', endDate: '2026-11-25' });
+    await h.seed({ id: id(4), status: 'REJECTED', startDate: '2026-11-26', endDate: '2026-11-26' });
+    await h.seed({ id: id(5), userId: U.Max, startDate: '2026-11-27', endDate: '2026-11-27' });
+    expect(await h.hooks.pendingCount(U.Mia)).toBe(2);
+    expect(await h.hooks.pendingCount(U.Olivia)).toBe(0);
+    expect(h.locks).toEqual([]); // chỉ đọc, không khóa
+  });
+});

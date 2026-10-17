@@ -76,7 +76,10 @@ export class EmploymentLeaveHooks {
     });
   }
 
-  /** Cảnh báo khi HR lên lịch nghỉ việc (T-062 — B): số đơn PENDING (mọi năm) của người đó. Chỉ đọc. */
+  /**
+   * Cảnh báo khi HR lên lịch nghỉ việc (T-062 — B): số đơn PENDING (mọi năm) của người đó. Chỉ đọc, KHÔNG khóa — số
+   * có thể lệch với lúc hoàn tất (đơn gửi / hủy sau đó); `offboardCleanup` lúc hoàn tất dọn theo dữ liệu khi ấy.
+   */
   async pendingCount(userId: string): Promise<number> {
     return (await this.kit.d.requests.listOpen(userId)).filter((r) => r.status === 'PENDING')
       .length;

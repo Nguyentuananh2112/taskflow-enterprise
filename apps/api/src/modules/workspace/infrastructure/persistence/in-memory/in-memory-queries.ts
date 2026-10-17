@@ -4,6 +4,7 @@ import type {
   UserSummary,
 } from '../../../application/ports/collaborators.port';
 import type {
+  AdminWorkspaceRow,
   IWorkspaceQueries,
   MemberRow,
   Page,
@@ -51,6 +52,40 @@ export class InMemoryWorkspaceQueries implements IWorkspaceQueries {
     private readonly projects: InMemoryProjectRepository,
     private readonly users: InMemoryUserDirectory,
   ) {}
+
+  listForAdmin(): Promise<AdminWorkspaceRow[]> {
+    return Promise.resolve(
+      this.workspaces
+        .rows()
+        .map((w) => this.#adminRow(w))
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi') || (a.id < b.id ? -1 : 1)),
+    );
+  }
+
+  findForAdmin(id: string): Promise<AdminWorkspaceRow | null> {
+    const w = this.workspaces.rows().find((r) => r.id === id);
+    return Promise.resolve(w ? this.#adminRow(w) : null);
+  }
+
+  #adminRow(w: WorkspaceSnapshot): AdminWorkspaceRow {
+    return {
+      id: w.id,
+      name: w.name,
+      deletedAt: w.deletedAt,
+      archivedAt: w.archivedAt ?? null,
+      members: this.memberships
+        .rows()
+        .filter((m) => m.workspaceId === w.id)
+        .map((m) => ({
+          userId: m.userId,
+          fullName: this.users.users.get(m.userId)?.fullName ?? '',
+          role: m.role,
+        }))
+        .sort(
+          (a, b) => a.fullName.localeCompare(b.fullName, 'vi') || (a.userId < b.userId ? -1 : 1),
+        ),
+    };
+  }
 
   listActiveForUser(
     userId: string,

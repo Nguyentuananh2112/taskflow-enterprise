@@ -8,12 +8,13 @@ import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
 import { CompanyAccess } from './application/company-access';
 import { HrAuditWriter } from './application/hr-audit-writer';
 import type { ICompanyAccounts } from './application/ports/accounts.port';
-import {
-  BootstrapAdminUseCase,
-  type BootstrapAdminInput,
-  type BootstrapAdminResult,
+import type {
+  BootstrapAdminInput,
+  BootstrapAdminResult,
 } from './application/use-cases/bootstrap-admin.use-case';
-import { HireEmployeeUseCase } from './application/use-cases/hire-employee.use-case';
+import type { ICompanyAccessEvents } from './application/ports/access-events.port';
+import type { IAdminWorkspaces } from './application/ports/admin-workspaces.port';
+import type { IOffboardLeavePort } from './application/ports/offboard-leave.port';
 import type {
   ICompanyMemberRepository,
   ICompanyRepository,
@@ -21,10 +22,11 @@ import type {
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
-import { HrController, hrRoutes } from './presentation/hr.routes';
+import { ADMIN_PATH, createAdminRouter } from './presentation/admin.routes';
+import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
-import { createEmployment, lateCollaborators } from './employment.wiring';
+import { createEmployment } from './employment.wiring';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -64,10 +66,16 @@ export interface CompanyModuleDeps {
    * request; composition gán `current` trước khi app nhận request.
    */
   accounts: { current: ICompanyAccounts | null };
-  /** T-062: workspace / leave / notifications / realtime — cũng tạo SAU company ⇒ tham chiếu trễ. */
-  collaborators: { current: EmploymentCollaborators | null };
+  /** T-062: workspace / leave / notifications / realtime — dựng SAU company ⇒ đọc trễ lúc chạy. */
+  collaborators: () => EmploymentCollaborators;
   /** Múi giờ lịch hiện hành (ADR-120) — attendance (T-063) nối; mặc định Asia/Ho_Chi_Minh. */
   timeZone?: () => Promise<string>;
+  /** Dọn đơn nghỉ khi đóng nhiệm kỳ (leave — D T-064; trước đó composition nối bản không làm gì). */
+  offboardLeave: IOffboardLeavePort;
+  /** Thông báo bền + realtime khi Admin đổi role / grant (T-061a). */
+  accessEvents: ICompanyAccessEvents;
+  /** Dữ liệu workspace cho Admin (module workspace — dựng SAU company ⇒ đọc trễ). */
+  adminWorkspaces: () => IAdminWorkspaces;
 }
 
 export interface CompanyModule {
@@ -83,8 +91,8 @@ export interface CompanyModule {
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
   /** Job hoàn tất nghỉ việc mỗi phút (R40) — composition đăng ký vào scheduler bảo trì. */
   completeDueOffboardings(signal?: AbortSignal): Promise<{ completed: number; failed: number }>;
-  /** Router `/api/v1/hr` (nhân viên — T-061 / T-062). */
-  hrRoutes(authenticate: RequestHandler): Router;
+  /** Router của company kèm đường gắn dưới `/api/v1`: `/hr` (T-061/T-062), `/admin` (T-061a). */
+  routers(authenticate: RequestHandler): { path: string; router: Router }[];
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
     isActive(userId: string): Promise<boolean>;
@@ -117,34 +125,11 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     if (!d.accounts.current) throw new Error('company: chưa nối port tài khoản (composition)');
     return d.accounts.current;
   }
-  const collaborators = lateCollaborators(d.collaborators);
   const timeZone = d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE));
-  const hire = new HireEmployeeUseCase({
-    access,
-    members,
-    tenures,
-    accounts,
-    audit,
-    uow: d.uow,
-    clock,
-    timeZone,
-    logger: d.logger,
-    rehireLeave: () => collaborators().rehireLeave,
-  });
   const active = async (userId: string) => {
     const m = await members.find(userId);
     return m && isCompanyAccessActive(m, clock.now()) ? m : null;
   };
-  const bootstrap = new BootstrapAdminUseCase({
-    company: d.repos.company,
-    members,
-    accounts,
-    audit,
-    uow: d.uow,
-    ids,
-    clock,
-    timeZone,
-  });
   const permissionsOf = async (userId: string) => {
     const m = await active(userId);
     return m ? effectiveCompanyPermissions(m.role, m.grants) : null;
@@ -152,9 +137,11 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
   const employment = createEmployment({
     access,
     members,
+    company: d.repos.company,
+    tenures,
     offboarding: d.repos.offboarding,
     accounts,
-    collaborators,
+    collaborators: d.collaborators,
     audit,
     uow: d.uow,
     ids,
@@ -181,14 +168,35 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     tenures,
     members,
     hrAudit: audit,
-    bootstrapAdmin: (input) => bootstrap.execute(input),
+    bootstrapAdmin: (input) => employment.bootstrap.execute(input),
     completeDueOffboardings: (signal) => employment.completer.runDue(signal),
-    hrRoutes: (authenticate) =>
-      hrRoutes({
-        controller: new HrController({ hire, employment, responder: d.responder }),
-        authenticate,
-        limit: d.limit,
-      }),
+    routers: (authenticate) => [
+      {
+        path: HR_PATH,
+        router: hrRoutes({
+          controller: new HrController({
+            hire: employment.hire,
+            employment,
+            responder: d.responder,
+          }),
+          authenticate,
+          limit: d.limit,
+        }),
+      },
+      {
+        path: ADMIN_PATH,
+        router: createAdminRouter({
+          ...d,
+          access,
+          members,
+          accounts,
+          audit,
+          permissionsOf,
+          timeZone,
+          authenticate,
+        }),
+      },
+    ],
     sessionGate: {
       isActive: async (userId) => (await active(userId)) !== null,
       meOf,

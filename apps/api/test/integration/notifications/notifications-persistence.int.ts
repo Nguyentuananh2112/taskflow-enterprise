@@ -108,7 +108,18 @@ beforeEach(async () => {
     responder: {} as never,
     limit: () => [],
     accounts: { current: null },
-    collaborators: { current: null },
+    collaborators: () => {
+      throw new Error('không dùng ở ca này');
+    },
+    // Không dùng ở ca này (chỉ audience): route admin / dọn đơn không chạy.
+    offboardLeave: { offboardCleanup: () => Promise.resolve({ cancelled: 0, revoked: 0 }) },
+    accessEvents: {
+      accessChanged: () => Promise.resolve(),
+      pushAccessChanged: () => Promise.resolve(),
+    },
+    adminWorkspaces: () => {
+      throw new Error('không dùng ở ca này');
+    },
   });
   const audience = company.notificationAudience;
   publisher = new NotificationPublisher({

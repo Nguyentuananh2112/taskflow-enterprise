@@ -60,6 +60,14 @@ export class InMemoryWorkspaceRepository
     });
     return Promise.resolve(true);
   }
+  archive(id: string, at: Date): Promise<boolean> {
+    const row = this.byId.get(id);
+    if (!row || row.deletedAt !== null || (row.archivedAt ?? null) !== null) {
+      return Promise.resolve(false);
+    }
+    this.byId.set(id, { ...row, archivedAt: at, updatedAt: at, version: row.version + 1 });
+    return Promise.resolve(true);
+  }
   listPurgeable(now: Date, limit: number): Promise<string[]> {
     const ids = this.rows()
       .filter((r) => r.purgeAt !== null && r.purgeAt.getTime() <= now.getTime())

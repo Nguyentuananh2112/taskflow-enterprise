@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  BusinessRuleViolationError,
   ForbiddenError,
   ResourceConflictError,
   ResourceNotFoundError,
@@ -84,12 +85,15 @@ describe('AddMemberUseCase', () => {
     expect(await h.roleOf(ctx.A, 'Mia')).toBe('MEMBER');
   });
 
-  it('MEM-07 (Mốc 3.5): người không còn thuộc công ty ⇒ cùng 404 user, không thêm', async () => {
-    h.company.revoked.add(uid('nina'));
-    const err = await caught(add().execute(ctx.alice, { userId: uid('nina'), role: 'MEMBER' }));
-    expect(err).toBeInstanceOf(ResourceNotFoundError);
-    expect((err as ResourceNotFoundError).details).toEqual({ resource: 'user' });
-    expect(await h.roleOf(ctx.A, 'Nina')).toBeNull();
+  it('MEM-07 (Mốc 3.5, SEC-HR-37): đã rời công ty / đã có lịch nghỉ việc ⇒ 422 NOT_ACTIVE_MEMBER, không thêm', async () => {
+    for (const set of [h.company.revoked, h.company.offboarding]) {
+      set.add(uid('nina'));
+      const err = await caught(add().execute(ctx.alice, { userId: uid('nina'), role: 'MEMBER' }));
+      expect(err).toBeInstanceOf(BusinessRuleViolationError);
+      expect((err as BusinessRuleViolationError).details).toEqual({ rule: 'NOT_ACTIVE_MEMBER' });
+      expect(await h.roleOf(ctx.A, 'Nina')).toBeNull();
+      set.clear();
+    }
   });
 
   it('MEM-09: role không hợp lệ ⇒ 400', async () => {

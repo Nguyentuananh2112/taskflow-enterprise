@@ -4,7 +4,13 @@ import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
 import type { CompanyAccess } from './application/company-access';
 import type { HrAuditWriter } from './application/hr-audit-writer';
 import type { ICompanyAccounts } from './application/ports/accounts.port';
-import type { ICompanyMemberRepository } from './application/ports/company-member.port';
+import type {
+  ICompanyMemberRepository,
+  ICompanyRepository,
+  ICompanyTenureReader,
+} from './application/ports/company-member.port';
+import { BootstrapAdminUseCase } from './application/use-cases/bootstrap-admin.use-case';
+import { HireEmployeeUseCase } from './application/use-cases/hire-employee.use-case';
 import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
 import { EmployeeQueries } from './application/use-cases/employees.queries';
@@ -16,10 +22,15 @@ import {
 import { ReissueActivationUseCase } from './application/use-cases/reissue-activation.use-case';
 import type { CompanyPermission } from './domain/roles';
 
-/** Vòng đời nhân viên (T-062): danh sách, lịch nghỉ / hủy / hoàn tất (+ job mỗi phút), tạo lại link. */
+/**
+ * Vòng đời nhân viên: thêm / nhận lại, bootstrap Admin (T-061); danh sách, lịch nghỉ / hủy / hoàn tất (+ job mỗi
+ * phút), tạo lại link (T-062).
+ */
 export function createEmployment(d: {
   access: CompanyAccess;
   members: ICompanyMemberRepository;
+  company: ICompanyRepository;
+  tenures: ICompanyTenureReader;
   offboarding: ICompanyOffboardingRepository;
   accounts: ICompanyAccounts;
   collaborators: () => EmploymentCollaborators;
@@ -33,6 +44,8 @@ export function createEmployment(d: {
 }) {
   const completer = new CompleteOffboardingUseCase(d);
   return {
+    hire: new HireEmployeeUseCase({ ...d, rehireLeave: () => d.collaborators().rehireLeave }),
+    bootstrap: new BootstrapAdminUseCase(d),
     employees: new EmployeeQueries(d),
     schedule: new ScheduleOffboardingUseCase(d, completer),
     cancel: new CancelOffboardingUseCase(d),
@@ -42,14 +55,3 @@ export function createEmployment(d: {
 }
 
 export type Employment = ReturnType<typeof createEmployment>;
-
-/** Tham chiếu trễ (composition gán `current` trước khi app nhận request / job chạy). */
-export function lateCollaborators(ref: {
-  current: EmploymentCollaborators | null;
-}): () => EmploymentCollaborators {
-  return () => {
-    if (!ref.current)
-      throw new Error('company: chưa nối cộng tác vòng đời nhân viên (composition)');
-    return ref.current;
-  };
-}

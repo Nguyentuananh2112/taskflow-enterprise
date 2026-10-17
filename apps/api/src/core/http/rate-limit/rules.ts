@@ -101,6 +101,16 @@ export const RATE_LIMIT_RULES = {
   hireEmployee: [
     rule({ id: 'hire-employee-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),
   ],
+  /** `GET /workspaces/:wsId/member-candidates` — danh bạ email nội bộ: 60/giờ/actor (R41). */
+  memberCandidates: [
+    rule({
+      id: 'member-candidates-user',
+      windowMs: HOUR,
+      limit: 60,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
   addMember: [
     rule({ id: 'add-member-user', windowMs: HOUR, limit: 30, key: 'user', failMode: 'open' }),
   ],

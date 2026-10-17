@@ -22,6 +22,7 @@ import {
   type WorkspaceRepositories,
 } from '../modules/workspace/workspace.module';
 import type { IWorkspacePurger } from '../modules/workspace/application/ports/collaborators.port';
+import { InMemoryMemberCandidates } from '../modules/workspace/infrastructure/persistence/in-memory/in-memory-member-candidates';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import { memoryLeaveRepositories } from './leave-adapters';
 import { notificationContextFrom } from './notification-adapters';
@@ -87,6 +88,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     memberships: new TaskMirroredMemberships(ws.memberships, task.db),
     projects: new TaskMirroredProjects(ws.projects, task.db),
     queries: ws.queries,
+    candidates: new InMemoryMemberCandidates(companyStore, ws.directory, ws.memberships),
   };
 
   const notificationStore = createInMemoryNotificationStore();
