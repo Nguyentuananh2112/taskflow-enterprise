@@ -60,10 +60,10 @@ export function CardSkeleton() {
         </div>
         <Skeleton className="h-10 w-28 sm:ml-auto" />
       </div>
-      <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-        <Skeleton className="h-9 w-36" />
-        <Skeleton className="h-9 w-40" />
-        <Skeleton className="h-9 w-40" />
+      <div className="grid grid-cols-2 gap-2 border-t border-border pt-3 md:flex md:flex-wrap">
+        <Skeleton className="h-12 md:h-9 md:w-36" />
+        <Skeleton className="h-12 md:h-9 md:w-40" />
+        <Skeleton className="h-12 md:h-9 md:w-40" />
       </div>
     </div>
   );

@@ -10,8 +10,11 @@ type Props = Readonly<{ wsId: string; today: string; canManageHr: boolean }>;
 const countText = (c: { count: number; more: boolean } | undefined) =>
   c && c.count > 0 ? `${c.more ? `${c.count}+` : c.count}` : null;
 
+// Dưới md: lưới 2 cột, mỗi ô cao đủ 2 dòng chữ ⇒ số đếm về sau ("· còn 12 ngày") chỉ làm chữ xuống dòng TRONG ô, không
+// đổi điểm xuống hàng của flex-wrap ⇒ không layout-shift (F đo E2E-HR-14 ở 360: +44 px). md+: hàng nút như cũ.
+const LIST = 'grid grid-cols-2 gap-2 md:flex md:flex-wrap';
 const LINK =
-  'inline-flex min-h-9 items-center rounded-control border border-border px-3 text-sm text-text hover:bg-bg-subtle';
+  'flex h-full min-h-12 w-full items-center rounded-control border border-border px-3 py-1 text-sm leading-tight text-text hover:bg-bg-subtle md:inline-flex md:min-h-9 md:w-auto md:py-0';
 
 /**
  * Lối tắt dưới thẻ Chấm công (T-045): Bảng công · Xin nghỉ (số phép còn) · Đơn nghỉ của tôi (số chờ duyệt) · Nhân sự
@@ -23,7 +26,7 @@ export function AttendanceShortcuts({ wsId, today, canManageHr }: Props) {
   const hr = countText(useHrPendingLeaveCount(wsId, canManageHr).data);
   return (
     <nav aria-label="Lối tắt chấm công và nghỉ phép" className="border-t border-border pt-3">
-      <ul className="flex flex-wrap gap-2">
+      <ul className={LIST}>
         <li>
           <Link href={`/w/${wsId}/attendance`} className={LINK}>
             Bảng công của tôi
