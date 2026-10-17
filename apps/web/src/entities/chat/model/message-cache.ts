@@ -6,7 +6,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 // response vẫn không trùng; catch-up `after` gộp theo `id`.
 
 export type MessagePage = { data: MessageDto[]; page: { hasMore: boolean } | undefined };
-export type MessagesData = InfiniteData<MessagePage, string | undefined>;
+export type MessagesData = InfiniteData<MessagePage>;
 
 /** Tin theo thứ tự hiển thị (cũ → mới). */
 export function flatten(data: MessagesData | undefined): MessageDto[] {
