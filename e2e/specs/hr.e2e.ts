@@ -59,6 +59,25 @@ const dayRow = (table: Locator, date: string) =>
     .getByRole('row')
     .filter({ has: table.page().getByRole('rowheader', { name: new RegExp(`${ddMm(date)}$`) }) });
 
+/** "d/M" không số 0 đầu — nhãn ô lịch T-046 ("Ngày 8/10, …"). */
+const dM = (date: string) =>
+  `${String(Number(date.slice(8, 10)))}/${String(Number(date.slice(5, 7)))}`;
+
+/**
+ * Nút ngày trong LỊCH tháng (T-046, mặc định ở /attendance và lịch từng người ở /hr): aria-label = "Ngày d/M"
+ * [, "hôm nay"], nhãn, dòng phụ — nối bằng ", ". Ngày tương lai không có gì biết trước ⇒ đúng "Ngày d/M".
+ */
+const dayCell = (scope: Locator, date: string) =>
+  scope.getByRole('button', { name: new RegExp(`^Ngày ${dM(date)}(,|$)`) });
+
+/** Phút đi muộn ⇒ chữ của T-046: "37 phút", "2 giờ", "1 giờ 5 phút". */
+function lateText(min: number): string {
+  if (min < 60) return `${String(min)} phút`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${String(h)} giờ ${String(m)} phút` : `${String(h)} giờ`;
+}
+
 /** Hai "HH:mm" cách nhau ≤ 1 phút (qua nửa đêm cũng được) — đồng hồ thẻ chạy theo serverNow, test đọc giờ máy test. */
 function withinAMinute(a: string, b: string): boolean {
   const m = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
@@ -240,7 +259,8 @@ test(`@main E2E-HR-02 [${T041B}]: gửi đơn ⇒ HR thấy chuông realtime ⇒
 
   await page.goto(wsPath(w, `attendance?month=${day.slice(0, 7)}`));
   const table = page.getByRole('table', { name: /^Bảng công tháng/ });
-  await expect(dayRow(table, day)).toContainText('Nghỉ phép');
+  // T-046: ngày tương lai vẫn hiện phép đã duyệt — "Ngày d/M, Nghỉ phép, cả ngày".
+  await expect(dayCell(table, day)).toHaveAccessibleName(`Ngày ${dM(day)}, Nghỉ phép, cả ngày`);
   await hana.close();
 });
 
@@ -464,12 +484,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`E2E-HR-07 a11y (${colorScheme})`, () => {
     test.use({ colorScheme });
 
-    test(`E2E-HR-07 [${T041A}]: lịch tháng là <table> có caption + tiêu đề hàng/cột, trạng thái chữ + biểu tượng; axe 0 serious/critical ở /projects (thẻ), /attendance + hộp lượt chấm, chuông (${colorScheme})`, async ({
+    test(`E2E-HR-07 [${T041A}]: /attendance dạng LỊCH (T-046, mặc định) và DANH SÁCH: <table> có caption, cột T2…CN / Ngày…, hôm nay theo server, nhãn chữ; axe 0 serious/critical ở cả hai dạng, hộp ngày, /projects, chuông (${colorScheme})`, async ({
       page,
       request,
     }) => {
       const w = await seedHrWorld(request, `hr07-${colorScheme}`);
-      await apiCheckIn(request, w.olivia, w.mia.accessToken);
+      const punched = await apiCheckIn(request, w.olivia, w.mia.accessToken);
       await loginViaUi(page, w.mia.user);
 
       await page.goto(wsPath(w, 'attendance'));
@@ -478,25 +498,49 @@ for (const colorScheme of ['light', 'dark'] as const) {
         name: `Bảng công tháng ${String(Number(month.slice(5)))}/${month.slice(0, 4)}`,
       });
       await expect(table).toBeVisible();
-      for (const col of ['Ngày', 'Trạng thái', 'Vào', 'Ra', 'Giờ làm', 'Muộn / sớm']) {
+      // LỊCH (mặc định): cột T2…CN, mỗi ngày là một nút trong <td>.
+      for (const col of ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']) {
         await expect(table.getByRole('columnheader', { name: col, exact: true })).toBeVisible();
       }
-      expect(await table.getByRole('rowheader').count()).toBeGreaterThanOrEqual(28);
-      // "Hôm nay" của bảng lấy từ serverNow (mốc), không từ Date trình duyệt — đúng một hàng, là hàng của mốc.
+      // "Hôm nay" theo serverNow (mốc): đúng một ô aria-current, là ô của ngày mốc. Mốc thứ Ba 10:00, ca 08:00,
+      // grace 0 ⇒ "Đi muộn …" tính từ firstIn THẬT của server (thời gian trôi từ lúc API lên), chưa chấm ra ⇒ "…".
+      const todayCell = table.locator('td[aria-current="date"]');
+      await expect(todayCell).toHaveCount(1);
+      const inHm = vnHm(punched.firstIn ?? '');
+      const lateMin = Number(inHm.slice(0, 2)) * 60 + Number(inHm.slice(3, 5)) - 8 * 60;
+      const inShort = `${String(Number(inHm.slice(0, 2)))}:${inHm.slice(3, 5)}`;
+      await expect(todayCell.getByRole('button')).toHaveAccessibleName(
+        `Ngày ${dM(vnDate())}, hôm nay, Đi muộn ${lateText(lateMin)}, ${inShort}–…`,
+      );
+      expect(await seriousViolations(page), `/attendance lịch (${colorScheme})`).toEqual([]);
+      await dayCell(table, vnDate()).click();
+      await expect(page.getByRole('dialog', { name: /^Ngày / })).toBeVisible();
+      expect(await seriousViolations(page), `/attendance hộp ngày (${colorScheme})`).toEqual([]);
+      await page.keyboard.press('Escape');
+
+      // DANH SÁCH: rowheader "Th x, dd/MM", hôm nay = tr[aria-current]; lựa chọn được nhớ qua tải lại.
+      const views = page.getByRole('group', { name: 'Cách xem' });
+      await views.getByRole('button', { name: 'Danh sách', exact: true }).click();
+      await expect(views.getByRole('button', { name: 'Danh sách', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      for (const col of ['Ngày', 'Trạng thái', 'Giờ vào', 'Giờ ra', 'Số giờ làm']) {
+        await expect(table.getByRole('columnheader', { name: col, exact: true })).toBeVisible();
+      }
       const todayRow = table.locator('tr[aria-current="date"]');
       await expect(todayRow).toHaveCount(1);
       await expect(todayRow.getByRole('rowheader')).toHaveAccessibleName(
         new RegExp(`${ddMm(vnDate())}$`),
       );
-      // Trạng thái hôm nay có CHỮ (không chỉ biểu tượng aria-hidden). Mốc thứ Ba 10:00 + đã chấm vào ⇒ "Có mặt".
-      await expect(dayRow(table, vnDate()).getByRole('cell').first()).toContainText('Có mặt');
-      expect(await seriousViolations(page), `/attendance (${colorScheme})`).toEqual([]);
-      await dayRow(table, vnDate()).getByRole('rowheader').getByRole('button').click();
-      await expect(page.getByRole('dialog', { name: /^Lượt chấm/ })).toBeVisible();
-      expect(await seriousViolations(page), `/attendance hộp lượt chấm (${colorScheme})`).toEqual(
-        [],
+      await expect(dayRow(table, vnDate())).toContainText(`Đi muộn ${lateText(lateMin)}`);
+      expect(await seriousViolations(page), `/attendance danh sách (${colorScheme})`).toEqual([]);
+      await page.reload();
+      await expect(views.getByRole('button', { name: 'Danh sách', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
       );
-      await page.keyboard.press('Escape');
+      await views.getByRole('button', { name: 'Lịch', exact: true }).click();
 
       await page.goto(projectsPath(w));
       await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
@@ -583,15 +627,16 @@ test(`E2E-HR-08 [${T041A}]: XSS (mở rộng SEC-49) — lý do ADJUSTMENT, tên
 
   await page.goto(wsPath(w, 'attendance'));
   const table = page.getByRole('table', { name: /^Bảng công tháng/ });
-  await dayRow(table, vnDate()).getByRole('rowheader').getByRole('button').click();
-  const punches = page.getByRole('dialog', { name: /^Lượt chấm/ });
+  await dayCell(table, vnDate()).click();
+  const punches = page.getByRole('dialog', { name: /^Ngày / }); // T-046: "Ngày Th x, dd/MM"
   await expect(punches.getByText(P.adjust)).toBeVisible();
   await assertInert(page, dialogsMia, 'Mia lượt chấm (ADJUSTMENT)');
   await page.keyboard.press('Escape');
   await page.goto(wsPath(w, `attendance?month=${holiday.slice(0, 7)}`));
-  await expect(
-    dayRow(page.getByRole('table', { name: /^Bảng công tháng/ }), holiday),
-  ).toContainText(P.holiday);
+  // Tên lễ nằm ở aria-label (thuộc tính) VÀ chữ hiển thị của ô — cả hai chỉ là text.
+  const holidayCell = dayCell(page.getByRole('table', { name: /^Bảng công tháng/ }), holiday);
+  await expect(holidayCell).toHaveAccessibleName(`Ngày ${dM(holiday)}, Ngày lễ, ${P.holiday}`);
+  await expect(holidayCell).toContainText(P.holiday);
   await assertInert(page, dialogsMia, 'Mia bảng công (ngày lễ)');
 });
 
@@ -664,11 +709,12 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   await hana.page.goto(wsPath(w, 'hr?tab=timesheet'));
   await hana.page.getByRole('button', { name: w.mia.user.fullName }).click();
   const sheet = hana.page.getByRole('region', { name: `Bảng công của ${w.mia.user.fullName}` });
-  await expect(sheet.locator('tr[aria-current="date"]')).toHaveCount(1);
-  await expect(
-    sheet.locator('tr[aria-current="date"]').getByRole('rowheader'),
-  ).toHaveAccessibleName(new RegExp(`${ddMm(vnDate())}$`));
-  await dayRow(sheet, vnDate()).getByRole('rowheader').getByRole('button').click();
+  // T-046: lịch T2…CN như /attendance — đúng một ô hôm nay (theo server), là ô của ngày mốc.
+  await expect(sheet.locator('td[aria-current="date"]')).toHaveCount(1);
+  await expect(sheet.locator('td[aria-current="date"]').getByRole('button')).toHaveAccessibleName(
+    new RegExp(`^Ngày ${dM(vnDate())}, hôm nay, `),
+  );
+  await dayCell(sheet, vnDate()).click();
   await expect(hana.page.getByRole('dialog').getByText(P.adjust)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana lượt chấm của Mia');
   await hana.close();
