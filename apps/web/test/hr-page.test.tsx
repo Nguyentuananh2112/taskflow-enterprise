@@ -172,8 +172,9 @@ describe('trang Nhân sự — các tab', () => {
     const row = within(table).getByRole('row', { name: /Nguyễn An/ });
     expect(row.textContent).toContain('Có mặt');
     expect(row.textContent).toContain('muộn 2 giờ');
+    // 10:00, ca từ 08:00, chưa chấm ⇒ "Chưa chấm công" (tách khỏi "Chưa tới giờ" — demo TL d9).
     expect(within(table).getByRole('row', { name: /Trần Lan/ }).textContent).toContain(
-      'Chưa tới giờ',
+      'Chưa chấm công',
     );
     await expectNoA11yViolations();
 

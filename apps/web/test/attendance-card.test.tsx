@@ -50,7 +50,8 @@ describe('thẻ Chấm công', () => {
     expect(clock?.textContent).toMatch(/^Giờ hiện tại theo máy chủ: 10:00:/);
     expect(within(card).getByText(/08:00–17:30/)).toBeTruthy();
     expect(within(card).getByText('Bạn chưa chấm vào hôm nay.')).toBeTruthy();
-    expect(within(card).getByText('Chưa tới giờ')).toBeTruthy();
+    // 10:00 đã qua giờ vào ca 08:00 mà chưa chấm ⇒ "Chưa chấm công" (không phải "Chưa tới giờ" — demo TL d9).
+    expect(within(card).getByText('Chưa chấm công')).toBeTruthy();
     await expectNoA11yViolations();
 
     await userEvent

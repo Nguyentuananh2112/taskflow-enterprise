@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  DAY_STATUS,
+  dayStatusLabel,
   LEAVE_PART_LABEL,
   minutesToClock,
   timeOfDay,
@@ -67,7 +67,7 @@ export function AttendanceCard({ wsId, enabled }: Props) {
     );
   }
   const t = today.data;
-  const status = DAY_STATUS[t.status];
+  const status = dayStatusLabel(t);
   return (
     <section
       aria-labelledby="attendance-heading"

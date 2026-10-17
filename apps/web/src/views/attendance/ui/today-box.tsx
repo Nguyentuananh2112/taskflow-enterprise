@@ -25,7 +25,13 @@ function statusText(t: AttendanceTodayDto): string {
     t.early && 'về sớm',
     t.leave && `nghỉ ${LEAVE_PART_LABEL[t.leave]}`,
   ].filter(Boolean);
-  const base = !t.firstIn ? 'Bạn chưa chấm vào' : t.inProgress ? 'Đang làm' : 'Đã chấm ra';
+  const base = t.firstIn
+    ? t.inProgress
+      ? 'Đang làm'
+      : 'Đã chấm ra'
+    : t.notCheckedInYet
+      ? 'Bạn chưa chấm công'
+      : 'Chưa tới giờ vào ca';
   return extra.length > 0 ? `${base} · ${extra.join(' · ')}` : base;
 }
 

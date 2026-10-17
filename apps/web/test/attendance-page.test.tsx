@@ -50,14 +50,14 @@ describe('bảng công tháng', () => {
       within(today[0] as HTMLElement)
         .getByRole('button')
         .getAttribute('aria-label'),
-    ).toBe('Ngày 15/10, hôm nay, Chưa chấm');
+    ).toBe('Ngày 15/10, hôm nay, Chưa chấm công');
     // Ngày tương lai: chỉ số ngày, không chữ trạng thái ("Chưa tới giờ" đã bỏ).
     const future = within(table).getByRole('button', { name: /^Ngày 20\/10$/ });
     expect(future.textContent).toBe('20');
     expect(table.textContent).not.toContain('Chưa tới giờ');
     // Ô "Hôm nay" + tổng kết (số do server tính).
     const box = screen.getByRole('region', { name: /^Hôm nay, / });
-    expect(box.textContent).toContain('Bạn chưa chấm vào');
+    expect(box.textContent).toContain('Bạn chưa chấm công');
     expect(within(box).getByRole('button', { name: 'Chấm vào' })).toBeTruthy();
     const summary = screen.getByRole('region', { name: 'Tổng kết tháng 10/2026' });
     expect(summary.textContent).toContain('Ngày đi làm0 ngày');
@@ -73,7 +73,7 @@ describe('bảng công tháng', () => {
       .getAllByRole('button')
       .filter((b) => b.tabIndex === 0);
     expect(tabbable.map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Ngày 15/10, hôm nay, Chưa chấm',
+      'Ngày 15/10, hôm nay, Chưa chấm công',
     ]);
     const u = userEvent.setup({ delay: null });
     tabbable[0]?.focus();

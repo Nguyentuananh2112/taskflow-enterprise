@@ -1,20 +1,55 @@
 import type { AttendanceCompanyTodayDto, DayStatus } from '@taskflow/contracts/attendance';
 
-import { DAY_STATUS, LEAVE_PART_LABEL, duration, timeOfDay } from '@/entities/attendance';
+import {
+  DAY_STATUS,
+  LEAVE_PART_LABEL,
+  NOT_CHECKED_IN,
+  dayStatusLabel,
+  duration,
+  timeOfDay,
+} from '@/entities/attendance';
 import { cn } from '@/shared/lib/cn';
 import { EmptyState } from '@/shared/ui/empty-state';
 
 type Props = Readonly<{ data: AttendanceCompanyTodayDto }>;
 
-/** Thứ tự ô tổng: những gì HR cần xử lý trước (vắng, quên chấm ra) đứng đầu. */
-const SUMMARY: readonly DayStatus[] = ['ABSENT', 'MISSING_OUT', 'PRESENT', 'ON_LEAVE', 'PENDING'];
+type Day = AttendanceCompanyTodayDto['members'][number]['day'];
+type Bucket = Readonly<{
+  key: string;
+  label: string;
+  icon: string;
+  tone: string;
+  match: (d: Day) => boolean;
+}>;
+const byStatus = (s: DayStatus): Bucket => ({
+  key: s,
+  ...DAY_STATUS[s],
+  match: (d) => d.status === s,
+});
+
+/**
+ * Thứ tự ô tổng: những gì HR cần xử lý trước (vắng, chưa chấm công, quên chấm ra) đứng đầu. PENDING tách đôi theo
+ * `notCheckedInYet` (đã tới giờ vào ca mà chưa chấm ≠ chưa tới giờ — demo TL d9).
+ */
+const SUMMARY: readonly Bucket[] = [
+  byStatus('ABSENT'),
+  {
+    key: 'NOT_CHECKED_IN',
+    ...NOT_CHECKED_IN,
+    match: (d) => d.status === 'PENDING' && d.notCheckedInYet,
+  },
+  byStatus('MISSING_OUT'),
+  byStatus('PRESENT'),
+  byStatus('ON_LEAVE'),
+  { ...byStatus('PENDING'), match: (d) => d.status === 'PENDING' && !d.notCheckedInYet },
+];
 
 /**
  * Tab "Hôm nay" (§6): ai vào / muộn / vắng / nghỉ. Trạng thái bằng CHỮ + biểu tượng (không chỉ màu);
  * giờ theo `timezone` của lịch. Người đã rời nhưng có lượt chấm hôm nay vẫn hiện (gắn nhãn — R30).
  */
 export function HrToday({ data }: Props) {
-  const count = (s: DayStatus) => data.members.filter((m) => m.day.status === s).length;
+  const count = (b: Bucket) => data.members.filter((m) => b.match(m.day)).length;
   const late = data.members.filter((m) => m.day.late).length;
   if (data.isHoliday || !data.isWorkday) {
     return (
@@ -32,15 +67,18 @@ export function HrToday({ data }: Props) {
       <h2 id="hr-today" className="sr-only">
         Chấm công hôm nay
       </h2>
-      <ul aria-label="Tổng hợp hôm nay" className="grid grid-cols-2 gap-2 sm:grid-cols-6">
-        {SUMMARY.map((s) => (
-          <li key={s} className="rounded-card border border-border bg-surface p-3">
-            <span className={cn('block text-xl font-semibold tabular-nums', DAY_STATUS[s].tone)}>
-              {count(s)}
+      <ul
+        aria-label="Tổng hợp hôm nay"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7"
+      >
+        {SUMMARY.map((b) => (
+          <li key={b.key} className="rounded-card border border-border bg-surface p-3">
+            <span className={cn('block text-xl font-semibold tabular-nums', b.tone)}>
+              {count(b)}
             </span>
             <span className="text-xs text-text-muted">
-              <span aria-hidden="true">{DAY_STATUS[s].icon} </span>
-              {DAY_STATUS[s].label}
+              <span aria-hidden="true">{b.icon} </span>
+              {b.label}
             </span>
           </li>
         ))}
@@ -80,7 +118,7 @@ export function HrToday({ data }: Props) {
           </thead>
           <tbody>
             {data.members.map(({ user, left, day }) => {
-              const s = DAY_STATUS[day.status];
+              const s = dayStatusLabel(day);
               const notes = [
                 day.lateMin > 0 && `muộn ${duration(day.lateMin)}`,
                 day.earlyMin > 0 && `về sớm ${duration(day.earlyMin)}`,

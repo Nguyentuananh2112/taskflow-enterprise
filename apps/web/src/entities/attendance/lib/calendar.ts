@@ -98,8 +98,10 @@ export function dayText(d: AttendanceDayDto, today: string): DayText {
       // Dữ liệu đã quá thời hạn lưu (R27) — trung tính, không phải "Vắng".
       return { label: 'Ngoài thời hạn lưu', detail: null, icon: '⌛', tone: 'off' };
     case 'PENDING':
-      // Chỉ còn HÔM NAY (ngày tương lai đã trả EMPTY ở trên): chưa chấm vào.
-      return { label: 'Chưa chấm', detail: null, icon: '○', tone: 'muted' };
+      // Chỉ còn HÔM NAY (tương lai đã xử lý ở trên): đã tới giờ vào ca mà chưa chấm ⇒ cảnh báo; chưa tới giờ ⇒ trung tính.
+      return d.notCheckedInYet
+        ? { label: 'Chưa chấm công', detail: null, icon: '!', tone: 'late' }
+        : { label: 'Chưa tới giờ', detail: null, icon: '○', tone: 'muted' };
   }
 }
 
