@@ -199,11 +199,12 @@ ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_request_hash_chk"
 -- B L2: trần 20 MiB = trần tệp của ADR-141 (ảnh đã mã hóa lại còn nhỏ hơn).
 ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_size_chk"
   CHECK ("size_bytes" >= 0 AND "size_bytes" <= 20 * 1024 * 1024);
--- B L1 (lớp 2 — app đã kiểm `isFileKey` trước mọi thao tác đĩa): khóa blob ngẫu nhiên 128 bit base32 (core/files).
+-- B L1 (lớp 2 — app đã kiểm `isFileKey` trước mọi thao tác đĩa): khóa ĐẦY ĐỦ có tiền tố module `chat/` + 128 bit base32
+-- (TL/G 18/10; thư mục ab/cd là việc riêng của LocalFileStore, DB không thấy).
 ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_keys_chk" CHECK (
-  "file_key" ~ '^[a-z2-7]{26}$'
-  AND ("preview_key" IS NULL OR "preview_key" ~ '^[a-z2-7]{26}$')
-  AND ("thumb_key" IS NULL OR "thumb_key" ~ '^[a-z2-7]{26}$')
+  "file_key" ~ '^chat/[a-z2-7]{26}$'
+  AND ("preview_key" IS NULL OR "preview_key" ~ '^chat/[a-z2-7]{26}$')
+  AND ("thumb_key" IS NULL OR "thumb_key" ~ '^chat/[a-z2-7]{26}$')
 );
 ALTER TABLE "chat_attachments" ADD CONSTRAINT "chat_attachments_dims_chk" CHECK (
   ("width" IS NULL) = ("height" IS NULL) AND ("width" IS NULL OR ("width" > 0 AND "height" > 0))

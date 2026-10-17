@@ -73,7 +73,7 @@ describe('migration chat — CHECK', () => {
           mime: 'application/pdf',
           sizeBytes: 1,
           sha256: 'b'.repeat(64),
-          fileKey: 'a'.repeat(26),
+          fileKey: `chat/${'a'.repeat(26)}`,
           ...data,
         } as never,
       });
@@ -82,7 +82,11 @@ describe('migration chat — CHECK', () => {
       /chat_attachments_size_chk/,
     );
     await expect(att({ fileKey: '../../etc/passwd' })).rejects.toThrow(/chat_attachments_keys_chk/);
-    await expect(att({ thumbKey: 'K'.repeat(26) })).rejects.toThrow(/chat_attachments_keys_chk/);
+    await expect(att({ thumbKey: `chat/${'K'.repeat(26)}` })).rejects.toThrow(
+      /chat_attachments_keys_chk/,
+    );
+    // Khóa trần (không tiền tố module) không còn hợp lệ.
+    await expect(att({ fileKey: 'b'.repeat(26) })).rejects.toThrow(/chat_attachments_keys_chk/);
     await att({ id: cid(93) });
     await expect(att({ id: cid(94) })).rejects.toThrow(
       /chat_attachments_file_key_key|Unique constraint/,
