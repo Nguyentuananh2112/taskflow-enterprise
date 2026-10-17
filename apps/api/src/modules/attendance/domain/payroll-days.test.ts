@@ -7,7 +7,7 @@ import {
   type PayrollLeaveType,
 } from './payroll-days';
 import type { DayStatus } from './summarize-day';
-import type { WorkSchedule } from './work-schedule';
+import { DEFAULT_SCHEDULE, isWorkday, type WorkSchedule } from './work-schedule';
 
 // payroll.md §7 — PD (công nửa ngày) + SD (công chuẩn), T-049. Lịch mặc định T2–T7. 16/11/2026 là thứ Hai, 22/11 Chủ nhật.
 const MON = '2026-11-16';
@@ -236,6 +236,27 @@ describe('payrollDaysOf — PD-13 / PD-17 / PD-19 (F, test-spec-payroll)', () =>
       expect(whole.halfDays).toBeGreaterThanOrEqual(0);
       expect(whole.halfDays).toBeLessThanOrEqual(2 * workdays);
       expect(whole.halfDays).toBe(a.halfDays + b.halfDays);
+      // (2) Bỏ hết nhiệm kỳ ⇒ 0.
+      const none = run({ statusOf, leaves, tenures: [] });
+      expect(none).toEqual({ ok: true, halfDays: 0, missingOutDates: [] });
+      // (1) Thêm một nửa ANNUAL vào một nửa trong nhiệm kỳ, ngày làm việc ⇒ h không giảm; tăng đúng 1 khi nửa đó đang 0
+      // (không có phép nào ở nửa đó và ngày không PRESENT / HOLIDAY) hoặc chỉ có phép không lương.
+      const day = Math.max(startDay, 1 + rnd(30));
+      const date = `2026-11-${String(day).padStart(2, '0')}`;
+      const part = rnd(2) ? 'AM' : 'PM';
+      const workday = isWorkday(DEFAULT_SCHEDULE, date);
+      const more = run({ statusOf, leaves: [...leaves, half(date, part, 'ANNUAL')], tenures });
+      if (!more.ok) throw new Error('không mong đợi');
+      const delta = more.halfDays - whole.halfDays;
+      const onHalf = leaves.filter((l) => l.date === date && l.part === part);
+      const paidBefore = onHalf.some((l) => l.type === 'ANNUAL' || l.type === 'PERSONAL_PAID');
+      const status = statusOf.get(date)!;
+      const halfWasZero =
+        workday &&
+        status !== 'HOLIDAY' &&
+        !paidBefore &&
+        (onHalf.length > 0 || status !== 'PRESENT');
+      expect(delta).toBe(halfWasZero ? 1 : 0);
       for (let d = 1; d <= 30; d++) {
         const date = `2026-11-${String(d).padStart(2, '0')}`;
         const one = run({ statusOf, leaves, tenures, from: date, to: date });
