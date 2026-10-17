@@ -29,6 +29,8 @@ export function OffboardDialog({ employee, today, onClose }: Props) {
         lastDay,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
       }),
+    // Hộp này dựng ở CẤP TRANG (không trong dòng): ngày cuối đã qua ⇒ người này thành "Đã nghỉ", rời bộ lọc "Hiện tại"
+    // khi danh sách tải lại — hộp kết quả (cảnh báo workspace mồ côi) vẫn còn (F, E2E-HR-19).
     onSuccess: (r, _v, _r, context) => {
       void context.client.invalidateQueries({ queryKey: companyKeys.employees() });
       setResult(r);
@@ -40,7 +42,12 @@ export function OffboardDialog({ employee, today, onClose }: Props) {
       <Dialog
         open
         onOpenChange={(next) => !next && onClose()}
-        title={`Đã lên lịch nghỉ việc cho ${employee.fullName}`}
+        title={
+          // Ngày cuối đã qua ⇒ server hoàn tất ngay trong request (B T-062).
+          result.employee.status === 'LEFT'
+            ? `Đã cho ${employee.fullName} nghỉ việc`
+            : `Đã lên lịch nghỉ việc cho ${employee.fullName}`
+        }
         description={`Làm việc tới hết ngày ${dmy(lastDay)}.`}
         footer={<Button onClick={onClose}>Đóng</Button>}
       >

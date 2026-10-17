@@ -1,6 +1,6 @@
 'use client';
 
-import type { ListEmployeesQuery } from '@taskflow/contracts/company';
+import type { EmployeeDto, ListEmployeesQuery } from '@taskflow/contracts/company';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { useEmployees } from '@/entities/company';
 import { useCompanyToday } from '@/entities/hr';
 import { useCompanyPermission, useSession } from '@/entities/session';
-import { HireDialog } from '@/features/employee-manage';
+import { HireDialog, OffboardDialog } from '@/features/employee-manage';
 import { cn } from '@/shared/lib/cn';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value';
 import { Button } from '@/shared/ui/button';
@@ -45,7 +45,11 @@ export function HrEmployeesPage() {
   const q = term.length >= 2 ? term : undefined;
   const list = useEmployees({ status, q }, allowed);
   const today = useCompanyToday(allowed).data?.date ?? null;
-  const [hiring, setHiring] = useState(false);
+  // Hộp thoại ở CẤP TRANG (không trong dòng) ⇒ người đổi trạng thái rời bộ lọc vẫn thấy kết quả (F, E2E-HR-19).
+  const [dialog, setDialog] = useState<
+    { kind: 'hire' } | { kind: 'offboard' | 'rehire'; employee: EmployeeDto } | null
+  >(null);
+  const close = () => setDialog(null);
 
   if (company !== null && !allowed) {
     return (
@@ -69,7 +73,7 @@ export function HrEmployeesPage() {
       </Link>
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">Nhân viên</h1>
-        <Button className="ml-auto" disabled={!today} onClick={() => setHiring(true)}>
+        <Button className="ml-auto" disabled={!today} onClick={() => setDialog({ kind: 'hire' })}>
           Thêm nhân viên
         </Button>
       </div>
@@ -116,7 +120,8 @@ export function HrEmployeesPage() {
             <EmployeeRow
               key={e.userId}
               employee={e}
-              today={today}
+              ready={today !== null}
+              onOpen={(kind, employee) => setDialog({ kind, employee })}
               locked={!isAdmin && (e.userId === viewerId || e.grants.length > 0)}
             />
           ))}
@@ -132,7 +137,17 @@ export function HrEmployeesPage() {
           Tải thêm
         </Button>
       )}
-      {hiring && today && <HireDialog today={today} onClose={() => setHiring(false)} />}
+      {today && dialog?.kind === 'hire' && <HireDialog today={today} onClose={close} />}
+      {today && dialog?.kind === 'offboard' && (
+        <OffboardDialog employee={dialog.employee} today={today} onClose={close} />
+      )}
+      {today && dialog?.kind === 'rehire' && (
+        <HireDialog
+          today={today}
+          rehire={{ email: dialog.employee.email, fullName: dialog.employee.fullName }}
+          onClose={close}
+        />
+      )}
     </PageMain>
   );
 }

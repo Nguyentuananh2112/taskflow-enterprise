@@ -6,10 +6,16 @@ import { Badge } from '@/shared/ui/badge';
 
 const dmy = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 
-type Props = Readonly<{ employee: EmployeeDto; today: string | null; locked: boolean }>;
+type Props = Readonly<{
+  employee: EmployeeDto;
+  /** Chưa có hôm nay của server ⇒ chưa có nút (hộp cần ngày mặc định / giới hạn). */
+  ready: boolean;
+  locked: boolean;
+  onOpen: (kind: 'offboard' | 'rehire', employee: EmployeeDto) => void;
+}>;
 
 /** Một nhân viên: tên + trạng thái (chữ, không chỉ màu), email, ngày vào / ngày làm cuối, MỘT nút theo trạng thái. */
-export function EmployeeRow({ employee: e, today, locked }: Props) {
+export function EmployeeRow({ employee: e, ready, locked, onOpen }: Props) {
   const dates =
     e.status === 'LEFT'
       ? e.offboardLastDay && `Làm tới ${dmy(e.offboardLastDay)}`
@@ -32,7 +38,7 @@ export function EmployeeRow({ employee: e, today, locked }: Props) {
         <p className="truncate text-sm text-text-muted">{e.email}</p>
         {dates && <p className="text-sm text-text-muted">{dates}</p>}
       </div>
-      {today && <EmployeeActions employee={e} today={today} locked={locked} />}
+      {ready && <EmployeeActions employee={e} locked={locked} onOpen={onOpen} />}
     </li>
   );
 }

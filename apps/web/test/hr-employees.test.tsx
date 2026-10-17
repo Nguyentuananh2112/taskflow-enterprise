@@ -138,6 +138,51 @@ describe('/hr/employees', () => {
     expect(mock.db.company.row(quinn.id)).toBeDefined();
   });
 
+  it('ngày làm cuối đã qua ⇒ hoàn tất NGAY: hộp kết quả "Đã cho … nghỉ việc" + cảnh báo ws mồ côi VẪN hiện dù dòng rời "Hiện tại" (F, E2E-HR-19)', async () => {
+    const f = open();
+    const mia = f.addUser('Mia Trần', `mia-${crypto.randomUUID()}@example.com`, 'MEMBER');
+    act(() => mock.db.company.add(mia.id, '2026-10-12T00:00:00+07:00', '2026-10-12'));
+    const u = user();
+    await u.click(
+      within(await row('Mia Trần')).getByRole('button', { name: 'Cho Mia Trần nghỉ việc' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Cho Mia Trần nghỉ việc' });
+    const date = within(dialog).getByLabelText(/^Ngày làm cuối/);
+    await u.clear(date);
+    await u.type(date, '2026-10-14'); // hôm qua ⇒ access_until 06:00 hôm nay đã qua
+    await u.click(within(dialog).getByRole('button', { name: 'Lên lịch nghỉ việc' }));
+    const done = await screen.findByRole('dialog', { name: 'Đã cho Mia Trần nghỉ việc' });
+    // Danh sách đã tải lại (Mia sang "Đã nghỉ") mà hộp kết quả vẫn còn.
+    await waitFor(() => expect(screen.queryByRole('listitem', { name: 'Mia Trần' })).toBeNull());
+    expect(within(done).getByText(/Workspace của Mia Trần/)).toBeTruthy();
+    await u.click(within(done).getByRole('button', { name: 'Đóng' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('nhận lại người CHƯA từng kích hoạt ⇒ hộp link vẫn hiện dù dòng rời "Đã nghỉ"', async () => {
+    const f = open('ADMIN');
+    const nina = mock.db.createUser({
+      email: 'nina@example.com',
+      password: '',
+      fullName: 'Nina',
+      workspace: false,
+    }).user;
+    act(() => mock.db.company.remove(nina.id));
+    cleanupApp();
+    f.signInAs(f.owner);
+    openApp(
+      '/hr/employees?status=left',
+      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
+    );
+    const u = user();
+    await u.click(within(await row('Nina')).getByRole('button', { name: 'Nhận lại Nina' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nhận lại Nina' });
+    await u.click(within(dialog).getByRole('button', { name: 'Nhận lại' }));
+    expect(await screen.findByRole('dialog', { name: 'Link kích hoạt cho Nina' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('listitem', { name: 'Nina' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Link kích hoạt cho Nina' })).toBeTruthy();
+  });
+
   it('nhân viên thường ⇒ "không có quyền" + lối về', async () => {
     const f = seedBoard(mock);
     f.signInAs(f.owner);
