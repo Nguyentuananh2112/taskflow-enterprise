@@ -707,7 +707,10 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   if (holiday.slice(0, 4) !== vnDate().slice(0, 4)) {
     await hana.page.getByRole('button', { name: `${holiday.slice(0, 4)} ›` }).click();
   }
-  await expect(hana.page.getByText(P.holiday)).toBeVisible();
+  // Một công ty: danh sách ngày lễ có cả lễ cùng tên của HR-08 (ngày khác, reserveDate) ⇒ khoanh theo ngày của ca này
+  // (dòng "Thứ x, dd/mm/yyyy · <tên>").
+  const holidayDmy = `${holiday.slice(8, 10)}/${holiday.slice(5, 7)}/${holiday.slice(0, 4)}`;
+  await expect(hana.page.getByText(`${holidayDmy} · ${P.holiday}`)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana /hr Lịch & ngày lễ');
   await hana.page.goto('/hr?tab=timesheet');
   await hana.page.getByRole('button', { name: w.mia.user.fullName }).click();
