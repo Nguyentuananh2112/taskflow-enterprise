@@ -1,4 +1,4 @@
-import { bodyPreview, compareKeyset } from '../../../domain/chat-message';
+import { attachmentUnavailable, bodyPreview, compareKeyset } from '../../../domain/chat-message';
 import type {
   AttachmentRecord,
   IChatMessageStore,
@@ -33,10 +33,13 @@ export class InMemoryChatMessageStore implements IChatMessageStore, IChatReadSta
       deletedAt: null,
     };
     this.s.data.messages.set(row.id, row);
-    for (const id of input.attachmentIds) {
-      const a = this.s.data.attachments.get(id);
-      if (a) this.s.data.attachments.set(id, { ...a, messageId: row.id });
+    // B M1: cùng hợp đồng với Prisma — thiếu / không còn của người gửi / đã gắn ⇒ ném, UoW rollback cả tin.
+    const claim = input.attachmentIds.map((id) => this.s.data.attachments.get(id));
+    if (claim.some((a) => a?.uploaderId !== input.senderId || a.messageId !== null)) {
+      this.s.data.messages.delete(row.id);
+      throw attachmentUnavailable();
     }
+    for (const a of claim) this.s.data.attachments.set(a!.id, { ...a!, messageId: row.id });
     const c = this.s.data.conversations.get(input.conversationId);
     if (c) {
       c.lastMessageAt = row.createdAt;

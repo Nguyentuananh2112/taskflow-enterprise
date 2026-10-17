@@ -8,6 +8,7 @@ import type {
   ReadStateRecord,
 } from '../../../application/ports/chat-message.port';
 import { bodyPreview } from '../../../domain/chat-message';
+import { attachmentUnavailable } from '../../../domain/chat-message';
 import type { DbProvider } from './chat-db';
 
 /** Tin + con trỏ đã đọc trên Postgres (T-069a; ADR-144/145). */
@@ -30,7 +31,7 @@ export class PrismaChatMessageStore implements IChatMessageStore, IChatReadState
       return { created: false, message: toMessage(old) };
     }
     if (input.attachmentIds.length > 0) {
-      await this.db().chatAttachment.updateMany({
+      const { count } = await this.db().chatAttachment.updateMany({
         where: {
           id: { in: [...input.attachmentIds] },
           uploaderId: input.senderId,
@@ -38,6 +39,9 @@ export class PrismaChatMessageStore implements IChatMessageStore, IChatReadState
         },
         data: { messageId: input.id },
       });
+      // B M1: đính kèm mất giữa claim và gắn (purge mồ côi, không còn của người gửi…) ⇒ rollback cả tin, không lưu tin
+      // thiếu tệp một cách âm thầm.
+      if (count !== input.attachmentIds.length) throw attachmentUnavailable();
     }
     await this.db().chatConversation.update({
       where: { id: input.conversationId },

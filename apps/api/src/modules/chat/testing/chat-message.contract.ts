@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { requestHash } from '../domain/chat-message';
 import type { ChatBackend } from './chat-backend';
-import { G, U, aid, at, cid, cmid, group, mid, send, staff, upload } from './chat-fixtures';
+import { G, U, aid, at, blob, cid, cmid, group, mid, send, staff, upload } from './chat-fixtures';
 
 // Bộ ca HỢP ĐỒNG IChatMessageStore / IChatReadStateStore / IChatAttachmentStore (T-069a; ADR-144/145/147).
 
@@ -36,6 +36,24 @@ export function describeChatMessageContract(name: string, make: () => Promise<Ch
       expect((await b.run(() => b.messages.findByClientMsgId(U.Vic, cmid(1))))?.id).toBe(mid(3));
       expect(await b.run(() => b.messages.findByClientMsgId(U.Lan, cmid(1)))).toBeNull();
       expect(await b.run(() => b.messages.findByClientMsgId(U.Mia, cmid(9)))).toBeNull();
+    });
+
+    it('B M1: đính kèm không gắn được (của người khác / đã purge) ⇒ ATTACHMENT_UNAVAILABLE, KHÔNG lưu tin', async () => {
+      const b = await make();
+      await group(b);
+      await upload(b, 6, U.Vic);
+      const err = await send(b, 1, U.Mia, 'kèm tệp người khác', { attachmentIds: [aid(6)] }).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toMatchObject({ statusCode: 422, details: { rule: 'ATTACHMENT_UNAVAILABLE' } });
+      const missing = await send(b, 2, U.Mia, 'tệp đã mất', { attachmentIds: [aid(7)] }).catch(
+        (e: unknown) => e,
+      );
+      expect(missing).toMatchObject({ details: { rule: 'ATTACHMENT_UNAVAILABLE' } });
+      expect(await b.run(() => b.messages.findById(mid(1)))).toBeNull();
+      expect(await b.run(() => b.messages.findById(mid(2)))).toBeNull();
+      expect(await b.run(() => b.attachments.findById(aid(6)))).toMatchObject({ messageId: null });
+      expect((await b.run(() => b.conversations.findById(G)))?.lastMessageId).toBeNull();
     });
 
     it('page keyset: mới nhất / before / after, tăng dần, hasMore; id lạ ⇒ rỗng', async () => {
@@ -89,7 +107,7 @@ export function describeChatMessageContract(name: string, make: () => Promise<Ch
         editedAt: at(3),
       });
       const removed = await b.run(() => b.messages.softDelete(mid(1), at(4)));
-      expect(removed.map((a) => a.fileKey)).toEqual(['k2f']);
+      expect(removed.map((a) => a.fileKey)).toEqual([blob(2, 'f')]);
       expect(await b.run(() => b.messages.findById(mid(1)))).toMatchObject({
         body: null,
         deletedAt: at(4),
@@ -142,16 +160,18 @@ export function describeChatMessageContract(name: string, make: () => Promise<Ch
       const purged = await b.run(() => b.attachments.purgeMessagesBefore(at(2), 100));
       expect({ ...purged, blobKeys: [...purged.blobKeys].sort() }).toEqual({
         deleted: 1,
-        blobKeys: ['k3f', 'k3p', 'k3t'],
+        blobKeys: [blob(3, 'f'), blob(3, 'p'), blob(3, 't')],
       });
       expect((await b.run(() => b.messages.findById(mid(2))))?.replyTo).toBeNull();
       expect(await b.run(() => b.attachments.purgeOrphanUploadsBefore(at(1), 100))).toEqual(
-        expect.arrayContaining(['k4f', 'k4p', 'k4t']),
+        expect.arrayContaining([blob(4, 'f'), blob(4, 'p'), blob(4, 't')]),
       );
       await upload(b, 5, U.Mia, 30);
-      expect(await b.run(() => b.attachments.existingBlobKeys(['k5f', 'k3f', 'k4t']))).toEqual(
-        new Set(['k5f']),
-      );
+      expect(
+        await b.run(() =>
+          b.attachments.existingBlobKeys([blob(5, 'f'), blob(3, 'f'), blob(4, 't')]),
+        ),
+      ).toEqual(new Set([blob(5, 'f')]));
     });
 
     it('danh sách: COALESCE(last_message_at, created_at) DESC, id DESC + con trỏ; markLeftForNonMembers', async () => {
