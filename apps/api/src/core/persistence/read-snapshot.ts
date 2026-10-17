@@ -11,17 +11,27 @@
  */
 export interface IReadSnapshot {
   run<T>(work: () => Promise<T>, opts: { timeoutMs: number }): Promise<T>;
+  /**
+   * Thoát snapshot CÓ TÊN (B review T-057) để chạy MỘT `uow.run` ngắn trên kết nối KHÁC trong lúc snapshot vẫn mở —
+   * dùng cho audit EXPORT ngay trước khi gửi header (đếm và stream phải chung một snapshot). Chỉ gọi được bên trong
+   * `run`; bên trong `fn` không còn ở snapshot (ALS rỗng) ⇒ `uow.run` mở transaction riêng, commit độc lập.
+   * Audit đã commit mà stream lỗi sau đó ⇒ audit VẪN ghi "đã xuất" dù không có file — chấp nhận (ADR-130: audit khi
+   * stream bắt đầu), KHÔNG rollback audit. Mỗi export giữ 2 kết nối trong lúc này (devops.md §4.5).
+   */
+  outside<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /** Trần thời gian một snapshot (ms): Postgres giữ snapshot ⇒ chặn dọn dẹp (vacuum) — không cho mở lâu hơn. */
 export const READ_SNAPSHOT_MAX_MS = 120_000;
 
 export class ReadSnapshotNestingError extends Error {
-  constructor(where: 'in-unit-of-work' | 'write-in-snapshot') {
+  constructor(where: 'in-unit-of-work' | 'write-in-snapshot' | 'outside-without-snapshot') {
     super(
       where === 'in-unit-of-work'
         ? 'readSnapshot.run() không được gọi bên trong uow.run() (isolation / read-only sẽ bị bỏ qua).'
-        : 'uow.run() không được gọi bên trong readSnapshot.run() (snapshot chỉ đọc — ghi audit bằng uow.run riêng).',
+        : where === 'write-in-snapshot'
+          ? 'uow.run() không được gọi bên trong readSnapshot.run() — dùng snapshot.outside(() => uow.run(...)).'
+          : 'snapshot.outside() chỉ gọi được bên trong snapshot.run().',
     );
     this.name = 'ReadSnapshotNestingError';
   }

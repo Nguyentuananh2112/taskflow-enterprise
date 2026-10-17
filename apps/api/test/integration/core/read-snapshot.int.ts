@@ -61,4 +61,22 @@ describe('IReadSnapshot (Prisma)', () => {
       ).rejects.toBeInstanceOf(RangeError);
     }
   });
+
+  it('B (4): trong lúc snapshot mở, outside(uow.run ghi) commit ngay — kết nối khác thấy; snapshot vẫn không thấy', async () => {
+    const result = await uow.inner.snapshot.run(
+      async () => {
+        await uow.inner.snapshot.outside(() =>
+          uow.inner.run(() => db().user.create({ data: user(7) })),
+        );
+        const visibleElsewhere = await testPrisma().user.count();
+        const inSnapshot = await db().user.count();
+        return { visibleElsewhere, inSnapshot };
+      },
+      { timeoutMs: 20_000 },
+    );
+    expect(result).toEqual({ visibleElsewhere: 4, inSnapshot: 3 });
+    await expect(uow.inner.snapshot.outside(() => Promise.resolve(1))).rejects.toBeInstanceOf(
+      ReadSnapshotNestingError,
+    );
+  });
 });

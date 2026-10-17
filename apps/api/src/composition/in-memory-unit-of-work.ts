@@ -67,7 +67,14 @@ export class InMemoryUnitOfWork implements IUnitOfWork {
     return this.#storage.run({ hooks: [], readOnly: true }, work);
   }
 
-  readonly snapshot: IReadSnapshot = { run: (work, opts) => this.readSnapshot(work, opts) };
+  readonly snapshot: IReadSnapshot = {
+    run: (work, opts) => this.readSnapshot(work, opts),
+    outside: async (fn) => {
+      if (!this.#storage.getStore()?.readOnly)
+        throw new ReadSnapshotNestingError('outside-without-snapshot');
+      return this.#storage.exit(fn);
+    },
+  };
 
   async #runExclusive<T>(work: () => Promise<T>): Promise<T> {
     const snapshots = this.participants.map((p) => p.snapshot());
