@@ -1,13 +1,14 @@
 import type { MessageDto } from '@taskflow/contracts/chat';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
 import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
 import { stubFetchXhr } from '@test/fetch-xhr';
-import { startMockApi } from '@test/mock-api';
+import { API_BASE, startMockApi } from '@test/mock-api';
 import { testRouter } from '@test/navigation';
 import { cleanupApp } from '@test/render';
 
@@ -134,6 +135,26 @@ describe('trò chuyện', () => {
     await waitFor(() =>
       expect(assign).toHaveBeenCalledWith(expect.stringContaining('/media/chat/')),
     );
+
+    // B L1: server / proxy trả URL lạ (javascript:, origin khác) ⇒ KHÔNG điều hướng, báo lỗi.
+    assign.mockClear();
+    for (const bad of ['javascript:alert(1)', 'https://evil.example/api/v1/media/chat/x/file']) {
+      mock.server.use(
+        http.post(
+          `${API_BASE}/chat/attachments/:id/download-url`,
+          () =>
+            HttpResponse.json({
+              success: true,
+              data: { url: bad },
+              meta: { timestamp: new Date().toISOString(), requestId: crypto.randomUUID() },
+            }),
+          { once: true },
+        ),
+      );
+      await user.click(download);
+      expect(await screen.findByRole('alert')).toBeTruthy();
+    }
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it('xóa tin của mình ⇒ "Tin nhắn đã bị xóa"; tin cũ ⇒ "Tải tin cũ hơn"', async () => {

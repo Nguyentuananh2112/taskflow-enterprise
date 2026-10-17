@@ -2,6 +2,7 @@ import type { MessageDto } from '@taskflow/contracts/chat';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { chatApi, chatKeys, upsertMessage, type MessagesData } from '@/entities/chat';
+import { isApiMediaUrl } from '@/shared/lib/media-url';
 
 // Sửa / xóa tin của chính mình (ADR-144: sửa ≤ 15 phút; xóa ⇒ thân NULL + tệp tách) và tải tệp (ADR-141).
 
@@ -43,7 +44,12 @@ export const navigation = { assign: (url: string) => window.location.assign(url)
  */
 export function useDownload() {
   return useMutation({
-    mutationFn: (attachmentId: string) => chatApi.downloadUrl(attachmentId),
-    onSuccess: ({ url }) => navigation.assign(url),
+    mutationFn: async (attachmentId: string) => {
+      const { url } = await chatApi.downloadUrl(attachmentId);
+      // B L1: chỉ điều hướng tới /media/chat của CHÍNH API (javascript: / origin lạ từ mock, proxy, lỗi server ⇒ lỗi).
+      if (!isApiMediaUrl(url, 'chat')) throw new Error('URL tải tệp không hợp lệ');
+      return url;
+    },
+    onSuccess: (url) => navigation.assign(url),
   });
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { cn } from '@/shared/lib/cn';
+import { isApiMediaUrl } from '@/shared/lib/media-url';
 
 import { AVATAR_COLORS, avatarColorIndex, initialsOf } from './avatar-utils';
 
@@ -44,7 +45,8 @@ export function Avatar({
   const { box, px } = SIZES[size];
   const label = decorative ? { 'aria-hidden': true as const } : { title: name };
 
-  if (src && failedSrc !== src) {
+  // B L2: chỉ URL ảnh của chính API (/media/avatars) — data:/blob:/origin lạ ⇒ chữ cái.
+  if (src && failedSrc !== src && isApiMediaUrl(src, 'avatars')) {
     return (
       // Ảnh từ API khác origin, URL ký có hạn ⇒ không qua next/image (tối ưu ảnh của Next sẽ cache URL ký).
       // eslint-disable-next-line @next/next/no-img-element

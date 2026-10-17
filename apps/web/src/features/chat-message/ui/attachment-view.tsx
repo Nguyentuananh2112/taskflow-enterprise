@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { chatKeys } from '@/entities/chat';
+import { isApiMediaUrl } from '@/shared/lib/media-url';
 import { Button } from '@/shared/ui/button';
 import { Dialog } from '@/shared/ui/dialog';
 
@@ -30,6 +31,9 @@ export function AttachmentView({ attachment: a, convId }: Props) {
   const download = useDownload();
 
   if (a.kind === 'IMAGE') {
+    // B L2: chỉ URL của chính API (/media/chat) mới vào <img>; khác ⇒ ô giữ chỗ, không mở xem.
+    const thumb = isApiMediaUrl(a.thumbUrl, 'chat') ? a.thumbUrl : null;
+    const preview = isApiMediaUrl(a.previewUrl, 'chat') ? a.previewUrl : null;
     const w = a.width ?? 320;
     const h = a.height ?? 240;
     const scale = Math.min(1, 240 / Math.max(w, h));
@@ -43,13 +47,13 @@ export function AttachmentView({ attachment: a, convId }: Props) {
       <>
         <button
           type="button"
-          onClick={() => a.previewUrl && setOpen(true)}
+          onClick={() => preview && setOpen(true)}
           aria-label={`Xem ảnh ${a.name}`}
         >
-          {a.thumbUrl ? (
+          {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element -- URL ký có hạn của API, không qua next/image
             <img
-              src={a.thumbUrl}
+              src={thumb}
               alt={a.name}
               {...box}
               loading="lazy"
@@ -66,11 +70,11 @@ export function AttachmentView({ attachment: a, convId }: Props) {
             />
           )}
         </button>
-        {open && a.previewUrl && (
+        {open && preview && (
           <Dialog open onOpenChange={setOpen} title="Xem ảnh" className="max-w-3xl">
             {/* eslint-disable-next-line @next/next/no-img-element -- URL ký có hạn */}
             <img
-              src={a.previewUrl}
+              src={preview}
               alt={a.name}
               width={a.width ?? undefined}
               height={a.height ?? undefined}
