@@ -2,15 +2,14 @@ import { ResourceConflictError } from '../../../../core/errors';
 import { uniqueConstraintOf } from '../../../../core/persistence/unique-constraint';
 import type { Prisma } from '../../../../generated/prisma/client';
 import type {
-  CompanyProfile,
   CompanyTenure,
   CompanyTenureQuery,
   ICompanyMemberRepository,
-  ICompanyRepository,
   ICompanyTenureReader,
   NewCompanyMember,
 } from '../../application/ports/company-member.port';
 import type { CompanyMemberSnapshot } from '../../domain/company-member';
+import { demote, updateGrants, type DemoteInput } from './prisma-company-roles';
 
 /** = `uow.db()` của `PrismaUnitOfWork` — repository không tự mở transaction (ADR-012). */
 export type DbProvider = () => Prisma.TransactionClient;
@@ -28,61 +27,27 @@ const byUserThenFrom = (a: CompanyTenure, b: CompanyTenure) =>
         ? 1
         : 0;
 
-/** Id cố định của dòng công ty duy nhất (CHECK `companies_single_row`). */
-export const COMPANY_ID = 1;
+export { COMPANY_ID, PrismaCompany } from './prisma-company-profile';
 
-export class PrismaCompany implements ICompanyRepository {
-  constructor(private readonly db: DbProvider) {}
-
-  get(): Promise<CompanyProfile | null> {
-    return this.db().company.findUnique({
-      where: { id: COMPANY_ID },
-      select: { name: true, version: true },
-    });
-  }
-
-  async ensure(name: string, at: Date): Promise<CompanyProfile> {
-    // ON CONFLICT DO NOTHING: hai bootstrap đồng thời đã tuần tự hóa bằng khóa `company:admins`, vẫn an toàn.
-    await this.db().$executeRaw`
-      INSERT INTO companies (id, name, version, updated_at) VALUES (${COMPANY_ID}, ${name}, 1, ${at})
-      ON CONFLICT (id) DO NOTHING`;
-    const row = await this.get();
-    if (!row) throw new Error('companies: không đọc lại được dòng vừa tạo');
-    return row;
-  }
-
-  async rename(input: {
-    name: string;
-    expectedVersion: number;
-    at: Date;
-  }): Promise<CompanyProfile | null> {
-    const { count } = await this.db().company.updateMany({
-      where: { id: COMPANY_ID, version: input.expectedVersion },
-      data: { name: input.name, version: { increment: 1 }, updatedAt: input.at },
-    });
-    return count === 1 ? this.get() : null;
-  }
-}
+const toSnapshot = (r: Prisma.CompanyMemberGetPayload<object>): CompanyMemberSnapshot => ({
+  userId: r.userId,
+  role: r.role,
+  grants: r.grants,
+  startDate: dateOnly(r.startDate),
+  offboardLastDay: dateOnly(r.offboardLastDay),
+  offboardAccessUntil: r.offboardAccessUntil,
+  offboardScheduledById: r.offboardScheduledById,
+  version: r.version,
+  createdAt: r.createdAt,
+  updatedAt: r.updatedAt,
+});
 
 export class PrismaCompanyMembers implements ICompanyMemberRepository {
   constructor(private readonly db: DbProvider) {}
 
   async find(userId: string): Promise<CompanyMemberSnapshot | null> {
     const r = await this.db().companyMember.findUnique({ where: { userId } });
-    return r
-      ? {
-          userId: r.userId,
-          role: r.role,
-          grants: r.grants,
-          startDate: dateOnly(r.startDate),
-          offboardLastDay: dateOnly(r.offboardLastDay),
-          offboardAccessUntil: r.offboardAccessUntil,
-          offboardScheduledById: r.offboardScheduledById,
-          version: r.version,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-        }
-      : null;
+    return r ? toSnapshot(r) : null;
   }
 
   async listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
@@ -166,6 +131,19 @@ export class PrismaCompanyMembers implements ICompanyMemberRepository {
       },
     });
     return count === 1 ? this.find(userId) : null;
+  }
+
+  async listAll(): Promise<CompanyMemberSnapshot[]> {
+    const rows = await this.db().companyMember.findMany({ orderBy: { userId: 'asc' } });
+    return rows.map(toSnapshot);
+  }
+
+  async setGrants(userId: string, grants: CompanyMemberSnapshot['grants'], at: Date) {
+    return (await updateGrants(this.db(), userId, grants, at)) ? this.find(userId) : null;
+  }
+
+  async demoteToEmployee(userId: string, input: DemoteInput) {
+    return (await demote(this.db(), userId, input)) ? this.find(userId) : null;
   }
 
   async recordDeparture(d: Parameters<ICompanyMemberRepository['recordDeparture']>[0]) {

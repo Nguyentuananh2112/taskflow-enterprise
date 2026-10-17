@@ -47,12 +47,17 @@ export const NOW = '2026-11-01T00:00:00.000Z';
 type Rows<T> = { rows(): T[] | Promise<T[]> };
 
 /**
- * Module company giả (Mốc 3.5): mặc định mọi user thuộc công ty; `revoked` = đã nghỉ / quá `access_until`.
+ * Module company giả (Mốc 3.5): mặc định mọi user thuộc công ty; `revoked` = đã nghỉ / quá `access_until`;
+ * `offboarding` = đã có lịch nghỉ việc (vẫn vào được, không thêm được vào ws mới).
  */
 export class FakeCompanyGate implements ICompanyMembershipGate {
   readonly revoked = new Set<string>();
+  readonly offboarding = new Set<string>();
   isActive(userId: string): Promise<boolean> {
     return Promise.resolve(!this.revoked.has(userId));
+  }
+  canJoinWorkspace(userId: string): Promise<boolean> {
+    return Promise.resolve(!this.revoked.has(userId) && !this.offboarding.has(userId));
   }
 }
 

@@ -20,8 +20,21 @@ export interface MemberRow extends MembershipSnapshot {
   fullName: string;
 }
 
+/** Một workspace cho màn Quản trị (T-061a): KHÔNG có dự án / task — chỉ tên, trạng thái, thành viên. */
+export interface AdminWorkspaceRow {
+  id: string;
+  name: string;
+  deletedAt: Date | null;
+  archivedAt: Date | null;
+  members: { userId: string; fullName: string; role: WorkspaceRole }[];
+}
+
 /** Phía đọc (CQRS-lite, ADR-015): bản Prisma dùng `select` trực tiếp, kể cả JOIN bảng users. */
 export interface IWorkspaceQueries {
+  /** Mọi workspace (kể cả đã xóa mềm / lưu trữ) kèm thành viên — sắp theo tên rồi id (T-061a, `company:admin`). */
+  listForAdmin(): Promise<AdminWorkspaceRow[]>;
+  /** Một workspace như `listForAdmin`; `null` khi không có. */
+  findForAdmin(id: string): Promise<AdminWorkspaceRow | null>;
   /**
    * Workspace chưa xóa mà user là thành viên, kèm role. Tối đa 100 (data-and-api 2.5). `joinedAt` = đầu
    * nhiệm kỳ HIỆN TẠI (T-040b: chuông không hiện thông báo của nhiệm kỳ trước).

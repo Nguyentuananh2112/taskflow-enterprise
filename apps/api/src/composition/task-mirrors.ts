@@ -112,6 +112,9 @@ export class TaskMirroredWorkspaces implements IWorkspaceRepository {
     return this.inner.findById(id);
   }
 
+  archive(id: string, at: Date) {
+    return this.inner.archive(id, at);
+  }
   listPurgeable(now: Date, limit: number) {
     return this.inner.listPurgeable(now, limit);
   }

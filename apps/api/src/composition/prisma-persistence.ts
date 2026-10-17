@@ -20,6 +20,7 @@ import { PrismaTaskAuditLogRepository } from '../modules/task/infrastructure/per
 import { PrismaTaskReadModel } from '../modules/task/infrastructure/persistence/prisma/prisma-task-read-model';
 import { PrismaTaskRepository } from '../modules/task/infrastructure/persistence/prisma/prisma-task.repository';
 import { PrismaNotificationStore } from '../modules/notifications/infrastructure/prisma/prisma-notification.store';
+import { PrismaMemberCandidates } from '../modules/workspace/infrastructure/persistence/prisma/prisma-member-candidates';
 import { PrismaWorkspaceQueries } from '../modules/workspace/infrastructure/persistence/prisma/prisma-queries';
 import {
   PrismaMembershipRepository,
@@ -74,6 +75,7 @@ export function createPrismaPersistence(d: {
       memberships: new PrismaMembershipRepository(db),
       projects: new PrismaProjectRepository(db),
       queries: workspaceQueries,
+      candidates: new PrismaMemberCandidates(db),
     },
     // Cùng `db` (một transaction) với Workspace/Auth: cấp số, khóa membership FOR SHARE, audit.
     task: {

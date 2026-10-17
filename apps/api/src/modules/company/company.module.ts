@@ -13,6 +13,9 @@ import {
   type BootstrapAdminInput,
   type BootstrapAdminResult,
 } from './application/use-cases/bootstrap-admin.use-case';
+import type { ICompanyAccessEvents } from './application/ports/access-events.port';
+import type { IAdminWorkspaces } from './application/ports/admin-workspaces.port';
+import type { IOffboardLeavePort } from './application/ports/offboard-leave.port';
 import { HireEmployeeUseCase } from './application/use-cases/hire-employee.use-case';
 import type {
   ICompanyMemberRepository,
@@ -21,14 +24,9 @@ import type {
 } from './application/ports/company-member.port';
 import type { IHrAuditLog } from './application/ports/hr-audit.port';
 import { DEFAULT_COMPANY_TIME_ZONE, isCompanyAccessActive } from './domain/company-member';
-import {
-  GetCompanyQuery,
-  RenameCompanyUseCase,
-} from './application/use-cases/company-profile.use-cases';
-import { CompanyController, companyRoutes } from './presentation/company.routes';
-import { HrAuditController, hrAuditRoutes } from './presentation/hr-audit.routes';
-import { HrController, hrRoutes } from './presentation/hr.routes';
-import { ListHrAuditLogsQuery } from './application/list-hr-audit-logs.query';
+import { companyProfileRouters } from './company-profile-routers';
+import { ADMIN_PATH, createAdminRouter } from './presentation/admin.routes';
+import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import {
   effectiveCompanyPermissions,
   type CompanyGrant,
@@ -69,6 +67,12 @@ export interface CompanyModuleDeps {
   accounts: { current: ICompanyAccounts | null };
   /** Múi giờ lịch hiện hành (ADR-120) — attendance (T-063) nối; mặc định Asia/Ho_Chi_Minh. */
   timeZone?: () => Promise<string>;
+  /** Dọn đơn nghỉ khi đóng nhiệm kỳ (leave — D T-064; trước đó composition nối bản không làm gì). */
+  offboardLeave: IOffboardLeavePort;
+  /** Thông báo bền + realtime khi Admin đổi role / grant (T-061a). */
+  accessEvents: ICompanyAccessEvents;
+  /** Dữ liệu workspace cho Admin (module workspace — dựng SAU company ⇒ đọc trễ). */
+  adminWorkspaces: () => IAdminWorkspaces;
 }
 
 export interface CompanyModule {
@@ -82,12 +86,11 @@ export interface CompanyModule {
   meOf(userId: string): Promise<MeCompanyView | null>;
   /** `admin:bootstrap` (CLI) — một transaction, khóa `company:admins`. */
   bootstrapAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult>;
-  /** Router `/api/v1/hr` (thêm nhân viên — T-061; phần còn lại T-062). */
-  hrRoutes(authenticate: RequestHandler): Router;
-  /** Router `/api/v1/company` (đọc tên; Admin đổi tên). */
-  companyRoutes(authenticate: RequestHandler): Router;
-  /** Router `/api/v1/hr/audit-logs` (chỉ Admin). */
-  hrAuditRoutes(authenticate: RequestHandler): Router;
+  /**
+   * Router của company kèm đường gắn dưới `/api/v1`: `/hr` (T-061/T-062), `/hr/audit-logs` (chỉ Admin), `/admin`
+   * (T-061a), `/company` (đọc tên; Admin đổi tên).
+   */
+  routers(authenticate: RequestHandler): { path: string; router: Router }[];
   /** Cổng công ty cho auth (`ICompanySessionGate`, khớp cấu trúc). */
   sessionGate: {
     isActive(userId: string): Promise<boolean>;
@@ -110,6 +113,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
   const accounts: ICompanyAccounts = {
     findByEmail: (email) => accountsOf().findByEmail(email),
     findById: (userId) => accountsOf().findById(userId),
+    profiles: (userIds) => accountsOf().profiles(userIds),
     revokeSessions: (userId, reason) => accountsOf().revokeSessions(userId, reason),
     createPending: (input) => accountsOf().createPending(input),
     issueActivation: (input) => accountsOf().issueActivation(input),
@@ -166,33 +170,33 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     members,
     hrAudit: audit,
     bootstrapAdmin: (input) => bootstrap.execute(input),
-    hrRoutes: (authenticate) =>
-      hrRoutes({
-        controller: new HrController({ hire, responder: d.responder }),
-        authenticate,
-        limit: d.limit,
-      }),
-    hrAuditRoutes: (authenticate) =>
-      hrAuditRoutes({
-        controller: new HrAuditController({
-          list: new ListHrAuditLogsQuery({ hrAudit, access }),
-          responder: d.responder,
+    routers: (authenticate) => [
+      {
+        path: HR_PATH,
+        router: hrRoutes({
+          controller: new HrController({ hire, responder: d.responder }),
+          authenticate,
+          limit: d.limit,
         }),
-        permissionsOf,
+      },
+      ...companyProfileRouters(
+        { ...d, company: d.repos.company, hrAudit, access, audit, permissionsOf },
         authenticate,
-        limit: d.limit,
-      }),
-    companyRoutes: (authenticate) =>
-      companyRoutes({
-        controller: new CompanyController({
-          get: new GetCompanyQuery({ company: d.repos.company, permissionsOf }),
-          rename: new RenameCompanyUseCase({ ...d, access, audit, company: d.repos.company }),
-          responder: d.responder,
+      ),
+      {
+        path: ADMIN_PATH,
+        router: createAdminRouter({
+          ...d,
+          access,
+          members,
+          accounts,
+          audit,
+          permissionsOf,
+          timeZone: d.timeZone ?? (() => Promise.resolve(DEFAULT_COMPANY_TIME_ZONE)),
+          authenticate,
         }),
-        permissionsOf,
-        authenticate,
-        limit: d.limit,
-      }),
+      },
+    ],
     sessionGate: {
       isActive: async (userId) => (await active(userId)) !== null,
       meOf,

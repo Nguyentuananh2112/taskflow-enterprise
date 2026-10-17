@@ -73,6 +73,26 @@ export interface IWorkspaceRealtimeNotifier {
  */
 export interface ICompanyMembershipGate {
   isActive(userId: string): Promise<boolean>;
+  /**
+   * Thêm được vào workspace (ADR-134): thuộc công ty (nhân viên hoặc Admin, kể cả chờ kích hoạt) và CHƯA có lịch
+   * nghỉ việc. Sai ⇒ 422 `NOT_ACTIVE_MEMBER`.
+   */
+  canJoinWorkspace(userId: string): Promise<boolean>;
+}
+
+export interface MemberCandidate {
+  id: string;
+  fullName: string;
+  email: string;
+}
+
+/**
+ * Danh bạ người thêm được vào workspace (`member-candidates`, ADR-134, R41) — đúng điều kiện của
+ * `canJoinWorkspace`, chưa là thành viên `workspaceId`; `q` khớp tên hoặc email không phân biệt hoa thường,
+ * `%`/`_`/`\` theo nghĩa đen (security.md 6.7). Sắp theo (tên, id), tối đa `limit`. Chỉ id + tên + email.
+ */
+export interface IMemberCandidateDirectory {
+  search(input: { workspaceId: string; q: string; limit: number }): Promise<MemberCandidate[]>;
 }
 
 /** `ProjectDto` (contracts) dạng truyền qua socket — ngày là chuỗi ISO. */

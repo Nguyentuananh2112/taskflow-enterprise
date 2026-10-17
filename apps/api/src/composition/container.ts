@@ -18,9 +18,7 @@ import {
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
-import { COMPANY_PATH } from '../modules/company/presentation/company.routes';
-import { HR_AUDIT_PATH } from '../modules/company/presentation/hr-audit.routes';
-import { HR_PATH } from '../modules/company/presentation/hr.routes';
+import { companyAdminDeps } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
@@ -89,6 +87,12 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
+    ...companyAdminDeps(
+      () => notifications,
+      realtime,
+      () => leave.employment,
+      () => workspace.adminWorkspaces,
+    ),
   });
   // Trước Workspace: publisher là port ghi thông báo (cùng UoW) cho leave / attendance / company.
   const notifications = createNotificationsModule({
@@ -105,8 +109,13 @@ export function createContainer(d: ContainerDeps): Container {
     repos: persistence.workspace,
     users: new AuthUserDirectory(persistence.auth.users),
     notifier: realtime,
-    // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`.
-    company: company.sessionGate,
+    // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
+    // người chưa có lịch nghỉ (ADR-134).
+    company: {
+      isActive: (userId) => company.sessionGate.isActive(userId),
+      canJoinWorkspace: async (userId) =>
+        (await company.members.find(userId))?.offboardLastDay === null,
+    },
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
@@ -168,9 +177,7 @@ export function createContainer(d: ContainerDeps): Container {
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
-    { path: HR_PATH, router: company.hrRoutes(auth.authenticate) },
-    { path: COMPANY_PATH, router: company.companyRoutes(auth.authenticate) },
-    { path: HR_AUDIT_PATH, router: company.hrAuditRoutes(auth.authenticate) },
+    ...company.routers(auth.authenticate),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
