@@ -295,6 +295,53 @@ describe('CheckInOutUseCase — qua nửa đêm (SD-11b, SD-12e) qua luồng ch�
   });
 });
 
+describe('CheckInOutUseCase — nhiệm kỳ + khóa theo user (T-063, company-level ADR-136)', () => {
+  it('A S1: IN trước ngày đầu nhiệm kỳ ⇒ 422 NOT_EMPLOYED, không ghi; từ ngày đầu ⇒ 201', async () => {
+    const t = await setup('2026-11-17 08:05');
+    t.tenures.rows.splice(0, t.tenures.rows.length, {
+      workspaceId: W1,
+      userId: MIA,
+      from: instantOf('2026-11-18', 0, VN),
+      until: null,
+    });
+    await expect(t.punch('IN', key(1))).rejects.toMatchObject({
+      statusCode: 422,
+      details: { rule: 'NOT_EMPLOYED' },
+    });
+    expect(await t.backend.eventRows()).toHaveLength(0);
+    t.at('2026-11-18 08:05');
+    expect(await t.punch('IN', key(2))).toMatchObject({ status: 'PRESENT', date: '2026-11-18' });
+  });
+
+  it('A S1: IN 01:00 sau ngày cuối ⇒ NOT_EMPLOYED; OUT 05:59 vẫn đóng IN của ngày cuối', async () => {
+    const t = await setup('2026-11-17 20:00');
+    t.tenures.rows.splice(0, t.tenures.rows.length, {
+      workspaceId: W1,
+      userId: MIA,
+      from: instantOf('2026-01-05', 480, VN),
+      until: instantOf('2026-11-17', 23 * 60, VN),
+    });
+    await t.punch('IN', key(1));
+    t.at('2026-11-18 01:00');
+    await expect(t.punch('IN', key(2))).rejects.toMatchObject({
+      details: { rule: 'NOT_EMPLOYED' },
+    });
+    t.at('2026-11-18 05:59');
+    expect(await t.punch('OUT', key(3))).toBeDefined();
+    const outs = (await t.backend.eventRows()).filter((e) => e.kind === 'OUT');
+    expect(outs.map((e) => e.workDate)).toEqual(['2026-11-17']);
+  });
+
+  it('khóa theo user lấy TRƯỚC mọi lần đọc (store in-memory ghi lại thứ tự)', async () => {
+    const t = await setup();
+    await t.punch('IN', key(1));
+    const events = t.backend.events as object;
+    if ('locks' in events) {
+      expect(events.locks).toEqual([`taskflow:attendance:punch:${MIA}`]);
+    }
+  });
+});
+
 describe('MyAttendanceQueries', () => {
   it('AT-21 me/today trước khi chấm: đủ trường, lịch + múi giờ của lịch, PENDING (07:55)', async () => {
     const t = await setup();

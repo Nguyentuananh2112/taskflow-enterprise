@@ -65,6 +65,12 @@ export interface IAttendanceEventStore {
     source: AttendanceSource;
     key: string;
   }): Promise<AttendanceEventRecord | null>;
+  /**
+   * Khóa chấm WEB của một người tới hết transaction (T-053a): `pg_advisory_xact_lock(hashtextextended(
+   * 'taskflow:attendance:punch:<user>', 0))` — theo USER, không theo ws, để chấm gộp mọi ws và chấm từng ws chạy tuần
+   * tự. Gọi trong `uow.run`, TRƯỚC mọi lần đọc.
+   */
+  lockUserPunch(userId: string): Promise<void>;
   /** Ném `AlreadyCheckedInError` / `IdempotencyKeyTakenError` khi vi phạm unique tương ứng. */
   add(event: AttendanceEventRecord): Promise<void>;
   /** Lượt theo id TRONG workspace (id của ws khác ⇒ null ⇒ 404, ADR-020). */

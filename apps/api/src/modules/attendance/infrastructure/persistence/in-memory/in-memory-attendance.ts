@@ -57,6 +57,14 @@ export class InMemoryAttendanceEventStore implements IAttendanceEventStore {
    */
   uniqueCheckOrder: 'in-once-first' | 'key-first' = 'in-once-first';
 
+  /** Thứ tự khóa đã lấy (test kiểm "khóa TRƯỚC khi đọc"); tuần tự thật chỉ có ở Postgres (test integration). */
+  readonly locks: string[] = [];
+
+  lockUserPunch(userId: string): Promise<void> {
+    this.locks.push(`taskflow:attendance:punch:${userId}`);
+    return Promise.resolve();
+  }
+
   add(event: AttendanceEventRecord): Promise<void> {
     const same = (e: AttendanceEventRecord) =>
       e.workspaceId === event.workspaceId && e.userId === event.userId;

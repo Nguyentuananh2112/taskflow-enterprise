@@ -2,11 +2,12 @@ import type { AttendanceDayDto, AttendanceTodayDto } from '@taskflow/contracts';
 
 import type { IClock, IIdGenerator } from '../../../core/domain';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
-import { addDays, daysBetween, toLocal, type LocalDate } from '../domain/local-time';
+import { addDays, daysBetween, type LocalDate } from '../domain/local-time';
 import { summarizeDay, type LeavePart } from '../domain/summarize-day';
-import { employedOn } from '../domain/tenure';
+import { employedOn, tenureOnLocalDays } from '../domain/tenure';
 import {
-  DEFAULT_SCHEDULE,
+  DEFAULT_TIMEZONE,
+  localToday,
   effectiveSchedule,
   isWorkday,
   type WorkSchedule,
@@ -34,25 +35,7 @@ export function lastDayOf(month: string): LocalDate {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }
 
-/** Múi giờ của lịch mặc định (workspace chưa lưu lịch nào). */
-export const DEFAULT_TIMEZONE = DEFAULT_SCHEDULE.timezone;
-
-/**
- * "Hôm nay" theo múi giờ của LỊCH hiệu lực. Múi giờ phụ thuộc phiên bản, phiên bản phụ thuộc ngày ⇒ ước
- * lượng ngày bằng múi giờ của phiên bản mới nhất rồi chọn lại phiên bản hiệu lực cho đúng ngày đó.
- */
-export function localToday(
-  versions: readonly WorkSchedule[],
-  now: Date,
-): { date: LocalDate; schedule: WorkSchedule; timezone: string } {
-  const latest = versions.reduce<WorkSchedule | null>(
-    (a, v) => (!a || v.effectiveFrom > a.effectiveFrom ? v : a),
-    null,
-  );
-  const guess = toLocal(now, latest?.timezone ?? DEFAULT_TIMEZONE).date;
-  const schedule = effectiveSchedule(versions, guess);
-  return { date: toLocal(now, schedule.timezone).date, schedule, timezone: schedule.timezone };
-}
+export { DEFAULT_TIMEZONE, localToday };
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -137,7 +120,10 @@ export async function summarizeUsers(
           schedule,
           holiday: holidayName !== null,
           leave,
-          employed: employedOn(myTenures, date, schedule.timezone),
+          employed: employedOn(
+            myTenures.map((t) => tenureOnLocalDays(t, schedule.timezone)),
+            date,
+          ),
           now,
         });
         return {

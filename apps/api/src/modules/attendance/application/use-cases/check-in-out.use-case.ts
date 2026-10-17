@@ -1,9 +1,10 @@
 import type { AttendanceTodayDto } from '@taskflow/contracts';
 
 import { BusinessRuleViolationError, ResourceConflictError } from '../../../../core/errors';
-import { addDays, toLocal } from '../../domain/local-time';
-import { workDateFor } from '../../domain/work-date';
-import { localToday, todayCard, type AttendanceDeps } from '../attendance-days';
+import { addDays } from '../../domain/local-time';
+import { decidePunch, type PunchSkipReason } from '../../domain/punch-rules';
+import { tenureOnLocalDays } from '../../domain/tenure';
+import { localToday, tenureWindow, todayCard, type AttendanceDeps } from '../attendance-days';
 import {
   AlreadyCheckedInError,
   IdempotencyKeyTakenError,
@@ -28,6 +29,18 @@ export interface CheckInOutResult {
 
 /** Thiết kế §3: `userAgent ≤ 256` — cắt chứ không từ chối (UA dài không phải lỗi của người dùng). */
 const USER_AGENT_MAX = 256;
+
+/** Lỗi cho từng lý do từ chối của `decidePunch` (mã giữ như route cũ; `NOT_EMPLOYED` mới — A S1). */
+const punchRefused: Record<PunchSkipReason, () => Error> = {
+  ALREADY_CHECKED_IN: () => alreadyCheckedIn(),
+  NOT_CHECKED_IN: () =>
+    new BusinessRuleViolationError('NOT_CHECKED_IN', 'Bạn chưa chấm vào hôm nay.'),
+  NOT_EMPLOYED: () =>
+    new BusinessRuleViolationError(
+      'NOT_EMPLOYED',
+      'Ngày này nằm ngoài thời gian bạn làm việc ở công ty.',
+    ),
+};
 
 const alreadyCheckedIn = () =>
   new ResourceConflictError({ reason: 'already_checked_in' }, 'Bạn đã chấm vào hôm nay.');
@@ -67,6 +80,8 @@ export class CheckInOutUseCase {
   async #record(input: CheckInOutInput): Promise<boolean> {
     const { d } = this;
     const { workspaceId, userId, kind } = input;
+    // Khóa theo USER (T-053a → T-063): mọi đường chấm của một người chạy tuần tự; đọc sau khóa.
+    await d.events.lockUserPunch(userId);
     const prior = await d.events.findByIdempotencyKey({
       workspaceId,
       userId,
@@ -78,10 +93,8 @@ export class CheckInOutUseCase {
       return true;
     }
     const now = d.clock.now();
-    const { date: today, timezone } = localToday(
-      await d.calendar.scheduleVersions(workspaceId),
-      now,
-    );
+    const versions = await d.calendar.scheduleVersions(workspaceId);
+    const { date: today, timezone } = localToday(versions, now);
     // Đủ để tìm IN còn mở của hôm qua (giờ chốt 06:00 hôm nay) và IN của hôm nay.
     const recent = await d.events.listForUser({
       workspaceId,
@@ -99,18 +112,20 @@ export class CheckInOutUseCase {
       if (sameKey.kind !== kind) throw keyReused();
       return true;
     }
-    const live = recent.filter((e) => e.voidedAt === null);
-    let workDate = toLocal(now, timezone).date;
-    if (kind === 'IN') {
-      if (live.some((e) => e.kind === 'IN' && e.source === 'WEB' && e.workDate === workDate)) {
-        throw alreadyCheckedIn();
-      }
-    } else {
-      workDate = workDateFor('OUT', now, timezone, recent);
-      if (!live.some((e) => e.kind === 'IN' && e.workDate === workDate)) {
-        throw new BusinessRuleViolationError('NOT_CHECKED_IN', 'Bạn chưa chấm vào hôm nay.');
-      }
-    }
+    const tenures = await d.tenures.tenuresOf({
+      workspaceId,
+      userIds: [userId],
+      ...tenureWindow(addDays(today, -2), today),
+    });
+    const decision = decidePunch({
+      kind,
+      now,
+      schedules: versions,
+      recent,
+      tenures: tenures.map((t) => tenureOnLocalDays(t, timezone)),
+    });
+    if (!decision.ok) throw punchRefused[decision.reason]();
+    const { workDate } = decision;
     await d.events.add({
       id: d.ids.next(),
       workspaceId,

@@ -1,19 +1,26 @@
 import { toLocal, type LocalDate } from './local-time';
 
-/** Một nhiệm kỳ thành viên (nhân viên): `from` = joinedAt, `until` = leftAt (`null` = đang là thành viên). */
+/**
+ * Một nhiệm kỳ nhân viên bằng NGÀY (ADR-133, A C1): `from` = ngày đầu, `until` = ngày cuối (gồm cả hai đầu; `null` = đang
+ * làm). So chuỗi `YYYY-MM-DD` — không instant, không múi giờ: HR nhập ngày, đổi múi giờ lịch về sau không dời nhiệm kỳ.
+ */
 export interface Tenure {
-  from: Date;
-  until: Date | null;
+  from: LocalDate;
+  until: LocalDate | null;
+}
+
+/** Ngày `date` nằm trong một nhiệm kỳ (ngày đầu và ngày cuối đều tính như thường). */
+export function employedOn(tenures: readonly Tenure[], date: LocalDate): boolean {
+  return tenures.some((t) => t.from <= date && (t.until === null || date <= t.until));
 }
 
 /**
- * Ngày `date` (theo `timezone` của lịch hiệu lực ngày đó) nằm trong một nhiệm kỳ: ngày địa phương của
- * joinedAt ≤ `date` ≤ ngày địa phương của leftAt — ngày gia nhập và ngày rời đều tính như thường (TL, Q9).
+ * TẠM (tới khi port nhiệm kỳ công ty trả ngày — T-063): nhiệm kỳ membership ws còn là instant joinedAt / leftAt ⇒ quy về
+ * ngày địa phương theo múi giờ lịch của ngày đang xét (giữ đúng hành vi T-037b: ngày rời tính như thường).
  */
-export function employedOn(tenures: readonly Tenure[], date: LocalDate, timezone: string): boolean {
-  return tenures.some(
-    (t) =>
-      toLocal(t.from, timezone).date <= date &&
-      (t.until === null || date <= toLocal(t.until, timezone).date),
-  );
+export function tenureOnLocalDays(t: { from: Date; until: Date | null }, timezone: string): Tenure {
+  return {
+    from: toLocal(t.from, timezone).date,
+    until: t.until === null ? null : toLocal(t.until, timezone).date,
+  };
 }

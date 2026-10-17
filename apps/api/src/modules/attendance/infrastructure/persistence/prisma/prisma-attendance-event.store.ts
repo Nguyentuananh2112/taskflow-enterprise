@@ -95,6 +95,12 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
     return row ? toRecord(row) : null;
   }
 
+  /** `pg_advisory_xact_lock` trả `void` — Prisma không đọc được cột void ⇒ `$executeRaw`. */
+  async lockUserPunch(userId: string): Promise<void> {
+    await this.db().$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`taskflow:attendance:punch:${userId}`}, 0))`;
+  }
+
   async add(e: AttendanceEventRecord): Promise<void> {
     try {
       await this.db().attendanceEvent.create({
