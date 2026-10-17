@@ -1,6 +1,6 @@
 import * as z from 'zod';
 
-import { AuthTokenDto, Email, FullName, Password, UserDto } from '../auth/auth.schemas';
+import { AuthTokenDto, AvatarUrl, Email, FullName, Password, UserDto } from '../auth/auth.schemas';
 import { Cursor, DateOnly, IsoDateTime, limitQuery, searchQuery, Uuid, Version } from '../common';
 import { WorkspaceRole } from '../rbac/permissions';
 import { CompanyGrant, CompanyRole, EmployeeStatus } from './company-roles';
@@ -32,6 +32,8 @@ export const EmployeeDto = z.object({
   offboardLastDay: DateOnly.nullable(),
   /** `company_members.version`; null với LEFT (không còn dòng). */
   version: Version.nullable(),
+  /** Mốc 6: variant 64; có ⇒ web hiện nút "Gỡ ảnh đại diện" (T-071). */
+  avatarUrl: AvatarUrl.optional(),
 });
 export type EmployeeDto = z.infer<typeof EmployeeDto>;
 

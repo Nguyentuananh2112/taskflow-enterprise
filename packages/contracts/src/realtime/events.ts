@@ -24,6 +24,7 @@ export const REALTIME_EVENTS = Object.freeze({
   memberRoleChanged: 'member:role-changed',
   companyAccessChanged: 'company:access-changed',
   notificationNew: 'notification:new',
+  userAvatarChanged: 'user:avatar-changed',
 } as const);
 
 // ---------- Client → Server ----------
@@ -115,6 +116,16 @@ export const NotificationNewEvent = realtimeEnvelope(
 );
 export type NotificationNewEvent = z.infer<typeof NotificationNewEvent>;
 
+/**
+ * Mốc 6 (ADR-142): tới MỌI socket (một công ty, đã qua cổng công ty) — web invalidate mọi query có `UserRefDto`.
+ * `avatarUrl` = variant 64; `null` = đã gỡ. Chính người đó (thiết bị khác) tải lại `/auth/me` để lấy variant 256.
+ */
+export const UserAvatarChangedEventDto = realtimeEnvelope(
+  'user:avatar-changed',
+  z.object({ userId: Uuid, avatarUrl: z.url({ protocol: /^https?$/ }).nullable() }),
+);
+export type UserAvatarChangedEventDto = z.infer<typeof UserAvatarChangedEventDto>;
+
 /** Generic event map cho `Server<C2S, S2C>` / `Socket<S2C, C2S>` — chỉ là type, không import socket.io. */
 export type ClientToServerEvents = {
   'project:join': (payload: ProjectJoinPayload, ack: (res: SocketAck) => void) => void;
@@ -133,4 +144,5 @@ export type ServerToClientEvents = {
   'member:role-changed': (event: MemberRoleChangedEvent) => void;
   'company:access-changed': (event: CompanyAccessChangedEventEnvelope) => void;
   'notification:new': (event: NotificationNewEvent) => void;
+  'user:avatar-changed': (event: UserAvatarChangedEventDto) => void;
 };
