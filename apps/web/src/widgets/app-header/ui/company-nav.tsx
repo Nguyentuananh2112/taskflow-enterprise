@@ -22,6 +22,7 @@ const ITEMS: readonly Item[] = [
   { href: '/w', label: 'Trang chính' },
   { href: '/attendance', label: 'Bảng công của tôi', needs: 'attendance:self' },
   { href: '/leave', label: 'Nghỉ phép', needs: 'leave:self' },
+  { href: '/my-profile', label: 'Hồ sơ của tôi', needs: 'profile:self' },
   { href: '/hr', label: 'Nhân sự', needs: 'hr:manage', manage: true },
   { href: '/admin', label: 'Quản trị', needs: 'company:admin', manage: true },
 ];

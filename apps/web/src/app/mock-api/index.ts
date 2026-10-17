@@ -1,6 +1,7 @@
 import { createActivationHandlers } from './activation-handlers';
 import { createAdminHandlers } from './admin-handlers';
 import { createAttendanceHandlers } from './attendance-handlers';
+import { createCorrectionHandlers } from './correction-handlers';
 import { createEmployeeHandlers } from './employee-handlers';
 import { createAuthHandlers } from './auth-handlers';
 import { createHrAttendanceHandlers } from './hr-attendance-handlers';
@@ -14,6 +15,8 @@ import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
 import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
+import { createPolicyHandlers } from './policy-handlers';
+import { createProfileHandlers } from './profile-handlers';
 import { createProjectHandlers } from './project-handlers';
 import { contentTypeGuard, createRateLimiter } from './request-guards';
 import { setMockClock } from './respond';
@@ -51,6 +54,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const attendance = new MockAttendance(options.now ?? Date.now);
   const notifications = new MockNotifications(board, options.now ?? Date.now);
   const leave = new MockLeave(attendance, options.now ?? Date.now);
+  leave.hireDateOf = (userId) => db.company.profiles.get(userId).hireDate;
   const hr = new MockHr(db, attendance, leave);
   return {
     db,
@@ -71,10 +75,13 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createAttendanceHandlers(baseUrl, db, attendance),
       ...createNotificationHandlers(baseUrl, db, notifications),
       // HR trước leave của E: `GET leave-requests` không có `mine` thuộc HR (T-041c).
+      ...createPolicyHandlers(baseUrl, hr),
       ...createHrLeaveHandlers(baseUrl, hr, notifications),
+      ...createCorrectionHandlers(baseUrl, hr),
       ...createHrAttendanceHandlers(baseUrl, hr),
       ...createHrCalendarHandlers(baseUrl, hr),
       ...createEmployeeHandlers(baseUrl, hr),
+      ...createProfileHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
     ],
   };

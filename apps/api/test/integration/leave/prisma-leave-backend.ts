@@ -2,6 +2,7 @@
 // `LeaveBackend` với bản InMemory. Lịch / membership / thông báo / audit vẫn là fake của harness.
 import type { LeaveRequestRecord } from '../../../src/modules/leave/application/ports/leave.ports';
 import { PrismaLeaveReadModel } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
+import { PrismaLeavePolicyStore } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave-policy.store';
 import { PrismaLeaveRepository } from '../../../src/modules/leave/infrastructure/persistence/prisma/prisma-leave.repository';
 import type { LeaveBackend } from '../../../src/modules/leave/testing/leave-backend';
 import { RecordingUnitOfWork, testPrisma } from '../support/prisma-test-kit';
@@ -14,6 +15,7 @@ export function prismaLeaveBackend(): LeaveBackend {
     uow,
     requests,
     readModel: new PrismaLeaveReadModel(() => uow.db()),
+    policies: new PrismaLeavePolicyStore(() => uow.db()),
     async prepare({ users }) {
       await prisma.user.createMany({
         data: users.map((id) => ({

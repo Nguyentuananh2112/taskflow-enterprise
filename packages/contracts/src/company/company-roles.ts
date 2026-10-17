@@ -22,6 +22,8 @@ export const CompanyPermission = z.enum([
   'workspace:create',
   'attendance:self',
   'leave:self',
+  /** Mốc 5 (ADR-128): xem hồ sơ nhân sự của CHÍNH MÌNH — chỉ EMPLOYEE (Admin không phải nhân viên). */
+  'profile:self',
 ]);
 export type CompanyPermission = z.infer<typeof CompanyPermission>;
 
@@ -38,6 +40,7 @@ export const COMPANY_ROLE_PERMISSIONS: Readonly<Record<CompanyRole, readonly Com
     EMPLOYEE: Object.freeze([
       'attendance:self',
       'leave:self',
+      'profile:self',
       'workspace:create',
     ] as const satisfies readonly CompanyPermission[]),
   });

@@ -3,19 +3,29 @@ import {
   AttendanceCompanyMonthQuery,
   AttendanceEventParams,
   AttendanceEventsQuery,
+  AttendanceExportXlsxQuery,
   AttendanceMonthQuery,
+  CancelCorrectionBody,
+  CorrectionParams,
   CreateWorkScheduleBody,
+  DecideCorrectionBody,
   DeleteHolidayBody,
   HolidayDateParams,
   HolidayListQuery,
+  ListCorrectionsQuery,
   MyAttendanceEventsQuery,
   PutHolidayBody,
+  SubmitCorrectionBody,
   VoidAttendanceBody,
 } from '@taskflow/contracts';
 import { Router, type RequestHandler } from 'express';
 import type * as z from 'zod';
 
-import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
+import {
+  EXPORT_RATE_LIMIT,
+  RATE_LIMIT_RULES,
+  type RateLimitRule,
+} from '../../../core/http/rate-limit/rules';
 import { validate } from '../../../core/http/validate';
 import {
   permitCompany,
@@ -23,9 +33,11 @@ import {
   type AttendanceCompanyMembership,
 } from './attendance-access';
 import type { AttendanceController } from './attendance.controller';
+import type { CorrectionController } from './correction.controller';
 
 export interface AttendanceRouteDeps {
   controller: AttendanceController;
+  corrections: CorrectionController;
   membership: AttendanceCompanyMembership;
   authenticate: RequestHandler;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
@@ -75,12 +87,59 @@ export function attendanceRoutes(d: AttendanceRouteDeps): Router {
     ...guard(HR, { query: AttendanceMonthQuery }, d.limit(RATE_LIMIT_RULES.attendanceExport)),
     c.exportCsv,
   );
+  // ADR-130: cùng bucket hạn mức với CSV (20/giờ/user); suất 2 đồng thời + 422 + audit trong use case.
+  router.get(
+    '/export.xlsx',
+    ...guard(HR, { query: AttendanceExportXlsxQuery }, d.limit(EXPORT_RATE_LIMIT)),
+    c.exportXlsx,
+  );
   router.get('/events', ...guard(HR, { query: AttendanceEventsQuery }), c.listEvents);
   router.post('/events', ...guard(HR, { body: AdjustAttendanceBody }), c.adjust);
   router.post(
     '/events/:eventId/void',
     ...guard(HR, { params: AttendanceEventParams, body: VoidAttendanceBody }),
     c.voidEvent,
+  );
+
+  // Đơn bổ sung giờ (hr-extended ADR-129, T-056). Danh sách: `mine=1` ⇒ attendance:self, không ⇒ hr:manage (quyền
+  // chọn THEO query trước validate — body/query sai vẫn 403 trước 400).
+  const k = d.corrections;
+  router.post(
+    '/corrections',
+    ...guard(SELF, { body: SubmitCorrectionBody }, [
+      ...d.limit(RATE_LIMIT_RULES.correctionSubmit),
+      requireIdempotencyKey,
+    ]),
+    k.submit,
+  );
+  const listPermit: RequestHandler = (req, res, next) =>
+    permitCompany(d.membership, (req.query as Record<string, unknown>).mine === '1' ? SELF : HR)(
+      req,
+      res,
+      next,
+    );
+  router.get(
+    '/corrections',
+    ...base,
+    listPermit,
+    validate({ query: ListCorrectionsQuery }),
+    k.list,
+  );
+  const one = { params: CorrectionParams };
+  router.post(
+    '/corrections/:requestId/cancel',
+    ...guard(SELF, { ...one, body: CancelCorrectionBody }),
+    k.cancel,
+  );
+  router.post(
+    '/corrections/:requestId/approve',
+    ...guard(HR, { ...one, body: DecideCorrectionBody }),
+    k.approve,
+  );
+  router.post(
+    '/corrections/:requestId/reject',
+    ...guard(HR, { ...one, body: DecideCorrectionBody }),
+    k.reject,
   );
 
   // Lịch + ngày lễ (một bộ cho cả công ty).

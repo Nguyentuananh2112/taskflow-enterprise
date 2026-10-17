@@ -20,6 +20,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 
 import { useViewMode } from '../model/use-view-mode';
 import { DayDetail } from './day-detail';
+import { MyCorrections } from './my-corrections';
 import { TodayBox } from './today-box';
 import { ViewToggle } from './view-toggle';
 
@@ -121,6 +122,7 @@ export function AttendancePage() {
           )}
         </>
       )}
+      {data.data && <MyCorrections />}
       <DayDetail
         day={data.data?.days.find((d) => d.date === day) ?? null}
         days={data.data?.days ?? []}

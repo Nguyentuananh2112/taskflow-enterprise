@@ -9,7 +9,6 @@ import type {
   LeaveBalanceRecord,
   LeaveRequestRecord,
 } from '../../../application/ports/leave.ports';
-import { DEFAULT_ENTITLED_HALF_DAYS } from '../../../domain/leave-balance';
 import type { CalendarDate, HalfDays } from '../../../domain/leave-days';
 import { holdsBalance } from '../../../domain/leave-status';
 
@@ -26,6 +25,13 @@ const byStart = (a: LeaveRequestRecord, b: LeaveRequestRecord) =>
  * Repo + read model leave trong bộ nhớ cho test A — cùng hợp đồng với bản Prisma (phạm vi công ty). Snapshottable để
  * `FakeUnitOfWork` rollback thật. `lockUser` ghi lại thứ tự khóa (test kiểm "khóa TRƯỚC khi đọc").
  */
+/** Dòng tạo lười (T-057): entitled NULL = theo chính sách, carried NULL = chưa chụp. */
+const EMPTY_BALANCE: LeaveBalanceRecord = Object.freeze({
+  entitled: null,
+  adjustment: 0,
+  carried: null,
+});
+
 export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadModel {
   #s: State = { requests: new Map(), balances: new Map() };
   readonly locks: string[] = [];
@@ -90,19 +96,34 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
     const key = balanceKey(userId, year);
     const found = this.#s.balances.get(key);
     if (found) return Promise.resolve(found);
-    const created = { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 };
-    this.#s.balances.set(key, created);
-    return Promise.resolve(created);
+    this.#s.balances.set(key, EMPTY_BALANCE);
+    return Promise.resolve(EMPTY_BALANCE);
   }
 
   setBalanceAdjustment(userId: string, year: number, adjustment: HalfDays): Promise<void> {
     const key = balanceKey(userId, year);
-    const current = this.#s.balances.get(key) ?? {
-      entitled: DEFAULT_ENTITLED_HALF_DAYS,
-      adjustment: 0,
-    };
-    this.#s.balances.set(key, { ...current, adjustment });
+    this.#s.balances.set(key, { ...(this.#s.balances.get(key) ?? EMPTY_BALANCE), adjustment });
     return Promise.resolve();
+  }
+
+  setCarried(
+    userId: string,
+    year: number,
+    carried: HalfDays,
+    mode: 'ifNull' | 'overwrite',
+  ): Promise<void> {
+    const key = balanceKey(userId, year);
+    const current = this.#s.balances.get(key) ?? EMPTY_BALANCE;
+    if (mode === 'overwrite' || current.carried === null) {
+      this.#s.balances.set(key, { ...current, carried });
+    }
+    return Promise.resolve();
+  }
+
+  /** Test seed: ghi đè / phép chuyển sang đã chụp. */
+  seedBalance(userId: string, year: number, balance: Partial<LeaveBalanceRecord>): void {
+    const key = balanceKey(userId, year);
+    this.#s.balances.set(key, { ...(this.#s.balances.get(key) ?? EMPTY_BALANCE), ...balance });
   }
 
   // ------------------------------------------------------------ phía đọc (ILeaveReadModel)

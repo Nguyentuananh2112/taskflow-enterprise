@@ -13,7 +13,7 @@ export interface AttendanceExportDeps extends AttendanceDeps {
   audit: IHrAuditRecorder;
 }
 
-const STATUS_LABEL: Record<DayStatus, string> = {
+export const STATUS_LABEL: Record<DayStatus, string> = {
   RETENTION_EXPIRED: 'Ngoài thời hạn lưu',
   NOT_EMPLOYED: 'Chưa/không còn làm',
   HOLIDAY: 'Nghỉ lễ',
@@ -24,8 +24,8 @@ const STATUS_LABEL: Record<DayStatus, string> = {
   ABSENT: 'Vắng',
   PENDING: 'Chưa tới',
 };
-const WEEKDAY = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-const LEAVE_LABEL = { FULL: 'Cả ngày', AM: 'Buổi sáng', PM: 'Buổi chiều' } as const;
+export const WEEKDAY = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+export const LEAVE_LABEL = { FULL: 'Cả ngày', AM: 'Buổi sáng', PM: 'Buổi chiều' } as const;
 
 const HEADER = [
   'Họ tên',
@@ -43,7 +43,7 @@ const HEADER = [
 ];
 
 /** Giờ địa phương HH:mm theo múi giờ lịch của ngày; ra sau nửa đêm ⇒ "00:30 (+1)". */
-function clock(iso: string | null, day: AttendanceDayDto): string {
+export function clock(iso: string | null, day: AttendanceDayDto): string {
   if (!iso) return '';
   const local = toLocal(new Date(iso), day.timezone);
   const hhmm = `${String(Math.floor(local.minute / 60)).padStart(2, '0')}:${String(local.minute % 60).padStart(2, '0')}`;

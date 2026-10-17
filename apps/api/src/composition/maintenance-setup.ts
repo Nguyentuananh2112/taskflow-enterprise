@@ -31,6 +31,8 @@ export function maintenanceJobs(d: {
    * phiên, dọn đơn), không phải dọn dẹp. Thiếu ⇒ không đăng ký (test cũ).
    */
   offboarding?: { completeDueOffboardings(signal?: AbortSignal): Promise<unknown> };
+  /** T-057: chụp phép chuyển sang năm hiện tại — LUÔN chạy (luật nghiệp vụ, như offboarding). */
+  carryover?: { runOnce(signal?: AbortSignal): Promise<unknown> };
 }): ScheduledJob[] {
   const { persistence: p, env, clock, businessClock, logger } = d;
   const groupOn = maintenanceEnabled(env.APP_ENV, env.MAINTENANCE_JOBS_ENABLED);
@@ -44,6 +46,20 @@ export function maintenanceJobs(d: {
       firstRunAfterMs: 5_000,
       run: async (signal) => {
         await offboarding.completeDueOffboardings(signal);
+      },
+    });
+  }
+  if (d.carryover) {
+    const carryover = d.carryover;
+    jobs.push({
+      name: LEAVE_CARRYOVER_JOB,
+      intervalMs: env.LEAVE_CARRYOVER_INTERVAL_MS ?? 3_600_000,
+      // Lượt đầu 5–10 s sau khởi động ở mọi môi trường (F 18/10: jitter áp cả lượt đầu). v1 một instance, job
+      // idempotent + khóa ⇒ không cần dàn trải 5 phút.
+      jitterMs: env.LEAVE_CARRYOVER_INTERVAL_MS === undefined ? 5_000 : 0,
+      firstRunAfterMs: 5_000,
+      run: async (signal) => {
+        await carryover.runOnce(signal);
       },
     });
   }
@@ -119,3 +135,6 @@ export function retentionEnabled(
   if (env.APP_ENV === 'local' || env.APP_ENV === 'test') return env.RETENTION_JOB_ENABLED === true;
   return env.RETENTION_JOB_ENABLED ?? env.MAINTENANCE_JOBS_ENABLED ?? true;
 }
+
+/** Tên job chụp phép chuyển sang (T-057) — log `maintenance.run_done {job}` và cờ `LEAVE_CARRYOVER_ON_START`. */
+export const LEAVE_CARRYOVER_JOB = 'leave-carryover';

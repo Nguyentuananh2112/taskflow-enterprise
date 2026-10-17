@@ -133,11 +133,12 @@ describe('PrismaLeaveRepository — đơn nghỉ', () => {
 });
 
 describe('PrismaLeaveRepository — số dư', () => {
-  it('LB-01: getOrCreateBalance tạo lười 12 ngày = 24 nửa ngày; gọi lại không nhân bản', async () => {
+  it('LB-01: getOrCreateBalance tạo lười — entitled / carried NULL (theo chính sách / chưa chụp, migration 9); gọi lại không nhân bản', async () => {
     const { uow, repo } = setup();
     await expect(uow.run(() => repo.getOrCreateBalance(MIA, 2026))).resolves.toEqual({
-      entitled: 24,
+      entitled: null,
       adjustment: 0,
+      carried: null,
     });
     await uow.run(() => repo.getOrCreateBalance(MIA, 2026));
     expect(await testPrisma().leaveBalance.count()).toBe(1);
@@ -157,8 +158,9 @@ describe('PrismaLeaveRepository — số dư', () => {
     const { uow, repo } = setup();
     await uow.run(() => repo.setBalanceAdjustment(MIA, 2026, 21));
     await expect(uow.run(() => repo.getOrCreateBalance(MIA, 2026))).resolves.toEqual({
-      entitled: 24,
+      entitled: null,
       adjustment: 21,
+      carried: null,
     });
     await uow.run(() => repo.setBalanceAdjustment(MIA, 2026, -7));
     const row = await testPrisma().leaveBalance.findFirstOrThrow({ where: { userId: MIA } });

@@ -3,6 +3,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ILogger } from '../core/logging/logger';
 import { runAfterCommitHooks } from '../core/persistence/prisma-unit-of-work';
 import {
+  assertSnapshotTimeout,
+  ReadSnapshotNestingError,
+  type IReadSnapshot,
+} from '../core/persistence/read-snapshot';
+import {
   AfterCommitOutsideTransactionError,
   type AfterCommitHook,
   type IUnitOfWork,
@@ -16,6 +21,7 @@ export interface Snapshottable {
 
 interface TxStore {
   readonly hooks: AfterCommitHook[];
+  readonly readOnly?: true;
 }
 
 /**
@@ -41,11 +47,34 @@ export class InMemoryUnitOfWork implements IUnitOfWork {
   }
 
   run<T>(work: () => Promise<T>): Promise<T> {
-    if (this.inTransaction) return work();
+    const store = this.#storage.getStore();
+    if (store?.readOnly) {
+      return Promise.reject(new ReadSnapshotNestingError('write-in-snapshot'));
+    }
+    if (store) return work();
     const next = this.#tail.then(() => this.#runExclusive(work));
     this.#tail = next.catch(() => undefined);
     return next;
   }
+
+  /**
+   * `IReadSnapshot` bộ nhớ: không có MVCC ⇒ chỉ chạy `work` (dev/test), nhưng GIỮ luật cấm lồng cả hai chiều như
+   * bản Prisma để test đơn vị bắt được lỗi lập trình sớm.
+   */
+  async readSnapshot<T>(work: () => Promise<T>, opts: { timeoutMs: number }): Promise<T> {
+    if (this.inTransaction) throw new ReadSnapshotNestingError('in-unit-of-work');
+    assertSnapshotTimeout(opts.timeoutMs);
+    return this.#storage.run({ hooks: [], readOnly: true }, work);
+  }
+
+  readonly snapshot: IReadSnapshot = {
+    run: (work, opts) => this.readSnapshot(work, opts),
+    outside: async (fn) => {
+      if (!this.#storage.getStore()?.readOnly)
+        throw new ReadSnapshotNestingError('outside-without-snapshot');
+      return this.#storage.exit(fn);
+    },
+  };
 
   async #runExclusive<T>(work: () => Promise<T>): Promise<T> {
     const snapshots = this.participants.map((p) => p.snapshot());

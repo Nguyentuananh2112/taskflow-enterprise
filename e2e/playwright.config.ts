@@ -12,7 +12,8 @@ const CI = !!process.env.CI;
  * báo HR ⇒ chạy TUẦN TỰ (workers: 1, cả CI) trong project "<trình duyệt>-hr"; các spec khác giữ song song. Giữa hai
  * trình duyệt vẫn có thể chạy cùng lúc — ca đã khẳng định theo thông báo của chính ca, ngày lễ theo dải reserveDate().
  */
-const HR_SPECS = /(hr|company)\.e2e\.ts$/;
+// Mốc 5: hr-extended.e2e.ts cùng dữ liệu một công ty ⇒ cùng lane tuần tự (F soát c000228b).
+const HR_SPECS = /(hr|hr-extended|company)\.e2e\.ts$/;
 function withHrLane<P extends { name: string }>(project: P) {
   return [
     { ...project, testIgnore: HR_SPECS },

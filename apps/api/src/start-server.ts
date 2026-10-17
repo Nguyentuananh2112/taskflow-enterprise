@@ -8,7 +8,11 @@ import { createContainer } from './composition/container';
 import { assertPersistenceAllowed, createMemoryPersistence } from './composition/persistence';
 import { createPrismaPersistence } from './composition/prisma-persistence';
 import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
-import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
+import {
+  LEAVE_CARRYOVER_JOB,
+  maintenanceJobs,
+  retentionCutoffFor,
+} from './composition/maintenance-setup';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
@@ -28,6 +32,7 @@ import { loadCommonPasswordList } from './modules/auth/infrastructure/security/c
 import { AppMetrics, startMetricsServer } from './core/observability/metrics';
 import type { IErrorReporter } from './core/observability/sentry';
 import { createHttpServer, listen } from './server';
+import { exportLimitsFromEnv } from './core/export/export-limits';
 
 export async function startServer(
   env: Env,
@@ -70,6 +75,7 @@ export async function startServer(
       jwtSecret: env.JWT_ACCESS_SECRET,
       jwtPreviousSecret: env.JWT_ACCESS_SECRET_PREVIOUS,
       jwtAccessTtlSeconds: env.JWT_ACCESS_TTL_SECONDS,
+      exportLimits: exportLimitsFromEnv(env),
     },
     logger,
     clock,
@@ -138,6 +144,7 @@ export async function startServer(
     businessClock,
     logger,
     offboarding: container.company,
+    carryover: container.leave.carryover,
   });
   // Job dọn dẹp tắt ở local/test (mặc định); job hoàn tất nghỉ việc luôn có — xem `maintenanceJobs`.
   const maintenance =
@@ -179,6 +186,10 @@ export async function startServer(
   lifecycleRef.current = lifecycle;
   lifecycle.installProcessHandlers();
 
+  // T-057 (chỉ APP_ENV=test — env chặn ở nơi khác): chụp phép chuyển sang một lượt TRƯỚC khi nhận request.
+  const carryJob = jobs.find((j) => j.name === LEAVE_CARRYOVER_JOB);
+  if (env.LEAVE_CARRYOVER_ON_START && maintenance && carryJob)
+    await maintenance.runNow(measured(carryJob));
   await listen(server, env.PORT);
   maintenance?.start();
   const metricsAddress = metricsServer.address();
