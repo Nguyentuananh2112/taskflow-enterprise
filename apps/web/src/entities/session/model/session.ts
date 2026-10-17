@@ -125,9 +125,10 @@ export function createSessionController(deps: SessionDeps) {
     },
 
     /**
-     * T-044 S2a: bắt đầu khôi phục phiên SỚM — gọi trong lượt render đầu (ngay sau khi có runtime config), KHÔNG
-     * đổi `sessionStore` (đổi store lúc render ⇒ cảnh báo React / lệch hydrate). Chỉ mở request; trạng thái vẫn do
-     * `bootstrap` đặt. Idempotent; không làm gì khi không còn `idle` hoặc đang chờ xác nhận đăng xuất.
+     * T-044 S2a: bắt đầu khôi phục phiên SỚM — AuthGate / GuestGate gọi ở đầu render, KHÔNG đổi `sessionStore`
+     * (đổi store lúc render ⇒ cảnh báo React / lệch hydrate). Chỉ mở request; trạng thái vẫn do `bootstrap` đặt.
+     * Tác dụng phụ có chủ ý trong render: `start()` gắn hook http + mở kênh đa tab (idempotent). Không làm gì khi
+     * không còn `idle` hoặc đang chờ xác nhận đăng xuất.
      */
     prestart(): void {
       controller.start();

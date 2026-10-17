@@ -5,7 +5,6 @@ import { applyVietnameseZodLocale } from '@taskflow/contracts/common';
 import { setNonce } from 'get-nonce';
 import { useState, type ReactNode } from 'react';
 
-import { session } from '@/entities/session';
 import { CspNonceProvider, RuntimeConfigBoot, type PublicRuntimeConfig } from '@/shared/config';
 import { createQueryClient } from '@/shared/query';
 import { Toaster } from '@/shared/ui/toast';
@@ -16,15 +15,6 @@ import { SessionEffects } from './session-effects';
 
 // Thông báo validate tiếng Việt cho mọi schema (kể cả từ @taskflow/contracts) — ADR-081, frontend.md §7.2.
 applyVietnameseZodLocale();
-
-/**
- * T-044 S2a: mở khôi phục phiên (refresh → me) ngay ở lượt render đầu trên trình duyệt — ngay sau khi có runtime
- * config — thay vì chờ effect của AuthGate sau khi cả cây hydrate. Không đổi store (xem `session.prestart`); SSR bỏ qua.
- */
-function SessionPrestart() {
-  if (typeof window !== 'undefined') session.prestart();
-  return null;
-}
 
 type Props = Readonly<{
   config: PublicRuntimeConfig;
@@ -49,7 +39,6 @@ export function AppProviders({ config, nonce, realtime, children }: Props) {
   useThemeSync();
   return (
     <RuntimeConfigBoot config={config}>
-      <SessionPrestart />
       <CspNonceProvider nonce={nonce}>
         <QueryClientProvider client={queryClient}>
           <SessionEffects />
