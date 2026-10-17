@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  callName,
   greetingAt,
   minuteOfDay,
   minutesToClock,
@@ -30,7 +31,7 @@ export function CheckInPrompt({ wsId, enabled }: Props) {
       d.firstIn ? `Đã chấm vào lúc ${timeOfDay(d.firstIn, d.timezone)}` : 'Đã chấm vào',
   });
   if (!open || !t?.schedule) return null;
-  const name = user?.fullName.trim().split(/\s+/).at(-1);
+  const name = user ? callName(user.fullName) : null;
   const minute = minuteOfDay(Date.parse(t.serverNow), t.timezone);
   return (
     <Dialog

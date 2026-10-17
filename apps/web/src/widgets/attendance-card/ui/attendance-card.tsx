@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  DAY_STATUS,
+  dayStatusLabel,
   LEAVE_PART_LABEL,
   minutesToClock,
   timeOfDay,
@@ -11,14 +11,20 @@ import {
 import { usePermission } from '@/entities/workspace';
 import { CheckButtons } from '@/features/attendance-check';
 import { cn } from '@/shared/lib/cn';
-import type { AttendanceTodayDto } from '@taskflow/contracts/attendance';
-import { Alert } from '@/shared/ui/alert';
 import { Button } from '@/shared/ui/button';
-import { Skeleton } from '@/shared/ui/skeleton';
 
 import { AttendanceShortcuts } from './attendance-shortcuts';
+import { CARD_FRAME, CardNote, CardSkeleton } from './card-frame';
 
-type Props = Readonly<{ wsId: string; enabled: boolean }>;
+type Props = Readonly<{
+  wsId: string;
+  enabled: boolean;
+  /**
+   * Quyền chưa biết (workspace đang tải) ⇒ vẫn giữ chỗ bằng skeleton — tránh thẻ "xuất hiện" sau đó đẩy danh sách
+   * dự án xuống (E2E-HR-14, demo TL d9). Biết là VIEWER ⇒ không có thẻ.
+   */
+  pending?: boolean;
+}>;
 
 const clockFormat = (timeZone: string) =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -37,43 +43,32 @@ const dayFormat = (timeZone: string) =>
     year: 'numeric',
   });
 
-/** Ngày làm, chưa vào, không nghỉ cả ngày, không lễ ⇒ nhắc (KHÔNG tự chấm — §6). */
-const needsReminder = (t: AttendanceTodayDto) =>
-  t.isWorkday && !t.isHoliday && t.leave !== 'FULL' && !t.firstIn && t.status !== 'ABSENT';
-
 /** Thẻ Chấm công đầu trang danh sách dự án (attendance-leave.md §6). Ẩn với VIEWER (`enabled`). */
-export function AttendanceCard({ wsId, enabled }: Props) {
+export function AttendanceCard({ wsId, enabled, pending = false }: Props) {
   const today = useAttendanceToday(wsId, enabled);
   const clock = useServerClock(today.data?.serverNow, today.dataUpdatedAt);
   const canManageHr = usePermission(wsId).can('hr:manage');
-  if (!enabled) return null;
+  if (!enabled) return pending ? <CardSkeleton /> : null;
   if (!today.data) {
     return today.isError ? (
-      <p className="flex flex-wrap items-center gap-2 rounded-card border border-border p-4 text-sm">
-        Không tải được chấm công.
-        <Button variant="secondary" size="sm" onClick={() => void today.refetch()}>
-          Thử lại
-        </Button>
-      </p>
-    ) : (
-      <div
-        role="status"
-        aria-busy="true"
-        aria-label="Đang tải chấm công"
-        className="rounded-card border border-border p-4"
-      >
-        <Skeleton className="h-16" />
+      // Cùng khung ⇒ "Thử lại" thành công không đẩy danh sách dự án.
+      <div className={`${CARD_FRAME} justify-center`}>
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          Không tải được chấm công.
+          <Button variant="secondary" size="sm" onClick={() => void today.refetch()}>
+            Thử lại
+          </Button>
+        </p>
       </div>
+    ) : (
+      <CardSkeleton />
     );
   }
   const t = today.data;
-  const status = DAY_STATUS[t.status];
+  const status = dayStatusLabel(t);
   return (
-    <section
-      aria-labelledby="attendance-heading"
-      className="flex flex-col gap-3 rounded-card border border-border bg-surface p-4 shadow-card"
-    >
-      {needsReminder(t) && <Alert tone="info">Bạn chưa chấm vào hôm nay.</Alert>}
+    <section aria-labelledby="attendance-heading" className={CARD_FRAME}>
+      <CardNote today={t} />
       <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
         <div className="flex flex-col gap-1">
           <h2 id="attendance-heading" className="text-base font-semibold">

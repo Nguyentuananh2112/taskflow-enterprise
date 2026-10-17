@@ -20,4 +20,14 @@ export const DAY_STATUS: Readonly<
   PENDING: { label: 'Chưa tới giờ', icon: '○', tone: 'text-text-muted' },
 };
 
+/**
+ * PENDING có hai nghĩa với người dùng (demo TL d9): CHƯA tới giờ vào ca ⇒ "Chưa tới giờ"; đã tới giờ mà chưa chấm vào
+ * (`notCheckedInYet`, server tính theo ca hiệu lực) ⇒ "Chưa chấm công". Mọi nơi hiện trạng thái ngày dùng hàm này.
+ */
+export const NOT_CHECKED_IN = { label: 'Chưa chấm công', icon: '!', tone: 'text-warning' } as const;
+
+export function dayStatusLabel(d: { status: DayStatus; notCheckedInYet: boolean }) {
+  return d.status === 'PENDING' && d.notCheckedInYet ? NOT_CHECKED_IN : DAY_STATUS[d.status];
+}
+
 export const LEAVE_PART_LABEL = { FULL: 'cả ngày', AM: 'buổi sáng', PM: 'buổi chiều' } as const;

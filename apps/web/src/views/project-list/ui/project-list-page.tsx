@@ -28,7 +28,7 @@ export function ProjectListPage() {
     useSearchParams().get('archived') === 'true' ? 'true' : 'false';
   const valid = Uuid.safeParse(wsId).success;
   const projects = useProjects(wsId, archived, valid);
-  const { can } = usePermission(wsId);
+  const { can, role } = usePermission(wsId);
   const list = projects.data?.pages.flatMap((page) => page.data) ?? [];
 
   if (!valid || isApiError(projects.error, 'RESOURCE_NOT_FOUND')) {
@@ -41,7 +41,11 @@ export function ProjectListPage() {
   return (
     <PageMain className="gap-6">
       {/* Màn hạ cánh sau khi chọn workspace ⇒ thẻ Chấm công ở ĐẦU trang (attendance-leave.md §6). */}
-      <AttendanceCard wsId={wsId} enabled={valid && can('attendance:self')} />
+      <AttendanceCard
+        wsId={wsId}
+        enabled={valid && can('attendance:self')}
+        pending={valid && role === null}
+      />
       {/* T-045: nhắc chấm công giữa màn hình — tối đa 1 lần / ngày, chỉ khi server cho thấy phải chấm mà chưa. */}
       <CheckInPrompt wsId={wsId} enabled={valid && can('attendance:self')} />
       <ProjectListHeader wsId={wsId} canCreate={can('project:create')} />

@@ -50,7 +50,8 @@ describe('thẻ Chấm công', () => {
     expect(clock?.textContent).toMatch(/^Giờ hiện tại theo máy chủ: 10:00:/);
     expect(within(card).getByText(/08:00–17:30/)).toBeTruthy();
     expect(within(card).getByText('Bạn chưa chấm vào hôm nay.')).toBeTruthy();
-    expect(within(card).getByText('Chưa tới giờ')).toBeTruthy();
+    // 10:00 đã qua giờ vào ca 08:00 mà chưa chấm ⇒ "Chưa chấm công" (không phải "Chưa tới giờ" — demo TL d9).
+    expect(within(card).getByText('Chưa chấm công')).toBeTruthy();
     await expectNoA11yViolations();
 
     await userEvent
@@ -90,5 +91,39 @@ describe('thẻ Chấm công', () => {
     ).toBeTruthy();
     await userEvent.setup({ delay: null }).click(screen.getByRole('button', { name: 'Thử lại' }));
     expect(await screen.findByRole('region', { name: 'Chấm công' })).toBeTruthy();
+  });
+
+  it('không layout-shift (demo TL d9): skeleton CÙNG khung min-h với thẻ; ô thông báo luôn có, chấm xong chỉ đổi CHỮ (cùng phần tử)', async () => {
+    const f = seedBoard(mock);
+    const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    mock.server.use(
+      http.get(
+        url,
+        async () => {
+          await gate;
+          return undefined; // chuyển tiếp cho handler mock thật
+        },
+        { once: true },
+      ),
+    );
+    f.signInAs(f.owner);
+    openApp(
+      `/w/${f.wsId}/projects`,
+      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
+    );
+    const skeleton = await screen.findByRole('status', { name: 'Đang tải chấm công' });
+    expect(skeleton.className).toContain('md:min-h-60');
+    release();
+    const card = await screen.findByRole('region', { name: 'Chấm công' });
+    expect(card.className).toContain('md:min-h-60');
+    const note = within(card).getByText('Bạn chưa chấm vào hôm nay.');
+    expect(note.className).toContain('min-h-10');
+    await userEvent
+      .setup({ delay: null })
+      .click(within(card).getByRole('button', { name: 'Chấm vào' }));
+    await waitFor(() => expect(note.textContent).toBe('Đã chấm vào lúc 10:00.'));
+    expect(note.isConnected).toBe(true);
   });
 });

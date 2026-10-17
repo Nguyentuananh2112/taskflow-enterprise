@@ -125,7 +125,9 @@ export function AttendancePage() {
       <DayDetail
         wsId={wsId}
         day={data.data?.days.find((d) => d.date === day) ?? null}
+        days={data.data?.days ?? []}
         today={serverToday}
+        onSelectDay={setDay}
         onClose={() => setDay(null)}
       />
     </PageMain>

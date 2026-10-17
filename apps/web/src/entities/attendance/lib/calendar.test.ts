@@ -136,9 +136,16 @@ describe('dayText — câu chữ đời thường', () => {
     expect(dayText(day('2026-10-25', { status: 'OFF', isWorkday: false }), today).label).toBe('');
   });
 
-  it('ngày TƯƠNG LAI ⇒ trống (không "Chưa tới giờ"); hôm nay chưa chấm ⇒ "Chưa chấm"; ngoài nhiệm kỳ ⇒ trống', () => {
+  it('ngày TƯƠNG LAI ⇒ trống; hôm nay: trước giờ vào ca "Chưa tới giờ", đã tới giờ mà chưa chấm "Chưa chấm công"; ngoài nhiệm kỳ ⇒ trống', () => {
     expect(dayText(day('2026-10-16'), today).label).toBe('');
-    expect(dayText(day('2026-10-15'), today).label).toBe('Chưa chấm');
+    expect(dayText(day('2026-10-15'), today)).toMatchObject({
+      label: 'Chưa tới giờ',
+      tone: 'muted',
+    });
+    expect(dayText(day('2026-10-15', { notCheckedInYet: true }), today)).toMatchObject({
+      label: 'Chưa chấm công',
+      tone: 'late',
+    });
     expect(dayText(day('2026-10-01', { status: 'NOT_EMPLOYED' }), today).label).toBe('');
   });
 });

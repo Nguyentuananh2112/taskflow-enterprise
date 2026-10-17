@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -50,14 +50,14 @@ describe('bảng công tháng', () => {
       within(today[0] as HTMLElement)
         .getByRole('button')
         .getAttribute('aria-label'),
-    ).toBe('Ngày 15/10, hôm nay, Chưa chấm');
+    ).toBe('Ngày 15/10, hôm nay, Chưa chấm công');
     // Ngày tương lai: chỉ số ngày, không chữ trạng thái ("Chưa tới giờ" đã bỏ).
     const future = within(table).getByRole('button', { name: /^Ngày 20\/10$/ });
     expect(future.textContent).toBe('20');
     expect(table.textContent).not.toContain('Chưa tới giờ');
     // Ô "Hôm nay" + tổng kết (số do server tính).
     const box = screen.getByRole('region', { name: /^Hôm nay, / });
-    expect(box.textContent).toContain('Bạn chưa chấm vào');
+    expect(box.textContent).toContain('Bạn chưa chấm công');
     expect(within(box).getByRole('button', { name: 'Chấm vào' })).toBeTruthy();
     const summary = screen.getByRole('region', { name: 'Tổng kết tháng 10/2026' });
     expect(summary.textContent).toContain('Ngày đi làm0 ngày');
@@ -73,7 +73,7 @@ describe('bảng công tháng', () => {
       .getAllByRole('button')
       .filter((b) => b.tabIndex === 0);
     expect(tabbable.map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Ngày 15/10, hôm nay, Chưa chấm',
+      'Ngày 15/10, hôm nay, Chưa chấm công',
     ]);
     const u = userEvent.setup({ delay: null });
     tabbable[0]?.focus();
@@ -87,6 +87,55 @@ describe('bảng công tháng', () => {
     expect((document.activeElement as HTMLButtonElement).tabIndex).toBe(0);
     await u.keyboard('{Enter}');
     expect(await screen.findByRole('dialog', { name: /^Ngày .*08\/10/ })).toBeTruthy();
+  });
+
+  it('bấm ô ngày N ⇒ dialog đúng ngày N, kể cả sau khi đi bằng phím mũi tên (demo TL: bấm 17 mở 31/10)', async () => {
+    open();
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    const u = userEvent.setup({ delay: null });
+    const cell = (n: number) =>
+      within(table).getByRole('button', { name: new RegExp(`^Ngày ${n}/10`) });
+    for (const n of [17, 1, 31, 9]) {
+      await u.click(cell(n));
+      expect(
+        await screen.findByRole('dialog', {
+          name: new RegExp(`, ${String(n).padStart(2, '0')}/10$`),
+        }),
+      ).toBeTruthy();
+      await u.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    }
+    // Đi bằng phím rồi BẤM chuột vào ô khác ⇒ vẫn đúng ô được bấm (roving tabindex không ghi đè).
+    cell(15).focus();
+    await u.keyboard('{ArrowRight}{ArrowDown}');
+    await u.click(cell(17));
+    expect(await screen.findByRole('dialog', { name: /, 17\/10$/ })).toBeTruthy();
+  });
+
+  it('chi tiết ngày: "‹ Ngày trước" / "Ngày sau ›" đổi ngày ngay trong dialog, không vượt khỏi tháng', async () => {
+    open();
+    const table = await screen.findByRole('table', { name: 'Bảng công tháng 10/2026' });
+    const u = userEvent.setup({ delay: null });
+    const title = () => screen.getByRole('dialog').querySelector('h2')?.textContent;
+    await u.click(within(table).getByRole('button', { name: /^Ngày 15\/10/ }));
+    await screen.findByRole('dialog', { name: /15\/10$/ });
+    await u.click(screen.getByRole('button', { name: 'Ngày sau ›' }));
+    expect(title()).toMatch(/16\/10$/);
+    await u.click(screen.getByRole('button', { name: '‹ Ngày trước' }));
+    await u.click(screen.getByRole('button', { name: '‹ Ngày trước' }));
+    expect(title()).toMatch(/14\/10$/);
+    await u.keyboard('{Escape}');
+    await u.click(within(table).getByRole('button', { name: /^Ngày 1\/10/ }));
+    await screen.findByRole('dialog', { name: /01\/10$/ });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '‹ Ngày trước' }).disabled).toBe(
+      true,
+    );
+    await u.keyboard('{Escape}');
+    await u.click(within(table).getByRole('button', { name: /^Ngày 31\/10/ }));
+    await screen.findByRole('dialog', { name: /31\/10$/ });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Ngày sau ›' }).disabled).toBe(
+      true,
+    );
   });
 
   it('chuyển "Danh sách" ⇒ bảng có tiêu đề hàng, câu chữ đời thường; NHỚ lựa chọn khi vào lại', async () => {

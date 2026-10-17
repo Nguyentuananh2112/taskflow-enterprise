@@ -44,7 +44,9 @@ export function HrTabs({ tabs, current, onChange }: Props) {
       <div
         role="tablist"
         aria-label="Quản lý nhân sự"
-        className="flex gap-1 overflow-x-auto border-b border-border"
+        // Tab tự xuống dòng thay vì khung cuộn ngang: `-mb-px` của tab (đè viền dưới) trong khung overflow-x-auto làm
+        // overflow-y thành auto ⇒ hiện thanh cuộn nhỏ ▲▼ cạnh "Số phép" (demo TL d9).
+        className="flex flex-wrap gap-x-1 border-b border-border"
         onKeyDown={move}
       >
         {tabs.map((tab, i) => (
