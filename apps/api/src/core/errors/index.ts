@@ -31,6 +31,7 @@ export {
   ActiveContentError,
   ImageProcessingBusyError,
   ImageProcessingUnavailableError,
+  imageUnreadableError,
   InvalidUploadNameError,
   StorageFullError,
   UnsupportedFileTypeError,

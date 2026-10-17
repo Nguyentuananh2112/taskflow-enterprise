@@ -1,4 +1,5 @@
 import { AppError, type ErrorCode } from './app-error';
+import { BusinessRuleViolationError } from './domain-errors';
 
 // Kho tệp Mốc 6 (ADR-141). Thông điệp là lời thường cho người dùng; web rẽ nhánh theo `code`.
 
@@ -66,4 +67,12 @@ export class StorageFullError extends AppError {
   constructor() {
     super('Kho lưu trữ đã đầy, vui lòng báo quản trị viên.');
   }
+}
+
+/** 422 `BUSINESS_RULE_VIOLATION` rule `IMAGE_UNREADABLE` — ảnh hỏng, sharp lỗi / quá 10 s (TL 18/10). */
+export function imageUnreadableError(): BusinessRuleViolationError {
+  return new BusinessRuleViolationError(
+    'IMAGE_UNREADABLE',
+    'Ảnh này chưa đọc được, hãy chọn ảnh JPG hoặc PNG khác.',
+  );
 }
