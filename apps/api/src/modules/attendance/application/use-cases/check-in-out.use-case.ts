@@ -1,17 +1,17 @@
 import type { AttendanceTodayDto } from '@taskflow/contracts';
 
 import { BusinessRuleViolationError, ResourceConflictError } from '../../../../core/errors';
-import { addDays, toLocal } from '../../domain/local-time';
-import { workDateFor } from '../../domain/work-date';
+import { addDays } from '../../domain/local-time';
+import { decidePunch, type PunchSkipReason } from '../../domain/punch-rules';
 import { localToday, todayCard, type AttendanceDeps } from '../attendance-days';
 import {
   AlreadyCheckedInError,
   IdempotencyKeyTakenError,
   type AttendanceKind,
 } from '../ports/attendance-event-store.port';
+import type { ICompanyAccess } from '../ports/collaborators.port';
 
 export interface CheckInOutInput {
-  workspaceId: string;
   userId: string;
   kind: AttendanceKind;
   /** UUID từ header `Idempotency-Key` (đã validate ở presentation). */
@@ -29,6 +29,18 @@ export interface CheckInOutResult {
 /** Thiết kế §3: `userAgent ≤ 256` — cắt chứ không từ chối (UA dài không phải lỗi của người dùng). */
 const USER_AGENT_MAX = 256;
 
+/** Lỗi cho từng lý do từ chối của `decidePunch` (mã giữ như route cũ; `NOT_EMPLOYED` mới — A S1). */
+const punchRefused: Record<PunchSkipReason, () => Error> = {
+  ALREADY_CHECKED_IN: () => alreadyCheckedIn(),
+  NOT_CHECKED_IN: () =>
+    new BusinessRuleViolationError('NOT_CHECKED_IN', 'Bạn chưa chấm vào hôm nay.'),
+  NOT_EMPLOYED: () =>
+    new BusinessRuleViolationError(
+      'NOT_EMPLOYED',
+      'Ngày này nằm ngoài thời gian bạn làm việc ở công ty.',
+    ),
+};
+
 const alreadyCheckedIn = () =>
   new ResourceConflictError({ reason: 'already_checked_in' }, 'Bạn đã chấm vào hôm nay.');
 const keyReused = () =>
@@ -38,13 +50,15 @@ const keyReused = () =>
   );
 
 /**
- * `POST attendance/check-in|check-out` (thiết kế §4–§5). Giờ là giờ SERVER (client không gửi giờ). Trả thẻ
+ * `POST attendance/check-in|check-out` (thiết kế §4–§5; cấp công ty — company-level ADR-136). Giờ là giờ SERVER (client không gửi giờ). Trả thẻ
  * hôm nay để web cập nhật không cần GET lại. Lặp lại cùng Idempotency-Key của chính mình + cùng loại ⇒ trả
  * thẻ hiện tại, không tạo lượt mới; khác loại ⇒ 422. IN lần 2 ⇒ 409 `already_checked_in`; OUT khi không có
  * IN để đóng ⇒ 422 `NOT_CHECKED_IN`.
  */
 export class CheckInOutUseCase {
-  constructor(private readonly d: AttendanceDeps) {}
+  constructor(
+    private readonly d: AttendanceDeps & { company: Pick<ICompanyAccess, 'assertActiveEmployee'> },
+  ) {}
 
   async execute(input: CheckInOutInput, retried = false): Promise<CheckInOutResult> {
     let replayed: boolean;
@@ -66,9 +80,13 @@ export class CheckInOutUseCase {
   /** `true` khi key đã có (lặp lại) — không ghi gì. */
   async #record(input: CheckInOutInput): Promise<boolean> {
     const { d } = this;
-    const { workspaceId, userId, kind } = input;
+    const { userId, kind } = input;
+    // Khóa theo USER (T-053a → T-063): mọi đường chấm của một người chạy tuần tự; đọc sau khóa.
+    await d.events.lockUserPunch(userId);
+    // A C2: middleware kiểm TRƯỚC transaction — job hoàn tất nghỉ việc có thể commit trong lúc ta chờ khóa (nó cũng
+    // lấy `punch:<user>`) ⇒ đọc lại tư cách nhân viên SAU khóa; hết quyền ⇒ 401 SESSION_REVOKED, không ghi.
+    await d.company.assertActiveEmployee(userId);
     const prior = await d.events.findByIdempotencyKey({
-      workspaceId,
       userId,
       source: 'WEB',
       key: input.idempotencyKey,
@@ -78,17 +96,10 @@ export class CheckInOutUseCase {
       return true;
     }
     const now = d.clock.now();
-    const { date: today, timezone } = localToday(
-      await d.calendar.scheduleVersions(workspaceId),
-      now,
-    );
+    const versions = await d.calendar.scheduleVersions();
+    const { date: today } = localToday(versions, now);
     // Đủ để tìm IN còn mở của hôm qua (giờ chốt 06:00 hôm nay) và IN của hôm nay.
-    const recent = await d.events.listForUser({
-      workspaceId,
-      userId,
-      from: addDays(today, -2),
-      to: today,
-    });
+    const recent = await d.events.listForUser({ userId, from: addDays(today, -2), to: today });
     // CC-HR-02 #17: READ COMMITTED ⇒ mỗi câu đọc một snapshot mới. Request song song cùng key có thể commit GIỮA
     // `findByIdempotencyKey` (chưa thấy) và câu này (đã thấy) ⇒ kiểm key lại TRÊN dữ liệu mới nhất trước khi kết
     // luận "đã chấm vào" (409) — cùng key là lặp lại, không phải chấm lần hai.
@@ -99,21 +110,16 @@ export class CheckInOutUseCase {
       if (sameKey.kind !== kind) throw keyReused();
       return true;
     }
-    const live = recent.filter((e) => e.voidedAt === null);
-    let workDate = toLocal(now, timezone).date;
-    if (kind === 'IN') {
-      if (live.some((e) => e.kind === 'IN' && e.source === 'WEB' && e.workDate === workDate)) {
-        throw alreadyCheckedIn();
-      }
-    } else {
-      workDate = workDateFor('OUT', now, timezone, recent);
-      if (!live.some((e) => e.kind === 'IN' && e.workDate === workDate)) {
-        throw new BusinessRuleViolationError('NOT_CHECKED_IN', 'Bạn chưa chấm vào hôm nay.');
-      }
-    }
+    const tenures = await d.tenures.tenuresOf({
+      userIds: [userId],
+      from: addDays(today, -2),
+      to: addDays(today, 1),
+    });
+    const decision = decidePunch({ kind, now, schedules: versions, recent, tenures });
+    if (!decision.ok) throw punchRefused[decision.reason]();
+    const { workDate } = decision;
     await d.events.add({
       id: d.ids.next(),
-      workspaceId,
       userId,
       kind,
       source: 'WEB',

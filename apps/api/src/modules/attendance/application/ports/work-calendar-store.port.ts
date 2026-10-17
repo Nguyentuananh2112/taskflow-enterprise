@@ -12,17 +12,17 @@ export interface ScheduleVersionRecord extends WorkSchedule {
   createdAt: Date;
 }
 
-/** Lịch làm việc (theo phiên bản) + ngày lễ của workspace. Ghi chạy TRONG `uow.run` của use case. */
+/** Lịch làm việc (theo phiên bản) + ngày lễ của CÔNG TY (một bộ — ADR-136). Ghi chạy TRONG `uow.run` của use case. */
 export interface IWorkCalendarStore {
   /** Mọi phiên bản lịch (thứ tự bất kỳ); chưa lưu phiên bản nào ⇒ rỗng (domain dùng `DEFAULT_SCHEDULE`). */
-  scheduleVersions(workspaceId: string): Promise<WorkSchedule[]>;
+  scheduleVersions(): Promise<WorkSchedule[]>;
   /** Như `scheduleVersions` kèm người lưu, sắp `effectiveFrom` tăng dần. */
-  scheduleRecords(workspaceId: string): Promise<ScheduleVersionRecord[]>;
-  /** Lưu phiên bản; trùng `(workspace, effectiveFrom)` ⇒ THAY phiên bản đó (kể cả người lưu, giờ lưu). */
-  saveScheduleVersion(workspaceId: string, record: ScheduleVersionRecord): Promise<void>;
-  holidays(q: { workspaceId: string; from: LocalDate; to: LocalDate }): Promise<HolidayRecord[]>;
+  scheduleRecords(): Promise<ScheduleVersionRecord[]>;
+  /** Lưu phiên bản; trùng `effectiveFrom` ⇒ THAY phiên bản đó (kể cả người lưu, giờ lưu). */
+  saveScheduleVersion(record: ScheduleVersionRecord): Promise<void>;
+  holidays(q: { from: LocalDate; to: LocalDate }): Promise<HolidayRecord[]>;
   /** Tạo hoặc đổi tên ngày lễ. */
-  putHoliday(workspaceId: string, holiday: HolidayRecord): Promise<void>;
+  putHoliday(holiday: HolidayRecord): Promise<void>;
   /** `false` khi ngày đó không có lễ. */
-  deleteHoliday(workspaceId: string, date: LocalDate): Promise<boolean>;
+  deleteHoliday(date: LocalDate): Promise<boolean>;
 }

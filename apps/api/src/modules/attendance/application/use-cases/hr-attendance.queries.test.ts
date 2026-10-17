@@ -7,9 +7,7 @@ import {
   key,
   MAX,
   MIA,
-  OLIVIA,
-  vnTime,
-  W1,
+  VIC,
 } from '../../testing/attendance-harness';
 
 // test-spec-hr §5 (tầng A): HR xem cả công ty — AT-20 (người đã rời, R30), AT-22 (tổng tháng), phân trang.
@@ -20,8 +18,7 @@ const adjust = (
   kind: 'IN' | 'OUT',
   date: string,
   time: string,
-) =>
-  t.eventUseCases.adjust(W1, HANA, { userId, kind, date, time, nextDay: false, reason: 'Nhập bù' });
+) => t.eventUseCases.adjust(HANA, { userId, kind, date, time, nextDay: false, reason: 'Nhập bù' });
 const tenureOf = (
   t: Awaited<ReturnType<typeof setup>>,
   userId: string,
@@ -29,15 +26,16 @@ const tenureOf = (
   until: string | null,
 ) => {
   const rows = t.tenures.rows.filter((r) => r.userId !== userId);
-  rows.push({ workspaceId: W1, userId, from: vnTime(from), until: until ? vnTime(until) : null });
+  // Nhiệm kỳ bằng NGÀY (ADR-133): chỉ lấy phần ngày của mốc 'YYYY-MM-DD HH:MM'.
+  rows.push({ userId, from: from.slice(0, 10), until: until ? until.slice(0, 10) : null });
   t.tenures.rows.splice(0, t.tenures.rows.length, ...rows);
 };
 
 describe('HrAttendanceQueries.today', () => {
-  it('mọi nhân viên (không VIEWER), sắp theo tên; trạng thái từng người; khớp contract', async () => {
+  it('mọi nhân viên công ty (Admin không có — ADR-134), sắp theo tên; trạng thái từng người; khớp contract', async () => {
     const t = await setup();
     await t.punch('IN', key(1));
-    const r = await t.hrQueries.today(W1);
+    const r = await t.hrQueries.today();
     expect(AttendanceCompanyTodayDto.parse(r)).toEqual(r);
     expect(r).toMatchObject({
       date: '2026-11-17',
@@ -51,7 +49,7 @@ describe('HrAttendanceQueries.today', () => {
       ['Hana', false, 'PENDING'],
       ['Max', false, 'PENDING'],
       ['Mia', false, 'PRESENT'],
-      ['Olivia', false, 'PENDING'],
+      ['Vic', false, 'PENDING'],
     ]);
     expect(r.members.every((m) => !m.day.notCheckedInYet)).toBe(true); // 07:55 — chưa tới giờ vào ca
   });
@@ -59,13 +57,13 @@ describe('HrAttendanceQueries.today', () => {
   it('tab Hôm nay sau giờ vào ca: người chưa chấm ⇒ PENDING + notCheckedInYet (không phải "Chưa tới giờ")', async () => {
     const t = await setup('2026-11-17 09:00');
     await t.punch('IN', key(1));
-    const r = await t.hrQueries.today(W1);
+    const r = await t.hrQueries.today();
     expect(AttendanceCompanyTodayDto.parse(r)).toEqual(r);
     expect(r.members.map((m) => [m.user.fullName, m.day.status, m.day.notCheckedInYet])).toEqual([
       ['Hana', 'PENDING', true],
       ['Max', 'PENDING', true],
       ['Mia', 'PRESENT', false],
-      ['Olivia', 'PENDING', true],
+      ['Vic', 'PENDING', true],
     ]);
   });
 
@@ -73,10 +71,10 @@ describe('HrAttendanceQueries.today', () => {
     const t = await setup('2026-11-17 18:00');
     // Port trả một dòng mỗi (đơn, ngày); PM trước AM — thứ tự dòng không được quyết định kết quả.
     t.leaves.rows.push(
-      { workspaceId: W1, userId: MAX, date: '2026-11-17', part: 'PM' },
-      { workspaceId: W1, userId: MAX, date: '2026-11-17', part: 'AM' },
+      { userId: MAX, date: '2026-11-17', part: 'PM' },
+      { userId: MAX, date: '2026-11-17', part: 'AM' },
     );
-    const r = await t.hrQueries.today(W1);
+    const r = await t.hrQueries.today();
     const max = r.members.find((m) => m.user.id === MAX)!.day;
     expect(max).toMatchObject({
       status: 'ON_LEAVE',
@@ -88,16 +86,16 @@ describe('HrAttendanceQueries.today', () => {
 
   it('ngày lễ ⇒ isHoliday + tên; người đã rời có lượt hôm nay vẫn hiện, gắn left', async () => {
     const t = await setup('2026-11-17 10:00');
-    await t.backend.addHoliday(W1, '2026-11-17', 'Lễ thử');
+    await t.backend.addHoliday('2026-11-17', 'Lễ thử');
     await adjust(t, MAX, 'IN', '2026-11-17', '08:00');
     tenureOf(t, MAX, '2020-01-01 09:00', '2026-11-17 09:00');
     tenureOf(t, MIA, '2020-01-01 09:00', '2026-11-10 17:00');
-    const r = await t.hrQueries.today(W1);
+    const r = await t.hrQueries.today();
     expect(r).toMatchObject({ isHoliday: true, holidayName: 'Lễ thử' });
     expect(r.members.map((m) => [m.user.fullName, m.left, m.day.status])).toEqual([
       ['Hana', false, 'HOLIDAY'],
       ['Max', true, 'HOLIDAY'],
-      ['Olivia', false, 'HOLIDAY'],
+      ['Vic', false, 'HOLIDAY'],
     ]);
   });
 });
@@ -107,8 +105,8 @@ describe('HrAttendanceQueries.month', () => {
     const t = await setup('2026-11-30 20:00');
     await adjust(t, MAX, 'IN', '2026-11-05', '08:00');
     tenureOf(t, MAX, '2020-01-01 09:00', '2026-11-10 17:00');
-    tenureOf(t, OLIVIA, '2020-01-01 09:00', '2026-10-20 17:00');
-    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    tenureOf(t, VIC, '2020-01-01 09:00', '2026-10-20 17:00');
+    const r = await t.hrQueries.month({ month: '2026-11', limit: 50 });
     expect(r.data.map((x) => [x.user.fullName, x.left])).toEqual([
       ['Hana', false],
       ['Max', true],
@@ -127,11 +125,11 @@ describe('HrAttendanceQueries.month', () => {
   it('AT-22 tổng tháng: gia nhập 10/11 ⇒ không đếm vắng trước đó; lễ / CN / nghỉ nửa ngày / đi muộn tính đúng', async () => {
     const t = await setup('2026-11-30 20:00');
     tenureOf(t, MIA, '2026-11-10 14:00', null);
-    await t.backend.addHoliday(W1, '2026-11-20', 'Lễ');
-    t.leaves.rows.push({ workspaceId: W1, userId: MIA, date: '2026-11-12', part: 'AM' });
+    await t.backend.addHoliday('2026-11-20', 'Lễ');
+    t.leaves.rows.push({ userId: MIA, date: '2026-11-12', part: 'AM' });
     await adjust(t, MIA, 'IN', '2026-11-11', '08:10');
     await adjust(t, MIA, 'OUT', '2026-11-11', '17:30');
-    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    const r = await t.hrQueries.month({ month: '2026-11', limit: 50 });
     const mia = r.data.find((x) => x.user.id === MIA)!;
     // 10..30/11: 21 ngày − 3 CN = 18 ngày công; −1 lễ, −1 đi làm, 12/11 vắng nửa ngày ⇒ 15,5.
     expect(mia.totals).toEqual({
@@ -153,14 +151,14 @@ describe('HrAttendanceQueries.month', () => {
   it('T-046 giữa tháng: chỉ đếm tới HÔM NAY; phép sau hôm nay ⇒ upcomingLeaveDays; tổng của HR = tổng của me?month', async () => {
     const t = await setup('2026-11-17 10:00');
     t.leaves.rows.push(
-      { workspaceId: W1, userId: MIA, date: '2026-11-16', part: 'FULL' },
-      { workspaceId: W1, userId: MIA, date: '2026-11-20', part: 'FULL' },
-      { workspaceId: W1, userId: MIA, date: '2026-11-23', part: 'PM' },
+      { userId: MIA, date: '2026-11-16', part: 'FULL' },
+      { userId: MIA, date: '2026-11-20', part: 'FULL' },
+      { userId: MIA, date: '2026-11-23', part: 'PM' },
     );
     t.at('2026-11-17 08:10');
     await t.punch('IN', key(1)); // hôm nay vào muộn, đang làm
     t.at('2026-11-17 10:00');
-    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    const r = await t.hrQueries.month({ month: '2026-11', limit: 50 });
     const mia = r.data.find((x) => x.user.id === MIA)!;
     // 1..17/11: CN 1/11, 8/11, 15/11 nghỉ; 2..7, 9..14 = 12 ngày vắng; 16/11 phép; 17/11 đi làm (muộn 10').
     expect(mia.totals).toEqual({
@@ -176,7 +174,7 @@ describe('HrAttendanceQueries.month', () => {
       upcomingLeaveDays: 1.5,
       throughDate: '2026-11-17',
     });
-    const mine = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const mine = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(mine.totals).toEqual(mia.totals);
   });
 
@@ -184,13 +182,13 @@ describe('HrAttendanceQueries.month', () => {
     const t = await setup('2026-11-30 20:00');
     tenureOf(t, MIA, '2026-11-23 08:00', null);
     t.leaves.rows.push(
-      { workspaceId: W1, userId: MIA, date: '2026-11-24', part: 'AM' },
-      { workspaceId: W1, userId: MIA, date: '2026-11-24', part: 'PM' },
+      { userId: MIA, date: '2026-11-24', part: 'AM' },
+      { userId: MIA, date: '2026-11-24', part: 'PM' },
       // hai dòng cùng phần (một đơn nhiều ngày trùng ngày với đơn khác không thể có — D-M2) vẫn là nửa ngày
-      { workspaceId: W1, userId: MIA, date: '2026-11-25', part: 'PM' },
-      { workspaceId: W1, userId: MIA, date: '2026-11-25', part: 'PM' },
+      { userId: MIA, date: '2026-11-25', part: 'PM' },
+      { userId: MIA, date: '2026-11-25', part: 'PM' },
     );
-    const r = await t.hrQueries.month(W1, { month: '2026-11', limit: 50 });
+    const r = await t.hrQueries.month({ month: '2026-11', limit: 50 });
     const mia = r.data.find((x) => x.user.id === MIA)!;
     expect(mia.days.find((x) => x.date === '2026-11-24')).toMatchObject({
       status: 'ON_LEAVE',
@@ -204,30 +202,30 @@ describe('HrAttendanceQueries.month', () => {
     });
     // 23..30/11: CN 29/11 nghỉ ⇒ 7 ngày công; 24/11 phép cả ngày, 25/11 vắng ½ + phép ½ ⇒ vắng 5,5.
     expect(mia.totals).toMatchObject({ absentDays: 5.5, leaveDays: 1.5, presentDays: 0 });
-    const mine = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const mine = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(mine.totals).toEqual(mia.totals);
   });
 
   it('phân trang: limit 2 ⇒ 2 trang theo tên, cursor opaque; cursor hỏng / của endpoint khác ⇒ 400', async () => {
     const t = await setup('2026-11-30 20:00');
-    const p1 = await t.hrQueries.month(W1, { month: '2026-11', limit: 2 });
+    const p1 = await t.hrQueries.month({ month: '2026-11', limit: 2 });
     expect(p1.data.map((x) => x.user.fullName)).toEqual(['Hana', 'Max']);
     expect(p1.page).toMatchObject({ hasMore: true, limit: 2 });
     expect(p1.page.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
-    const p2 = await t.hrQueries.month(W1, {
+    const p2 = await t.hrQueries.month({
       month: '2026-11',
       limit: 2,
       cursor: p1.page.nextCursor!,
     });
-    expect(p2.data.map((x) => x.user.fullName)).toEqual(['Mia', 'Olivia']);
+    expect(p2.data.map((x) => x.user.fullName)).toEqual(['Mia', 'Vic']);
     expect(p2.page).toEqual({ nextCursor: null, hasMore: false, limit: 2 });
     const other = Buffer.from(JSON.stringify({ k: 'tasks', v: { name: 'x', id: 'y' } })).toString(
       'base64url',
     );
     for (const cursor of ['abc', other]) {
-      await expect(
-        t.hrQueries.month(W1, { month: '2026-11', limit: 2, cursor }),
-      ).rejects.toMatchObject({ statusCode: 400 });
+      await expect(t.hrQueries.month({ month: '2026-11', limit: 2, cursor })).rejects.toMatchObject(
+        { statusCode: 400 },
+      );
     }
   });
 });

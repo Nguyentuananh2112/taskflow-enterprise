@@ -1,9 +1,5 @@
 import { FakeClock, SequentialIdGenerator } from '../../../../test/support';
-import {
-  BusinessRuleViolationError,
-  ForbiddenError,
-  ResourceNotFoundError,
-} from '../../../core/errors';
+import { ForbiddenError, SessionRevokedError } from '../../../core/errors';
 import type { AttendanceDeps } from '../application/attendance-days';
 import type { HrAuditAction } from '../application/ports/collaborators.port';
 import { AttendanceEventsUseCases } from '../application/use-cases/attendance-events.use-cases';
@@ -16,19 +12,19 @@ import { instantOf } from '../domain/local-time';
 import type { WorkSchedule } from '../domain/work-schedule';
 import {
   FakeApprovedLeaves,
-  FakeMembershipTenures,
+  FakeCompanyTenures,
 } from '../infrastructure/persistence/in-memory/fake-collaborators';
 import { inMemoryAttendanceBackend, type AttendanceBackend } from './attendance-backend';
 
 /**
- * Bối cảnh chuẩn test-spec-hr §0.2 cho tầng A: workspace W1, lịch S0 (VN, T2–T7, 08:00–17:30, nghỉ trưa
+ * Bối cảnh chuẩn test-spec-hr §0.2 cho tầng A — cấp CÔNG TY (company-level ADR-136): một công ty, lịch S0 (VN, T2–T7, 08:00–17:30, nghỉ trưa
  * 12:00–13:30, grace 0), đồng hồ giả theo GIỜ VN. Lưu trữ qua `AttendanceBackend` — in-memory mặc định, Postgres ở
  * runner LSP (application không import infra).
  */
 // Hằng fixture ở file riêng: backend Postgres của runner LSP import chúng mà KHÔNG đi qua module harness
 // (module bị `vi.mock` — import ngược lại từ factory của mock làm treo vòng import).
-export { HANA, MAX, MIA, OLIVIA, VIC, VN, W1, W2 } from './attendance-fixture';
-import { FIXTURE, MIA, NAMES, ROLES, VN, W1 } from './attendance-fixture';
+export { HANA, MAX, MIA, OLIVIA, VIC, VN } from './attendance-fixture';
+import { FIXTURE, HR_MANAGERS, MIA, NAMES, ROLES, VN } from './attendance-fixture';
 export { FIXTURE };
 
 export const S0: WorkSchedule = {
@@ -60,12 +56,10 @@ export async function createAttendanceHarness(
   // Không seed phiên bản lịch nào (TL): workspace chưa lưu lịch ⇒ DEFAULT_SCHEDULE (= nội dung S0).
   const { events, calendar } = backend;
   const leaves = new FakeApprovedLeaves();
-  // Nhân viên của fixture (không VIEWER — adapter T-037b tự lọc) đều gia nhập W1 từ 2020.
-  const tenures = new FakeMembershipTenures();
+  // Nhân viên (role EMPLOYEE) của fixture đều có nhiệm kỳ từ 2020; Admin không có (không phải nhân viên).
+  const tenures = new FakeCompanyTenures();
   for (const [userId, role] of Object.entries(ROLES)) {
-    if (role !== 'VIEWER') {
-      tenures.rows.push({ workspaceId: W1, userId, from: vnTime('2020-01-01 09:00'), until: null });
-    }
+    if (role === 'EMPLOYEE') tenures.rows.push({ userId, from: '2020-01-01', until: null });
   }
   // Như composition: job retention tắt (local/test mặc định) ⇒ null. Test bật bằng `retention.cutoff = 'YYYY-MM-DD'`.
   const retention = { cutoff: null as string | null, recordsCutoffDate: () => retention.cutoff };
@@ -79,7 +73,9 @@ export async function createAttendanceHarness(
     ids: new SequentialIdGenerator(),
     uow: backend.uow,
   };
-  const members = new Map<string, 'OWNER' | 'PM' | 'MEMBER' | 'VIEWER'>(Object.entries(ROLES));
+  const members = new Map<string, 'ADMIN' | 'EMPLOYEE'>(Object.entries(ROLES));
+  /** Người đã mất quyền vào (hết `access_until`) — `assertActiveEmployee` ⇒ 401 (A C2). */
+  const revoked = new Set<string>();
   const notified: { recipientId: string; eventId: string; actorId: string }[] = [];
   const audit: {
     action: HrAuditAction;
@@ -96,24 +92,21 @@ export async function createAttendanceHarness(
           new Map(ids.filter((id) => NAMES[id]).map((id) => [id, { id, fullName: NAMES[id]! }])),
         ),
     },
-    // Fake theo đúng luật `HrAccess.authorizeWrite` / `isEmployee` của T-037 (bản thật chạy ở runner LSP + HTTP);
-    // quyền `hr:manage` do route + bản thật kiểm, ở đây chỉ còn thành viên + luật tự xử lý.
-    hrAccess: {
-      authorizeWrite: ({ workspaceId, actorId, targetUserId, reason }) => {
-        const role = workspaceId === W1 ? members.get(actorId) : undefined;
-        if (!role) return Promise.reject(new ResourceNotFoundError('workspace'));
-        if (targetUserId === actorId) {
-          if (role !== 'OWNER') return Promise.reject(new ForbiddenError('hr:manage'));
-          if (!reason?.trim()) {
-            return Promise.reject(new BusinessRuleViolationError('REASON_REQUIRED', 'Cần lý do.'));
-          }
-        }
+    // Fake theo đúng luật `CompanyAccess` của T-061 (bản thật ở module company + runner HTTP): không thuộc công ty ⇒
+    // 401; thiếu `hr:manage` ⇒ 403; tự xử lý ⇒ 403 (luật self TUYỆT ĐỐI — kể cả Admin).
+    company: {
+      authorizeWrite: ({ actorId, targetUserId }) => {
+        const role = revoked.has(actorId) ? undefined : members.get(actorId);
+        if (!role) return Promise.reject(new SessionRevokedError());
+        if (!HR_MANAGERS.has(actorId)) return Promise.reject(new ForbiddenError('hr:manage'));
+        if (targetUserId === actorId) return Promise.reject(new ForbiddenError('hr:manage'));
         return Promise.resolve({ role });
       },
-      isEmployee: ({ workspaceId, userId }) =>
-        Promise.resolve(
-          workspaceId === W1 && ['OWNER', 'PM', 'MEMBER'].includes(members.get(userId) ?? ''),
-        ),
+      isEmployee: (userId) => Promise.resolve(members.get(userId) === 'EMPLOYEE'),
+      assertActiveEmployee: (userId) =>
+        members.get(userId) === 'EMPLOYEE' && !revoked.has(userId)
+          ? Promise.resolve()
+          : Promise.reject(new SessionRevokedError()),
     },
     notifier: {
       attendanceAdjusted: (n) => {
@@ -141,7 +134,7 @@ export async function createAttendanceHarness(
   } satisfies Omit<ConstructorParameters<typeof AttendanceEventsUseCases>[0], keyof AttendanceDeps>;
   const eventUseCases = new AttendanceEventsUseCases({ ...deps, ...collaborators });
   const calendarUseCases = new WorkCalendarUseCases({ ...deps, ...collaborators });
-  const checkInOut = new CheckInOutUseCase(deps);
+  const checkInOut = new CheckInOutUseCase({ ...deps, company: collaborators.company });
   return {
     backend,
     deps,
@@ -157,6 +150,7 @@ export async function createAttendanceHarness(
     collaborators,
     hrQueries: new HrAttendanceQueries({ ...deps, users: collaborators.users }),
     members,
+    revoked,
     notified,
     audit,
     /** Đặt đồng hồ theo giờ VN. */
@@ -164,7 +158,6 @@ export async function createAttendanceHarness(
     punch: async (kind: 'IN' | 'OUT', idempotencyKey: string, userId = MIA) =>
       (
         await checkInOut.execute({
-          workspaceId: W1,
           userId,
           kind,
           idempotencyKey,

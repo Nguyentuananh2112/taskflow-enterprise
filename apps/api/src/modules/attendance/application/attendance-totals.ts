@@ -60,17 +60,16 @@ export function totalsOf(days: readonly AttendanceDayDto[], today: LocalDate): A
  */
 export async function monthTotalsOf(
   d: AttendanceDeps,
-  q: { workspaceId: string; userId: string; date: LocalDate },
+  q: { userId: string; date: LocalDate },
 ): Promise<{ day: AttendanceDayDto; totals: AttendanceTotalsDto }> {
   const month = q.date.slice(0, 7);
   const [days, versions] = await Promise.all([
     summarizeRange(d, {
-      workspaceId: q.workspaceId,
       userId: q.userId,
       from: `${month}-01`,
       to: lastDayOf(month),
     }),
-    d.calendar.scheduleVersions(q.workspaceId),
+    d.calendar.scheduleVersions(),
   ]);
   const today = localToday(versions, d.clock.now()).date;
   return { day: days.find((x) => x.date === q.date)!, totals: totalsOf(days, today) };

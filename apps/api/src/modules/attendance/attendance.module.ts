@@ -10,11 +10,11 @@ import type { ApprovedLeavePort } from './application/ports/approved-leave.port'
 import type { IAttendanceEventStore } from './application/ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
-  IHrAccess,
+  ICompanyAccess,
+  ICompanyTenurePort,
   IHrAuditRecorder,
   IUserRefReader,
 } from './application/ports/collaborators.port';
-import type { IMembershipTenurePort } from './application/ports/membership-tenure.port';
 import type { IRetentionWindow } from './application/ports/retention-window.port';
 import type { IWorkCalendarStore } from './application/ports/work-calendar-store.port';
 import { AttendanceEventsUseCases } from './application/use-cases/attendance-events.use-cases';
@@ -28,7 +28,7 @@ import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memor
 import type { DbProvider } from './infrastructure/persistence/prisma/db';
 import { PrismaAttendanceEventStore } from './infrastructure/persistence/prisma/prisma-attendance-event.store';
 import { PrismaWorkCalendarStore } from './infrastructure/persistence/prisma/prisma-work-calendar.store';
-import type { AttendanceMembership } from './presentation/attendance-access';
+import type { AttendanceCompanyMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
 
@@ -54,14 +54,15 @@ export interface AttendanceModuleDeps {
    * leave ↔ attendance phụ thuộc vòng, composition dùng tham chiếu trễ.
    */
   leaves: ApprovedLeavePort;
-  tenures: IMembershipTenurePort;
+  tenures: ICompanyTenurePort;
   /** T-047: mốc lưu của job retention (null khi job tắt). */
   retention: IRetentionWindow;
   users: IUserRefReader;
-  hrAccess: IHrAccess;
+  /** `CompanyAccess` của module company (T-061). */
+  company: ICompanyAccess;
   audit: IHrAuditRecorder;
   notifier: AttendanceNotifier;
-  membership: AttendanceMembership;
+  membership: AttendanceCompanyMembership;
   uow: IUnitOfWork;
   clock: IClock;
   ids: IIdGenerator;
@@ -90,12 +91,12 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
   };
   const collaborators = {
     users: d.users,
-    hrAccess: d.hrAccess,
+    company: d.company,
     audit: d.audit,
     notifier: d.notifier,
   };
   const controller = new AttendanceController({
-    checkInOut: new CheckInOutUseCase(deps),
+    checkInOut: new CheckInOutUseCase({ ...deps, company: d.company }),
     mine: new MyAttendanceQueries(deps),
     hr: new HrAttendanceQueries({ ...deps, users: d.users }),
     events: new AttendanceEventsUseCases({ ...deps, ...collaborators }),

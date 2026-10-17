@@ -30,7 +30,7 @@ describe('assertPersistenceAllowed (quyết định Tech Lead — T-020)', () =>
     ).toEqual(['task']);
     expect(
       assertPersistenceAllowed('test', createMemoryPersistence(new SpyLogger()).modules),
-    ).toEqual(['auth', 'company', 'notifications', 'task', 'workspace']);
+    ).toEqual(['attendance', 'auth', 'company', 'notifications', 'task', 'workspace']);
   });
 });
 
@@ -48,6 +48,7 @@ describe('createPrismaPersistence (T-023)', () => {
       task: 'prisma',
       notifications: 'prisma',
       company: 'prisma',
+      attendance: 'prisma',
     });
     expect(Object.keys(p.company).sort()).toEqual(['company', 'hrAudit', 'members', 'tenures']);
     expect(Object.keys(p.task ?? {}).sort()).toEqual([

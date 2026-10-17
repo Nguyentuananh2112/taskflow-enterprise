@@ -6,6 +6,7 @@ import {
   DEFAULT_SCHEDULE,
   effectiveSchedule,
   isWorkday,
+  localToday,
   scheduleFor,
   type WorkSchedule,
 } from './work-schedule';
@@ -205,5 +206,28 @@ describe('work-schedule — ngày làm + phiên bản hiệu lực (SD-29)', () 
       graceMin: 0,
     });
     expect(Object.isFrozen(DEFAULT_SCHEDULE)).toBe(true);
+  });
+});
+
+describe('localToday — "hôm nay" theo lịch hiệu lực (T-063: chuyển xuống domain)', () => {
+  // Lịch VN từ 01/01, lịch Tokyo từ 18/11. 23:30 VN ngày 17/11 = 01:30 Tokyo ngày 18/11 ⇒ hôm nay là 18/11 theo Tokyo.
+  const vnOld = { ...DEFAULT_SCHEDULE, effectiveFrom: '2026-01-01' };
+  const tokyoNew = { ...DEFAULT_SCHEDULE, effectiveFrom: '2026-11-18', timezone: 'Asia/Tokyo' };
+  const now = at('2026-11-17', '23:30');
+
+  it('ước lượng ngày bằng múi giờ của phiên bản MỚI NHẤT (không phụ thuộc thứ tự mảng)', () => {
+    for (const versions of [
+      [vnOld, tokyoNew],
+      [tokyoNew, vnOld],
+    ]) {
+      expect(localToday(versions, now)).toMatchObject({
+        date: '2026-11-18',
+        timezone: 'Asia/Tokyo',
+      });
+    }
+  });
+
+  it('chưa có phiên bản nào ⇒ lịch mặc định (VN)', () => {
+    expect(localToday([], now)).toMatchObject({ date: '2026-11-17', timezone: VN });
   });
 });

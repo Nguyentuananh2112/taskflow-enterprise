@@ -17,12 +17,12 @@ export interface AttendanceBackend {
   events: IAttendanceEventStore;
   calendar: IWorkCalendarStore;
   uow: IUnitOfWork;
-  /** Dữ liệu nền (workspace, user cho FK) — chạy trước mỗi harness. */
+  /** Dữ liệu nền (user cho FK) — chạy trước mỗi harness. */
   seed(): Promise<void>;
   /** Mọi lượt chấm, theo `occurredAt` rồi `id`. */
   eventRows(): Promise<AttendanceEventRecord[]>;
-  addScheduleVersion(workspaceId: string, schedule: WorkSchedule, createdBy: string): Promise<void>;
-  addHoliday(workspaceId: string, date: string, name: string): Promise<void>;
+  addScheduleVersion(schedule: WorkSchedule, createdBy: string): Promise<void>;
+  addHoliday(date: string, name: string): Promise<void>;
 }
 
 export const byTime = (a: AttendanceEventRecord, b: AttendanceEventRecord) =>
@@ -37,10 +37,10 @@ export function inMemoryAttendanceBackend(): AttendanceBackend {
     uow: new FakeUnitOfWork(),
     seed: () => Promise.resolve(),
     eventRows: () => Promise.resolve(events.rows.map((e) => ({ ...e })).sort(byTime)),
-    addScheduleVersion: (ws, schedule, createdBy) =>
-      calendar.saveScheduleVersion(ws, { ...schedule, createdBy, createdAt: new Date(0) }),
-    addHoliday: (ws, date, name) => {
-      calendar.holidayRows.push({ workspaceId: ws, date, name });
+    addScheduleVersion: (schedule, createdBy) =>
+      calendar.saveScheduleVersion({ ...schedule, createdBy, createdAt: new Date(0) }),
+    addHoliday: (date, name) => {
+      calendar.holidayRows.push({ date, name });
       return Promise.resolve();
     },
   };

@@ -29,6 +29,9 @@ import {
 import { createCompanyModule, type CompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { HR_PATH } from '../modules/company/presentation/hr.routes';
+import type { AttendanceModule } from '../modules/attendance/attendance.module';
+import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
+import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
 import { createTaskModule, type TaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import type { AppMetrics } from '../core/observability/metrics';
@@ -84,6 +87,8 @@ export interface Container {
   notifications: NotificationsModule;
   /** Mốc 3.5: công ty — quyền / nhiệm kỳ / HrAuditLog cho attendance, leave, payroll (nối khi gỡ loại tạm). */
   company: CompanyModule;
+  /** Chấm công cấp công ty (T-063). */
+  attendance: AttendanceModule;
   /** Gắn gateway Socket.io sau khi có HTTP server: `realtime.bind(gateway)`. */
   realtime: LateBoundRealtime;
   /** Router module gắn dưới `/api/v1` + đường dẫn gắn — cho test parity OpenAPI (A2). */
@@ -173,7 +178,13 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
   });
   workspaceRef.current = workspace;
-  // TẠM (T-061, `tsconfig.exclusions.json`): attendance (A, T-063) / leave (D, T-064) chưa dựng — gỡ khi rebase.
+  // Chấm công (T-063). Đơn nghỉ gắn trễ (leave cần lịch của attendance) — TẠM: leave (D, T-064) chưa dựng, D `bind`.
+  const approvedLeaves = new LateApprovedLeavePort();
+  const attendance = wireAttendance(
+    { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
+    { company: () => company, notifications, leaves: approvedLeaves },
+    { responder, limit },
+  );
   const auth = createAuthModule({
     repos: persistence.auth,
     hasher: d.hasher,
@@ -209,6 +220,8 @@ export function createContainer(d: ContainerDeps): Container {
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },
+    // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
+    { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
   ];
@@ -224,5 +237,5 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
     routers,
   });
-  return { app, auth, workspace, task, notifications, company, realtime, routers };
+  return { app, auth, workspace, task, notifications, company, attendance, realtime, routers };
 }

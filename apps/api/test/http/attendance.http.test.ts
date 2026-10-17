@@ -1,4 +1,4 @@
-// T-038: route chấm công qua HTTP thật (in-process) — thứ tự lỗi, Idempotency-Key, hạn mức, CSV, luồng HR.
+// T-038 → T-063 (cấp công ty): route chấm công qua HTTP thật (in-process) — thứ tự lỗi, Idempotency-Key, hạn mức, CSV, luồng HR.
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -6,14 +6,14 @@ import { envelopeOf, errorOf } from '../support/http';
 import { createTestApp, type TestApp, type TestUser } from '../support/http-app';
 
 let t: TestApp;
-let olivia: TestUser; // OWNER
-let hana: TestUser; // MEMBER + HR_MANAGE
-let mia: TestUser; // MEMBER
-let vic: TestUser; // VIEWER
-let rex: TestUser; // không phải thành viên
-let wsId: string;
+let olivia: TestUser; // Admin — không phải nhân viên (không chấm công — ADR-134)
+let hana: TestUser; // nhân viên + HR_MANAGE
+let mia: TestUser; // nhân viên
+let vic: TestUser; // nhân viên
+let rex: TestUser; // đã đăng nhập nhưng KHÔNG còn thuộc công ty
 
-const att = (path = '') => `/api/v1/workspaces/${wsId}/attendance${path}`;
+// Mốc 3.5 (T-063): chấm công thuộc CÔNG TY — `/api/v1/attendance`, không còn `/workspaces/:wsId`.
+const att = (path = '') => `/api/v1/attendance${path}`;
 const key = (n: number) => `0199e5a2-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const punch = (by: TestUser, kind: 'in' | 'out', k: string) =>
   request(t.app)
@@ -27,31 +27,12 @@ const at = (local: string) => t.clock.set(new Date(`${local.replace(' ', 'T')}:0
 beforeEach(async () => {
   t = createTestApp();
   // Đặt giờ TRƯỚC khi đăng nhập: dời đồng hồ sau đó sẽ làm access token (15 phút) hết hạn.
-  at('2026-11-02 07:55'); // thứ Hai
-  olivia = await t.register('Olivia');
-  wsId = olivia.workspaceId;
-  [hana, mia, vic, rex] = [
-    await t.register('Hana'),
-    await t.register('Mia'),
-    await t.register('Vic'),
-    await t.register('Rex'),
-  ];
-  for (const [u, role] of [
-    [hana, 'MEMBER'],
-    [mia, 'MEMBER'],
-    [vic, 'VIEWER'],
-  ] as const) {
-    const res = await request(t.app)
-      .post(`/api/v1/workspaces/${wsId}/members`)
-      .set(olivia.auth)
-      .send({ email: u.email, role });
-    expect(res.status).toBe(201);
-  }
-  const grant = await request(t.app)
-    .put(`/api/v1/workspaces/${wsId}/members/${hana.id}/grants`)
-    .set(olivia.auth)
-    .send({ grants: ['HR_MANAGE'] });
-  expect(grant.status).toBe(200);
+  at('2026-11-02 07:55'); // thứ Hai — nhân viên mới có nhiệm kỳ từ hôm nay
+  olivia = await t.register('Olivia', undefined, { role: 'ADMIN' });
+  hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'] });
+  [mia, vic, rex] = [await t.register('Mia'), await t.register('Vic'), await t.register('Rex')];
+  // Rex đã đăng nhập rồi mới mất tư cách công ty (vd hết `access_until`) ⇒ token còn hạn nhưng phải 401.
+  t.persistence.companyStore!.removeMember(rex.id);
 });
 
 describe('check-in / check-out', () => {
@@ -73,17 +54,17 @@ describe('check-in / check-out', () => {
     });
   });
 
-  it('thứ tự lỗi: chưa đăng nhập 401 → không phải thành viên 404 → VIEWER 403 → thiếu / sai Idempotency-Key 400', async () => {
+  it('thứ tự lỗi: chưa đăng nhập 401 → không thuộc công ty 401 SESSION_REVOKED → Admin (không phải nhân viên) 403 → thiếu / sai Idempotency-Key 400', async () => {
     expect(
       (await request(t.app).post(att('/check-in')).set('Idempotency-Key', key(1)).send({})).status,
     ).toBe(401);
     const outsider = await punch(rex, 'in', key(1));
-    expect(outsider.status).toBe(404);
-    expect(errorOf(outsider).details).toEqual({ resource: 'workspace' });
-    // VIEWER thiếu header vẫn 403 (quyền trước validate).
-    const viewer = await request(t.app).post(att('/check-in')).set(vic.auth).send({});
-    expect(viewer.status).toBe(403);
-    expect(errorOf(viewer)).toMatchObject({ details: { required: 'attendance:self' } });
+    expect(outsider.status).toBe(401);
+    expect(errorOf(outsider).code).toBe('SESSION_REVOKED');
+    // Admin thiếu header vẫn 403 (quyền trước validate) — Admin không có `attendance:self`.
+    const admin = await request(t.app).post(att('/check-in')).set(olivia.auth).send({});
+    expect(admin.status).toBe(403);
+    expect(errorOf(admin)).toMatchObject({ details: { required: 'attendance:self' } });
     for (const header of [undefined, 'not-a-uuid']) {
       const req = request(t.app).post(att('/check-in')).set(mia.auth);
       const res = await (header ? req.set('Idempotency-Key', header) : req).send({});
@@ -120,7 +101,7 @@ describe('check-in / check-out', () => {
 });
 
 describe('route HR', () => {
-  it('SEC-HR-02: MEMBER gọi route hr:manage (kể cả body sai) ⇒ 403, không 400; HR body sai ⇒ 400', async () => {
+  it('SEC-HR-02: nhân viên thường gọi route hr:manage (kể cả body sai) ⇒ 403, không 400; HR body sai ⇒ 400', async () => {
     for (const [method, path, body] of [
       ['get', '/today', undefined],
       ['get', '?month=2026-11', undefined],
@@ -194,7 +175,7 @@ describe('route HR', () => {
       envelopeOf<{ members: { user: { fullName: string } }[] }>(today).data?.members.map(
         (m) => m.user.fullName,
       ),
-    ).toEqual(['Hana', 'Mia', 'Olivia']);
+    ).toEqual(['Hana', 'Mia', 'Vic']); // Admin (Olivia) không phải nhân viên; Rex không thuộc công ty
     const page1 = await request(t.app).get(att('?month=2026-11&limit=2')).set(hana.auth);
     expect(page1.status).toBe(200);
     const body = envelopeOf<{ user: { fullName: string } }[]>(page1);
@@ -205,7 +186,7 @@ describe('route HR', () => {
       .set(hana.auth);
     expect(
       envelopeOf<{ user: { fullName: string } }[]>(page2).data?.map((r) => r.user.fullName),
-    ).toEqual(['Olivia']);
+    ).toEqual(['Vic']);
     expect((await request(t.app).get(att('?month=2026-11&limit=51')).set(hana.auth)).status).toBe(
       400,
     );
@@ -241,9 +222,11 @@ describe('route HR', () => {
 });
 
 describe('lịch + ngày lễ', () => {
-  it('VIEWER đọc lịch / ngày lễ được; ghi cần hr:manage; HR lưu lịch 201, ngày lễ PUT 200 / DELETE 204 (không body)', async () => {
+  it('nhân viên + Admin đọc lịch / ngày lễ được; ghi cần hr:manage; HR lưu lịch 201, ngày lễ PUT 200 / DELETE 204 (không body)', async () => {
     expect((await request(t.app).get(att('/schedules')).set(vic.auth)).status).toBe(200);
     expect((await request(t.app).get(att('/holidays?year=2026')).set(vic.auth)).status).toBe(200);
+    expect((await request(t.app).get(att('/schedules')).set(olivia.auth)).status).toBe(200);
+    expect((await request(t.app).get(att('/schedules')).set(rex.auth)).status).toBe(401);
     const schedule = {
       effectiveFrom: '2026-11-02',
       timezone: 'Asia/Ho_Chi_Minh',

@@ -11,7 +11,6 @@ import {
   MyAttendanceEventsQuery,
   PutHolidayBody,
   VoidAttendanceBody,
-  WorkspaceParams,
 } from '@taskflow/contracts';
 import { Router, type RequestHandler } from 'express';
 import type * as z from 'zod';
@@ -19,123 +18,84 @@ import type * as z from 'zod';
 import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
 import { validate } from '../../../core/http/validate';
 import {
-  permitAttendance,
+  permitCompany,
   requireIdempotencyKey,
-  type AttendanceMembership,
+  type AttendanceCompanyMembership,
 } from './attendance-access';
 import type { AttendanceController } from './attendance.controller';
 
 export interface AttendanceRouteDeps {
   controller: AttendanceController;
-  membership: AttendanceMembership;
+  membership: AttendanceCompanyMembership;
   authenticate: RequestHandler;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
 }
 
-/** Gắn dưới `/api/v1` (mergeParams). */
-export const ATTENDANCE_PATH = '/workspaces/:wsId/attendance';
+/** Gắn dưới `/api/v1` — chấm công thuộc CÔNG TY (company-level ADR-136), không còn `/workspaces/:wsId`. */
+export const ATTENDANCE_PATH = '/attendance';
 
-const SELF = 'attendance:self';
-const HR = 'hr:manage';
-/** Lịch + ngày lễ: mọi thành viên đọc được (thiết kế §5). */
-const MEMBER = 'workspace:read';
+/** Của chính nhân viên (Admin không có — ADR-134). */
+const SELF = ['attendance:self'];
+const HR = ['hr:manage'];
+/** Lịch + ngày lễ: nhân viên và HR (gồm Admin) đọc được (§4). */
+const READ_CALENDAR = ['attendance:self', 'hr:manage'];
 
 /**
- * Route chấm công (thiết kế §5). Mỗi route: 401 → 400 params → 404 ws / 403 quyền → [hạn mức riêng] → 400
- * query / body / header → use case. Không cache (IP/UA, giờ chấm là dữ liệu cá nhân — §9).
+ * Route chấm công (§4). Mỗi route: 401 → 401 SESSION_REVOKED (không thuộc công ty) → 403 quyền → [hạn mức riêng] →
+ * 400 params / query / body / header → use case. Không cache (IP/UA, giờ chấm là dữ liệu cá nhân — §9).
  */
 export function attendanceRoutes(d: AttendanceRouteDeps): Router {
-  const router = Router({ mergeParams: true });
+  const router = Router();
   const c = d.controller;
   const noStore: RequestHandler = (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();
   };
-  // Gắn THEO TỪNG ROUTE như task / leave (audit T-028 F1) — dù path này chỉ phủ `/attendance`.
+  // Gắn THEO TỪNG ROUTE như task / leave (audit T-028 F1).
   const base = [noStore, d.authenticate, ...d.limit(RATE_LIMIT_RULES.authenticated)];
   const guard = (
-    params: z.ZodType,
-    permission: string,
-    input: { body?: z.ZodType; query?: z.ZodType } = {},
+    anyOf: readonly string[],
+    input: { params?: z.ZodType; body?: z.ZodType; query?: z.ZodType } = {},
     extra: readonly RequestHandler[] = [],
-  ) => [
-    ...base,
-    validate({ params }),
-    permitAttendance(d.membership, permission),
-    ...extra,
-    validate(input),
-  ];
+  ) => [...base, permitCompany(d.membership, anyOf), ...extra, validate(input)];
   const punch = d.limit(RATE_LIMIT_RULES.attendancePunch);
 
   // Của chính nhân viên.
-  router.get('/me/today', ...guard(WorkspaceParams, SELF), c.meToday);
-  router.get('/me', ...guard(WorkspaceParams, SELF, { query: AttendanceMonthQuery }), c.meMonth);
-  router.get(
-    '/me/events',
-    ...guard(WorkspaceParams, SELF, { query: MyAttendanceEventsQuery }),
-    c.meEvents,
-  );
-  router.post(
-    '/check-in',
-    ...guard(WorkspaceParams, SELF, {}, [...punch, requireIdempotencyKey]),
-    c.checkIn,
-  );
-  router.post(
-    '/check-out',
-    ...guard(WorkspaceParams, SELF, {}, [...punch, requireIdempotencyKey]),
-    c.checkOut,
-  );
+  router.get('/me/today', ...guard(SELF), c.meToday);
+  router.get('/me', ...guard(SELF, { query: AttendanceMonthQuery }), c.meMonth);
+  router.get('/me/events', ...guard(SELF, { query: MyAttendanceEventsQuery }), c.meEvents);
+  router.post('/check-in', ...guard(SELF, {}, [...punch, requireIdempotencyKey]), c.checkIn);
+  router.post('/check-out', ...guard(SELF, {}, [...punch, requireIdempotencyKey]), c.checkOut);
 
   // HR.
-  router.get('/today', ...guard(WorkspaceParams, HR), c.companyToday);
-  router.get(
-    '/',
-    ...guard(WorkspaceParams, HR, { query: AttendanceCompanyMonthQuery }),
-    c.companyMonth,
-  );
+  router.get('/today', ...guard(HR), c.companyToday);
+  router.get('/', ...guard(HR, { query: AttendanceCompanyMonthQuery }), c.companyMonth);
   router.get(
     '/export.csv',
-    ...guard(
-      WorkspaceParams,
-      HR,
-      { query: AttendanceMonthQuery },
-      d.limit(RATE_LIMIT_RULES.attendanceExport),
-    ),
+    ...guard(HR, { query: AttendanceMonthQuery }, d.limit(RATE_LIMIT_RULES.attendanceExport)),
     c.exportCsv,
   );
-  router.get(
-    '/events',
-    ...guard(WorkspaceParams, HR, { query: AttendanceEventsQuery }),
-    c.listEvents,
-  );
-  router.post('/events', ...guard(WorkspaceParams, HR, { body: AdjustAttendanceBody }), c.adjust);
+  router.get('/events', ...guard(HR, { query: AttendanceEventsQuery }), c.listEvents);
+  router.post('/events', ...guard(HR, { body: AdjustAttendanceBody }), c.adjust);
   router.post(
     '/events/:eventId/void',
-    ...guard(AttendanceEventParams, HR, { body: VoidAttendanceBody }),
+    ...guard(HR, { params: AttendanceEventParams, body: VoidAttendanceBody }),
     c.voidEvent,
   );
 
-  // Lịch + ngày lễ.
-  router.get('/schedules', ...guard(WorkspaceParams, MEMBER), c.listSchedules);
-  router.post(
-    '/schedules',
-    ...guard(WorkspaceParams, HR, { body: CreateWorkScheduleBody }),
-    c.createSchedule,
-  );
-  router.get(
-    '/holidays',
-    ...guard(WorkspaceParams, MEMBER, { query: HolidayListQuery }),
-    c.listHolidays,
-  );
+  // Lịch + ngày lễ (một bộ cho cả công ty).
+  router.get('/schedules', ...guard(READ_CALENDAR), c.listSchedules);
+  router.post('/schedules', ...guard(HR, { body: CreateWorkScheduleBody }), c.createSchedule);
+  router.get('/holidays', ...guard(READ_CALENDAR, { query: HolidayListQuery }), c.listHolidays);
   router.put(
     '/holidays/:date',
-    ...guard(HolidayDateParams, HR, { body: PutHolidayBody }),
+    ...guard(HR, { params: HolidayDateParams, body: PutHolidayBody }),
     c.putHoliday,
   );
   // DELETE thường không có body ⇒ thiếu body = `{}`.
   router.delete(
     '/holidays/:date',
-    ...guard(HolidayDateParams, HR, { body: DeleteHolidayBody.optional().default({}) }),
+    ...guard(HR, { params: HolidayDateParams, body: DeleteHolidayBody.optional().default({}) }),
     c.deleteHoliday,
   );
   return router;
