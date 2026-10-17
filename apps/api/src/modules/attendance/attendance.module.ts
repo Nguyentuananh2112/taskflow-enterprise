@@ -31,6 +31,7 @@ import { PrismaWorkCalendarStore } from './infrastructure/persistence/prisma/pri
 import type { AttendanceCompanyMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
+import { localToday } from './domain/work-schedule';
 
 export interface AttendanceRepositories {
   events: IAttendanceEventStore;
@@ -75,6 +76,11 @@ export interface AttendanceModule {
   routes(authenticate: RequestHandler): Router;
   /** Hiện thực `IWorkCalendarPort` của module leave (thiết kế §4). */
   workCalendar: AttendanceWorkCalendar;
+  /**
+   * Múi giờ của lịch công ty có hiệu lực HÔM NAY (ADR-120) — module company dùng cho `start_date` / `access_until`
+   * (CLK-HR-08: lịch múi Berlin ⇒ ngày / 06:00 theo Berlin).
+   */
+  timeZoneNow(): Promise<string>;
 }
 
 /** Composition của module Attendance (ADR-016): wire nội bộ module, port ngoài được tiêm vào. */
@@ -108,5 +114,7 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
     routes: (authenticate) =>
       attendanceRoutes({ controller, membership: d.membership, authenticate, limit: d.limit }),
     workCalendar: new AttendanceWorkCalendar(d.repos.calendar),
+    timeZoneNow: async () =>
+      localToday(await d.repos.calendar.scheduleVersions(), d.clock.now()).timezone,
   };
 }
