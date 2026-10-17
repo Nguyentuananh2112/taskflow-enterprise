@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
-import { loginViaUi, type E2EUser } from './fixtures';
+import { dismissCheckinPrompt, loginViaUi, type E2EUser } from './fixtures';
 
 /**
  * Người dùng thứ hai/ba trong context riêng (realtime nhiều người). Có cùng bộ bắt vi phạm CSP như
@@ -9,6 +9,7 @@ import { loginViaUi, type E2EUser } from './fixtures';
 export async function openAs(
   browser: Browser,
   user: E2EUser,
+  { checkinPrompt = 'dismiss' }: { checkinPrompt?: 'dismiss' | 'keep' } = {},
 ): Promise<{ context: BrowserContext; page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext();
   await context.addInitScript(() => {
@@ -18,6 +19,11 @@ export async function openAs(
     });
   });
   const page = await context.newPage();
+  // T-045: context riêng không có fixture ⇒ tự gắn handler đóng dialog nhắc chấm công.
+  if (checkinPrompt === 'dismiss') {
+    await dismissCheckinPrompt(page);
+    context.on('page', (p) => void dismissCheckinPrompt(p));
+  }
   await loginViaUi(page, user);
   return {
     context,

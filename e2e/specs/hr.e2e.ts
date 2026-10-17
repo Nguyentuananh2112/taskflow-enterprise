@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
-import { expect, loginViaUi, test } from '../support/fixtures';
+import { checkinPrompt, expect, loginViaUi, test } from '../support/fixtures';
 import {
   apiAdjust,
   apiCheckIn,
@@ -36,6 +36,7 @@ import { arm, assertInert } from '../support/xss';
 const T041A = 'T-041a';
 const T041B = 'T-041b';
 const T041C = 'T-041c';
+const T045 = 'T-045';
 
 /** Realtime (notification:new, member:grants-changed) — spec: < 2 s; nới cho máy CI bận như REALTIME của collaboration. */
 const REALTIME = { timeout: 5_000 };
@@ -481,6 +482,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(table.getByRole('columnheader', { name: col, exact: true })).toBeVisible();
       }
       expect(await table.getByRole('rowheader').count()).toBeGreaterThanOrEqual(28);
+      // "Hôm nay" của bảng lấy từ serverNow (mốc), không từ Date trình duyệt — đúng một hàng, là hàng của mốc.
+      const todayRow = table.locator('tr[aria-current="date"]');
+      await expect(todayRow).toHaveCount(1);
+      await expect(todayRow.getByRole('rowheader')).toHaveAccessibleName(
+        new RegExp(`${ddMm(vnDate())}$`),
+      );
       // Trạng thái hôm nay có CHỮ (không chỉ biểu tượng aria-hidden). Mốc thứ Ba 10:00 + đã chấm vào ⇒ "Có mặt".
       await expect(dayRow(table, vnDate()).getByRole('cell').first()).toContainText('Có mặt');
       expect(await seriousViolations(page), `/attendance (${colorScheme})`).toEqual([]);
@@ -657,6 +664,10 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   await hana.page.goto(wsPath(w, 'hr?tab=timesheet'));
   await hana.page.getByRole('button', { name: w.mia.user.fullName }).click();
   const sheet = hana.page.getByRole('region', { name: `Bảng công của ${w.mia.user.fullName}` });
+  await expect(sheet.locator('tr[aria-current="date"]')).toHaveCount(1);
+  await expect(
+    sheet.locator('tr[aria-current="date"]').getByRole('rowheader'),
+  ).toHaveAccessibleName(new RegExp(`${ddMm(vnDate())}$`));
   await dayRow(sheet, vnDate()).getByRole('rowheader').getByRole('button').click();
   await expect(hana.page.getByRole('dialog').getByText(P.adjust)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana lượt chấm của Mia');
@@ -705,4 +716,100 @@ test(`@main E2E-HR-09b [${T041B}]: responsive 360 → 1440 — /leave không cu�
     await expect(send).toBeInViewport();
     await noHorizontalScroll(page, `/leave @${String(width)}`);
   }
+});
+
+// ---------------------------------------------------------------- E2E-HR-10..12 (T-045: dialog nhắc chấm công)
+
+test.describe('T-045 dialog nhắc chấm công', () => {
+  // Ca kiểm CHÍNH dialog ⇒ không để fixture tự bấm "Để sau".
+  test.use({ checkinPrompt: 'keep' });
+
+  test(`@main E2E-HR-10 [${T045}]: mốc thứ Ba 10:00, chưa chấm ⇒ dialog "Chào buổi sáng" ⇒ "Chấm công vào" ⇒ toast giờ server; tải lại không hiện nữa`, async ({
+    page,
+    request,
+  }) => {
+    const w = await seedHrWorld(request, 'hr10');
+    await loginViaUi(page, w.mia.user);
+    await page.goto(projectsPath(w));
+    const dialog = checkinPrompt(page);
+    await expect(dialog).toBeVisible();
+    // 10:00 < 11:00 ⇒ "buổi sáng"; tên = từ cuối của họ tên.
+    await expect(dialog).toHaveAccessibleName(
+      `Chào buổi sáng, ${w.mia.user.fullName.trim().split(/\s+/).at(-1) ?? ''}!`,
+    );
+    await expect(dialog.getByText('Hôm nay bạn chưa chấm công.', { exact: true })).toBeVisible();
+    await expect(dialog).toContainText('Ca làm hôm nay: 08:00–17:30');
+    const main = dialog.getByRole('button', { name: 'Chấm công vào', exact: true });
+    await expect(main).toBeFocused();
+
+    const punched = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/attendance/check-in'),
+    );
+    await main.click();
+    const res = await punched;
+    expect(res.status()).toBe(201);
+    const card = (await res.json()) as { data: { firstIn: string } };
+    const toast = page.getByText(/^Đã chấm vào lúc \d{2}:\d{2}$/);
+    await expect(toast).toBeVisible();
+    // Giờ trong toast = giờ VN của firstIn server trả về (giờ nghiệp vụ theo mốc), không phải giờ máy.
+    await expect(toast).toHaveText(`Đã chấm vào lúc ${vnHm(card.data.firstIn)}`);
+    await expect(dialog).toHaveCount(0);
+    await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
+
+    await page.reload();
+    await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test(`E2E-HR-11 [${T045}]: "Để sau" ⇒ đóng, không tự chấm; tải lại / tab mới cùng phiên không hiện lại trong ngày`, async ({
+    page,
+    context,
+    request,
+  }) => {
+    const w = await seedHrWorld(request, 'hr11');
+    await loginViaUi(page, w.mia.user);
+    await page.goto(projectsPath(w));
+    const dialog = checkinPrompt(page);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const card = attendanceCard(page);
+    await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
+    await expect(
+      card.getByRole('status').filter({ hasText: 'Bạn chưa chấm vào hôm nay.' }),
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    const tab = await context.newPage();
+    await tab.goto(projectsPath(w));
+    await expect(attendanceCard(tab).getByRole('button', { name: 'Chấm vào' })).toBeVisible();
+    await expect(checkinPrompt(tab)).toHaveCount(0);
+
+    const today = await apiMyToday(request, w.olivia, await refreshed(request, w.mia));
+    expect(today.firstIn, 'dialog không được tự chấm').toBeNull();
+  });
+
+  test(`E2E-HR-12 [${T045}]: không hiện cho VIEWER, cũng không hiện cho người đã chấm vào`, async ({
+    page,
+    browser,
+    request,
+  }) => {
+    const w = await seedHrWorld(request, 'hr12');
+    await apiCheckIn(request, w.olivia, w.mia.accessToken);
+
+    await loginViaUi(page, w.mia.user);
+    await page.goto(projectsPath(w));
+    // Thẻ đã tải dữ liệu hôm nay (nút "Chấm ra") ⇒ dialog nếu có thì đã phải hiện.
+    await expect(attendanceCard(page).getByRole('button', { name: 'Chấm ra' })).toBeVisible();
+    await expect(checkinPrompt(page)).toHaveCount(0);
+
+    const vic = await openAs(browser, w.vic.user, { checkinPrompt: 'keep' });
+    await vic.page.goto(projectsPath(w));
+    await expect(vic.page.getByRole('navigation', { name: 'Workspace' })).toBeVisible();
+    await expect(attendanceCard(vic.page)).toHaveCount(0);
+    await expect(checkinPrompt(vic.page)).toHaveCount(0);
+    await vic.close();
+  });
 });

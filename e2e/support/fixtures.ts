@@ -66,7 +66,38 @@ declare global {
   }
 }
 
-export const test = base.extend<{ cleanRateLimits: undefined; noCspViolations: undefined }>({
+/** Dialog nhắc chấm công của T-045 ("Chào buổi …!") — modal, che thẻ Chấm công tới khi đóng. */
+export const checkinPrompt = (page: Page) => page.getByRole('dialog', { name: /^Chào buổi/ });
+
+/**
+ * T-045: dialog hiện khi vào /projects nếu hôm nay (theo server) phải chấm mà chưa chấm — với mốc thứ Ba 10:00 thì
+ * gần như mọi ca đều gặp. Handler bấm "Để sau" mỗi khi dialog hiện ra (Playwright chạy handler trước hành động /
+ * khẳng định kế tiếp). Dialog ghi "đã hiện trong ngày" ngay lúc mở ⇒ đóng thế nào cũng không hiện lại trong ngày.
+ */
+export async function dismissCheckinPrompt(page: Page): Promise<void> {
+  await page.addLocatorHandler(checkinPrompt(page), async (dialog) => {
+    await dialog.getByRole('button', { name: 'Để sau', exact: true }).click();
+  });
+}
+
+export const test = base.extend<{
+  cleanRateLimits: undefined;
+  noCspViolations: undefined;
+  /** `'keep'` cho ca kiểm chính dialog T-045 (`test.use({ checkinPrompt: 'keep' })`). */
+  checkinPrompt: 'dismiss' | 'keep';
+  autoDismissCheckinPrompt: undefined;
+}>({
+  checkinPrompt: ['dismiss', { option: true }],
+  autoDismissCheckinPrompt: [
+    async ({ context, page, checkinPrompt: mode }, use) => {
+      if (mode === 'dismiss') {
+        await dismissCheckinPrompt(page);
+        context.on('page', (p) => void dismissCheckinPrompt(p));
+      }
+      await use(undefined);
+    },
+    { auto: true },
+  ],
   /**
    * Mọi kịch bản chạy trên build prod với CSP thật (TL, sau lỗi dnd-kit chèn <style>): ghi mọi
    * `securitypolicyviolation` của context mặc định; còn vi phạm khi test kết thúc ⇒ test đỏ.
