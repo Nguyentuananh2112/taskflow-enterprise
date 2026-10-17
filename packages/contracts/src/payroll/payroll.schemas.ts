@@ -2,7 +2,7 @@ import * as z from 'zod';
 
 import { YearMonth } from '../attendance/attendance.schemas';
 import { DateOnly, IsoDateTime, singleLineText, Uuid } from '../common';
-import { MAX_PAYSLIP_LINES } from './payslip-math';
+import { MAX_PAYSLIP_LINES, PAYSLIP_SECTIONS } from './limits';
 
 // Mốc 4 — phiếu lương cấp công ty (docs/design/payroll.md v4, ADR-124…127; T-048 contract). Quyền: `payroll:manage`
 // (Kế toán + Admin) cho mọi route `payroll/*`; route nhân viên `payslips/*` chỉ EMPLOYEE (Admin ⇒ 403). Luật self tuyệt
@@ -208,7 +208,7 @@ export type PublishPayrollBody = z.infer<typeof PublishPayrollBody>;
 
 // ---------------------------------------------------------------- phiếu
 
-export const PayslipSection = z.enum(['INCOME', 'BONUS', 'DEDUCTION']);
+export const PayslipSection = z.enum(PAYSLIP_SECTIONS);
 export type PayslipSection = z.infer<typeof PayslipSection>;
 
 /** Dòng kế toán gõ tay (nhãn bắt buộc); dấu do mục quyết định ⇒ `amount ≥ 0`. Thâm niên KHÔNG phải dòng. */

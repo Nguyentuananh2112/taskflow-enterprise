@@ -2,14 +2,9 @@
 // lại, là chuẩn). Tiền là số nguyên VND; công là số nguyên NỬA NGÀY; ngày là chuỗi `YYYY-MM-DD` (không `Date`, không múi
 // giờ ⇒ cùng kết quả ở mọi máy). Đầu vào sai ⇒ ném `RangeError` (không bao giờ trả số sai).
 
-import type { PayslipSection } from './payroll.schemas';
+import { MAX_HALF_DAYS, MAX_MONEY_VND, MAX_PAYSLIP_LINES, type PAYSLIP_SECTIONS } from './limits';
 
-/** Trần tiền một ô / một dòng (contract `MoneyVnd`). */
-export const MAX_MONEY_VND = 1_000_000_000_000;
-/** Trần số dòng gõ tay trên một phiếu (contract `.max` ở payroll.schemas import hằng này). */
-export const MAX_PAYSLIP_LINES = 50;
-/** 31 ngày × 2 nửa. */
-export const MAX_HALF_DAYS = 62;
+type PayslipSection = (typeof PAYSLIP_SECTIONS)[number];
 
 /** Một dòng gõ tay khi TÍNH (body đầy đủ có `label` là `PayslipLineInput` ở payroll.schemas). */
 export interface PayslipMathLine {
