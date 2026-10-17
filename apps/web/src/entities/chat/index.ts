@@ -1,4 +1,5 @@
 // Public API của trò chuyện (avatar-chat.md §7).
+export { linkify, type Segment } from './lib/linkify';
 export { chatApi, type SendInput, type UploadInput } from './api/chat.api';
 export {
   appendMessages,
