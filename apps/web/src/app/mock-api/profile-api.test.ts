@@ -42,6 +42,19 @@ function setup() {
 }
 
 describe('mock hồ sơ nhân viên (T-058a)', () => {
+  it('thứ tự lỗi PUT: sửa chính mình ⇒ 403 kể cả body sai; ngày vào sau hôm nay ⇒ 422 HIRE_DATE_IN_FUTURE', async () => {
+    const { send, hr, mia, asHr } = setup();
+    expect((await send('PUT', `/hr/employee-profiles/${hr.id}`, asHr, { bogus: 1 })).status).toBe(
+      403,
+    );
+    const future = await send('PUT', `/hr/employee-profiles/${mia.id}`, asHr, {
+      hireDate: '2026-10-16',
+      expectedVersion: 0,
+    });
+    expect(future.status).toBe(422);
+    expect(future.body.error?.details).toEqual({ rule: 'HIRE_DATE_IN_FUTURE' });
+  });
+
   it('route: /me và /departments khai báo trước /:userId; Admin gọi /me ⇒ 403', async () => {
     const { send, asMia, asHr, asAdmin } = setup();
     const me = await send('GET', '/hr/employee-profiles/me', asMia);

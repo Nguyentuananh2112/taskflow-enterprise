@@ -56,13 +56,14 @@ export function createProfileHandlers(baseUrl: string, hr: MockHr): HttpHandler[
     http.put(`${base}/:userId`, async ({ request, params }) => {
       const ctx = requireCompany(request, db, 'hr:manage');
       if (ctx.response) return ctx.response;
+      // Thứ tự lỗi (B, T-054): 401 → 403 sửa chính mình → 400 → 404 → 422 ngày tương lai → 409 → 422 lý do.
+      if (params.userId === ctx.ok.user.id)
+        return fail(403, 'FORBIDDEN_ACCESS', { required: 'hr:manage' });
       const body = await parseBody(request, PutEmployeeProfileBody);
       if (body.response) return body.response;
       const id = Uuid.safeParse(params.userId);
       if (!id.success || !employee(id.data))
         return fail(404, 'RESOURCE_NOT_FOUND', { resource: 'user' });
-      if (id.data === ctx.ok.user.id)
-        return fail(403, 'FORBIDDEN_ACCESS', { required: 'hr:manage' });
       const { expectedVersion, reason, ...fields } = body.data;
       if (fields.hireDate && fields.hireDate > today())
         return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'HIRE_DATE_IN_FUTURE' });

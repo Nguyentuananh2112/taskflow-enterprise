@@ -91,6 +91,7 @@ export function createEmployeeHandlers(baseUrl: string, hr: MockHr): HttpHandler
       const startDate = body.data.startDate ?? today();
       if (startDate > today() || startDate < shift(today(), -31))
         return rule('START_DATE_OUT_OF_RANGE');
+      if (body.data.hireDate && body.data.hireDate > today()) return rule('HIRE_DATE_IN_FUTURE');
       const existing = db.findUserByEmail(email);
       if (existing && company.row(existing.id)) {
         return fail(409, 'RESOURCE_CONFLICT', { reason: 'already_employee' });
