@@ -1,6 +1,6 @@
 # T-067 — Kho tệp (`core/files`) — báo cáo (Engineer G)
 
-> Trạng thái: **ĐANG LÀM** (bước 1–2 xong, bước 3–9 chưa). Nhánh `feat/T-067` từ `feat/avatar-chat`.
+> Trạng thái: **DONE** (bước 1–9). Nhánh `feat/T-067`, rebase lên `feat/avatar-chat` @a0c2c677.
 > Căn cứ: `docs/design/avatar-chat.md` v2.1 (ADR-141), `test-spec-chat.md` (F, §1.2 / §2).
 
 ## Lệch so với ADR-141 (TL đồng ý 18/10 — TL cập nhật ADR-141 lúc gộp)
@@ -249,3 +249,32 @@ volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 - (Đã chốt — TL 18/10) worker sharp quá thời gian / vượt trần điểm ảnh ⇒ rule riêng `IMAGE_TOO_COMPLEX` (422);
   `IMAGE_UNREADABLE` cho ảnh hỏng. Đã báo H câu hiển thị.
+
+## Definition of Done (sau rebase lên `feat/avatar-chat` @a0c2c677)
+
+- `pnpm install --frozen-lockfile` ✔ · `check-env-example` khớp 49 biến ✔ · eslint (phần đã đụng) 0 · `typecheck` api 0,
+  contracts 0, web 0 · depcruise 0.
+- Test phạm vi nhỏ (TL: "chỉ test nhỏ"): `src/core` + `src/composition` + `src/config` + `src/app.test.ts` +
+  `test/files` + `test/contract` **57 file / 848 ca xanh**; contracts **171 / 171**.
+- Lượt máy TL cấp (trước bước 7–9): unit toàn phần **2099 / 2099**, integration **766 / 766** (xem mục kết quả chạy).
+  Bước 7–9 chỉ thêm `files-sweep`, deploy / runbook và test — không đổi đường chạy của integration.
+
+## Rủi ro / để ý khi gộp
+
+- File chung đã sửa: `env.ts`, `.env.example`, `app.ts`, `container(-types).ts`, `start-server.ts`, `core/http/middleware.ts`,
+  `core/http/rate-limit/rules.ts`, `core/errors/*`, `packages/contracts` (error-codes, auth, company, workspace, realtime,
+  chat), `pnpm-workspace.yaml` + lockfile, `apps/api/package.json`, `apps/api/Dockerfile`, `deploy/vps/*`, `docker/backup/*`,
+  `docs/runbook/backup-restore.md`, `THIRD_PARTY_NOTICES.md` (mới), `test/support/env.ts`, `test/contract/realtime-event-parity`.
+- Gặp T-055 (Mốc 5): gộp `TEST_ONLY_KEYS` thành một danh sách (B L1).
+- `PENDING_SERVER_EMIT` (realtime parity) phải rỗng ở cổng gộp cuối: `user:avatar-changed` (T-068), 6 event chat (T-070).
+- Image Docker (api, backup) chưa build lại trong vé này — cổng CI / TL.
+- ADR-141 cần TL cập nhật: port hai pha `stage`, khóa avatar xác định, `IMAGE_UNREADABLE` / `IMAGE_TOO_COMPLEX`,
+  `MEDIA_BASE_URL`, link "Quay lại" về origin web, pool sharp khởi động lười.
+
+## Chuyển sang T-068 / T-069
+
+- T-068: `files.resolvers.register('avatars', …)`; cấp `avatar_version` bằng `UPDATE … RETURNING` dưới khóa dòng TRƯỚC commit
+  blob (B M-a); trần pixel theo mục đích (avatar thấp hơn chat — B M, TL đồng ý); bước sweep avatar người đã rời + 30 ngày.
+- T-069: `files.resolvers.register('chat', …)`; bước sweep upload mồ côi > `FILES_ORPHAN_TTL_SECONDS` + blob mất tham chiếu
+  + `left_at`; hạn mức theo thời gian (30 / 10 phút, 200 MB / ngày, fail-closed khi Valkey lỗi); `CHAT_*` env test-only.
+
