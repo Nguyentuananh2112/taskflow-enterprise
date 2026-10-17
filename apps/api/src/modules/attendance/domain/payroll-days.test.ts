@@ -156,6 +156,95 @@ describe('payrollDaysOf — PD', () => {
   });
 });
 
+describe('payrollDaysOf — PD-13 / PD-17 / PD-19 (F, test-spec-payroll)', () => {
+  const novemberAll = (status: DayStatus) => {
+    const m = new Map<string, DayStatus>();
+    for (let d = 1; d <= 30; d++) m.set(`2026-11-${String(d).padStart(2, '0')}`, status);
+    return m;
+  };
+  const run = (over: Partial<Parameters<typeof payrollDaysOf>[0]>) =>
+    payrollDaysOf({
+      from: '2026-11-01',
+      to: '2026-11-30',
+      statusOf: novemberAll('PRESENT'),
+      leaves: [],
+      schedules: [],
+      tenures: always,
+      retentionCutoff: null,
+      ...over,
+    });
+
+  it('PD-13 hai nhiệm kỳ trong tháng (nghỉ 10/11, nhận lại 20/11): chỉ đếm 1..10 và 20..30', () => {
+    // T2–T7: 1..10 có 8 ngày làm (2–7, 9, 10); 20..30 có 9 (20, 21, 23–28, 30).
+    const tenures = [
+      { from: '2020-01-01', until: '2026-11-10' },
+      { from: '2026-11-20', until: null },
+    ];
+    expect(run({ tenures })).toEqual({ ok: true, halfDays: 2 * (8 + 9), missingOutDates: [] });
+  });
+
+  it('PD-17 đổi lịch giữa tháng (T2–T6 từ 16/11): thứ Bảy sau 16/11 không còn là ngày làm ⇒ 0 dù PRESENT', () => {
+    const monFri: WorkSchedule = {
+      effectiveFrom: '2026-11-16',
+      timezone: 'Asia/Ho_Chi_Minh',
+      workdays: 0b0011111,
+      startMin: 480,
+      endMin: 1020,
+      breakStartMin: 720,
+      breakEndMin: 780,
+      graceMin: 0,
+    };
+    expect(run({ schedules: [monFri] })).toEqual({
+      ok: true,
+      halfDays: 2 * (12 + 11),
+      missingOutDates: [],
+    });
+  });
+
+  it('PD-19 property (seed cố định): 0 ≤ h ≤ 2 × số ngày làm trong nhiệm kỳ; mỗi ngày đóng góp ≤ 2; ghép kỳ = tổng hai nửa kỳ', () => {
+    let seed = 20261118;
+    const rnd = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed % n;
+    };
+    const statuses: DayStatus[] = [
+      'PRESENT',
+      'MISSING_OUT',
+      'ABSENT',
+      'ON_LEAVE',
+      'HOLIDAY',
+      'OFF',
+    ];
+    const types: PayrollLeaveType[] = ['ANNUAL', 'SICK', 'PERSONAL_PAID', 'UNPAID', 'OTHER'];
+    for (let round = 0; round < 200; round++) {
+      const statusOf = new Map<string, DayStatus>();
+      const leaves: PayrollLeaveHalf[] = [];
+      for (let d = 1; d <= 30; d++) {
+        const date = `2026-11-${String(d).padStart(2, '0')}`;
+        statusOf.set(date, statuses[rnd(statuses.length)]!);
+        for (let k = rnd(4); k > 0; k--) {
+          leaves.push(half(date, rnd(2) ? 'AM' : 'PM', types[rnd(types.length)]!));
+        }
+      }
+      const startDay = 1 + rnd(30);
+      const tenures = [{ from: `2026-11-${String(startDay).padStart(2, '0')}`, until: null }];
+      const whole = run({ statusOf, leaves, tenures });
+      const a = run({ statusOf, leaves, tenures, to: '2026-11-15' });
+      const b = run({ statusOf, leaves, tenures, from: '2026-11-16' });
+      if (!whole.ok || !a.ok || !b.ok) throw new Error('không mong đợi');
+      const workdays = standardDaysOf({ from: tenures[0]!.from, to: '2026-11-30', schedules: [] });
+      expect(whole.halfDays).toBeGreaterThanOrEqual(0);
+      expect(whole.halfDays).toBeLessThanOrEqual(2 * workdays);
+      expect(whole.halfDays).toBe(a.halfDays + b.halfDays);
+      for (let d = 1; d <= 30; d++) {
+        const date = `2026-11-${String(d).padStart(2, '0')}`;
+        const one = run({ statusOf, leaves, tenures, from: date, to: date });
+        expect(one.ok && one.halfDays <= 2).toBe(true);
+      }
+    }
+  });
+});
+
 describe('standardDaysOf — SD', () => {
   const monFri: WorkSchedule = {
     effectiveFrom: '2026-11-16',
