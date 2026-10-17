@@ -242,7 +242,7 @@ Selector chat: chờ H gửi (T-072). Thiết kế §7 E13: `link "Trò chuyện
 | `chat-media.sec.ts` | F | SEC-CH-10, 11, 31, 35 (B); 22 (F) | chưa |
 | `chat-media-rotate.sec.ts` | F | SEC-CH-35 (xoay khóa) | chưa |
 | `chat-upload-types.sec.ts` | F | SEC-CH-06, 07, 12, 21, 23, 32, 33, 34, 36 | chưa |
-| `chat-upload-limits.sec.ts` (NẶNG) | B | SEC-CH-08, 09, 24, 26, 27, 37; CC-CH-09 | chưa |
+| `chat-upload-limits.sec.ts` (NẶNG) | F | SEC-CH-08, 09, 24, 26, 27, 37; CC-CH-09 | chưa |
 | `chat-races.sec.ts` | F | CC-CH-01, 02, 03, 05, 06 (F); 04, 07, 08 (B) | chưa |
 | `chat-clock-avatar.sec.ts`, `chat-clock-retention.sec.ts` | F | CLK-CH-02, 03 | chưa |
 | `e2e/specs/avatar.e2e.ts` | H | E2E-CH-01 | chưa |
