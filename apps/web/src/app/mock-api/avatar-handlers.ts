@@ -12,12 +12,6 @@ import { fail, failUnlisted, noContent, ok } from './respond';
 // Avatar của mock API (avatar-chat.md ADR-141/142, §4): `PUT/DELETE me/avatar`, `DELETE hr/employees/:userId/avatar`,
 // `GET media/avatars/:userId/:variant`. Thứ tự lỗi như server: 401 → 403 → 400 → 404 → 413/415 → 429.
 
-/** Đường dẫn được nhận `application/octet-stream` (đúng method + path — B M1); contentTypeGuard dùng. */
-export const OCTET_STREAM_ROUTES: ReadonlyArray<readonly [method: string, path: RegExp]> = [
-  ['PUT', /\/me\/avatar$/],
-  ['POST', /\/chat\/uploads$/],
-];
-
 /** Chỉ ảnh mà avatar nhận (sniff theo nội dung, không tin đuôi / Content-Type — ADR-141). */
 function sniffImage(bytes: Uint8Array): string | null {
   const at = (i: number) => bytes[i] ?? -1;

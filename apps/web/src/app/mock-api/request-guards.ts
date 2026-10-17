@@ -1,11 +1,16 @@
 import { http, type HttpHandler } from 'msw';
 
-import { OCTET_STREAM_ROUTES } from './avatar-handlers';
 import { fail } from './respond';
 
 // Kiểm tra cấp app của API thật (apps/api core/http/middleware.ts), đặt TRƯỚC mọi handler mock.
 // T-029 H2: mock dễ dãi hơn server là lý do lỗi thiếu Content-Type lọt qua test — giờ mock trả đúng
 // 415 như server.
+
+/** Đường dẫn được nhận `application/octet-stream` (đúng method + path — B M1); contentTypeGuard dùng. */
+export const OCTET_STREAM_ROUTES: ReadonlyArray<readonly [method: string, path: RegExp]> = [
+  ['PUT', /\/me\/avatar$/],
+  ['POST', /\/chat\/uploads$/],
+];
 
 const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH']);
 const UTF8 = new Set(['utf-8', 'utf8']);

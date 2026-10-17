@@ -1,4 +1,4 @@
-import type { UserDto } from '@taskflow/contracts/auth';
+import type { UserWithAvatarDto } from '@/shared/api/pending-contracts/avatar';
 
 /**
  * - `idle`: chưa thử khôi phục phiên (vừa tải trang).
@@ -8,7 +8,7 @@ import type { UserDto } from '@taskflow/contracts/auth';
 export type SessionStatus =
   'idle' | 'bootstrapping' | 'authenticated' | 'anonymous' | 'unreachable';
 
-export type SessionState = Readonly<{ status: SessionStatus; user: UserDto | null }>;
+export type SessionState = Readonly<{ status: SessionStatus; user: UserWithAvatarDto | null }>;
 
 const INITIAL: SessionState = { status: 'idle', user: null };
 
