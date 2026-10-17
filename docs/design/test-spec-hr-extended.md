@@ -246,8 +246,8 @@ E2E-HR-14…19 (Mốc 3.5) vẫn xanh; menu nhân viên có thêm "Hồ sơ củ
 |---|---|---|---|
 | `test/security/harness/clock.ts` + `clock.test.ts` | `nextVnDateAnchor`, `localToIso`, `dateInTz`, `daysInMonth` | — (đã có) | TL |
 | `test/security/harness/xlsx.ts` + `xlsx.test.ts` | bộ đọc .xlsx §1.2 | — (đã có) | B |
-| `test/security/hr-profile.sec.ts` | SEC-HR-40 (hồ sơ), 41, 42, 43, 45 (hồ sơ), 46, 47 · EP-01…06, 09, 11, 12, 13 (vế S) | T-054 | A |
-| `test/security/hr-corrections.sec.ts` | SEC-HR-40 (approve), 45 (đơn), 48…51 · CR-01…06, 08…13, 15 (vế S) | T-055 + T-056 | D |
+| `test/security/hr-profile.sec.ts` | SEC-HR-40, 41, 42, 43, 45, 46, 47 · EP-01…06, 11, 13 (vế S) — **15/15 xanh** trên `feat/m5-hr` 7ed6681 | T-054 | A |
+| `test/security/hr-corrections.sec.ts` | SEC-HR-40c, 45c (vế đơn của 40 / 45 — mã có hậu tố để mỗi mã đúng một file), 48…51 · CR-01…06, 08…11, 13, 14 (vế S), 15 — **đã viết** (pending `T-056` tới khi vé vào `feat/m5-hr`) | T-055 + T-056 | D |
 | `test/security/hr-export.sec.ts` | SEC-HR-52, 53, 54 (vế nội dung) · XL-01…04, 05 (local), 07, 09, 10 | T-055 + T-056 (bảng công), T-057 (phép) | B |
 | `test/security/hr-export-limits.sec.ts` | SEC-HR-54 (429 giờ + đồng thời) | T-055 | B |
 | `test/security/hr-export-load.nightly.sec.ts` | XL-05 (nightly) | T-055 + T-056 | B |

@@ -14,7 +14,32 @@ export interface DeclaredPending {
   readonly ticket: string;
 }
 
+const T056: DeclaredPending = {
+  reason: 'đơn bổ sung giờ — route T-056 (A, feat/T-056-time-requests) chưa vào feat/m5-hr',
+  ticket: 'T-056',
+};
+
 export const DECLARED_PENDING: Readonly<Record<string, DeclaredPending>> = {
+  // T-059 (F): hr-corrections.sec.ts viết trước khi T-056 merge. Merge ⇒ xóa cả khối này + hằng T056.
+  'SEC-HR-40c': T056,
+  'SEC-HR-45c': T056,
+  'SEC-HR-48': T056,
+  'SEC-HR-49': T056,
+  'SEC-HR-50': T056,
+  'SEC-HR-51': T056,
+  'CR-01': T056,
+  'CR-02': T056,
+  'CR-03': T056,
+  'CR-04': T056,
+  'CR-05': T056,
+  'CR-06': T056,
+  'CR-08': T056,
+  'CR-09': T056,
+  'CR-10': T056,
+  'CR-11': T056,
+  'CR-13': T056,
+  'CR-14': T056,
+  'CR-15': T056,
   // T-042 (F): bộ HR viết trước route. Vé merge ⇒ xóa các mục của vé đó (SEC_RUN_PENDING=<ticket> để nghiệm thu). T-037 (e0b0fc9), T-038 (0fb023f), T-039 (87255e8), T-040/T-040b (e330783) đã merge — mục của các vé đó đã gỡ.
 };
 
