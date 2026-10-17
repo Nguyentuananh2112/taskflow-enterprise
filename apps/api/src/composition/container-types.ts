@@ -21,6 +21,7 @@ import type { IErrorReporter } from '../core/observability/sentry';
 import type { LateBoundRealtime } from './late-realtime';
 import type { Persistence } from './persistence';
 import type { ISocketAuthenticator } from '../core/realtime/ports';
+import type { ExportLimits } from '../core/export/export-limits';
 import type { FilesBundle } from './files-setup';
 import type { ChatSettings } from './chat-wiring';
 
@@ -30,6 +31,8 @@ export interface ContainerConfig extends AppConfig {
   jwtPreviousSecret?: string | undefined;
   /** Chỉ APP_ENV=test (env.ts chặn nơi khác); thiếu ⇒ 900 giây. */
   jwtAccessTtlSeconds?: number | undefined;
+  /** Trần + nhịp đọc báo cáo .xlsx (T-055); thiếu ⇒ `DEFAULT_EXPORT_LIMITS`. Env `EXPORT_*` chỉ APP_ENV=test. */
+  exportLimits?: ExportLimits | undefined;
 }
 
 export interface ContainerDeps {

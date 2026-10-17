@@ -34,13 +34,15 @@ export interface ApiRoute {
   binaryBody?: true;
   /**
    * 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`; `csv` ⇒ thân `text/csv` (không
-   * envelope); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
+   * envelope); `xlsx` ⇒ thân .xlsx (không envelope — ADR-130); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
    */
   response: {
     status: 200 | 201 | 204;
     data?: z.ZodType;
     paged?: boolean;
     csv?: boolean;
+    /** Thân `.xlsx` (không envelope) — ADR-130. */
+    xlsx?: boolean;
     alsoOk?: boolean;
   };
   /** Mã lỗi đặc thù của route (ngoài lỗi chung 400/401/403/404/429). */

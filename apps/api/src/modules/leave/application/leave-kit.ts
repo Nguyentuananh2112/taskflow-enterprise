@@ -7,21 +7,21 @@ import {
   VersionConflictError,
 } from '../../../core/errors';
 import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
-import {
-  assertBalanceCovers,
-  consumesAnnualBalance,
-  summarizeBalance,
-  type LeaveType,
-} from '../domain/leave-balance';
-import type { CalendarDate, HalfDays } from '../domain/leave-days';
+import { BusinessRuleViolationError } from '../../../core/errors';
+import { consumesAnnualBalance, halfDaysToDecimal, type LeaveType } from '../domain/leave-balance';
+import type { CalendarDate, HalfDays, LeaveSpan } from '../domain/leave-days';
+import { AnnualBalanceCalculator, type BalanceSources } from './annual-balance';
+import { prefetchedSources } from './balance-prefetch';
 import { localDate } from '../domain/leave-status';
-import { belongsToTenure, countTenureHalfDays, type LeaveTenure } from '../domain/leave-tenure';
+import type { LeaveTenure } from '../domain/leave-tenure';
 import { toLeaveDto, type LeaveRequestDto } from './leave-dto';
-import type { ILeaveUserRefs } from './ports/leave-read-model.port';
+import type { ILeaveReadModel, ILeaveUserRefs } from './ports/leave-read-model.port';
 import type {
   IHrAudit,
   ILeaveCompany,
+  ILeaveHireDates,
   ILeaveNotifier,
+  ILeavePolicyStore,
   ILeaveRepository,
   IWorkCalendarPort,
   LeaveActor,
@@ -35,6 +35,10 @@ export const PERMISSION_HR_MANAGE = 'hr:manage';
 
 export interface LeaveCommandDeps {
   requests: ILeaveRepository;
+  /** T-057 (ADR-131): chính sách phép theo năm + khóa `taskflow:leave-policy` (bậc 1). */
+  policies: ILeavePolicyStore;
+  /** Ngày vào công ty (hồ sơ T-054); chưa nối ⇒ null cho mọi người. */
+  hireDates: ILeaveHireDates;
   calendar: IWorkCalendarPort;
   company: ILeaveCompany;
   notifier: ILeaveNotifier;
@@ -57,33 +61,6 @@ export interface LeaveScope {
 export function countingTenure(employment: LeaveEmployment): LeaveTenure | null {
   if (employment.current === null) return null;
   return { from: employment.current.from, until: employment.lastDay ?? employment.current.until };
-}
-
-/**
- * Số dư từ bản ghi đã lưu + các đơn đang giữ chỗ, số ngày tính theo lịch hiện tại (D-H3a). Có `tenure` ⇒ chỉ đơn
- * BẮT ĐẦU trong nhiệm kỳ (nhận lại cùng năm — D H2), mỗi đơn đếm phần trong nhiệm kỳ (vắt qua `lastDay` — D H1).
- */
-export function summarizeStored(
-  stored: { entitled: HalfDays; adjustment: HalfDays },
-  holding: readonly LeaveRequestRecord[],
-  calendar: readonly WorkCalendarDay[],
-  opts: { tenure?: LeaveTenure | null; excludeId?: string } = {},
-) {
-  const tenure = opts.tenure ?? null;
-  const open: LeaveTenure = { from: '0000-01-01', until: null };
-  return summarizeBalance({
-    entitled: stored.entitled,
-    adjustment: stored.adjustment,
-    requests: holding
-      .filter((r) => tenure === null || belongsToTenure(r, tenure))
-      .map((r) => ({
-        id: r.id,
-        type: r.type,
-        status: r.status,
-        halfDays: countTenureHalfDays(r, calendar, tenure ?? open),
-      })),
-    ...(opts.excludeId === undefined ? {} : { excludeId: opts.excludeId }),
-  });
 }
 
 export const yearOf = (date: CalendarDate): number => Number(date.slice(0, 4));
@@ -146,24 +123,123 @@ export class LeaveKit {
     return toLeaveDto(record, halfDays, refs, { includeReason: true });
   }
 
-  /** 422 INSUFFICIENT_BALANCE nếu đơn ANNUAL vượt số dư (LB-02: `excludeId` = chính đơn đang duyệt). */
+  /**
+   * Thứ tự khóa của MỌI lệnh ghi phép (ADR-131 + ADR-136): `taskflow:leave-policy` SHARED (bậc 1) rồi
+   * `taskflow:leave:<user>` (bậc 3) — `PUT leave/policy` lấy bản EXCLUSIVE ⇒ đơn được kiểm theo chính sách trước hoặc
+   * sau, không bao giờ lẫn.
+   */
+  async lockFor(userId: string): Promise<void> {
+    await this.d.policies.lock('shared');
+    await this.d.requests.lockUser(userId);
+  }
+
+  /** Bộ tính số dư cho ĐƯỜNG GHI (trong khóa): đọc repo, tạo lười dòng số dư. */
+  calculator(): AnnualBalanceCalculator {
+    const storedOf = (userId: string, year: number) =>
+      this.d.requests.getOrCreateBalance(userId, year);
+    return new AnnualBalanceCalculator(this.#sources(storedOf));
+  }
+
+  /**
+   * Bộ tính cho ĐƯỜNG ĐỌC: số dư qua read model, KHÔNG tạo dòng (GET không ghi — ADR-131). `hireDates` thay thế ⇒
+   * "nếu đổi ngày vào công ty thì sao" (T-054 `negativeBalancesIfHireDate`).
+   */
+  readCalculator(
+    read: Pick<ILeaveReadModel, 'findBalance'>,
+    hireDates: ILeaveHireDates = this.d.hireDates,
+  ): AnnualBalanceCalculator {
+    return new AnnualBalanceCalculator(this.#sources((u, y) => read.findBalance(u, y), hireDates));
+  }
+
+  /** Bộ tính đọc cho CẢ NHÓM người một năm — nạp theo lô (T-057d, balance-prefetch.ts). */
+  async readCalculatorFor(
+    read: Pick<ILeaveReadModel, 'findBalance' | 'findBalances' | 'listHoldingFor'>,
+    input: { userIds: readonly string[]; year: number; currentYearLoaded: boolean },
+  ): Promise<AnnualBalanceCalculator> {
+    const base = this.#sources((userId, year) => read.findBalance(userId, year));
+    return new AnnualBalanceCalculator(await prefetchedSources(base, read, input));
+  }
+
+  #sources(storedOf: BalanceSources['storedOf'], hireDates = this.d.hireDates): BalanceSources {
+    const { policies, company } = this.d;
+    const holdingOf = (userId: string, year: number) => this.d.requests.listHolding(userId, year);
+    return {
+      policies,
+      hireDates,
+      company,
+      holdingOf,
+      storedOf,
+      calendarOf: (y) => this.yearCalendar(y),
+    };
+  }
+
+  /**
+   * 422 INSUFFICIENT_BALANCE (ADR-131 thay ADR-122, cả gửi lẫn duyệt): `extra` = đơn mới chưa lưu (submit); duyệt thì
+   * đơn đang xét đã nằm trong `holding` (PENDING) ⇒ không cộng lần nữa. Gọi TRONG khóa (`lockFor`).
+   */
   async assertBalance(input: {
     userId: string;
     year: number;
     type: LeaveType;
-    requested: HalfDays;
     holding: readonly LeaveRequestRecord[];
-    calendar: readonly WorkCalendarDay[];
     tenure: LeaveTenure | null;
-    excludeId?: string;
+    today: CalendarDate;
+    extra?: LeaveSpan;
   }): Promise<void> {
     if (!consumesAnnualBalance(input.type)) return;
-    const stored = await this.d.requests.getOrCreateBalance(input.userId, input.year);
-    const balance = summarizeStored(stored, input.holding, input.calendar, {
+    const calc = this.calculator();
+    const base = {
+      userId: input.userId,
+      year: input.year,
+      today: input.today,
       tenure: input.tenure,
-      ...(input.excludeId === undefined ? {} : { excludeId: input.excludeId }),
-    });
-    assertBalanceCovers(input.type, input.requested, balance);
+      holding: input.holding,
+    };
+    const view = await calc.compute(
+      input.extra ? { ...base, extra: { ...input.extra, type: input.type } } : base,
+    );
+    if (view.balance.covers) return;
+    const without = input.extra ? await calc.compute(base) : view;
+    const requested = input.extra
+      ? view.balance.usedEarly +
+        view.balance.usedLate -
+        without.balance.usedEarly -
+        without.balance.usedLate
+      : 0;
+    throw new BusinessRuleViolationError(
+      'INSUFFICIENT_BALANCE',
+      'Không đủ số ngày phép năm còn lại.',
+      {
+        remainingDays: halfDaysToDecimal(without.balance.remaining),
+        requestedDays: halfDaysToDecimal(requested),
+      },
+    );
+  }
+
+  /**
+   * Chụp phép chuyển sang năm `year` (ADR-131) khi năm đó ĐÃ bắt đầu và dòng còn NULL — trong khóa, idempotent
+   * (`ifNull`). Gọi ở submit / approve / PATCH số dư / PUT policy.
+   */
+  async snapshotCarried(userId: string, year: number, today: CalendarDate): Promise<boolean> {
+    if (today < `${String(year)}-01-01`) return false;
+    const stored = await this.d.requests.getOrCreateBalance(userId, year);
+    if (stored.carried !== null) return false;
+    const carried = await this.calculator().carriedInto(userId, year);
+    await this.d.requests.setCarried(userId, year, carried, 'ifNull');
+    return true;
+  }
+
+  /**
+   * Năm `year` vừa đổi (PATCH điều chỉnh, duyệt muộn một đơn của `year`) ⇒ nếu `year + 1` đã bắt đầu và ĐÃ chụp
+   * `carried`, tính lại trong cùng khóa (ADR-131). Chưa chụp ⇒ để NULL (đọc sẽ tính tạm theo số mới).
+   */
+  async refreshNextCarried(userId: string, year: number, today: CalendarDate): Promise<void> {
+    const next = year + 1;
+    if (today < `${String(next)}-01-01`) return;
+    const stored = await this.d.requests.getOrCreateBalance(userId, next);
+    if (stored.carried === null) return;
+    const carried = await this.calculator().carriedInto(userId, next);
+    await this.d.requests.setCarried(userId, next, carried, 'overwrite');
   }
 
   /** Cả năm của lịch (đơn không vắt năm) — một lần gọi port phủ đơn mới + mọi đơn đang giữ chỗ cùng năm. */

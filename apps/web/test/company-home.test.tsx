@@ -42,7 +42,7 @@ async function menuLabels() {
 }
 
 describe('header công ty', () => {
-  it('nhân viên: ☰ có Trang chính · Bảng công · Nghỉ phép · Trò chuyện; hàng link ≥ md chỉ Trang chính; a11y', async () => {
+  it('nhân viên: ☰ có Trang chính · Bảng công · Nghỉ phép · Hồ sơ của tôi · Trò chuyện; hàng link ≥ md chỉ Trang chính; a11y', async () => {
     open('EMPLOYEE');
     await screen.findByRole('region', { name: 'Chấm công' });
     const links = within(screen.getByRole('navigation', { name: 'Công ty' })).getAllByRole('link');
@@ -52,6 +52,7 @@ describe('header công ty', () => {
       ['Trang chính', '/w'],
       ['Bảng công của tôi', '/attendance'],
       ['Nghỉ phép', '/leave'],
+      ['Hồ sơ của tôi', '/my-profile'],
       ['Trò chuyện', '/chat'], // Mốc 6 — thứ tự TL chốt; ≥ md là icon cạnh chuông, không ở hàng link
     ]);
     expect(screen.getByRole('button', { name: 'Menu' }).getAttribute('aria-expanded')).toBe('true');

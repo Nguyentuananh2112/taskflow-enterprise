@@ -10,6 +10,7 @@ import {
   duration,
   useMyAttendanceEvents,
 } from '@/entities/attendance';
+import { CorrectionDayAction } from '@/features/correction-request';
 import { Button } from '@/shared/ui/button';
 import { Dialog } from '@/shared/ui/dialog';
 
@@ -72,6 +73,7 @@ export function DayDetail({ day, days, today, onSelectDay, onClose }: Props) {
           <dd className="font-semibold">{day.workedMin > 0 ? duration(day.workedMin) : '—'}</dd>
         </dl>
       )}
+      {day && <CorrectionDayAction key={day.date} day={day} today={today} />}
       <h3 className="text-sm font-semibold">Lượt chấm</h3>
       {events.data && day ? (
         <EventsList data={events.data} date={day.date} />

@@ -10,6 +10,7 @@ import type {
   LeaveNotificationType,
   LeaveRole,
   WorkCalendarDay,
+  ILeaveHireDates,
 } from '../application/ports/leave.ports';
 import type { CalendarDate } from '../domain/leave-days';
 import type { LeaveTenure } from '../domain/leave-tenure';
@@ -188,5 +189,20 @@ export class SpyHrAudit implements IHrAudit {
   record(input: AuditEntry): Promise<void> {
     this.entries.push(input);
     return Promise.resolve();
+  }
+}
+
+/** Ngày vào công ty (hồ sơ T-054) giả: mặc định null (chưa nhập). */
+export class FakeHireDates implements ILeaveHireDates {
+  readonly dates = new Map<string, CalendarDate>();
+
+  set(userId: string, hireDate: CalendarDate): void {
+    this.dates.set(userId, hireDate);
+  }
+  hireDateOf(userId: string): Promise<CalendarDate | null> {
+    return Promise.resolve(this.dates.get(userId) ?? null);
+  }
+  hireDatesOf(userIds: readonly string[]): Promise<ReadonlyMap<string, CalendarDate | null>> {
+    return Promise.resolve(new Map(userIds.map((id) => [id, this.dates.get(id) ?? null])));
   }
 }

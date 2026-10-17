@@ -1,15 +1,10 @@
-import {
-  assertBalanceCovers,
-  consumesAnnualBalance,
-  DEFAULT_ENTITLED_HALF_DAYS,
-  halfDaysToDecimal,
-} from '../../domain/leave-balance';
+import { BusinessRuleViolationError } from '../../../../core/errors';
+import { consumesAnnualBalance, halfDaysToDecimal } from '../../domain/leave-balance';
 import { assertLeaveRange, countLeaveHalfDays } from '../../domain/leave-days';
 import { assertNotAfterLastDay } from '../../domain/leave-tenure';
 import {
   PERMISSION_LEAVE_SELF,
   countingTenure,
-  summarizeStored,
   yearOf,
   type LeaveKit,
   type LeaveScope,
@@ -56,17 +51,29 @@ export class PreviewLeaveQuery {
     if (!consumesAnnualBalance(input.type)) {
       return { days: halfDaysToDecimal(halfDays), remainingDays: null };
     }
-    const stored = await this.readModel.findBalance(actorId, year);
-    const balance = summarizeStored(
-      stored ?? { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 },
+    const calc = this.kit.readCalculator(this.readModel);
+    const base = {
+      userId: actorId,
+      year,
+      today: await this.kit.today(),
+      tenure: countingTenure(employment),
       holding,
-      calendar,
-      { tenure: countingTenure(employment) },
-    );
-    assertBalanceCovers(input.type, halfDays, balance);
+    };
+    const now = await calc.compute(base);
+    const after = await calc.compute({ ...base, extra: { ...input, type: input.type } });
+    if (!after.balance.covers) {
+      throw new BusinessRuleViolationError(
+        'INSUFFICIENT_BALANCE',
+        'Không đủ số ngày phép năm còn lại.',
+        {
+          remainingDays: halfDaysToDecimal(now.balance.remaining),
+          requestedDays: halfDaysToDecimal(halfDays),
+        },
+      );
+    }
     return {
       days: halfDaysToDecimal(halfDays),
-      remainingDays: halfDaysToDecimal(balance.remaining),
+      remainingDays: halfDaysToDecimal(now.balance.remaining),
     };
   }
 }

@@ -17,10 +17,12 @@ import type {
   LeaveActor,
 } from '../modules/leave/application/ports/leave.ports';
 import type { LeaveTenure } from '../modules/leave/domain/leave-tenure';
+import type { InMemoryLeavePolicyStore } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave-policy.store';
 import type { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import type { DbProvider } from '../modules/leave/infrastructure/persistence/prisma/db';
 import { PrismaLeaveEmployeeDirectory } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-employee-directory';
 import { PrismaLeaveReadModel } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-read-model';
+import { PrismaLeavePolicyStore } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-policy.store';
 import { PrismaLeaveRepository } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave.repository';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
 
@@ -184,11 +186,13 @@ function companyEmployees(
 /** Lưu trữ leave chế độ bộ nhớ: một repo làm cả ghi lẫn đọc; nhân viên từ bảng công ty trong bộ nhớ. */
 export function memoryLeaveRepositories(
   store: InMemoryLeaveRepository,
+  policies: InMemoryLeavePolicyStore,
   company: Parameters<typeof companyEmployees>[0],
   users: Parameters<typeof companyEmployees>[1],
 ): LeaveRepositories {
   return {
     requests: store,
+    policies,
     readModel: store,
     employees: new ListEmployeeDirectory(companyEmployees(company, users)),
   };
@@ -198,6 +202,7 @@ export function memoryLeaveRepositories(
 export function prismaLeaveRepositories(db: DbProvider): LeaveRepositories {
   return {
     requests: new PrismaLeaveRepository(db),
+    policies: new PrismaLeavePolicyStore(db),
     readModel: new PrismaLeaveReadModel(db),
     employees: new PrismaLeaveEmployeeDirectory(db),
   };

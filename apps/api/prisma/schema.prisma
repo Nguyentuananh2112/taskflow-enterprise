@@ -113,6 +113,18 @@ enum NotificationType {
   ACCESS_CHANGED // Mốc 3.5: đổi role / grant công ty (thay HR_GRANTED / HR_REVOKED)
   OFFBOARD_SCHEDULED
   OFFBOARD_CLEANUP
+  PROFILE_UPDATED // Mốc 5 (ADR-128): HR sửa hồ sơ của bạn
+  CORRECTION_SUBMITTED // Mốc 5 (ADR-129): đơn bổ sung giờ — SUBMITTED / CANCELLED dành cho HR
+  CORRECTION_APPROVED
+  CORRECTION_REJECTED
+  CORRECTION_CANCELLED
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
 model User {
@@ -144,6 +156,7 @@ model User {
   leaveRequests           LeaveRequest[]    @relation("LeaveRequester")
   leaveRequestsDecided    LeaveRequest[]    @relation("LeaveDecider")
   leaveBalances           LeaveBalance[]
+  leavePoliciesUpdated    LeavePolicy[]     @relation("LeavePolicyUpdater")
   notificationsReceived   Notification[]    @relation("NotificationRecipient")
   notificationsActed      Notification[]    @relation("NotificationActor")
   hrAuditLogs             HrAuditLog[]
@@ -155,6 +168,13 @@ model User {
   activationTokens       AccountActivationToken[] @relation("ActivationTokenUser")
   activationTokensIssued AccountActivationToken[] @relation("ActivationTokenCreator")
 
+  // Mốc 5 (T-054, ADR-128)
+  employeeProfile EmployeeProfile?  @relation("ProfileUser")
+  profilesUpdated EmployeeProfile[] @relation("ProfileUpdater")
+
+  // Mốc 5 (T-055, ADR-129)
+  correctionRequests AttendanceCorrectionRequest[] @relation("CorrectionRequester")
+  correctionsDecided AttendanceCorrectionRequest[] @relation("CorrectionDecider")
   // Mốc 6 — trò chuyện (T-069a, ADR-143/144): mọi tham chiếu tới users là Restrict (v1 không xóa cứng user).
   chatConversationsCreated ChatConversation[] @relation("ChatConversationCreator")
   chatParticipations       ChatParticipant[]
@@ -429,6 +449,8 @@ model AttendanceEvent {
   createdBy User  @relation("AttendanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
   voidedBy  User? @relation("AttendanceVoider", fields: [voidedById], references: [id], onDelete: Restrict)
 
+  correction AttendanceCorrectionRequest? // Mốc 5: lượt ADJUSTMENT do duyệt đơn bổ sung giờ (ADR-129)
+
   @@unique([userId, workDate], map: "attendance_events_web_in_once_key", where: raw("kind = 'IN' AND source = 'WEB' AND voided_at IS NULL"))
   @@unique([userId, source, idempotencyKey], map: "attendance_events_idempotency_key", where: raw("idempotency_key IS NOT NULL"))
   @@index([workDate])
@@ -466,16 +488,39 @@ model LeaveRequest {
 }
 
 model LeaveBalance {
-  userId         String  @map("user_id") @db.Uuid
-  year           Int
-  entitledDays   Decimal @default(12) @map("entitled_days") @db.Decimal(4, 1)
-  adjustmentDays Decimal @default(0) @map("adjustment_days") @db.Decimal(4, 1)
-  version        Int     @default(1)
+  userId          String   @map("user_id") @db.Uuid
+  year            Int
+  /// T-057 (ADR-131): NULL = theo chính sách năm (tính khi đọc); khác NULL = ghi đè cố định.
+  entitledDays    Decimal? @map("entitled_days") @db.Decimal(4, 1)
+  adjustmentDays  Decimal  @default(0) @map("adjustment_days") @db.Decimal(4, 1)
+  /// Phép năm trước chuyển sang, chụp ở đường ghi / job 01/01; NULL = chưa chụp (đọc ⇒ tính tạm).
+  carriedOverDays Decimal? @map("carried_over_days") @db.Decimal(4, 1)
+  version         Int      @default(1)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@id([userId, year])
   @@map("leave_balances")
+}
+
+/// Chính sách phép một năm cho cả công ty (T-057, ADR-131). Năm chưa có dòng ⇒ dòng gần nhất trước đó, không có ⇒
+/// mức luật. Giới hạn = CHECK của migration (không thấp hơn luật: 12 ngày, +1 mỗi ≤ 5 năm).
+model LeavePolicy {
+  year                 Int      @id
+  annualDays           Decimal  @default(12) @map("annual_days") @db.Decimal(4, 1)
+  seniorityStepYears   Int      @default(5) @map("seniority_step_years")
+  seniorityBonusDays   Decimal  @default(1) @map("seniority_bonus_days") @db.Decimal(3, 1)
+  carryOverEnabled     Boolean  @default(false) @map("carry_over_enabled")
+  carryOverMaxDays     Decimal  @default(0) @map("carry_over_max_days") @db.Decimal(4, 1)
+  carryOverExpiryMonth Int      @default(3) @map("carry_over_expiry_month")
+  version              Int      @default(1)
+  updatedById          String   @map("updated_by_id") @db.Uuid
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User @relation("LeavePolicyUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([updatedById])
+  @@map("leave_policies")
 }
 
 /// ADR-123: thông báo bền — ghi cùng transaction với thay đổi; payload chỉ id + loại.
@@ -513,6 +558,61 @@ model HrAuditLog {
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@index([actorId])
   @@map("hr_audit_logs")
+}
+
+// ---------------------------------------------------------------- Mốc 5: hồ sơ nhân viên (ADR-128, T-054)
+/// Một dòng / user, KHÔNG phiên bản, nguồn duy nhất của `hireDate` (lương + phép). Không FK tới `company_members`
+/// (dòng đó bị xóa khi nghỉ việc) — người đã nghỉ giữ hồ sơ tới hạn lưu D8. CHECK: SQL tay trong migration.
+model EmployeeProfile {
+  userId      String    @id @map("user_id") @db.Uuid
+  hireDate    DateTime? @map("hire_date") @db.Date
+  department  String?   @db.VarChar(100)
+  jobTitle    String?   @map("job_title") @db.VarChar(100)
+  workPhone   String?   @map("work_phone") @db.VarChar(16) // đã chuẩn hóa: +? và chữ số
+  version     Int       @default(1)
+  updatedById String    @map("updated_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user      User @relation("ProfileUser", fields: [userId], references: [id], onDelete: Restrict)
+  updatedBy User @relation("ProfileUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([updatedById])
+  @@map("employee_profiles")
+}
+
+// ---------------------------------------------------------------- Mốc 5: đơn bổ sung giờ (ADR-129, T-055)
+/// Nhân viên xin thêm lượt IN / OUT còn THIẾU của một ngày công; HR duyệt ⇒ một lượt ADJUSTMENT (`created_event_id`).
+/// `reason` có thể nhắc sức khỏe (B-H2): chỉ người gửi + HR; NULL sau hạn lưu D9 (trừ PENDING). CHECK: SQL tay.
+model AttendanceCorrectionRequest {
+  id             String           @id @db.Uuid // UUIDv7 từ app
+  userId         String           @map("user_id") @db.Uuid
+  workDate       DateTime         @map("work_date") @db.Date
+  kind           AttendanceKind
+  minuteOfDay    Int              @map("minute_of_day") // phút từ 00:00 theo múi giờ lịch hiệu lực
+  nextDay        Boolean          @default(false) @map("next_day") // OUT sau nửa đêm, < 06:00
+  reason         String?          @db.VarChar(500)
+  status         CorrectionStatus @default(PENDING)
+  idempotencyKey String           @map("idempotency_key") @db.VarChar(64)
+  decidedById    String?          @map("decided_by_id") @db.Uuid
+  decidedAt      DateTime?        @map("decided_at") @db.Timestamptz(3)
+  decisionNote   String?          @map("decision_note") @db.VarChar(500)
+  createdEventId String?          @unique @map("created_event_id") @db.Uuid
+  version        Int              @default(1)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User             @relation("CorrectionRequester", fields: [userId], references: [id], onDelete: Restrict)
+  decidedBy    User?            @relation("CorrectionDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+  // NO ACTION (không Restrict): kiểm CUỐI câu lệnh ⇒ retention xóa đơn rồi lượt chấm trong một lượt không vỡ (B-HIGH-2).
+  createdEvent AttendanceEvent? @relation(fields: [createdEventId], references: [id], onDelete: NoAction)
+
+  @@unique([userId, workDate, kind], map: "attendance_corrections_pending_key", where: raw("status = 'PENDING'"))
+  @@unique([userId, idempotencyKey])
+  @@index([status, createdAt, id])
+  @@index([userId, workDate])
+  @@index([decidedById])
+  @@map("attendance_correction_requests")
 }
 
 // ================================================================ Mốc 6 — trò chuyện (T-069a; avatar-chat.md §3, ADR-143/144)

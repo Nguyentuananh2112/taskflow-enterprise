@@ -44,6 +44,13 @@ const SQL_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
 /** Mẫu dữ liệu nhạy cảm trong message tự do — thứ tự quan trọng (dòng DB trước, rồi từng mẫu). */
 const SCRUBBERS: readonly [RegExp, string][] = [
   [/Failing row contains \(.*?\)(?=\.?(\s|$))/gs, 'Failing row contains ([REDACTED])'],
+  // Postgres nhắc lại GIÁ TRỊ gốc (lương, số tiền — SEC-PAY-14): khóa trùng, ngoài miền kiểu số, sai cú pháp kiểu.
+  [
+    /\bKey \(([^)]*)\)=\(.*?\)(?= already exists| is not present|\.|\s|$)/gs,
+    'Key ($1)=([REDACTED])',
+  ],
+  [/\bvalue "[^"]*"(?= is out of range)/g, 'value "[REDACTED]"'],
+  [/(invalid input syntax for type [a-z ]+: )"[^"]*"/gi, '$1"[REDACTED]"'],
   [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@'],
   [/\b(password|passwd|pwd|secret|token|api[_-]?key)(\s*[=:]\s*)[^\s,;&]+/gi, '$1$2[REDACTED]'],
   // Chuỗi PHC có cả dấu phẩy (`m=19456,t=2,p=1`) ⇒ chỉ dừng ở khoảng trắng / nháy / ngoặc.

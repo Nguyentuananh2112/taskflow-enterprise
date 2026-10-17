@@ -148,10 +148,24 @@ export const RATE_LIMIT_RULES = {
       failMode: 'open',
     }),
   ],
-  /** Xuất CSV bảng công (SEC-HR-13): truy vấn nặng cả công ty — 20/giờ/user. */
+  /**
+   * Xuất CSV bảng công (SEC-HR-13): truy vấn nặng cả công ty — 20/giờ/user. Mốc 5 (ADR-130): MỌI báo cáo .xlsx
+   * (`attendance/export.xlsx`, `leave/export.xlsx`, `payroll/…/export.xlsx`) dùng CHÍNH quy tắc này (cùng `id` ⇒ cùng
+   * bucket với CSV) qua `EXPORT_RATE_LIMIT`.
+   */
   attendanceExport: [
     rule({
       id: 'attendance-export-user',
+      windowMs: HOUR,
+      limit: 20,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
+  /** Gửi đơn bổ sung giờ (hr-extended ADR-129, SEC-HR-51): 20/giờ/user. */
+  correctionSubmit: [
+    rule({
+      id: 'attendance-correction-user',
       windowMs: HOUR,
       limit: 20,
       key: 'user',
@@ -224,6 +238,8 @@ export const RATE_LIMIT_RULES = {
   ],
 } as const satisfies Record<string, readonly RateLimitRule[]>;
 
+/** Mọi route .xlsx (ADR-130): CÙNG quy tắc / bucket với xuất CSV — không phải hạn mức riêng (20/giờ/user chung). */
+export const EXPORT_RATE_LIMIT: readonly RateLimitRule[] = RATE_LIMIT_RULES.attendanceExport;
 /** Gửi tin: 30 / phút + `hourly` / giờ (600; `CHAT_SEND_HOURLY` chỉ ở APP_ENV=test). */
 export function chatSendRules(hourly = 600): readonly RateLimitRule[] {
   return [

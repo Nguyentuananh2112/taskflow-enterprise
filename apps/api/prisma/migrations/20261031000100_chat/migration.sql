@@ -1,5 +1,5 @@
 -- Mốc 6 — trò chuyện (docs/design/avatar-chat.md §3, ADR-143/144/148; T-069a). TẠM timestamp — TL đặt lúc gộp;
--- tách khỏi 20261020000000_avatar (users.avatar_version — G, T-068). 3 enum + 5 bảng, FK: users Restrict,
+-- tách khỏi 20261031000000_avatar (users.avatar_version — G, T-068). 3 enum + 5 bảng, FK: users Restrict,
 -- hội thoại Cascade, workspace Cascade (purge ws xóa chat — R20), reply / message của đính kèm SetNull.
 
 -- CreateEnum

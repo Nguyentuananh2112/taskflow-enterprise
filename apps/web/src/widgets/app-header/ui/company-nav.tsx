@@ -25,6 +25,7 @@ const ITEMS: readonly Item[] = [
   { href: '/w', label: 'Trang chính' },
   { href: '/attendance', label: 'Bảng công của tôi', needs: 'attendance:self' },
   { href: '/leave', label: 'Nghỉ phép', needs: 'leave:self' },
+  { href: '/my-profile', label: 'Hồ sơ của tôi', needs: 'profile:self' },
   // Mốc 6 (avatar-chat.md §7 E9): ai thuộc công ty cũng có (kể cả Admin). ≥ md: icon cạnh chuông thay cho link.
   { href: '/chat', label: 'Trò chuyện' },
   { href: '/hr', label: 'Nhân sự', needs: 'hr:manage', manage: true },

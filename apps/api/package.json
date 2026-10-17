@@ -45,6 +45,7 @@
     "cors": "catalog:",
     "express": "catalog:",
     "express-rate-limit": "catalog:",
+    "fflate": "catalog:",
     "fractional-indexing": "catalog:",
     "helmet": "catalog:",
     "jose": "catalog:",

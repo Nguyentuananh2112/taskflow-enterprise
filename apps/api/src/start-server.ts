@@ -7,14 +7,18 @@ import { appConfigFromEnv } from './app';
 import { createContainer } from './composition/container';
 import { assertPersistenceAllowed, createMemoryPersistence } from './composition/persistence';
 import { createPrismaPersistence } from './composition/prisma-persistence';
-import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
-import { maintenanceJobs, retentionCutoffFor } from './composition/maintenance-setup';
+import { MaintenanceScheduler } from './composition/maintenance-jobs';
+import {
+  LEAVE_CARRYOVER_JOB,
+  maintenanceJobs,
+  measuredBy,
+  retentionCutoffFor,
+} from './composition/maintenance-setup';
 import { chatSettingsFromEnv } from './composition/chat-wiring';
-import { createFiles } from './composition/files-setup';
-import { valkeyByteCounter } from './core/files/upload-byte-budget';
+import { serverFiles } from './composition/files-server';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
-import { createHitLimiter, createRateLimit } from './core/http/rate-limit/rate-limit';
+import { createHitLimiter } from './core/http/rate-limit/rate-limit';
 import { RATE_LIMIT_RULES } from './core/http/rate-limit/rules';
 import { createValkeyStore } from './core/http/rate-limit/store';
 import { CryptoRandom, UuidV7Generator, clocksForEnv } from './core/infrastructure/system';
@@ -31,6 +35,7 @@ import { loadCommonPasswordList } from './modules/auth/infrastructure/security/c
 import { AppMetrics, startMetricsServer } from './core/observability/metrics';
 import type { IErrorReporter } from './core/observability/sentry';
 import { createHttpServer, listen } from './server';
+import { exportLimitsFromEnv } from './core/export/export-limits';
 
 export async function startServer(
   env: Env,
@@ -67,18 +72,13 @@ export async function startServer(
   const rateLimitStore = (rule: Parameters<typeof createValkeyStore>[1]) =>
     createValkeyStore(valkey, rule);
   // Mốc 6 (ADR-141): kho tệp — FILE_STORE_DIR không dùng được ⇒ ném ⇒ từ chối khởi động.
-  const files = await createFiles({
+  const files = await serverFiles({
     env,
     clock,
     logger,
     metrics,
-    mediaRateLimit: createRateLimit(RATE_LIMIT_RULES.media[0], {
-      storeFor: rateLimitStore,
-      logger,
-      userIdOf: () => undefined,
-    }),
-    webOrigin: env.CORS_ORIGINS[0] ?? 'http://localhost:3001',
-    byteCounter: valkeyByteCounter(valkey),
+    storeFor: rateLimitStore,
+    valkey,
   });
   const container = createContainer({
     config: {
@@ -87,6 +87,7 @@ export async function startServer(
       jwtSecret: env.JWT_ACCESS_SECRET,
       jwtPreviousSecret: env.JWT_ACCESS_SECRET_PREVIOUS,
       jwtAccessTtlSeconds: env.JWT_ACCESS_TTL_SECONDS,
+      exportLimits: exportLimitsFromEnv(env),
     },
     logger,
     clock,
@@ -138,17 +139,7 @@ export async function startServer(
   );
   // Job bảo trì (T-033, ADR-095): purge workspace hết ân hạn mỗi giờ, khóa advisory theo lô.
   // Kết quả mỗi lượt ⇒ metrics `scheduled_job_*` (T-035) — bọc `run`, không sửa scheduler.
-  const measured = (job: ScheduledJob): ScheduledJob => ({
-    ...job,
-    run: (signal) =>
-      job.run(signal).then(
-        () => metrics.recordJobRun(job.name, true),
-        (err: unknown) => {
-          metrics.recordJobRun(job.name, false);
-          throw err;
-        },
-      ),
-  });
+  const measured = measuredBy(metrics);
   const jobs = [
     ...maintenanceJobs({
       persistence,
@@ -157,6 +148,7 @@ export async function startServer(
       businessClock,
       logger,
       offboarding: container.company,
+      carryover: container.leave.carryover,
     }),
     // Mốc 6 (ADR-141): dọn kho tệp — bật theo cờ bảo trì, hoặc ở test qua FILES_SWEEP_*.
     ...(files.sweepJob ? [files.sweepJob] : []),
@@ -203,6 +195,10 @@ export async function startServer(
   lifecycleRef.current = lifecycle;
   lifecycle.installProcessHandlers();
 
+  // T-057 (chỉ APP_ENV=test — env chặn ở nơi khác): chụp phép chuyển sang một lượt TRƯỚC khi nhận request.
+  const carryJob = jobs.find((j) => j.name === LEAVE_CARRYOVER_JOB);
+  if (env.LEAVE_CARRYOVER_ON_START && maintenance && carryJob)
+    await maintenance.runNow(measured(carryJob));
   // CHỈ APP_ENV=test (env.ts chặn nơi khác): một lượt files-sweep TRƯỚC khi nhận request — test hộp đen sau
   // restart mốc tiến (CLK-CH) chờ log `maintenance.run_done` {job: 'files-sweep'}.
   const sweepNow = scheduledJobs.find((j) => j.name === files.sweepJob?.name);

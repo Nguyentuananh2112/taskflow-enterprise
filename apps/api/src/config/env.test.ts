@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { productionEnvVars, testEnvVars } from '../../test/support';
 import { appConfigFromEnv } from '../app';
+import { DEFAULT_EXPORT_LIMITS, exportLimitsFromEnv } from '../core/export/export-limits';
 import { EnvValidationError, loadEnv } from './env';
 
 const variablesOf = (source: NodeJS.ProcessEnv): readonly string[] => {
@@ -178,6 +179,27 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
     }
   });
 
+  it('T-057 LEAVE_CARRYOVER_ON_START / LEAVE_CARRYOVER_INTERVAL_MS: CHỈ APP_ENV=test; interval ≥ 1000', () => {
+    const env = loadEnv(
+      testEnvVars({
+        APP_ENV: 'test',
+        LEAVE_CARRYOVER_ON_START: 'true',
+        LEAVE_CARRYOVER_INTERVAL_MS: '1000',
+      }),
+    );
+    expect([env.LEAVE_CARRYOVER_ON_START, env.LEAVE_CARRYOVER_INTERVAL_MS]).toEqual([true, 1000]);
+    expect(
+      variablesOf(testEnvVars({ APP_ENV: 'test', LEAVE_CARRYOVER_INTERVAL_MS: '999' })),
+    ).toEqual(['LEAVE_CARRYOVER_INTERVAL_MS']);
+    for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS']) {
+      const value = key.endsWith('MS') ? '5000' : 'true';
+      expect(
+        variablesOf(testEnvVars({ APP_ENV: 'local', NODE_ENV: 'development', [key]: value })),
+        key,
+      ).toEqual([key]);
+    }
+  });
+
   it.each(['local', 'staging', 'production'])(
     'JWT_ACCESS_TTL_SECONDS ở APP_ENV=%s ⇒ từ chối khởi động (không âm thầm bỏ qua)',
     (appEnv) => {
@@ -214,6 +236,43 @@ describe('loadEnv — ràng buộc production (devops.md §2.4, security.md §6.
       const anchor = { APP_ENV: appEnv, TEST_CLOCK_ANCHOR: '2026-10-20T10:00:00+07:00' };
       const vars = appEnv === 'local' ? testEnvVars(anchor) : productionEnvVars(anchor);
       expect(variablesOf(vars)).toEqual(['TEST_CLOCK_ANCHOR']);
+    },
+  );
+
+  const EXPORT_ENV = {
+    EXPORT_MAX_EMPLOYEES: '3',
+    EXPORT_MAX_LEAVE_ROWS: '5',
+    EXPORT_BATCH_SIZE: '2',
+    EXPORT_BATCH_DELAY_MS: '200',
+  };
+
+  it('T-055 EXPORT_* (F XL-05 / XL-07): APP_ENV=test ⇒ đọc được; thiếu / rỗng ⇒ mặc định của thiết kế; sai miền ⇒ 400', () => {
+    const env = loadEnv(testEnvVars({ APP_ENV: 'test', ...EXPORT_ENV }));
+    expect(exportLimitsFromEnv(env)).toEqual({
+      maxEmployees: 3,
+      maxLeaveRows: 5,
+      batchSize: 2,
+      batchDelayMs: 200,
+    });
+    expect(exportLimitsFromEnv(loadEnv(testEnvVars({ EXPORT_BATCH_SIZE: ' ' })))).toEqual(
+      DEFAULT_EXPORT_LIMITS,
+    );
+    for (const [key, bad] of [
+      ['EXPORT_MAX_EMPLOYEES', '0'],
+      ['EXPORT_MAX_LEAVE_ROWS', '-1'],
+      ['EXPORT_BATCH_SIZE', '1.5'],
+      ['EXPORT_BATCH_DELAY_MS', '5001'],
+    ] as const) {
+      expect(variablesOf(testEnvVars({ APP_ENV: 'test', [key]: bad }))).toEqual([key]);
+    }
+  });
+
+  it.each(['local', 'staging', 'production'])(
+    'T-055 EXPORT_* ở APP_ENV=%s ⇒ từ chối khởi động, nêu đủ tên biến',
+    (appEnv) => {
+      const extra = { APP_ENV: appEnv, ...EXPORT_ENV };
+      const vars = appEnv === 'local' ? testEnvVars(extra) : productionEnvVars(extra);
+      expect([...variablesOf(vars)].sort()).toEqual(Object.keys(EXPORT_ENV).sort());
     },
   );
 

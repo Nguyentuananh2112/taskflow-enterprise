@@ -22,6 +22,7 @@ import {
   vnWorkday,
   type HrWorld,
 } from '../support/hr';
+import { loadUntilVisible } from '../support/load-more';
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
@@ -443,7 +444,10 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
 
 // ---------------------------------------------------------------- E2E-HR-06
 
-test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên file theo tháng, có BOM`, async ({
+// Mốc 5 (ADR-130, T-058c): web bỏ nút "Xuất CSV", thay bằng "Tải Excel" (endpoint CSV vẫn còn — SEC-HR ở suite bảo
+// mật). Nội dung file (.xlsx an toàn, dòng của người, ô ngày) ở E2E-HR-22 (hr-extended.e2e.ts); ca này giữ phần riêng
+// của T-041c: tải bằng fetch + Bearer (không link GET trần), tên file theo tháng, cảnh báo dữ liệu cá nhân.
+test(`E2E-HR-06 [${T041C}]: HR tải Excel bảng công tháng (fetch + Blob, Bearer) ⇒ tên file theo tháng, file .xlsx, không còn nút CSV`, async ({
   page,
   request,
 }) => {
@@ -458,25 +462,23 @@ test(`E2E-HR-06 [${T041C}]: HR xuất CSV tháng (fetch + Blob, Bearer) ⇒ tên
     }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tháng sau ›' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Xuất CSV' })).toHaveCount(0);
 
-  const exportBtn = page.getByRole('button', { name: 'Xuất CSV' });
-  await expect(exportBtn).toHaveAttribute('title', /dữ liệu cá nhân/);
-  const csvRes = page.waitForResponse((r) => r.url().includes('/attendance/export.csv'));
+  const exportBtn = page.getByRole('button', { name: 'Tải Excel' });
+  await expect(exportBtn).toHaveAttribute('title', /dữ liệu của nhân viên/);
+  const xlsxRes = page.waitForResponse((r) => r.url().includes('/attendance/export.xlsx'));
   const download = page.waitForEvent('download');
   await exportBtn.click();
-  const res = await csvRes;
+  const res = await xlsxRes;
   expect(res.status()).toBe(200);
   expect(
     (await res.request().allHeaders())['authorization'],
-    'CSV gọi bằng Bearer (fetch), không phải link GET trần',
+    'Excel gọi bằng Bearer (fetch), không phải link GET trần',
   ).toMatch(/^Bearer /);
   const file = await download;
-  expect(file.suggestedFilename()).toContain(month);
-  expect(file.suggestedFilename()).toMatch(/\.csv$/);
+  expect(file.suggestedFilename()).toBe(`bang-cong-${month}.xlsx`);
   const bytes = await readFile(await file.path());
-  expect([...bytes.subarray(0, 3)], 'BOM UTF-8 (U+FEFF)').toEqual([0xef, 0xbb, 0xbf]);
-  expect(bytes.toString('utf8')).toContain(w.mia.user.fullName);
-  await expect(page.getByText('Đã xuất bảng công', { exact: true })).toBeVisible();
+  expect(bytes.subarray(0, 2).toString('latin1'), 'file ZIP (.xlsx)').toBe('PK');
 });
 
 // ---------------------------------------------------------------- E2E-HR-07
@@ -716,14 +718,10 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   // Một công ty (§0.4): bảng công tháng có MỌI nhân viên của lượt chạy, phân trang "Tải thêm", không có ô tìm ⇒ tải tới
   // khi thấy Mia (không dựa trang 1 — đỏ ở 5840a31 khi DB E2E đã tích lũy > 48 người).
   const miaBtn = hana.page.getByRole('button', { name: w.mia.user.fullName, exact: true });
-  const more = hana.page.getByRole('button', { name: 'Tải thêm' });
   // Chờ bảng có dữ liệu (thấy Mia hoặc nút "Tải thêm") rồi mới đếm — đếm sớm ra 0 khi bảng còn đang tải.
+  const more = hana.page.getByRole('button', { name: 'Tải thêm' });
   await expect(miaBtn.or(more).first()).toBeVisible();
-  for (let i = 0; i < 30 && (await miaBtn.count()) === 0; i += 1) {
-    await expect(more, `không thấy ${w.mia.user.fullName} và hết "Tải thêm"`).toBeVisible();
-    await more.click();
-    await expect(more.or(miaBtn).first()).toBeVisible();
-  }
+  await loadUntilVisible(miaBtn, hana.page.getByRole('row'), more);
   await miaBtn.click();
   const sheet = hana.page.getByRole('region', { name: `Bảng công của ${w.mia.user.fullName}` });
   // T-046: lịch T2…CN như /attendance — đúng một ô hôm nay (theo server), là ô của ngày mốc.

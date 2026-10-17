@@ -113,7 +113,14 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
         // Mốc 6 (ADR-141): tên gốc của upload nhị phân — thiếu ⇒ preflight của trình duyệt chặn upload thật.
         'X-Upload-Name',
       ],
-      exposedHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Policy', 'RateLimit'],
+      // Content-Disposition (T-055, A): web đọc tên file .xlsx của báo cáo khi tải qua fetch.
+      exposedHeaders: [
+        'X-Request-Id',
+        'Retry-After',
+        'RateLimit-Policy',
+        'RateLimit',
+        'Content-Disposition',
+      ],
       maxAge: 600,
     }),
   ];

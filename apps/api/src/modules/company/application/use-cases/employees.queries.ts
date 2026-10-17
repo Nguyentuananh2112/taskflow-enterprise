@@ -1,4 +1,6 @@
-import type { LocalDate } from '../../../../core/domain/local-time';
+import type { IClock } from '../../../../core/domain';
+import { toLocal, type LocalDate } from '../../../../core/domain/local-time';
+import { seniorityOf } from '../../../../core/domain/seniority';
 import {
   ForbiddenError,
   ResourceNotFoundError,
@@ -8,6 +10,7 @@ import type { IUnitOfWork } from '../../../../core/persistence/unit-of-work';
 import type { CompanyMemberSnapshot, EmployeeStatus } from '../../domain/company-member';
 import type { CompanyGrant, CompanyPermission } from '../../domain/roles';
 import type { ICompanyAccounts } from '../ports/accounts.port';
+import type { IProfileColumnsPort } from '../ports/employment-collaborators.port';
 import type { DepartedEmployee, ICompanyOffboardingRepository } from '../ports/offboarding.port';
 
 /** = `EmployeeDto` của contracts. */
@@ -20,6 +23,12 @@ export interface EmployeeView {
   startDate: LocalDate | null;
   offboardLastDay: LocalDate | null;
   version: number | null;
+  // Mốc 5 (T-054): cột hồ sơ (không `workPhone`), thâm niên tính ở server theo "hôm nay" của giờ nghiệp vụ.
+  hireDate: LocalDate | null;
+  department: string | null;
+  jobTitle: string | null;
+  missingHireDate: boolean;
+  seniority: { years: number; months: number } | null;
   /** Mốc 6: có ⇒ web hiện "Gỡ ảnh đại diện" (T-071). Chỉ gắn khi có `avatars`. */
   avatarUrl?: string | null;
 }
@@ -60,6 +69,10 @@ export class EmployeeQueries {
       accounts: ICompanyAccounts;
       permissionsOf(userId: string): Promise<ReadonlySet<CompanyPermission> | null>;
       uow: IUnitOfWork;
+      clock: IClock;
+      timeZone: () => Promise<string>;
+      /** Module hr-profile (T-054) — tham chiếu trễ. */
+      profileColumns: () => IProfileColumnsPort;
       avatars?: IEmployeeAvatars | undefined;
     },
   ) {}
@@ -112,6 +125,7 @@ export class EmployeeQueries {
   }
 
   async #all(only?: readonly string[]): Promise<EmployeeView[]> {
+    const today = toLocal(this.d.clock.now(), await this.d.timeZone()).date;
     return this.d.uow.run(async () => {
       const keep = (id: string) => !only || only.includes(id);
       const members = only
@@ -123,9 +137,9 @@ export class EmployeeQueries {
         ...departed.map((m) => m.userId),
       ]);
       const avatars = await this.d.avatars?.urlsOf(members.map((m) => m.userId));
-      const withAvatar = (v: EmployeeView): EmployeeView =>
+      const withAvatar = (v: BaseView): BaseView =>
         avatars ? { ...v, avatarUrl: avatars.get(v.userId) ?? null } : v;
-      const out: EmployeeView[] = [];
+      const out: BaseView[] = [];
       for (const m of members) {
         const p = profiles.get(m.userId);
         if (p && !p.deleted) out.push(withAvatar(currentView(m, p)));
@@ -134,14 +148,33 @@ export class EmployeeQueries {
         const p = profiles.get(m.userId);
         if (p && !p.deleted) out.push(withAvatar(leftView(m, p))); // đã nghỉ ⇒ null (ADR-142)
       }
-      return out;
+      const columns = await this.d.profileColumns().columnsOf(out.map((e) => e.userId));
+      return out.map((e) => withProfile(e, columns.get(e.userId), today));
     });
   }
 }
 
 type Profile = { fullName: string; email: string; hasPassword: boolean };
+type ProfileColumn = 'hireDate' | 'department' | 'jobTitle' | 'missingHireDate' | 'seniority';
+type BaseView = Omit<EmployeeView, ProfileColumn>;
 
-function currentView(m: CompanyMemberSnapshot, p: Profile): EmployeeView {
+function withProfile(
+  e: Omit<EmployeeView, ProfileColumn>,
+  c: { hireDate: LocalDate | null; department: string | null; jobTitle: string | null } | undefined,
+  today: LocalDate,
+): EmployeeView {
+  const hireDate = c?.hireDate ?? null;
+  return {
+    ...e,
+    hireDate,
+    department: c?.department ?? null,
+    jobTitle: c?.jobTitle ?? null,
+    missingHireDate: hireDate === null,
+    seniority: hireDate ? seniorityOf(hireDate, today) : null,
+  };
+}
+
+function currentView(m: CompanyMemberSnapshot, p: Profile): Omit<EmployeeView, ProfileColumn> {
   const status: EmployeeStatus = !p.hasPassword
     ? 'PENDING_ACTIVATION'
     : m.offboardLastDay === null
@@ -159,7 +192,7 @@ function currentView(m: CompanyMemberSnapshot, p: Profile): EmployeeView {
   };
 }
 
-function leftView(m: DepartedEmployee, p: Profile): EmployeeView {
+function leftView(m: DepartedEmployee, p: Profile): Omit<EmployeeView, ProfileColumn> {
   return {
     userId: m.userId,
     fullName: p.fullName,

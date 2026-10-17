@@ -5,8 +5,8 @@
 
 ## Lệch / quyết định (TL đồng ý 18/10 — TL ghi vào ADR lúc gộp)
 
-1. **Migration tách theo ticket.** `20261020000000_avatar` chỉ thêm `users.avatar_version INTEGER` + CHECK
-   `users_avatar_version_positive_chk` (NULL hoặc 1…999 999 999). Migration chat là `20261021000000_chat` (D, T-069a).
+1. **Migration tách theo ticket.** `20261031000000_avatar` (đổi số khi gộp main sau Mốc 5; ban đầu 20261020000000) chỉ thêm `users.avatar_version INTEGER` + CHECK
+   `users_avatar_version_positive_chk` (NULL hoặc 1…999 999 999). Migration chat là `20261031000100_chat` (D, T-069a).
 2. **Code avatar nằm trong module auth** (bảng `users` thuộc auth). Route HR `DELETE /hr/employees/:userId/avatar` ở
    company, gọi qua cổng late-bound `accounts.removeAvatar`.
 3. **Quy tắc version:** version mới = `max(version đã commit, version lớn nhất còn trên đĩa) + 1`. Không bao giờ dùng

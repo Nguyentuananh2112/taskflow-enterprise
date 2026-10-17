@@ -133,7 +133,12 @@ describe('PrismaLeaveReadModel', () => {
     expect(await read.findBalance(MIA, 2026)).toBeNull();
     expect(await testPrisma().leaveBalance.count()).toBe(0);
     await uow.run(() => repo.setBalanceAdjustment(MIA, 2026, -3));
-    expect(await read.findBalance(MIA, 2026)).toEqual({ entitled: 24, adjustment: -3 });
+    // T-057: dòng tạo lười giữ entitled NULL (= theo chính sách) và carried NULL (chưa chụp).
+    expect(await read.findBalance(MIA, 2026)).toEqual({
+      entitled: null,
+      adjustment: -3,
+      carried: null,
+    });
     const many = await read.findBalances([MIA, HANA], 2026);
     expect([...many.keys()]).toEqual([MIA]);
     await uow.run(async () => {

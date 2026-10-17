@@ -2,13 +2,7 @@ import { ResourceNotFoundError, ValidationError } from '../../../../core/errors'
 import type { HalfDays } from '../../domain/leave-days';
 import type { LeaveTenure } from '../../domain/leave-tenure';
 import { refOf, toBalanceDto, type LeaveBalanceRowDto } from '../leave-dto';
-import {
-  countingTenure,
-  summarizeStored,
-  yearOf,
-  type LeaveKit,
-  type LeaveScope,
-} from '../leave-kit';
+import { countingTenure, yearOf, type LeaveKit, type LeaveScope } from '../leave-kit';
 
 export interface AdjustBalanceInput {
   userId: string;
@@ -47,8 +41,9 @@ export class AdjustBalanceUseCase {
     const yearTenure = await this.tenureForYear(input.userId, input.year);
     if (yearTenure === undefined) throw new ResourceNotFoundError('user');
 
-    const balance = await d.uow.run(async () => {
-      await d.requests.lockUser(input.userId);
+    const today = await this.kit.today();
+    const view = await d.uow.run(async () => {
+      await this.kit.lockFor(input.userId); // policy SHARED → leave:<user> (ADR-131/136)
       await d.company.authorizeHrWrite(guard); // B-H3: sau khóa
       const before = await d.requests.getOrCreateBalance(input.userId, input.year);
       await d.requests.setBalanceAdjustment(input.userId, input.year, input.adjustment);
@@ -61,18 +56,21 @@ export class AdjustBalanceUseCase {
         after: { year: input.year, adjustmentHalfDays: input.adjustment },
         note,
       });
-      return summarizeStored(
-        { entitled: before.entitled, adjustment: input.adjustment },
-        await d.requests.listHolding(input.userId, input.year),
-        await this.kit.yearCalendar(input.year),
-        { tenure: yearTenure },
-      );
+      await this.kit.snapshotCarried(input.userId, input.year, today);
+      // Chỉnh năm Y khi Y+1 đã bắt đầu ⇒ `carried(Y+1)` đã chụp phải tính lại (ADR-131, LP-09).
+      await this.kit.refreshNextCarried(input.userId, input.year, today);
+      return this.kit.calculator().compute({
+        userId: input.userId,
+        year: input.year,
+        today,
+        tenure: yearTenure,
+      });
     });
     const refs = await d.users.findRefs([input.userId]);
     return {
       userId: input.userId,
       user: refOf(refs, input.userId),
-      ...toBalanceDto(input.year, balance),
+      ...toBalanceDto(view),
     };
   }
 

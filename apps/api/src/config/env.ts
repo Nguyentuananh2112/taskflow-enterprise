@@ -1,5 +1,9 @@
 import { isAbsolute } from 'node:path';
 
+import { FILES_ENV_SHAPE, FILES_TEST_ONLY_VARS, jwtSecret } from './env-files';
+
+export { FILES_TEST_ONLY_VARS } from './env-files';
+
 import * as z from 'zod';
 
 // Nơi DUY NHẤT đọc process.env (devops.md §2.2–2.4, ESLint chặn chỗ khác). Thêm biến ⇒ sửa ở đây.
@@ -8,46 +12,32 @@ import * as z from 'zod';
  * Secret không bao giờ được chấp nhận ở production (security.md §6.9): placeholder của
  * `.env.example` (`change-me-…`) và giá trị test cố định (`test-only-…`).
  */
+/** Số nguyên tùy chọn; chuỗi rỗng = không đặt (không coi là 0). */
+const testOnlyInt = (min: number, max: number) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().int().min(min).max(max).optional(),
+  );
+
 export const NON_PRODUCTION_SECRET = /^(change-me|test-only-)/;
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
-/** Khóa HS256 = byte UTF-8 của chuỗi (security.md §2.1: `TextEncoder().encode(secret)`), ≥ 32 byte. */
-const jwtSecret = z
-  .string()
-  .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, 'phải ≥ 32 byte');
-
 const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ });
 
-/** Chuỗi rỗng ⇒ không đặt (giống JWT_ACCESS_TTL_SECONDS). */
-const blankAsUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
-/** Số nguyên tùy chọn — dùng cho các cửa sổ CHỈ APP_ENV=test (superRefine chặn môi trường khác). */
-const optionalInt = (min: number, max: number) =>
-  z.preprocess(blankAsUndefined, z.coerce.number().int().min(min).max(max).optional());
-const optionalFlag = z.preprocess(blankAsUndefined, z.stringbool().optional());
-
-/** Mốc 6 (ADR-141): cửa sổ chỉnh được ở test (F-01/F-02). Đặt khi APP_ENV ≠ test ⇒ từ chối khởi động. */
-export const FILES_TEST_ONLY_VARS = [
-  'MEDIA_URL_AVATAR_BUCKET_SECONDS',
-  'MEDIA_URL_IMAGE_BUCKET_SECONDS',
-  'MEDIA_URL_DOWNLOAD_TTL_SECONDS',
-  'FILES_ORPHAN_TTL_SECONDS',
-  'UPLOAD_IDLE_TIMEOUT_MS',
-  'FILE_STORE_USAGE_CACHE_MS',
-  'FILES_SWEEP_ON_START',
-  'FILES_SWEEP_INTERVAL_MS',
-  'FILES_IMAGE_PIPELINE_DISABLED',
-  // T-069: cửa sổ / hạn mức chat (ADR-141 F-01)
-  'CHAT_EDIT_WINDOW_SECONDS',
-  'CHAT_UPLOAD_DAILY_BYTES',
-  'CHAT_SEND_HOURLY',
-] as const;
-
 /**
- * Danh sách CHUNG các biến chỉ APP_ENV=test (một vòng lặp, một thông báo lỗi). Gộp với T-055 (Mốc 5,
- * `TEST_ONLY_KEYS` của B) khi hai mốc gặp nhau: nối thêm phần tử, không thêm cơ chế thứ hai.
+ * Biến CHỈ cho APP_ENV=test — nơi khác có ⇒ từ chối khởi động (không âm thầm bỏ qua). MỘT danh sách, MỘT vòng lặp
+ * (Mốc 5 T-055 của B + Mốc 6 ADR-141 gộp khi hai mốc gặp nhau).
  */
-const TEST_ONLY_KEYS = [...FILES_TEST_ONLY_VARS] as const;
+const TEST_ONLY_KEYS = [
+  'JWT_ACCESS_TTL_SECONDS',
+  'TEST_CLOCK_ANCHOR',
+  'EXPORT_MAX_EMPLOYEES',
+  'EXPORT_MAX_LEAVE_ROWS',
+  'EXPORT_BATCH_SIZE',
+  'EXPORT_BATCH_DELAY_MS',
+  ...FILES_TEST_ONLY_VARS,
+] as const;
 const redisUrl = z.url({ protocol: /^rediss?$/ });
 
 const originList = z
@@ -87,6 +77,12 @@ const EnvSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.iso.datetime({ offset: true }).optional(),
     ),
+    // CHỈ APP_ENV=test (T-055, F XL-05 / XL-07 / SEC-HR-54): trần + nhịp đọc của báo cáo .xlsx — core/export/
+    // export-limits.ts giữ mặc định. Môi trường khác có biến nào ⇒ từ chối khởi động.
+    EXPORT_MAX_EMPLOYEES: testOnlyInt(1, 1_000_000),
+    EXPORT_MAX_LEAVE_ROWS: testOnlyInt(1, 1_000_000),
+    EXPORT_BATCH_SIZE: testOnlyInt(1, 10_000),
+    EXPORT_BATCH_DELAY_MS: testOnlyInt(0, 5_000),
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
@@ -122,6 +118,10 @@ const EnvSchema = z
     PURGE_JITTER_MS: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
     // T-043: job retention XÓA dữ liệu ⇒ cờ riêng; local/test chỉ chạy khi = true (composition tính).
     RETENTION_JOB_ENABLED: z.stringbool().optional(),
+    // T-057 (F, CLK-HR-13 / LP-12): job chụp phép chuyển sang — CHỈ APP_ENV=test: chạy một lượt TRƯỚC khi listen;
+    // rút ngắn interval (mặc định 1 giờ).
+    LEAVE_CARRYOVER_ON_START: z.stringbool().optional(),
+    LEAVE_CARRYOVER_INTERVAL_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
     // T-043 / R27 (data-retention.md §3): thời hạn lưu dữ liệu cá nhân Mốc 3, đơn vị NGÀY, mặc định =
     // phương án B. `min` chặn cấu hình nhầm (vd 0 ⇒ xóa sạch).
     RETENTION_CLIENT_INFO_DAYS: z.coerce.number().int().min(30).max(3_660).default(395),
@@ -133,40 +133,7 @@ const EnvSchema = z
     // T-020/T-024: lưu trữ của MỌI module (auth, workspace, task) — Prisma + Valkey, hoặc `memory`
     // (bộ nhớ, MẤT dữ liệu khi khởi động lại; chỉ local/test). Không còn trạng thái "lai" theo module.
     PERSISTENCE: z.enum(['prisma', 'memory']).default('prisma'),
-    // ---- Mốc 6 — kho tệp (ADR-141) ----
-    // Thư mục kho (tuyệt đối, ngoài thư mục app; Docker: volume `filestore`). Bắt buộc ở staging/production;
-    // local/test không đặt ⇒ `<os tmpdir>/taskflow-files`. Không tồn tại / không ghi được ⇒ từ chối khởi động.
-    FILE_STORE_DIR: z.preprocess(blankAsUndefined, z.string().optional()),
-    // Khóa HMAC ký URL `/media` (≥ 32 byte, KHÁC JWT). Bắt buộc ở staging/production; local/test không đặt ⇒
-    // khóa ngẫu nhiên mỗi lần khởi động (URL cũ hết hiệu lực khi restart).
-    FILE_URL_SECRET: z.preprocess(blankAsUndefined, jwtSecret.optional()),
-    // Khóa cũ trong lúc xoay — CHỈ để kiểm, không để ký (B M3).
-    FILE_URL_SECRET_PREVIOUS: z.preprocess(blankAsUndefined, jwtSecret.optional()),
-    // Trần dung lượng kho (byte) ⇒ 507 STORAGE_FULL. Mặc định 50 GiB (người dùng 17/10).
-    FILE_STORE_MAX_BYTES: z.coerce
-      .number()
-      .int()
-      .min(1_000_000)
-      .default(50 * 1024 ** 3),
-    // CORP của `/media` (B M2): web + API chung eTLD+1 ⇒ same-site; khác ⇒ cross-origin có chủ ý.
-    MEDIA_CORP: z.enum(['same-site', 'cross-origin']).default('same-site'),
-    // Origin công khai của API cho URL ký tuyệt đối (TL 18/10). staging/production bắt buộc https.
-    MEDIA_BASE_URL: z
-      .url({ protocol: /^https?$/ })
-      .refine((u) => new URL(u).origin === u, 'chỉ origin, không path')
-      .default('http://localhost:4000'),
-    MEDIA_URL_AVATAR_BUCKET_SECONDS: optionalInt(1, 86_400),
-    MEDIA_URL_IMAGE_BUCKET_SECONDS: optionalInt(1, 3_600),
-    MEDIA_URL_DOWNLOAD_TTL_SECONDS: optionalInt(1, 60),
-    FILES_ORPHAN_TTL_SECONDS: optionalInt(1, 86_400),
-    UPLOAD_IDLE_TIMEOUT_MS: optionalInt(100, 15_000),
-    FILE_STORE_USAGE_CACHE_MS: optionalInt(0, 60_000),
-    FILES_SWEEP_ON_START: optionalFlag,
-    FILES_SWEEP_INTERVAL_MS: optionalInt(1_000, 3_600_000),
-    FILES_IMAGE_PIPELINE_DISABLED: optionalFlag,
-    CHAT_EDIT_WINDOW_SECONDS: optionalInt(1, 900),
-    CHAT_UPLOAD_DAILY_BYTES: optionalInt(1_000, 200 * 1024 * 1024),
-    CHAT_SEND_HOURLY: optionalInt(1, 600),
+    ...FILES_ENV_SHAPE,
   })
   .superRefine((env, ctx) => {
     const fail = (path: keyof typeof env, message: string) =>
@@ -176,16 +143,13 @@ const EnvSchema = z
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
     }
     if (env.METRICS_PORT === env.PORT) fail('METRICS_PORT', 'phải khác PORT (cổng nội bộ riêng)');
-    if (env.JWT_ACCESS_TTL_SECONDS !== undefined && env.APP_ENV !== 'test') {
-      fail('JWT_ACCESS_TTL_SECONDS', 'chỉ được đặt khi APP_ENV=test');
+    for (const key of TEST_ONLY_KEYS) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
-    if (env.TEST_CLOCK_ANCHOR !== undefined && env.APP_ENV !== 'test') {
-      fail('TEST_CLOCK_ANCHOR', 'chỉ được đặt khi APP_ENV=test');
-    }
-    if (env.APP_ENV !== 'test') {
-      for (const key of TEST_ONLY_KEYS) {
-        if (env[key] !== undefined) fail(key, 'chỉ được đặt khi APP_ENV=test');
-      }
+    for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS'] as const) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
     if (env.FILE_STORE_DIR !== undefined && !isAbsolute(env.FILE_STORE_DIR)) {
       fail('FILE_STORE_DIR', 'phải là đường dẫn tuyệt đối');

@@ -5,14 +5,18 @@ import {
   AttendanceMemberMonthDto,
   HolidayDto,
   WorkScheduleDto,
+  XLSX_CONTENT_TYPE,
   type AdjustAttendanceBody,
   type CreateWorkScheduleBody,
 } from '@taskflow/contracts/attendance';
 import type { LeaveStatus } from '@taskflow/contracts/hr';
 import {
   LeaveBalanceRowDto,
+  LeavePolicyDto,
   LeaveRequestDto,
+  PutLeavePolicyResponse,
   type AdjustLeaveBalanceBody,
+  type PutLeavePolicyBody,
 } from '@taskflow/contracts/leave';
 import * as z from 'zod';
 
@@ -31,9 +35,9 @@ export const hrAttendanceApi = {
       schema: z.array(AttendanceMemberMonthDto),
       query: { month, cursor, limit: 50 },
     }),
-  /** CSV cả công ty: fetch (Bearer) → Blob (§5 — không dùng URL ký). */
-  exportCsv: (month: string) =>
-    http.download(`${att}/export.csv`, { query: { month }, accept: 'text/csv' }),
+  /** Excel bảng công tháng cả công ty (ADR-130 — thay CSV ở màn hình); tên file từ `Content-Disposition`. */
+  exportXlsx: (month: string) =>
+    http.download(`${att}/export.xlsx`, { query: { month }, accept: XLSX_CONTENT_TYPE }),
   events: (userId: string, date: string) =>
     http.get(`${att}/events`, { schema: AttendanceEventsDto, query: { userId, date } }),
   adjust: (body: AdjustAttendanceBody) =>
@@ -60,6 +64,12 @@ export const hrAttendanceApi = {
 
 /** Nghỉ phép phía HR (§9 — `expectedVersion` cho mọi chuyển trạng thái). */
 export const hrLeaveApi = {
+  policy: (year: number) => http.get('/leave/policy', { schema: LeavePolicyDto, query: { year } }),
+  putPolicy: (year: number, body: PutLeavePolicyBody) =>
+    http.put(`/leave/policy/${year}`, { schema: PutLeavePolicyResponse, body }),
+  /** Báo cáo nghỉ phép .xlsx (ADR-130): năm + khoảng ngày trong năm (mặc định cả năm). */
+  exportXlsx: (q: { year: number; from?: string; to?: string }) =>
+    http.download('/leave/export.xlsx', { query: q, accept: XLSX_CONTENT_TYPE }),
   list: (status: LeaveStatus | undefined, cursor?: string) =>
     http.request('GET', `/leave/requests`, {
       schema: z.array(LeaveRequestDto),

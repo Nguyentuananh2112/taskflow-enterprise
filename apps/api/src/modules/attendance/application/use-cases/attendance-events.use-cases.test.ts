@@ -243,3 +243,40 @@ describe('AttendanceEventsUseCases', () => {
     ]);
   });
 });
+
+describe('khóa punch:<user> cho ADJUSTMENT / void (T-056, hr-extended ADR-129 · bảng khóa ADR-136)', () => {
+  const locksOf = (t: Awaited<ReturnType<typeof createAttendanceHarness>>) => {
+    const events = t.backend.events as object;
+    return 'locks' in events ? (events.locks as string[]) : null;
+  };
+
+  it('adjust: khóa người ĐƯỢC sửa lấy TRƯỚC kiểm quyền — tự sửa (403) vẫn đã khóa; sửa người khác khóa đúng người đó', async () => {
+    const t = await createAttendanceHarness('2026-11-17 10:00');
+    const locks = locksOf(t);
+    if (!locks) return; // backend Postgres (runner LSP): thứ tự khóa kiểm ở integration
+    await expect(t.eventUseCases.adjust(hana, adjustBody({ userId: HANA }))).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(locks).toEqual([`taskflow:attendance:punch:${HANA}`]);
+    await t.eventUseCases.adjust(hana, adjustBody());
+    expect(locks.at(-1)).toBe(`taskflow:attendance:punch:${MIA}`);
+  });
+
+  it('void: khóa CHỦ lượt chấm (không phải người hủy) trước kiểm quyền; id lạ ⇒ 404 không khóa', async () => {
+    const t = await createAttendanceHarness();
+    const locks = locksOf(t);
+    if (!locks) return;
+    await t.punch('IN', key(1), HANA);
+    const own = (await t.backend.eventRows())[0]!.id;
+    locks.length = 0;
+    await expect(t.eventUseCases.void(hana, { id: own, reason: 'x' })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(locks).toEqual([`taskflow:attendance:punch:${HANA}`]);
+    locks.length = 0;
+    await expect(
+      t.eventUseCases.void(hana, { id: '0199e5a2-0000-7000-8000-00000000ffff', reason: 'x' }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(locks).toEqual([]);
+  });
+});

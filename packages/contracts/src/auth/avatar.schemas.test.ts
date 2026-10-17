@@ -62,6 +62,12 @@ describe('avatar trong DTO người dùng', () => {
       startDate: '2026-01-05',
       offboardLastDay: null,
       version: 1,
+      // Mốc 5 (T-054): cột hồ sơ phẳng — bắt buộc trong EmployeeDto sau khi gộp main.
+      hireDate: null,
+      department: null,
+      jobTitle: null,
+      missingHireDate: true,
+      seniority: null,
     };
     expect(EmployeeDto.safeParse(employee).success).toBe(true);
     expect(EmployeeDto.parse({ ...employee, avatarUrl: URL64 }).avatarUrl).toBe(URL64);
