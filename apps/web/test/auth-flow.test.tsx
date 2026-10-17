@@ -203,6 +203,52 @@ describe('luồng xác thực trên mock API', () => {
     clear.mockRestore();
   });
 
+  it('SEC-HR-67 (thu hồi phiên khi nghỉ việc): access cũ ⇒ 401 UNAUTHORIZED ⇒ /login không refresh; access hết hạn ⇒ refresh 401 REFRESH_TOKEN_INVALID đúng MỘT lần ⇒ /login, không lặp', async () => {
+    const user = userEvent.setup({ delay: null });
+    const signIn = async (email: string) => {
+      openPage('/login?next=%2Fw');
+      await user.type(await screen.findByLabelText(/Email/), email);
+      await user.type(screen.getByLabelText(/Mật khẩu/), BINH_PASSWORD);
+      await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+      expect(await screen.findByRole('heading', { level: 1, name: 'Trang chính' })).toBeDefined();
+    };
+
+    // (a) Hoàn tất nghỉ việc tăng token_version + thu hồi refresh (ADR-105) ⇒ access trong bộ nhớ thành UNAUTHORIZED.
+    const { user: dung } = mock.db.createUser({
+      email: 'dung@example.com',
+      password: BINH_PASSWORD,
+      fullName: 'Phạm Dũng',
+    });
+    await signIn('dung@example.com');
+    act(() => mock.db.revokeAllSessions(dung.id, 'LOGOUT_ALL'));
+    const rotateA = vi.spyOn(mock.db, 'rotateRefresh');
+    act(() => testRouter.push('/attendance'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Đăng nhập' })).toBeDefined();
+    expect(rotateA, 'UNAUTHORIZED không vào vòng refresh').not.toHaveBeenCalled();
+    rotateA.mockRestore();
+    cleanupApp();
+    mock.jar.clear();
+
+    // (b) Access HẾT HẠN đúng lúc refresh đã bị thu hồi ⇒ thử refresh MỘT lần ⇒ REFRESH_TOKEN_INVALID ⇒ /login.
+    mock.db.createUser({
+      email: 'em@example.com',
+      password: BINH_PASSWORD,
+      fullName: 'Lý Em',
+    });
+    await signIn('em@example.com');
+    // Chỉ refresh token bị thu hồi (job hoàn tất nghỉ việc chạy giữa hai lần access còn hạn) — access cũ vẫn khớp
+    // token_version cho tới khi hết hạn ⇒ web đi đường TOKEN_EXPIRED → refresh.
+    act(() => mock.db.revokeRefresh(mock.jar.get('tf_rt')));
+    now += 61_000; // access TTL 60 s
+    const rotateB = vi.spyOn(mock.db, 'rotateRefresh');
+    act(() => testRouter.push('/attendance'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Đăng nhập' })).toBeDefined();
+    expect(rotateB.mock.results.map((r) => (r.value as { status: string }).status)).toEqual([
+      'invalid',
+    ]);
+    rotateB.mockRestore();
+  });
+
   it('?next= trỏ ra ngoài (open redirect) ⇒ bị bỏ, vào /w', async () => {
     const user = userEvent.setup({ delay: null });
     openPage('/login?next=%2F%2Fevil.example');
