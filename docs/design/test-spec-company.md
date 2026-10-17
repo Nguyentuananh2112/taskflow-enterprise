@@ -87,7 +87,8 @@ Lịch, ngày lễ, danh sách nhân viên và người nhận thông báo HR l�
 ### 1.2 Tạo người và workspace
 
 ```ts
-// Ada: POST /hr/employees {email, fullName, startDate?} ⇒ {userId, version, activation: {token}}
+// Ada: POST /hr/employees {email, fullName, startDate?} ⇒ {userId, version, activation: {token, expiresAt} | null}
+//   (activation = null khi NHẬN LẠI người đã có mật khẩu — TL đề xuất, B chốt contracts)
 //   ⇒ POST /auth/activate {token, password} ⇒ access token (không login lại)
 //   ⇒ (tuỳ chọn) PUT /admin/access/:userId {role, grants, expectedVersion: version}
 actors.createUser(label, { grants?: CompanyGrant[], admin?: boolean, pending?: boolean, startDate?: string })
@@ -124,7 +125,8 @@ await api.restart({ TEST_CLOCK_ANCHOR: addDays(anchor, 7) /* - 30 s */ })
 | `test/security/company-access.sec.ts` | SEC-HR-30…35, 38, 65 |
 | `test/security/company-idor.sec.ts` | SEC-HR-36, 37, 39 |
 | `test/security/company-activation.sec.ts` | SEC-HR-56…61, 63 |
-| `test/security/company-offboard.sec.ts` | SEC-HR-62, 66, 68, 69, 70 |
+| `test/security/company-offboard.sec.ts` | SEC-HR-62, 68, 69, 70 |
+| `test/integration/company/session-revoke.int.ts` | SEC-HR-66 (tầng I, store token-version giả ném lỗi) |
 | `test/security/company-bootstrap.sec.ts` | SEC-HR-64 (gọi CLI trực tiếp, không cần API) |
 | `test/security/company-races.sec.ts` | CC-HR-16…19, 26, 27 |
 | `test/security/company-clock-*.sec.ts` | CLK-HR-05…09 (mỗi mốc một file) |
@@ -174,7 +176,7 @@ await api.restart({ TEST_CLOCK_ANCHOR: addDays(anchor, 7) /* - 30 s */ })
 | **SEC-HR-63** | Hana thêm nhân viên lần 31 / giờ; tạo lại link cho một người lần 11 / giờ | 429 + `Retry-After` |
 | **SEC-HR-64** | Bootstrap (CLI, không API): lần 2 khi đã có Admin; thiếu từng env; không TTY và không `APP_ENV=test`; `--reissue-link` khi Admin đã kích hoạt; email của nhân viên đã có mật khẩu | thoát 1 + "Đã có Admin", DB không đổi; thoát lỗi, không user; từ chối; thoát 1; nâng ADMIN, mật khẩu giữ, không token |
 | **SEC-HR-65** | Body strict: `POST hr/employees` có `grants` / `role` / `userId` / `startDate` tương lai / −32 ngày; `PUT admin/access` có `startDate` / `userId` | 400 / 422 (`startDate` ngoài khoảng) |
-| **SEC-HR-66** | Thu hồi phiên khi Valkey `setTokenVersion` lỗi (dừng container Valkey của suite trong lúc hoàn tất / hạ Admin / nâng Admin) | rollback: không departure, role không đổi; khôi phục Valkey ⇒ job thử lại thành công; access token cũ 401 ngay; socket bị `disconnectUser` |
+| **SEC-HR-66** | **Tầng I, không phải S** (TL: KHÔNG dừng Valkey dùng chung). Integration với Postgres thật + store token-version **giả** (test double inject qua composition) ném lỗi ở `setTokenVersion` khi: hoàn tất nghỉ việc, Admin hạ Admin, nâng lên Admin | transaction rollback: không departure, `company_members` / role / grants không đổi, refresh token không bị revoke nửa vời, không `disconnectUser`; gọi lại khi store hết lỗi ⇒ thành công trọn vẹn (job thử lại); ca thành công: access token cũ bị từ chối ngay (đọc `token_version` mới), `disconnectUser` được gọi đúng một lần |
 | **SEC-HR-68** | Nhận lại Quinn: refresh token / access token cũ trước khi nghỉ; mật khẩu cũ; trước khi nhận lại | không sống lại (401); đăng nhập được sau khi nhận lại; trước đó như không tồn tại |
 | **SEC-HR-69** | (B HIGH-2a) `POST /auth/refresh` bằng refresh token **còn hạn**, trong khe sau `access_until` trước khi job chạy | 401; không cấp access token; không xoay token (token cũ vẫn bị coi là không hợp lệ ở lần sau) |
 | **SEC-HR-70** | (B HIGH-2b) Socket của Mia đã join phòng W1 và `user:{id}` trước `access_until`; sau 06:00, OWNER khác đổi task W1 | socket bị ngắt trong ≤ ~70 s; event phát sau khi ngắt không tới; nối lại ⇒ handshake bị từ chối |
@@ -261,7 +263,7 @@ CLK-HR-01…04 (Mốc 3) giữ nội dung, đổi đường dẫn sang công ty.
 | E2E-HR-16 `@main` | Mia chấm Vào ở `/w` (rồi lặp bằng nút header ở trang khác ⇒ đã vào); Hana `/hr` "Hôm nay" tìm "Mia"; Mia tạo workspace mới | Hana thấy Mia "Đang làm"; tạo ws không cần chấm lại, thẻ vẫn "Chấm ra" |
 | E2E-HR-17 | Hana thêm nhân viên ở 360 px (tên chứa payload XSS) ⇒ hộp link ⇒ sao chép (clipboard) ⇒ context mới mở link ⇒ đặt mật khẩu ⇒ `/w` ⇒ chấm công | tên chỉ là text ở `/activate`, `/hr/employees`, chuông; fragment bị xóa khỏi URL; không request nào chứa token trong URL (bắt `page.on('request')`) |
 | E2E-HR-18 | Ada cấp `HR_MANAGE` cho Mia ở `/admin/access` (Mia đang mở `/w`) | Mia thấy "Nhân sự" không tải lại; thu lại ⇒ mất ngay, cache `['company', 'hr', …]` bị xóa (vào `/hr` ⇒ không có quyền) |
-| E2E-HR-19 | Mia (OWNER W3) thêm Max bằng combobox; Hana cho Mia nghỉ `lastDay` = hôm qua (mốc 05:59 — E2E chạy API **riêng** cho ca này, hoặc gộp vào CLK; **CẦN CHỐT** với TL); sau 06:00 | Mia bị đăng xuất về `/login` (401 `SESSION_REVOKED`, không lặp refresh); W3 mồ côi ở `/admin/workspaces`; Ada giao OWNER cho Max; Max thấy role OWNER |
+| E2E-HR-19 | Mia (OWNER W3) thêm Max bằng combobox; Hana cho Mia nghỉ `lastDay` = **quá khứ** (TL chọn (b): hoàn tất ngay trong request, không cần mốc 06:00 — biên 06:00 ở CLK-HR-05 hộp đen) | tab của Mia: thao tác kế tiếp ⇒ về `/login` (401 `SESSION_REVOKED`, không lặp refresh); W3 mồ côi ở `/admin/workspaces`; Ada giao OWNER cho Max; Max thấy role OWNER |
 
 - **axe** 0 serious / critical, sáng + tối: `/w` (Ada, Mia), `/activate`, `/hr/employees`, `/admin/access`, `/admin/workspaces`, `/admin/company`.
 - **Responsive** 360 / 768 / 1280 cho cùng các trang.
@@ -289,11 +291,8 @@ CLK-HR-01…04 (Mốc 3) giữ nội dung, đổi đường dẫn sang công ty.
 5. **Cổng:** mỗi bước xin lượt TL (ADR-107); job nặng chỉ khi TL báo.
    - Thời gian suite tăng ~1,3–1,5× (2 request / người).
 
-## 10. Câu hỏi mở (F → TL)
+## 10. Đã chốt (TL 1f, 2026-10-17)
 
-1. **E2E-HR-19** cần mốc 05:59 (nghỉ việc qua 06:00) trong khi suite E2E chạy một API mốc thứ Ba 10:00. Chọn một trong hai:
-   - (a) thêm một Playwright project riêng (webServer API thứ hai, mốc 05:59, port khác) cho đúng một spec;
-   - (b) phần "bị đăng xuất sau 06:00" để ở CLK-HR-05 (hộp đen), E2E chỉ kiểm phần UI còn lại với `lastDay` quá khứ (hoàn tất ngay trong request).
-   F nghiêng **(b)**.
-2. **Response `POST hr/employees`** chốt shape `{ userId, version, activation: { token, expiresAt } }`? Harness dựa vào `userId` và `version`.
-3. **SEC-HR-66** cần làm lỗi Valkey giữa chừng. Suite security đang dùng Valkey container riêng (`valkey-container.ts`); dừng nó trong một ca có ảnh hưởng ca khác cùng file không? Đề xuất đặt ở file riêng.
+1. **E2E-HR-19:** phương án (b). Biên 06:00 ở CLK-HR-05 (hộp đen); E2E dùng `lastDay` quá khứ, hoàn tất ngay trong request.
+2. **Response `POST hr/employees`:** `{ userId, version, activation: { token, expiresAt } | null }`, `null` khi nhận lại người đã có mật khẩu. TL đề xuất, B sở hữu contracts và chốt. Harness đọc theo contracts khi B commit.
+3. **SEC-HR-66:** không dừng container Valkey (hạ tầng dùng chung). Ca ở tầng integration với store token-version giả ném lỗi (§3, §1.5).
