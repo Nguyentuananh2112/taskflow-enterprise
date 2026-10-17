@@ -1,3 +1,7 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { errorEnvelope } from './harness/http-client';
@@ -18,6 +22,10 @@ const api = useApi(
     JWT_ACCESS_SECRET: 'staging-like-secret-for-security-suite-0123456789',
     SENTRY_DSN: 'https://public@o0.ingest.sentry.io/0',
     METRICS_TOKEN: 'm'.repeat(32),
+    // Mốc 6 (T-067): kho tệp bắt buộc ở staging/production — thư mục tạm THẬT (prepareStoreRoot kiểm ghi / hard link).
+    FILE_STORE_DIR: mkdtempSync(join(tmpdir(), 'tf-sec-prod-files-')),
+    FILE_URL_SECRET: 'file-url-secret-for-security-suite-0123456789',
+    MEDIA_BASE_URL: 'https://api.sec.example',
   },
   {
     // T-021: main.ts từ chối lưu trữ bộ nhớ ở production (guard đúng) ⇒ skip có nhãn tới khi có Prisma.
