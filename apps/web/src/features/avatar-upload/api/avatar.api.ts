@@ -1,7 +1,7 @@
+import { AvatarUploadResponseDto } from '@taskflow/contracts/auth';
 import * as z from 'zod';
 
 import { http, type UploadProgress } from '@/shared/api';
-import { AvatarUploadResponseDto } from '@/shared/api/pending-contracts/avatar';
 
 // `PUT/DELETE /me/avatar` (avatar-chat.md §4, ADR-142). Ảnh đã cắt ở trình duyệt ⇒ tên gửi kèm cố định.
 

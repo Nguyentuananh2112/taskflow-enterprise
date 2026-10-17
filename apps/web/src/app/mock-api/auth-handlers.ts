@@ -2,16 +2,12 @@ import {
   AuthTokenDto,
   ChangePasswordBody,
   LoginBody,
+  LoginResponse,
+  MeResponse,
   UpdateMeBody,
   UserDto,
 } from '@taskflow/contracts/auth';
 import { http, type HttpHandler } from 'msw';
-
-import {
-  LoginWithAvatarResponse,
-  MeWithAvatarResponse,
-  UserWithAvatarDto,
-} from '@/shared/api/pending-contracts/avatar';
 
 import type { MockAvatars } from './mock-avatars';
 import type { MockDb } from './mock-db';
@@ -84,7 +80,7 @@ export function createAuthHandlers(
       }
       loginFailures.delete(email);
       return ok(
-        LoginWithAvatarResponse,
+        LoginResponse,
         { ...db.issueAccess(user), user: userDto(user) },
         { headers: setCookie(db.issueRefresh(user.id)) },
       );
@@ -122,7 +118,7 @@ export function createAuthHandlers(
       const company = db.company.of(auth.user.id);
       // ADR-135: không thuộc công ty ⇒ 401 SESSION_REVOKED (không có "đăng nhập mà không thuộc công ty").
       if (!company) return fail(401, 'SESSION_REVOKED');
-      return ok(MeWithAvatarResponse, {
+      return ok(MeResponse, {
         user: userDto(auth.user),
         memberships: db.membershipsOf(auth.user.id),
         company,
@@ -135,7 +131,7 @@ export function createAuthHandlers(
       const body = await parseBody(request, UpdateMeBody);
       if (body.response) return body.response;
       auth.user.fullName = body.data.fullName;
-      return ok(UserWithAvatarDto, userDto(auth.user));
+      return ok(UserDto, userDto(auth.user));
     }),
 
     http.post(url('/auth/change-password'), async ({ request }) => {

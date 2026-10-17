@@ -1,5 +1,4 @@
-import type { UserWithAvatarDto } from '@/shared/api/pending-contracts/avatar';
-import type { AuthTokenDto } from '@taskflow/contracts/auth';
+import type { AuthTokenDto, UserDto } from '@taskflow/contracts/auth';
 
 import { setAuthHooks, type AuthHooks } from '@/shared/api';
 
@@ -58,10 +57,8 @@ export function createSessionController(deps: SessionDeps) {
     return false;
   }
 
-  const set = (
-    status: 'authenticated' | 'anonymous' | 'unreachable',
-    user: UserWithAvatarDto | null,
-  ) => sessionStore.set({ status, user });
+  const set = (status: 'authenticated' | 'anonymous' | 'unreachable', user: UserDto | null) =>
+    sessionStore.set({ status, user });
 
   /** Tăng mỗi lần `end()` — refresh đang bay từ phiên cũ không được đặt lại token (G1 W1). */
   let generation = 0;
@@ -82,8 +79,7 @@ export function createSessionController(deps: SessionDeps) {
    * mở request ngay trong lượt render đầu (không chờ effect sau khi cả cây hydrate), `bootstrap` dùng lại đúng promise
    * đó. Dùng MỘT lần; bỏ khi phiên kết thúc / tab khác đăng nhập để không áp kết quả cũ.
    */
-  type Restored =
-    { kind: 'authenticated'; user: UserWithAvatarDto } | { kind: 'anonymous' | 'unreachable' };
+  type Restored = { kind: 'authenticated'; user: UserDto } | { kind: 'anonymous' | 'unreachable' };
   let restoring: Promise<Restored> | null = null;
   function restore(): Promise<Restored> {
     restoring ??= (async (): Promise<Restored> => {
@@ -160,7 +156,7 @@ export function createSessionController(deps: SessionDeps) {
     },
 
     /** Sau đăng nhập / kích hoạt tài khoản thành công. */
-    signIn(token: AuthTokenDto, user: UserWithAvatarDto): void {
+    signIn(token: AuthTokenDto, user: UserDto): void {
       controller.start();
       restoring = null; // kết quả khôi phục (nếu còn) thuộc trạng thái trước đăng nhập
       tokenStore.set(token);
@@ -174,7 +170,7 @@ export function createSessionController(deps: SessionDeps) {
     },
 
     /** Cập nhật hồ sơ (vd sửa họ tên) mà không đổi trạng thái phiên. */
-    updateUser(user: UserWithAvatarDto): void {
+    updateUser(user: UserDto): void {
       if (sessionStore.get().status === 'authenticated') set('authenticated', user);
     },
 

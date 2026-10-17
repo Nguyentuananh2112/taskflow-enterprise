@@ -32,6 +32,7 @@ function open(access: 'ADMIN' | 'HR') {
   const mia = f.addUser('Mia Trần', `mia-${crypto.randomUUID()}@example.com`, 'MEMBER');
   const kay = f.addUser('Kay Lê', `kay-${crypto.randomUUID()}@example.com`, 'MEMBER');
   mock.db.company.setAccess(kay.id, 'EMPLOYEE', ['PAYROLL_MANAGE']);
+  f.addUser('Nam Võ', `nam-${crypto.randomUUID()}@example.com`, 'MEMBER'); // không có ảnh
   mock.avatars.set(mia.id, JPEG, 'image/jpeg');
   mock.avatars.set(kay.id, JPEG, 'image/jpeg');
   f.signInAs(f.owner);
@@ -65,6 +66,8 @@ describe('/hr/employees — gỡ ảnh đại diện', () => {
     await screen.findByRole('list', { name: 'Danh sách nhân viên' });
     expect(removeButton('Mia Trần')).toBeTruthy();
     expect(removeButton('Kay Lê')).toBeNull();
+    // Chưa có ảnh (EmployeeDto.avatarUrl thiếu) ⇒ không có nút.
+    expect(removeButton('Nam Võ')).toBeNull();
     expect(removeButton(f.owner.fullName)).toBeNull();
   });
 

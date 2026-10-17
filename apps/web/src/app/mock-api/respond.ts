@@ -46,7 +46,7 @@ export function fail(status: number, code: ErrorCode, details: unknown = null, i
 }
 
 /**
- * TẠM (Mốc 6): mã lỗi API sẽ có nhưng `ErrorCode` của contracts chưa có (G thêm ở T-068/T-069) — cùng vỏ envelope,
+ * TẠM (Mốc 6): mã lỗi API sẽ có nhưng `ErrorCode` của contracts trên nhánh này chưa có (G thêm ở T-067 — chưa gộp) — cùng vỏ envelope,
  * không parse enum. Contracts có mã ⇒ chuyển sang `fail`.
  */
 export function failUnlisted(status: number, code: string, message: string, init: Init = {}) {

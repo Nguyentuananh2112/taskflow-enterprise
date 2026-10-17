@@ -21,8 +21,8 @@ type Props = Readonly<{
 
 /** Một nhân viên: tên + trạng thái (chữ, không chỉ màu), email, ngày vào / ngày làm cuối, MỘT nút theo trạng thái. */
 export function EmployeeRow({ employee: e, ready, locked, self, onOpen, onRemoveAvatar }: Props) {
-  // SEC-CH-17: không tự gỡ qua route HR; người giữ grant chỉ Admin gỡ (`locked`); chờ kích hoạt / đã nghỉ không có ảnh.
-  const canRemoveAvatar = !self && !locked && (e.status === 'ACTIVE' || e.status === 'OFFBOARDING');
+  // SEC-CH-17: không tự gỡ qua route HR; người giữ grant chỉ Admin gỡ (`locked`); chỉ khi người đó đang có ảnh.
+  const canRemoveAvatar = !self && !locked && Boolean(e.avatarUrl);
   const dates =
     e.status === 'LEFT'
       ? e.offboardLastDay && `Làm tới ${dmy(e.offboardLastDay)}`

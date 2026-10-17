@@ -2,6 +2,7 @@ import {
   CompanyAccessChangedEventEnvelope,
   MemberRoleChangedEvent,
   NotificationNewEvent,
+  UserAvatarChangedEventDto,
   WorkspaceAccessRevokedEvent,
 } from '@taskflow/contracts/realtime';
 import type { NotificationType } from '@taskflow/contracts/hr';
@@ -16,7 +17,6 @@ import { leaveKeys } from '@/entities/leave';
 import { memberKeys } from '@/entities/member';
 import { notificationKeys } from '@/entities/notification';
 import { invalidateAvatarViews, sessionKeys } from '@/entities/session';
-import { USER_AVATAR_CHANGED, UserAvatarChangedEvent } from '@/shared/api/pending-contracts/avatar';
 import {
   ROLE_LABEL,
   WORKSPACE_GONE_MESSAGE,
@@ -114,13 +114,9 @@ export function useRealtimeSession(): void {
       }
     });
     // ADR-142: ai đó (kể cả mình ở tab khác) đổi / gỡ avatar ⇒ làm mới mọi chỗ hiện avatar (URL ký mới, `/auth/me`
-    // có avatarUrlLarge). TẠM: event chưa có trong ServerToClientEvents (G thêm ở T-068) ⇒ đăng ký qua chữ ký lỏng.
-    const onLoose = client.on.bind(client) as unknown as (
-      event: string,
-      handler: (raw: unknown) => void,
-    ) => () => void;
-    const offAvatar = onLoose(USER_AVATAR_CHANGED, (raw) => {
-      const event = UserAvatarChangedEvent.safeParse(raw);
+    // có avatarUrlLarge).
+    const offAvatar = client.on('user:avatar-changed', (raw) => {
+      const event = UserAvatarChangedEventDto.safeParse(raw);
       if (!event.success) return;
       void invalidateAvatarViews(queryClient, event.data.data.userId).catch(() => undefined);
     });

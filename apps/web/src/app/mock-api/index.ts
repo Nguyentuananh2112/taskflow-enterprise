@@ -56,6 +56,8 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const leave = new MockLeave(attendance, options.now ?? Date.now);
   const hr = new MockHr(db, attendance, leave);
   const avatars = new MockAvatars(baseUrl, options.now ?? Date.now);
+  board.avatarOf = (userId) => avatars.urlOf(userId, '64');
+  db.company.avatarOf = board.avatarOf;
   return {
     db,
     board,

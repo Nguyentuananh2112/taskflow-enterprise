@@ -170,14 +170,13 @@ describe('/account — ảnh đại diện', () => {
     mock.avatars.set(f.owner.id, JPEG, 'image/jpeg');
     const event = {
       eventId: crypto.randomUUID(),
-      type: 'user:avatar-changed',
+      type: 'user:avatar-changed' as const,
       occurredAt: '2026-10-17T03:00:00.000Z',
       actorId: f.owner.id,
       originClientId: crypto.randomUUID(),
       data: { userId: f.owner.id, avatarUrl: mock.avatars.urlOf(f.owner.id, '64') },
     };
-    // TẠM: event chưa có trong ServerToClientEvents (G — T-068).
-    act(() => f.client.emitServer('user:avatar-changed' as never, event as never));
+    act(() => f.client.emitServer('user:avatar-changed', event));
     await waitFor(() =>
       expect(
         within(region).getByRole('img', { name: f.owner.fullName }).getAttribute('src'),

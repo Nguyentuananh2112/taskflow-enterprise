@@ -1,9 +1,6 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
-import type {
-  MeWithAvatarResponse,
-  UserWithAvatarDto,
-} from '@/shared/api/pending-contracts/avatar';
+import type { MeResponse, UserDto } from '@taskflow/contracts/auth';
 
 import { authApi } from '../api/auth.api';
 import { session } from './session';
@@ -53,11 +50,11 @@ export async function invalidateAvatarViews(
   }
 }
 
-type AvatarFields = Pick<UserWithAvatarDto, 'avatarUrl' | 'avatarUrlLarge'>;
+type AvatarFields = Pick<UserDto, 'avatarUrl' | 'avatarUrlLarge'>;
 
 /** Ảnh của CHÍNH MÌNH vừa đổi ở tab này: cập nhật ngay header + /account, rồi làm mới chỗ khác. */
 export function applyMyAvatar(queryClient: QueryClient, fields: AvatarFields): void {
-  queryClient.setQueryData<MeWithAvatarResponse>(
+  queryClient.setQueryData<MeResponse>(
     sessionKeys.me,
     (old) => old && { ...old, user: { ...old.user, ...fields } },
   );

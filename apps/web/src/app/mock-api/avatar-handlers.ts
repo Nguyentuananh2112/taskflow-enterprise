@@ -1,7 +1,6 @@
-import { Uuid } from '@taskflow/contracts/common';
+import { AvatarUploadResponseDto } from '@taskflow/contracts/auth';
+import { AVATAR_MAX_BYTES, Uuid } from '@taskflow/contracts/common';
 import { HttpResponse, http, type HttpHandler } from 'msw';
-
-import { AVATAR_MAX_BYTES, AvatarUploadResponseDto } from '@/shared/api/pending-contracts/avatar';
 
 import type { MockAvatars } from './mock-avatars';
 import type { MockDb } from './mock-db';

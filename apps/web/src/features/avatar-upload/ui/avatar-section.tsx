@@ -1,8 +1,8 @@
 'use client';
 
+import type { UserDto } from '@taskflow/contracts/auth';
 import { useId, useState, type ChangeEvent } from 'react';
 
-import type { UserWithAvatarDto } from '@/shared/api/pending-contracts/avatar';
 import { Alert } from '@/shared/ui/alert';
 import { Avatar } from '@/shared/ui/avatar';
 import { Button } from '@/shared/ui/button';
@@ -13,7 +13,7 @@ import { AVATAR_ACCEPT, decodeAvatar, type AvatarSource } from '../model/image';
 import { useRemoveAvatar } from '../model/use-avatar';
 import { AvatarCropDialog } from './avatar-crop-dialog';
 
-type Props = Readonly<{ user: UserWithAvatarDto }>;
+type Props = Readonly<{ user: UserDto }>;
 
 const PICK_BUTTON =
   'inline-flex h-10 cursor-pointer items-center justify-center rounded-control border border-border bg-surface px-4 text-sm font-medium text-text hover:bg-bg-subtle peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2';
