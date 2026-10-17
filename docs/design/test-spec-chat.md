@@ -146,11 +146,11 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 | SEC-CH-05 | F | `chat-clock-0559.sec.ts` (K) | Mẫu `company-clock-0559` (05:59:10, tự khẳng định còn OFFBOARDING). Sau 06:00: REST 401 `SESSION_REVOKED`; Mia gửi vào DIRECT ⇒ socket người hết hạn không nhận |
 | SEC-CH-06 | F | `chat-upload-types.sec.ts` | Từng tệp ⇒ 415 `UNSUPPORTED_FILE_TYPE`, `storeTree` không thêm gì. Polyglot GIF ⇒ 201; tải biến thể ⇒ không chứa chuỗi `alert(` và là WebP hợp lệ |
 | SEC-CH-07 | F | `chat-upload-types.sec.ts` | Tải `preview`, `thumb` và avatar 256 / 64 ⇒ sharp `metadata()`: không `exif`, không GPS; byte không chứa `GPS` / `Exif` |
-| SEC-CH-08 | F | `chat-upload-limits.sec.ts` (NẶNG) | Mỗi vế ≤ 2 s: pixel bomb ⇒ 422; 21 MB ⇒ 413 (ngay theo `Content-Length`); chunked 25 MB ⇒ 413; avatar 6 MB ⇒ 413. `expectNoTmp`. Bỏ vế RAM (TL) |
-| SEC-CH-09 | F | `chat-upload-limits.sec.ts` | `../../etc/passwd`, U+202E, NUL ⇒ 201 + `filename*` sạch (không `/`, `\`, bidi, NUL) + `outsideWrites` rỗng; thiếu / `%E0%A4%A` / 256 byte ⇒ 400 `INVALID_UPLOAD_NAME`, không ghi |
+| SEC-CH-08 | F | `chat-upload-limits.sec.ts` (NẶNG) | Mỗi vế ≤ 2 s: pixel bomb ⇒ 422; 21 MB ⇒ 413 (ngay theo `Content-Length`); chunked 25 MB ⇒ 413; avatar 6 MB ⇒ 413 (avatar cũng bắt buộc `X-Upload-Name`). `expectNoTmp`. Bỏ vế RAM (TL) |
+| SEC-CH-09 | F | `chat-upload-limits.sec.ts` | `../../etc/passwd.pdf`, U+202E, NUL (giữ đuôi `.pdf` — đuôi phải khớp nội dung, không đuôi ⇒ 415) ⇒ 201 + `filename*` sạch (không `/`, `\`, bidi, NUL) + `outsideWrites` rỗng; thiếu / `%E0%A4%A` / 256 byte ⇒ 400 `INVALID_UPLOAD_NAME`, không ghi |
 | SEC-CH-10 | F | `chat-media.sec.ts` | Header từng loại đúng bảng ADR-141; CORP = giá trị `MEDIA_CORP` của env test (`same-site` mặc định; một ca chạy `cross-origin`) |
 | SEC-CH-11 | F | `chat-media.sec.ts` | Sửa `exp` / `sig` / path / `v` / URL hết hạn (chờ khung test) / `download-url` sau TTL ⇒ `expectMedia404`, body giống hệt · **Thước đo hộp đen (TL 18/10):** log debug `media.sig_invalid {reason: format \| signature \| expired}` — có ⇒ bị chặn trước DB / đĩa; không có ⇒ qua chữ ký. **Giới hạn:** "404 không chạm DB / đĩa" KHÔNG quan sát trực tiếp được từ hộp đen — dựa vào thứ tự trong `media-router.ts` + unit test của G (`media-router.test.ts`); S chỉ khẳng định log + trang lỗi giống hệt |
-| SEC-CH-12 | F | `chat-upload-limits.sec.ts` | multipart / text/plain có Bearer ⇒ 415; không Bearer ⇒ 401; không ghi |
+| SEC-CH-12 | F | `chat-upload-limits.sec.ts` | multipart / text/plain có Bearer ⇒ 415; `application/json` ⇒ 400 `invalid_json` (parse JSON toàn cục chạy trước — không ghi gì); không Bearer ⇒ 401; không ghi |
 | SEC-CH-13 | H | `e2e/specs/chat.e2e.ts` (E) + `chat-idor.sec.ts` (S: thân lưu nguyên văn) | E: `arm()` + `assertInert`; link chỉ `http(s)`; `a[href^="javascript:"]` = 0 |
 | SEC-CH-14 | F | `chat-limits.sec.ts` | 31 tin / phút ⇒ 429 + `Retry-After`, tin 31 không có trong `messages`; 31 upload / 10 phút ⇒ 429; vượt 2 MB / ngày ⇒ 429; `FILE_STORE_MAX_BYTES` 3 MB ⇒ 507 `STORAGE_FULL` (file riêng env) |
 | SEC-CH-15 | F | `chat-groups.sec.ts` | Vic (thành viên) thêm / bớt / đổi tên / giao OWNER ⇒ 403; thêm Quinn / Nina ⇒ 422 `NOT_ACTIVE_MEMBER`; id lạ ⇒ 404 `user` |
@@ -172,16 +172,19 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 | SEC-CH-31 | F | `chat-media.sec.ts` | `deleteBlob` ⇒ 404 (không 500) + log cảnh báo; 601 GET `/media` cùng IP / phút ⇒ 429; chữ ký sai: kho không có lượt đọc (dùng ổ thật: thời gian ≈ chữ ký đúng-không-tồn tại; khẳng định qua log debug `media.sig_invalid` không kèm `open`) |
 | SEC-CH-32 | F | `chat-upload-types.sec.ts` | Bộ Office thật ⇒ 201 (pending nếu thiếu mẫu); CSV 5 bảng mã ⇒ 201; TXT có NUL ⇒ 415 |
 | SEC-CH-33 | F | `chat-upload-types.sec.ts` | PNG magic nhưng `format` khác ⇒ 415; hỏng giữa chừng ⇒ 422; không biến thể |
-| SEC-CH-34 | F | `chat-upload-limits.sec.ts` | octet-stream tới `POST /chat/conversations/:id/messages`, `PATCH /auth/me` ⇒ 415; `PUT /chat/uploads` ⇒ 404 / 405 |
+| SEC-CH-34 | F | `chat-upload-limits.sec.ts` | octet-stream tới `POST /chat/conversations/:id/messages`, `PATCH /auth/me` ⇒ 415; `PUT /chat/uploads`, `POST /me/avatar` ⇒ 404 / 405 / **415** (octet-stream chỉ được nhận ở đúng method + path upload — chặn trước router, G T-067) |
 | SEC-CH-35 | F | `chat-media.sec.ts` + `chat-media-rotate.sec.ts` | Đổi tuple giữ `sig` ⇒ 404. Ký bằng `_PREVIOUS` (file riêng, restart với secret mới + previous = cũ) ⇒ 200. Secret < 32 byte / = JWT ⇒ `startApi` thất bại với thông điệp rõ (mẫu `production.sec`) |
 | SEC-CH-36 | F | `chat-upload-types.sec.ts` | `macroEnabled`, `oleObject`, ODF `Basic/`, 2 001 entry, `.docm` → `.docx` ⇒ 415 |
 | SEC-CH-37 | F | `chat-upload-limits.sec.ts` | Ổ trống < trần: **I** (fs giả `statfs`) vì S không giả ổ đầy được. Valkey lỗi ⇒ upload 503 (container Valkey tạm như `valkey-outage.sec`) |
+| SEC-CH-38 | F | `chat-idor.sec.ts` | DIRECT tới chính mình ⇒ 422 `SELF_DIRECT`; tới người chờ kích hoạt / đã nghỉ ⇒ 422 `RECIPIENT_INACTIVE`; UUID lạ ⇒ 404; DIRECT cũ với người đã nghỉ: `canSend` false, gửi ⇒ 422 (TL 18/10) |
+| SEC-CH-39 | F | `chat-lifecycle.sec.ts` | Phòng ws: VIEWER (vai trò dự án) đọc + GỬI được; người ngoài ws / Admin không là thành viên ⇒ 404 (TL 18/10) |
 
 ## 4. CC-CH — đua (tầng C, ×20, mẫu `red[]`)
 
 | ID | Người viết | File | Mong đợi chi tiết |
 |---|---|---|---|
 | CC-CH-01 | F | `chat-races.sec.ts` | 5 POST cùng `clientMsgId` ⇒ [201, 200×4]; `messages` có đúng 1; socket người nhận đúng 1 `chat:message:new` |
+| CC-CH-01b | F | `chat-races.sec.ts` | Cùng `clientMsgId` khác thân ⇒ 422 `IDEMPOTENCY_KEY_REUSED`, tin đầu không đổi; cùng `clientMsgId` ở hội thoại khác ⇒ không trả tin chéo |
 | CC-CH-02 | F | `chat-races.sec.ts` | Mia, Vic cùng `POST chat/direct` ⇒ cùng `id` |
 | CC-CH-03 | F | `chat-races.sec.ts` | OWNER rời ‖ OWNER bớt người cuối ⇒ không 5xx; `effectiveGroupOwners` (đọc qua `GET conversation`) luôn có ≥ 1 OWNER hiệu lực hoặc nhóm không còn ai |
 | CC-CH-04 | F | `chat-races.sec.ts` | 2 `PUT me/avatar` ⇒ `avatar_version` cuối có blob; sau sweep (TTL test) không blob mồ côi trong `avatars/<id>/` |
@@ -245,8 +248,8 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 |---|---|---|---|
 | `test/security/harness/upload.ts`, `files/fixtures.ts`, `files/store.ts`, `useCompanyApi` + env | F | harness | chưa |
 | `e2e/support/chat.ts` + `apiServerEnv` | F | harness E | chưa |
-| `chat-idor.sec.ts` | F | SEC-CH-01, 02, 03, 13 (S) | chưa |
-| `chat-lifecycle.sec.ts` | F | SEC-CH-04, 28, 30 | chưa |
+| `chat-idor.sec.ts` | F | SEC-CH-01, 02, 03, 13s (S: thân lưu nguyên văn), 38 — **đã viết**, pending `T-069` | chưa chạy |
+| `chat-lifecycle.sec.ts` | F | SEC-CH-04 (vế REST), 28, 39 — **đã viết**, pending `T-069`; SEC-CH-30 chưa | một phần |
 | `chat-clock-0559.sec.ts` | F | SEC-CH-05 / CLK-CH-01 | chưa |
 | `chat-limits.sec.ts` | F | SEC-CH-14 | chưa |
 | `chat-groups.sec.ts` | F | SEC-CH-15 | chưa |
@@ -259,7 +262,7 @@ Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E t
 | `chat-media-rotate.sec.ts` | F | SEC-CH-35r (xoay khóa `_PREVIOUS`) — **1/1 xanh** | xong |
 | `chat-upload-types.sec.ts` | F | SEC-CH-06, 07, 21, 23, 32, 33, 36 | chưa |
 | `chat-upload-limits.sec.ts` (NẶNG) | F | SEC-CH-08, 09, 12, 24, 26, 27, 34 (đã viết, pending `T-067`, chưa chạy); SEC-CH-37, CC-CH-09 chưa | một phần |
-| `chat-races.sec.ts` | F | CC-CH-01, 02, 03, 05, 06 (F); 04, 07, 08 (B) | chưa |
+| `chat-races.sec.ts` | F | CC-CH-01, 01b, 02 — **đã viết**, pending `T-069`; CC-CH-03…08 chưa | một phần |
 | `chat-clock-avatar.sec.ts`, `chat-clock-retention.sec.ts` | F | CLK-CH-02, 03 | chưa |
 | `e2e/specs/avatar.e2e.ts` | H | E2E-CH-01 | chưa |
 | `e2e/specs/chat.e2e.ts` | F / H | E2E-CH-02…06 (F); 07, SEC-CH-13 (H) | chưa |
