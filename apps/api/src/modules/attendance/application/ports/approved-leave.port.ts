@@ -7,8 +7,7 @@ import type { LeavePart } from '../../domain/summarize-day';
  */
 export interface ApprovedLeavePort {
   approvedLeaves(q: {
-    workspaceId: string;
-    /** Bỏ trống = mọi người trong workspace (bảng công HR). */
+    /** Bỏ trống = mọi người (bảng công HR). */
     userIds?: readonly string[];
     from: LocalDate;
     to: LocalDate;

@@ -14,7 +14,6 @@ const IDEMPOTENCY = 'attendance_events_idempotency_key';
 
 const toRecord = (r: Row): AttendanceEventRecord => ({
   id: r.id,
-  workspaceId: r.workspaceId,
   userId: r.userId,
   kind: r.kind,
   source: r.source,
@@ -38,10 +37,9 @@ const toRecord = (r: Row): AttendanceEventRecord => ({
 export class PrismaAttendanceEventStore implements IAttendanceEventStore {
   constructor(private readonly db: DbProvider) {}
 
-  async listForUser(q: { workspaceId: string; userId: string; from: string; to: string }) {
+  async listForUser(q: { userId: string; from: string; to: string }) {
     const rows = await this.db().attendanceEvent.findMany({
       where: {
-        workspaceId: q.workspaceId,
         userId: q.userId,
         workDate: { gte: fromDateOnly(q.from), lte: fromDateOnly(q.to) },
       },
@@ -49,16 +47,10 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
     return rows.map(toRecord);
   }
 
-  async listForUsers(q: {
-    workspaceId: string;
-    userIds: readonly string[];
-    from: string;
-    to: string;
-  }) {
+  async listForUsers(q: { userIds: readonly string[]; from: string; to: string }) {
     if (q.userIds.length === 0) return [];
     const rows = await this.db().attendanceEvent.findMany({
       where: {
-        workspaceId: q.workspaceId,
         userId: { in: [...q.userIds] },
         workDate: { gte: fromDateOnly(q.from), lte: fromDateOnly(q.to) },
       },
@@ -66,10 +58,9 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
     return rows.map(toRecord);
   }
 
-  async userIdsWithEvents(q: { workspaceId: string; from: string; to: string }) {
+  async userIdsWithEvents(q: { from: string; to: string }) {
     const rows = await this.db().attendanceEvent.findMany({
       where: {
-        workspaceId: q.workspaceId,
         workDate: { gte: fromDateOnly(q.from), lte: fromDateOnly(q.to) },
       },
       distinct: ['userId'],
@@ -78,15 +69,9 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
     return rows.map((r) => r.userId);
   }
 
-  async findByIdempotencyKey(q: {
-    workspaceId: string;
-    userId: string;
-    source: AttendanceSource;
-    key: string;
-  }) {
+  async findByIdempotencyKey(q: { userId: string; source: AttendanceSource; key: string }) {
     const row = await this.db().attendanceEvent.findFirst({
       where: {
-        workspaceId: q.workspaceId,
         userId: q.userId,
         source: q.source,
         idempotencyKey: q.key,
@@ -106,7 +91,6 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
       await this.db().attendanceEvent.create({
         data: {
           id: e.id,
-          workspaceId: e.workspaceId,
           userId: e.userId,
           kind: e.kind,
           source: e.source,
@@ -130,29 +114,28 @@ export class PrismaAttendanceEventStore implements IAttendanceEventStore {
     }
   }
 
-  async findById(workspaceId: string, id: string) {
-    const row = await this.db().attendanceEvent.findFirst({ where: { id, workspaceId } });
+  async findById(id: string) {
+    const row = await this.db().attendanceEvent.findFirst({ where: { id } });
     return row ? toRecord(row) : null;
   }
 
   /** Một câu UPDATE có điều kiện `voided_at IS NULL` ⇒ 2 HR hủy song song: đúng 1 thắng. */
   async void(q: {
-    workspaceId: string;
     id: string;
     voidedAt: Date;
     voidedBy: string;
     voidReason: string;
   }): Promise<boolean> {
     const { count } = await this.db().attendanceEvent.updateMany({
-      where: { id: q.id, workspaceId: q.workspaceId, voidedAt: null },
+      where: { id: q.id, voidedAt: null },
       data: { voidedAt: q.voidedAt, voidedById: q.voidedBy, voidReason: q.voidReason },
     });
     return count === 1;
   }
 
-  async hasAnyForUser(workspaceId: string, userId: string): Promise<boolean> {
+  async hasAnyForUser(userId: string): Promise<boolean> {
     const row = await this.db().attendanceEvent.findFirst({
-      where: { workspaceId, userId },
+      where: { userId },
       select: { id: true },
     });
     return row !== null;

@@ -3,16 +3,15 @@ import type { AttendanceTodayDto } from '@taskflow/contracts';
 import { BusinessRuleViolationError, ResourceConflictError } from '../../../../core/errors';
 import { addDays } from '../../domain/local-time';
 import { decidePunch, type PunchSkipReason } from '../../domain/punch-rules';
-import { tenureOnLocalDays } from '../../domain/tenure';
-import { localToday, tenureWindow, todayCard, type AttendanceDeps } from '../attendance-days';
+import { localToday, todayCard, type AttendanceDeps } from '../attendance-days';
 import {
   AlreadyCheckedInError,
   IdempotencyKeyTakenError,
   type AttendanceKind,
 } from '../ports/attendance-event-store.port';
+import type { ICompanyAccess } from '../ports/collaborators.port';
 
 export interface CheckInOutInput {
-  workspaceId: string;
   userId: string;
   kind: AttendanceKind;
   /** UUID từ header `Idempotency-Key` (đã validate ở presentation). */
@@ -51,13 +50,15 @@ const keyReused = () =>
   );
 
 /**
- * `POST attendance/check-in|check-out` (thiết kế §4–§5). Giờ là giờ SERVER (client không gửi giờ). Trả thẻ
+ * `POST attendance/check-in|check-out` (thiết kế §4–§5; cấp công ty — company-level ADR-136). Giờ là giờ SERVER (client không gửi giờ). Trả thẻ
  * hôm nay để web cập nhật không cần GET lại. Lặp lại cùng Idempotency-Key của chính mình + cùng loại ⇒ trả
  * thẻ hiện tại, không tạo lượt mới; khác loại ⇒ 422. IN lần 2 ⇒ 409 `already_checked_in`; OUT khi không có
  * IN để đóng ⇒ 422 `NOT_CHECKED_IN`.
  */
 export class CheckInOutUseCase {
-  constructor(private readonly d: AttendanceDeps) {}
+  constructor(
+    private readonly d: AttendanceDeps & { company: Pick<ICompanyAccess, 'assertActiveEmployee'> },
+  ) {}
 
   async execute(input: CheckInOutInput, retried = false): Promise<CheckInOutResult> {
     let replayed: boolean;
@@ -79,11 +80,13 @@ export class CheckInOutUseCase {
   /** `true` khi key đã có (lặp lại) — không ghi gì. */
   async #record(input: CheckInOutInput): Promise<boolean> {
     const { d } = this;
-    const { workspaceId, userId, kind } = input;
+    const { userId, kind } = input;
     // Khóa theo USER (T-053a → T-063): mọi đường chấm của một người chạy tuần tự; đọc sau khóa.
     await d.events.lockUserPunch(userId);
+    // A C2: middleware kiểm TRƯỚC transaction — job hoàn tất nghỉ việc có thể commit trong lúc ta chờ khóa (nó cũng
+    // lấy `punch:<user>`) ⇒ đọc lại tư cách nhân viên SAU khóa; hết quyền ⇒ 401 SESSION_REVOKED, không ghi.
+    await d.company.assertActiveEmployee(userId);
     const prior = await d.events.findByIdempotencyKey({
-      workspaceId,
       userId,
       source: 'WEB',
       key: input.idempotencyKey,
@@ -93,15 +96,10 @@ export class CheckInOutUseCase {
       return true;
     }
     const now = d.clock.now();
-    const versions = await d.calendar.scheduleVersions(workspaceId);
-    const { date: today, timezone } = localToday(versions, now);
+    const versions = await d.calendar.scheduleVersions();
+    const { date: today } = localToday(versions, now);
     // Đủ để tìm IN còn mở của hôm qua (giờ chốt 06:00 hôm nay) và IN của hôm nay.
-    const recent = await d.events.listForUser({
-      workspaceId,
-      userId,
-      from: addDays(today, -2),
-      to: today,
-    });
+    const recent = await d.events.listForUser({ userId, from: addDays(today, -2), to: today });
     // CC-HR-02 #17: READ COMMITTED ⇒ mỗi câu đọc một snapshot mới. Request song song cùng key có thể commit GIỮA
     // `findByIdempotencyKey` (chưa thấy) và câu này (đã thấy) ⇒ kiểm key lại TRÊN dữ liệu mới nhất trước khi kết
     // luận "đã chấm vào" (409) — cùng key là lặp lại, không phải chấm lần hai.
@@ -113,22 +111,15 @@ export class CheckInOutUseCase {
       return true;
     }
     const tenures = await d.tenures.tenuresOf({
-      workspaceId,
       userIds: [userId],
-      ...tenureWindow(addDays(today, -2), today),
+      from: addDays(today, -2),
+      to: addDays(today, 1),
     });
-    const decision = decidePunch({
-      kind,
-      now,
-      schedules: versions,
-      recent,
-      tenures: tenures.map((t) => tenureOnLocalDays(t, timezone)),
-    });
+    const decision = decidePunch({ kind, now, schedules: versions, recent, tenures });
     if (!decision.ok) throw punchRefused[decision.reason]();
     const { workDate } = decision;
     await d.events.add({
       id: d.ids.next(),
-      workspaceId,
       userId,
       kind,
       source: 'WEB',

@@ -26,34 +26,18 @@ export function prismaAttendanceBackend(): AttendanceBackend {
           data: { id, email: `${id}@example.test`, fullName, passwordHash: 'x' },
         });
       }
-      for (const id of FIXTURE.workspaces) {
-        await prisma.workspace.create({
-          data: { id, name: `W ${id.slice(-4)}`, slug: `ws-${id.slice(-12)}` },
-        });
-      }
     },
     async eventRows() {
-      const rows = await prisma.attendanceEvent.findMany({
-        select: { workspaceId: true, userId: true },
-      });
+      const rows = await prisma.attendanceEvent.findMany({ select: { userId: true } });
       const out = [];
-      for (const key of new Set(rows.map((r) => `${r.workspaceId}|${r.userId}`))) {
-        const [workspaceId, userId] = key.split('|') as [string, string];
-        out.push(
-          ...(await events.listForUser({
-            workspaceId,
-            userId,
-            from: '1970-01-01',
-            to: '2999-12-31',
-          })),
-        );
+      for (const userId of new Set(rows.map((r) => r.userId))) {
+        out.push(...(await events.listForUser({ userId, from: '1970-01-01', to: '2999-12-31' })));
       }
       return out.sort(byTime);
     },
-    async addScheduleVersion(workspaceId, s, createdBy) {
+    async addScheduleVersion(s, createdBy) {
       await prisma.workSchedule.create({
         data: {
-          workspaceId,
           effectiveFrom: day(s.effectiveFrom),
           timezone: s.timezone,
           workdays: s.workdays,
@@ -66,8 +50,8 @@ export function prismaAttendanceBackend(): AttendanceBackend {
         },
       });
     },
-    async addHoliday(workspaceId, date, name) {
-      await prisma.holiday.create({ data: { workspaceId, date: day(date), name } });
+    async addHoliday(date, name) {
+      await prisma.holiday.create({ data: { date: day(date), name } });
     },
   };
 }

@@ -13,18 +13,14 @@ export interface WorkingDay {
 /**
  * Adapter cho `IWorkCalendarPort` của module leave (thiết kế §4, D-H4) — nối ở composition root. Trả MỌI ngày
  * của `[from, to]` (gồm cả hai đầu, kể cả ngày nghỉ) theo phiên bản lịch hiệu lực của TỪNG ngày + ngày lễ
- * hiện tại; workspace chưa lưu lịch ⇒ `DEFAULT_SCHEDULE`. Hai truy vấn cho cả khoảng (leave gọi theo năm).
+ * hiện tại của công ty; chưa lưu lịch ⇒ `DEFAULT_SCHEDULE`. Hai truy vấn cho cả khoảng (leave gọi theo năm).
  */
 export class AttendanceWorkCalendar {
   constructor(private readonly calendar: IWorkCalendarStore) {}
 
-  async workingDays(q: {
-    workspaceId: string;
-    from: LocalDate;
-    to: LocalDate;
-  }): Promise<WorkingDay[]> {
+  async workingDays(q: { from: LocalDate; to: LocalDate }): Promise<WorkingDay[]> {
     const [versions, holidays] = await Promise.all([
-      this.calendar.scheduleVersions(q.workspaceId),
+      this.calendar.scheduleVersions(),
       this.calendar.holidays(q),
     ]);
     const holidaySet = new Set(holidays.map((h) => h.date));

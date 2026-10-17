@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { instantOf } from './local-time';
-import { employedOn, tenureOnLocalDays } from './tenure';
+import { employedOn } from './tenure';
 
 // test-spec-hr §1: SD-37..SD-40 (nhiệm kỳ ⇒ cờ `employed` của summarizeDay; SD-41..43 ở summarize-day.test).
 // ADR-133 (A C1): nhiệm kỳ bằng NGÀY, gồm cả ngày đầu và ngày cuối.
-const VN = 'Asia/Ho_Chi_Minh';
 
 describe('employedOn', () => {
   const joined = [{ from: '2026-11-15', until: null }];
@@ -43,14 +41,5 @@ describe('employedOn', () => {
     expect(employedOn(twice, '2026-08-31')).toBe(false);
     expect(employedOn(twice, '2026-09-01')).toBe(true);
     expect(employedOn([], '2026-09-01')).toBe(false);
-  });
-});
-
-describe('tenureOnLocalDays (tạm — nhiệm kỳ ws instant)', () => {
-  it('SD-39b biên múi giờ: rời 20/11 00:30 giờ VN (= 19/11 17:30Z) ⇒ ngày cuối 20/11 theo lịch VN, 19/11 theo UTC', () => {
-    const t = { from: instantOf('2026-01-05', 480, VN), until: new Date('2026-11-19T17:30:00Z') };
-    expect(tenureOnLocalDays(t, VN)).toEqual({ from: '2026-01-05', until: '2026-11-20' });
-    expect(tenureOnLocalDays(t, 'UTC').until).toBe('2026-11-19');
-    expect(tenureOnLocalDays({ ...t, until: null }, VN).until).toBeNull();
   });
 });

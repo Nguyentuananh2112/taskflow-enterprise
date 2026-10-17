@@ -10,7 +10,6 @@ import {
   OLIVIA,
   S0,
   VN,
-  W1,
 } from '../../testing/attendance-harness';
 import { CheckInOutUseCase } from './check-in-out.use-case';
 import { lastDayOf } from './my-attendance.queries';
@@ -40,8 +39,7 @@ describe('CheckInOutUseCase', () => {
   // Ca riêng: mỗi ca một harness (Postgres/LSP chỉ làm sạch DB ở beforeEach).
   it('AT-01b User-Agent dài hơn 256 ký tự bị cắt (không từ chối)', async () => {
     const t2 = await setup();
-    await new CheckInOutUseCase(t2.deps).execute({
-      workspaceId: W1,
+    await new CheckInOutUseCase({ ...t2.deps, company: t2.collaborators.company }).execute({
       userId: MIA,
       kind: 'IN',
       idempotencyKey: key(2),
@@ -65,7 +63,6 @@ describe('CheckInOutUseCase', () => {
   it('AT-03 lặp check-in cùng Idempotency-Key ⇒ trả thẻ hiện tại, replayed (route 200 thay vì 201), không thêm dòng', async () => {
     const t = await setup();
     const input = {
-      workspaceId: W1,
       userId: MIA,
       kind: 'IN' as const,
       idempotencyKey: key(1),
@@ -135,7 +132,7 @@ describe('CheckInOutUseCase', () => {
     t.at('2026-11-17 00:30');
     await t.punch('OUT', key(2));
     expect((await t.backend.eventRows())[1]!.workDate).toBe('2026-11-16');
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(month.days.find((x) => x.date === '2026-11-16')).toMatchObject({
       status: 'PRESENT',
       workedMin: 480,
@@ -171,7 +168,6 @@ function uniqueOrder(t: Harness, order: 'in-once-first' | 'key-first') {
 }
 
 const IN_KEY1 = {
-  workspaceId: W1,
   userId: MIA,
   kind: 'IN' as const,
   idempotencyKey: key(1),
@@ -270,7 +266,7 @@ describe('CheckInOutUseCase — qua nửa đêm (SD-11b, SD-12e) qua luồng ch�
       '2026-11-17',
     ]);
     t.at('2026-11-17 20:00');
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     for (const date of ['2026-11-16', '2026-11-17']) {
       expect(month.days.find((x) => x.date === date)).toMatchObject({
         status: 'PRESENT',
@@ -288,7 +284,7 @@ describe('CheckInOutUseCase — qua nửa đêm (SD-11b, SD-12e) qua luồng ch�
     await expect(t.punch('OUT', key(3))).rejects.toMatchObject({
       details: { rule: 'NOT_CHECKED_IN' },
     });
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(month.days.find((x) => x.date === '2026-11-16')!.lastOut).toBe(
       instantOf('2026-11-16', hm('17:30'), VN).toISOString(),
     );
@@ -299,9 +295,8 @@ describe('CheckInOutUseCase — nhiệm kỳ + khóa theo user (T-063, company-l
   it('A S1: IN trước ngày đầu nhiệm kỳ ⇒ 422 NOT_EMPLOYED, không ghi; từ ngày đầu ⇒ 201', async () => {
     const t = await setup('2026-11-17 08:05');
     t.tenures.rows.splice(0, t.tenures.rows.length, {
-      workspaceId: W1,
       userId: MIA,
-      from: instantOf('2026-11-18', 0, VN),
+      from: '2026-11-18',
       until: null,
     });
     await expect(t.punch('IN', key(1))).rejects.toMatchObject({
@@ -316,10 +311,9 @@ describe('CheckInOutUseCase — nhiệm kỳ + khóa theo user (T-063, company-l
   it('A S1: IN 01:00 sau ngày cuối ⇒ NOT_EMPLOYED; OUT 05:59 vẫn đóng IN của ngày cuối', async () => {
     const t = await setup('2026-11-17 20:00');
     t.tenures.rows.splice(0, t.tenures.rows.length, {
-      workspaceId: W1,
       userId: MIA,
-      from: instantOf('2026-01-05', 480, VN),
-      until: instantOf('2026-11-17', 23 * 60, VN),
+      from: '2026-01-05',
+      until: '2026-11-17',
     });
     await t.punch('IN', key(1));
     t.at('2026-11-18 01:00');
@@ -330,6 +324,28 @@ describe('CheckInOutUseCase — nhiệm kỳ + khóa theo user (T-063, company-l
     expect(await t.punch('OUT', key(3))).toBeDefined();
     const outs = (await t.backend.eventRows()).filter((e) => e.kind === 'OUT');
     expect(outs.map((e) => e.workDate)).toEqual(['2026-11-17']);
+  });
+
+  it('A C2: hết quyền vào (job hoàn tất nghỉ việc commit lúc ta chờ khóa) ⇒ 401 SESSION_REVOKED SAU khóa, không ghi', async () => {
+    const t = await setup('2026-11-17 05:59');
+    const events = t.backend.events;
+    const lock = events.lockUserPunch.bind(events);
+    // Mô phỏng: trong lúc chờ khóa `punch:<user>`, job hoàn tất nghỉ việc của Mia đã commit.
+    events.lockUserPunch = async (userId) => {
+      await lock(userId);
+      t.revoked.add(userId);
+    };
+    await expect(t.punch('OUT', key(1))).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'SESSION_REVOKED',
+    });
+    expect(await t.backend.eventRows()).toHaveLength(0);
+  });
+
+  it('Admin (không phải nhân viên) chấm ⇒ 401 — chỉ nhân viên có thẻ chấm công (ADR-134)', async () => {
+    const t = await setup();
+    await expect(t.punch('IN', key(1), OLIVIA)).rejects.toMatchObject({ statusCode: 401 });
+    expect(await t.backend.eventRows()).toHaveLength(0);
   });
 
   it('khóa theo user lấy TRƯỚC mọi lần đọc (store in-memory ghi lại thứ tự)', async () => {
@@ -345,7 +361,7 @@ describe('CheckInOutUseCase — nhiệm kỳ + khóa theo user (T-063, company-l
 describe('MyAttendanceQueries', () => {
   it('AT-21 me/today trước khi chấm: đủ trường, lịch + múi giờ của lịch, PENDING (07:55)', async () => {
     const t = await setup();
-    const card = await t.queries.today({ workspaceId: W1, userId: MIA });
+    const card = await t.queries.today({ userId: MIA });
     expect(AttendanceTodayDto.parse(card)).toEqual(card);
     expect(card).toMatchObject({
       timezone: VN,
@@ -362,7 +378,7 @@ describe('MyAttendanceQueries', () => {
 
   it('AT-21b me/today đã qua giờ vào ca (08:00), chưa chấm ⇒ PENDING + notCheckedInYet; check-in xong ⇒ hết cờ', async () => {
     const t = await setup('2026-11-17 08:00');
-    const card = await t.queries.today({ workspaceId: W1, userId: MIA });
+    const card = await t.queries.today({ userId: MIA });
     expect(AttendanceTodayDto.parse(card)).toEqual(card);
     expect(card).toMatchObject({ status: 'PENDING', notCheckedInYet: true });
     expect(await t.punch('IN', key(1))).toMatchObject({
@@ -373,9 +389,9 @@ describe('MyAttendanceQueries', () => {
 
   it('me?month=: đủ mọi ngày của tháng, ngày lễ + nghỉ đã duyệt + Chủ nhật đúng trạng thái; khớp contract', async () => {
     const t = await setup('2026-11-30 20:00');
-    await t.backend.addHoliday(W1, '2026-11-14', 'Lễ thử');
-    t.leaves.rows.push({ workspaceId: W1, userId: MIA, date: '2026-11-16', part: 'FULL' });
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    await t.backend.addHoliday('2026-11-14', 'Lễ thử');
+    t.leaves.rows.push({ userId: MIA, date: '2026-11-16', part: 'FULL' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     expect(AttendanceMonthDto.parse(month)).toEqual(month);
     expect(month.days).toHaveLength(30);
     const of = (date: string) => month.days.find((x) => x.date === date);
@@ -390,10 +406,10 @@ describe('MyAttendanceQueries', () => {
 
   it('T-046 me?month: tháng đã qua ⇒ throughDate cuối tháng; tháng chưa tới ⇒ null, chỉ phép sắp tới', async () => {
     const t = await setup('2026-11-17 10:00');
-    t.leaves.rows.push({ workspaceId: W1, userId: MIA, date: '2026-12-01', part: 'FULL' });
-    const october = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-10' });
+    t.leaves.rows.push({ userId: MIA, date: '2026-12-01', part: 'FULL' });
+    const october = await t.queries.month({ userId: MIA, month: '2026-10' });
     expect(october.totals.throughDate).toBe('2026-10-31');
-    const december = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-12' });
+    const december = await t.queries.month({ userId: MIA, month: '2026-12' });
     expect(december.totals).toMatchObject({
       throughDate: null,
       absentDays: 0,
@@ -405,12 +421,11 @@ describe('MyAttendanceQueries', () => {
   it('SD-37/38 qua bảng tháng: gia nhập 10/11 lúc 14:00 ⇒ 1..9/11 NOT_EMPLOYED (0 phút), từ 10/11 tính như thường', async () => {
     const t = await setup('2026-11-30 20:00');
     t.tenures.rows.splice(0, t.tenures.rows.length, {
-      workspaceId: W1,
       userId: MIA,
-      from: instantOf('2026-11-10', 14 * 60, VN),
+      from: '2026-11-10',
       until: null,
     });
-    const month = await t.queries.month({ workspaceId: W1, userId: MIA, month: '2026-11' });
+    const month = await t.queries.month({ userId: MIA, month: '2026-11' });
     const statusOf = (date: string) => month.days.find((x) => x.date === date)!.status;
     expect(month.days.filter((x) => x.status === 'NOT_EMPLOYED').map((x) => x.date)).toEqual(
       Array.from({ length: 9 }, (_, i) => `2026-11-0${i + 1}`),
@@ -422,16 +437,15 @@ describe('MyAttendanceQueries', () => {
 
   it('workspace chưa lưu lịch nào ⇒ dùng DEFAULT_SCHEDULE (TL: không seed); HR lưu phiên bản mới thì theo phiên bản đó', async () => {
     const t = await setup();
-    expect(await t.queries.today({ workspaceId: W1, userId: MIA })).toMatchObject({
+    expect(await t.queries.today({ userId: MIA })).toMatchObject({
       timezone: VN,
       isWorkday: true,
       schedule: { startMin: 480, endMin: 1050, breakStartMin: 720, breakEndMin: 810, graceMin: 0 },
     });
     await t.backend.addScheduleVersion(
-      W1,
       { ...S0, effectiveFrom: '2026-11-17', startMin: 540 },
       OLIVIA,
     );
-    expect((await t.queries.today({ workspaceId: W1, userId: MIA })).schedule?.startMin).toBe(540);
+    expect((await t.queries.today({ userId: MIA })).schedule?.startMin).toBe(540);
   });
 });

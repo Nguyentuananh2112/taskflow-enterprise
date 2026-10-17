@@ -7,21 +7,20 @@ import type {
 import { fromDateOnly, toDateOnly, type DbProvider } from './db';
 
 /**
- * Lịch theo phiên bản + ngày lễ. Không có dòng nào ⇒ trả rỗng; domain dùng `DEFAULT_SCHEDULE`
+ * Lịch theo phiên bản + ngày lễ của công ty (một bộ — company-level ADR-136). Không có dòng nào ⇒ trả rỗng; domain dùng `DEFAULT_SCHEDULE`
  * (migration 3 không seed — TL).
  */
 export class PrismaWorkCalendarStore implements IWorkCalendarStore {
   constructor(private readonly db: DbProvider) {}
 
-  async scheduleVersions(workspaceId: string): Promise<WorkSchedule[]> {
-    return (await this.scheduleRecords(workspaceId)).map(
+  async scheduleVersions(): Promise<WorkSchedule[]> {
+    return (await this.scheduleRecords()).map(
       ({ createdBy: _c, createdAt: _a, ...schedule }) => schedule,
     );
   }
 
-  async scheduleRecords(workspaceId: string): Promise<ScheduleVersionRecord[]> {
+  async scheduleRecords(): Promise<ScheduleVersionRecord[]> {
     const rows = await this.db().workSchedule.findMany({
-      where: { workspaceId },
       orderBy: { effectiveFrom: 'asc' },
     });
     return rows.map((r) => ({
@@ -38,7 +37,7 @@ export class PrismaWorkCalendarStore implements IWorkCalendarStore {
     }));
   }
 
-  async saveScheduleVersion(workspaceId: string, v: ScheduleVersionRecord): Promise<void> {
+  async saveScheduleVersion(v: ScheduleVersionRecord): Promise<void> {
     const data = {
       timezone: v.timezone,
       workdays: v.workdays,
@@ -52,16 +51,15 @@ export class PrismaWorkCalendarStore implements IWorkCalendarStore {
     };
     const effectiveFrom = fromDateOnly(v.effectiveFrom);
     await this.db().workSchedule.upsert({
-      where: { workspaceId_effectiveFrom: { workspaceId, effectiveFrom } },
-      create: { workspaceId, effectiveFrom, ...data },
+      where: { effectiveFrom },
+      create: { effectiveFrom, ...data },
       update: data,
     });
   }
 
-  async holidays(q: { workspaceId: string; from: string; to: string }) {
+  async holidays(q: { from: string; to: string }) {
     const rows = await this.db().holiday.findMany({
       where: {
-        workspaceId: q.workspaceId,
         date: { gte: fromDateOnly(q.from), lte: fromDateOnly(q.to) },
       },
       orderBy: { date: 'asc' },
@@ -69,18 +67,18 @@ export class PrismaWorkCalendarStore implements IWorkCalendarStore {
     return rows.map((r) => ({ date: toDateOnly(r.date), name: r.name }));
   }
 
-  async putHoliday(workspaceId: string, h: HolidayRecord): Promise<void> {
+  async putHoliday(h: HolidayRecord): Promise<void> {
     const date = fromDateOnly(h.date);
     await this.db().holiday.upsert({
-      where: { workspaceId_date: { workspaceId, date } },
-      create: { workspaceId, date, name: h.name },
+      where: { date },
+      create: { date, name: h.name },
       update: { name: h.name },
     });
   }
 
-  async deleteHoliday(workspaceId: string, date: string): Promise<boolean> {
+  async deleteHoliday(date: string): Promise<boolean> {
     const { count } = await this.db().holiday.deleteMany({
-      where: { workspaceId, date: fromDateOnly(date) },
+      where: { date: fromDateOnly(date) },
     });
     return count > 0;
   }
