@@ -713,7 +713,18 @@ test(`E2E-HR-08c [${T041C}]: XSS — lý do đơn, tên ngày lễ, lý do ADJUS
   await expect(hana.page.getByText(`${holidayDmy} · ${P.holiday}`)).toBeVisible();
   await assertInert(hana.page, dialogsHana, 'Hana /hr Lịch & ngày lễ');
   await hana.page.goto('/hr?tab=timesheet');
-  await hana.page.getByRole('button', { name: w.mia.user.fullName }).click();
+  // Một công ty (§0.4): bảng công tháng có MỌI nhân viên của lượt chạy, phân trang "Tải thêm", không có ô tìm ⇒ tải tới
+  // khi thấy Mia (không dựa trang 1 — đỏ ở 5840a31 khi DB E2E đã tích lũy > 48 người).
+  const miaBtn = hana.page.getByRole('button', { name: w.mia.user.fullName, exact: true });
+  const more = hana.page.getByRole('button', { name: 'Tải thêm' });
+  // Chờ bảng có dữ liệu (thấy Mia hoặc nút "Tải thêm") rồi mới đếm — đếm sớm ra 0 khi bảng còn đang tải.
+  await expect(miaBtn.or(more).first()).toBeVisible();
+  for (let i = 0; i < 30 && (await miaBtn.count()) === 0; i += 1) {
+    await expect(more, `không thấy ${w.mia.user.fullName} và hết "Tải thêm"`).toBeVisible();
+    await more.click();
+    await expect(more.or(miaBtn).first()).toBeVisible();
+  }
+  await miaBtn.click();
   const sheet = hana.page.getByRole('region', { name: `Bảng công của ${w.mia.user.fullName}` });
   // T-046: lịch T2…CN như /attendance — đúng một ô hôm nay (theo server), là ô của ngày mốc.
   await expect(sheet.locator('td[aria-current="date"]')).toHaveCount(1);
