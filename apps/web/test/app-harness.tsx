@@ -10,6 +10,7 @@ import type { RealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
 import { AttendancePage } from '@/views/attendance';
 import { HrPage } from '@/views/hr';
+import { HrEmployeesPage } from '@/views/hr-employees';
 import { LeavePage } from '@/views/leave';
 import { BoardPage } from '@/views/board';
 import { MembersPage } from '@/views/members';
@@ -30,6 +31,7 @@ const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/attendance$/, () => <AttendancePage />],
   [/^\/leave$/, () => <LeavePage />],
   [/^\/hr$/, () => <HrPage />],
+  [/^\/hr\/employees$/, () => <HrEmployeesPage />],
   [/^\/w\/[^/]+\/settings$/, () => <WorkspaceSettingsPage />],
   [/^\/w\/[^/]+\/settings\/members$/, () => <MembersPage />],
   [/^\/w\/[^/]+\/p\/[^/]+\/settings$/, () => <ProjectSettingsPage />],

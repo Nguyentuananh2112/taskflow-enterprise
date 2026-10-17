@@ -61,7 +61,16 @@ export function HrPage() {
   ];
   return (
     <PageMain className="max-w-5xl gap-4">
-      <h1 className="text-xl font-semibold">Nhân sự</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold">Nhân sự</h1>
+        {/* ADR-137: thêm / cho nghỉ / nhận lại nhân viên ở trang riêng. */}
+        <Link
+          href="/hr/employees"
+          className="ml-auto rounded-control border border-border px-3 py-2 text-sm hover:bg-bg-subtle"
+        >
+          Danh sách nhân viên
+        </Link>
+      </div>
       {data ? (
         <HrTabs
           tabs={tabs}
