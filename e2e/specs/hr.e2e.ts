@@ -101,9 +101,13 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     const clock = card.getByRole('paragraph').filter({ hasText: 'Giờ hiện tại theo máy chủ' });
     await expect(clock).toHaveText(/: \d{2}:\d{2}:\d{2}$/);
     const shown = ((await clock.textContent()) ?? '').slice(-8);
+    // So với giờ NGHIỆP VỤ của server (mốc thứ Ba 10:00 VN + thời gian trôi), không với giờ máy test.
+    const serverHm = async () =>
+      vnHm((await apiMyToday(request, w.olivia, await refreshed(request, w.mia))).serverNow);
+    const atLoad = await serverHm();
     expect(
-      withinAMinute(shown, vnHm()),
-      `đồng hồ ${shown} ≠ giờ VN ${vnHm()} (máy: New York)`,
+      withinAMinute(shown, atLoad),
+      `đồng hồ ${shown} ≠ giờ server ${atLoad} VN (máy: New York)`,
     ).toBe(true);
 
     // Tab thứ hai mở TRƯỚC khi chấm ⇒ vẫn hiện "Chấm vào" (dữ liệu cũ) — dùng để bấm vào lần 2 qua UI. Phải bấm trong
@@ -122,7 +126,8 @@ test.describe('E2E-HR-01 múi giờ trình duyệt khác lịch', () => {
     const inOut = cardValue(card, 'Vào / Ra');
     await expect(inOut).toHaveText(/^\d{2}:\d{2} \/ —$/);
     const firstIn = ((await inOut.textContent()) ?? '').slice(0, 5);
-    expect(withinAMinute(firstIn, vnHm()), `giờ vào ${firstIn} hiển thị theo giờ VN`).toBe(true);
+    const atIn = await serverHm();
+    expect(withinAMinute(firstIn, atIn), `giờ vào ${firstIn} ≠ giờ server ${atIn} VN`).toBe(true);
     await expect(card.getByRole('button', { name: 'Chấm ra' })).toBeVisible();
 
     // Tab cũ bấm "Chấm vào" ⇒ 409 already_checked_in ⇒ toast lỗi, thẻ tải lại thành "Chấm ra"; không thêm lượt IN.
@@ -392,22 +397,16 @@ test(`E2E-HR-05 [${T041A}]: nhắc "chưa chấm vào" trong ngày làm việc; 
   request,
 }) => {
   const w = await seedHrWorld(request, 'hr05');
-  const today = await hrCall<{ isWorkday: boolean; isHoliday: boolean; status: string }>(
-    request,
-    'GET',
-    `/workspaces/${w.olivia.workspaceId}/attendance/me/today`,
-    { token: w.mia.accessToken, expected: 200 },
-  );
-  // Điều kiện của thẻ (T-041a): ngày làm việc, không lễ, không nghỉ, chưa vào, chưa bị chốt ABSENT (sau giờ ca).
-  const remind = today.isWorkday && !today.isHoliday && today.status !== 'ABSENT';
 
+  // Mốc thứ Ba 10:00 VN: ngày làm việc, không lễ, trong ca, chưa vào ⇒ banner PHẢI hiện. Biên khác (sau 17:30
+  // ⇒ ABSENT, Chủ nhật ⇒ OFF) kiểm ở hộp đen CLK-HR-01/04 với process API riêng.
   await loginViaUi(page, w.mia.user);
   await page.goto(projectsPath(w));
   const card = attendanceCard(page);
   await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
-  const banner = card.getByRole('status').filter({ hasText: 'Bạn chưa chấm vào hôm nay.' });
-  if (remind) await expect(banner).toBeVisible();
-  else await expect(banner).toHaveCount(0);
+  await expect(
+    card.getByRole('status').filter({ hasText: 'Bạn chưa chấm vào hôm nay.' }),
+  ).toBeVisible();
 
   await page.reload();
   await expect(card.getByRole('button', { name: 'Chấm vào' })).toBeVisible();
@@ -482,10 +481,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(table.getByRole('columnheader', { name: col, exact: true })).toBeVisible();
       }
       expect(await table.getByRole('rowheader').count()).toBeGreaterThanOrEqual(28);
-      // Trạng thái hôm nay có CHỮ (không chỉ biểu tượng aria-hidden).
-      await expect(dayRow(table, vnDate()).getByRole('cell').first()).toHaveText(
-        /Có mặt|Chưa chấm ra|Đang làm|Vắng|Nghỉ phép|Ngày lễ|Không phải ngày làm|Chưa tới giờ/,
-      );
+      // Trạng thái hôm nay có CHỮ (không chỉ biểu tượng aria-hidden). Mốc thứ Ba 10:00 + đã chấm vào ⇒ "Có mặt".
+      await expect(dayRow(table, vnDate()).getByRole('cell').first()).toContainText('Có mặt');
       expect(await seriousViolations(page), `/attendance (${colorScheme})`).toEqual([]);
       await dayRow(table, vnDate()).getByRole('rowheader').getByRole('button').click();
       await expect(page.getByRole('dialog', { name: /^Lượt chấm/ })).toBeVisible();

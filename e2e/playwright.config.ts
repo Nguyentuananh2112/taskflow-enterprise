@@ -6,6 +6,7 @@ import {
   API_ORIGIN,
   API_PORT,
   API_URL,
+  E2E_CLOCK_ANCHOR,
   E2E_DB,
   E2E_JWT_SECRET,
   E2E_REDIS_URL,
@@ -81,6 +82,8 @@ export default defineConfig({
         // E2E-11: access token sống ngắn ⇒ mọi kịch bản dài đều đi qua refresh trong suốt. API chỉ nhận
         // biến này khi APP_ENV=test (T-031); bản API chưa có thì bỏ qua (E2E-11 tự skip có nhãn).
         JWT_ACCESS_TTL_SECONDS: process.env.E2E_ACCESS_TTL ?? '10',
+        // Giờ nghiệp vụ tất định (TL d9, A fix/T-038-test-clock): neo + trôi; auth/limiter vẫn giờ thật.
+        TEST_CLOCK_ANCHOR: E2E_CLOCK_ANCHOR,
       },
     },
     {
