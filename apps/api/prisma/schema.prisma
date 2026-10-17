@@ -114,6 +114,17 @@ enum NotificationType {
   OFFBOARD_SCHEDULED
   OFFBOARD_CLEANUP
   PROFILE_UPDATED // Mốc 5 (ADR-128): HR sửa hồ sơ của bạn
+  CORRECTION_SUBMITTED // Mốc 5 (ADR-129): đơn bổ sung giờ — SUBMITTED / CANCELLED dành cho HR
+  CORRECTION_APPROVED
+  CORRECTION_REJECTED
+  CORRECTION_CANCELLED
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
 model User {
@@ -158,6 +169,10 @@ model User {
   // Mốc 5 (T-054, ADR-128)
   employeeProfile EmployeeProfile?  @relation("ProfileUser")
   profilesUpdated EmployeeProfile[] @relation("ProfileUpdater")
+
+  // Mốc 5 (T-055, ADR-129)
+  correctionRequests AttendanceCorrectionRequest[] @relation("CorrectionRequester")
+  correctionsDecided AttendanceCorrectionRequest[] @relation("CorrectionDecider")
 
   @@map("users")
 }
@@ -424,6 +439,8 @@ model AttendanceEvent {
   createdBy User  @relation("AttendanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
   voidedBy  User? @relation("AttendanceVoider", fields: [voidedById], references: [id], onDelete: Restrict)
 
+  correction AttendanceCorrectionRequest? // Mốc 5: lượt ADJUSTMENT do duyệt đơn bổ sung giờ (ADR-129)
+
   @@unique([userId, workDate], map: "attendance_events_web_in_once_key", where: raw("kind = 'IN' AND source = 'WEB' AND voided_at IS NULL"))
   @@unique([userId, source, idempotencyKey], map: "attendance_events_idempotency_key", where: raw("idempotency_key IS NOT NULL"))
   @@index([workDate])
@@ -529,4 +546,38 @@ model EmployeeProfile {
 
   @@index([updatedById])
   @@map("employee_profiles")
+}
+
+// ---------------------------------------------------------------- Mốc 5: đơn bổ sung giờ (ADR-129, T-055)
+/// Nhân viên xin thêm lượt IN / OUT còn THIẾU của một ngày công; HR duyệt ⇒ một lượt ADJUSTMENT (`created_event_id`).
+/// `reason` có thể nhắc sức khỏe (B-H2): chỉ người gửi + HR; NULL sau hạn lưu D9 (trừ PENDING). CHECK: SQL tay.
+model AttendanceCorrectionRequest {
+  id             String           @id @db.Uuid // UUIDv7 từ app
+  userId         String           @map("user_id") @db.Uuid
+  workDate       DateTime         @map("work_date") @db.Date
+  kind           AttendanceKind
+  minuteOfDay    Int              @map("minute_of_day") // phút từ 00:00 theo múi giờ lịch hiệu lực
+  nextDay        Boolean          @default(false) @map("next_day") // OUT sau nửa đêm, < 06:00
+  reason         String?          @db.VarChar(500)
+  status         CorrectionStatus @default(PENDING)
+  idempotencyKey String           @map("idempotency_key") @db.VarChar(64)
+  decidedById    String?          @map("decided_by_id") @db.Uuid
+  decidedAt      DateTime?        @map("decided_at") @db.Timestamptz(3)
+  decisionNote   String?          @map("decision_note") @db.VarChar(500)
+  createdEventId String?          @unique @map("created_event_id") @db.Uuid
+  version        Int              @default(1)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User             @relation("CorrectionRequester", fields: [userId], references: [id], onDelete: Restrict)
+  decidedBy    User?            @relation("CorrectionDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+  // NO ACTION (không Restrict): kiểm CUỐI câu lệnh ⇒ retention xóa đơn rồi lượt chấm trong một lượt không vỡ (B-HIGH-2).
+  createdEvent AttendanceEvent? @relation(fields: [createdEventId], references: [id], onDelete: NoAction)
+
+  @@unique([userId, workDate, kind], map: "attendance_corrections_pending_key", where: raw("status = 'PENDING'"))
+  @@unique([userId, idempotencyKey])
+  @@index([status, createdAt, id])
+  @@index([userId, workDate])
+  @@index([decidedById])
+  @@map("attendance_correction_requests")
 }

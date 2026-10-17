@@ -7,6 +7,11 @@ import {
   type IUnitOfWork,
   type UnitOfWorkOptions,
 } from './unit-of-work';
+import {
+  assertSnapshotTimeout,
+  ReadSnapshotNestingError,
+  type IReadSnapshot,
+} from './read-snapshot';
 
 /**
  * Phần tối thiểu của PrismaClient mà UoW cần — interactive transaction.
@@ -26,6 +31,13 @@ export interface TransactionCapable<TTx> {
 interface TxStore<TTx> {
   readonly tx: TTx;
   readonly hooks: AfterCommitHook[];
+  /** Trong `readSnapshot.run` (REPEATABLE READ READ ONLY) — `run` lồng vào ⇒ lỗi. */
+  readonly readOnly?: true;
+}
+
+/** Client transaction chạy được SQL thô (để `SET TRANSACTION READ ONLY`). */
+interface RawCapable {
+  $executeRawUnsafe(sql: string): Promise<number>;
 }
 
 export interface PrismaUnitOfWorkOptions {
@@ -61,7 +73,9 @@ export class PrismaUnitOfWork<TDb> implements IUnitOfWork {
   }
 
   async run<T>(work: () => Promise<T>, options: UnitOfWorkOptions = {}): Promise<T> {
-    if (this.inTransaction) return work();
+    const store = this.#storage.getStore();
+    if (store?.readOnly) throw new ReadSnapshotNestingError('write-in-snapshot');
+    if (store) return work();
 
     const hooks: AfterCommitHook[] = [];
     const result = await this.client.$transaction((tx) => this.#storage.run({ tx, hooks }, work), {
@@ -71,6 +85,36 @@ export class PrismaUnitOfWork<TDb> implements IUnitOfWork {
     await runAfterCommitHooks(hooks, this.logger);
     return result;
   }
+
+  /**
+   * `IReadSnapshot` (core/persistence/read-snapshot.ts): REPEATABLE READ, câu đầu `SET TRANSACTION READ ONLY` (mọi
+   * lệnh ghi bên trong ⇒ Postgres 25006), timeout có trần. Không có hook sau commit (không ghi gì để chờ).
+   */
+  async readSnapshot<T>(work: () => Promise<T>, opts: { timeoutMs: number }): Promise<T> {
+    if (this.inTransaction) throw new ReadSnapshotNestingError('in-unit-of-work');
+    assertSnapshotTimeout(opts.timeoutMs);
+    return this.client.$transaction(
+      async (tx) => {
+        await (tx as unknown as RawCapable).$executeRawUnsafe('SET TRANSACTION READ ONLY');
+        return this.#storage.run({ tx, hooks: [], readOnly: true }, work);
+      },
+      {
+        isolationLevel: 'RepeatableRead',
+        timeout: opts.timeoutMs,
+        maxWait: this.options.maxWait ?? 5_000,
+      },
+    );
+  }
+
+  /** Dạng port `IReadSnapshot` — truyền `uow.snapshot` cho use case báo cáo. */
+  readonly snapshot: IReadSnapshot = {
+    run: (work, opts) => this.readSnapshot(work, opts),
+    outside: async (fn) => {
+      if (!this.#storage.getStore()?.readOnly)
+        throw new ReadSnapshotNestingError('outside-without-snapshot');
+      return this.#storage.exit(fn);
+    },
+  };
 
   afterCommit(hook: AfterCommitHook): void {
     const store = this.#storage.getStore();
