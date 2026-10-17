@@ -24,7 +24,7 @@ async function november() {
   await t.punch('OUT', key(2));
   t.at('2026-11-17 08:30'); // muộn 30 phút, không ra ⇒ MISSING_OUT
   await t.punch('IN', key(3));
-  t.leaves.rows.push({ userId: MIA, date: '2026-11-18', part: 'FULL', type: 'ANNUAL' });
+  t.leaves.rows.push({ userId: MIA, date: '2026-11-18', part: 'FULL' });
   t.at('2026-12-01 09:00');
   // Vic nghỉ việc 15/11 ⇒ vẫn có dòng tháng 11, nhãn "Đã nghỉ".
   t.tenures.rows.splice(
