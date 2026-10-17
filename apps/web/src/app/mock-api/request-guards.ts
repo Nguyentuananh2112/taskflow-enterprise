@@ -6,6 +6,12 @@ import { fail } from './respond';
 // T-029 H2: mock dễ dãi hơn server là lý do lỗi thiếu Content-Type lọt qua test — giờ mock trả đúng
 // 415 như server.
 
+/** Đường dẫn được nhận `application/octet-stream` (đúng method + path — B M1); contentTypeGuard dùng. */
+export const OCTET_STREAM_ROUTES: ReadonlyArray<readonly [method: string, path: RegExp]> = [
+  ['PUT', /\/me\/avatar$/],
+  ['POST', /\/chat\/uploads$/],
+];
+
 const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH']);
 const UTF8 = new Set(['utf-8', 'utf8']);
 
@@ -31,6 +37,11 @@ function contentType(header: string | null): {
 export function contentTypeGuard(baseUrl: string): HttpHandler {
   return http.all(`${baseUrl}/*`, ({ request }) => {
     const { type, charset, invalid } = contentType(request.headers.get('content-type'));
+    // Mốc 6 (ADR-141, B M1): ngoại lệ ĐÚNG cặp method + path — chỉ nhận octet-stream; route khác vẫn 415.
+    const path = new URL(request.url).pathname;
+    if (OCTET_STREAM_ROUTES.some(([m, re]) => m === request.method && re.test(path))) {
+      return type === 'application/octet-stream' ? undefined : fail(415, 'UNSUPPORTED_MEDIA_TYPE');
+    }
     const wrongType = METHODS_WITH_BODY.has(request.method) && type !== 'application/json';
     const wrongCharset =
       type === 'application/json' && (invalid || (charset !== undefined && !UTF8.has(charset)));

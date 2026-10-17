@@ -149,7 +149,7 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 | SEC-CH-08 | F | `chat-upload-limits.sec.ts` (NẶNG) | Mỗi vế ≤ 2 s: pixel bomb ⇒ 422; 21 MB ⇒ 413 (ngay theo `Content-Length`); chunked 25 MB ⇒ 413; avatar 6 MB ⇒ 413. `expectNoTmp`. Bỏ vế RAM (TL) |
 | SEC-CH-09 | F | `chat-upload-limits.sec.ts` | `../../etc/passwd`, U+202E, NUL ⇒ 201 + `filename*` sạch (không `/`, `\`, bidi, NUL) + `outsideWrites` rỗng; thiếu / `%E0%A4%A` / 256 byte ⇒ 400 `INVALID_UPLOAD_NAME`, không ghi |
 | SEC-CH-10 | F | `chat-media.sec.ts` | Header từng loại đúng bảng ADR-141; CORP = giá trị `MEDIA_CORP` của env test (`same-site` mặc định; một ca chạy `cross-origin`) |
-| SEC-CH-11 | F | `chat-media.sec.ts` | Sửa `exp` / `sig` / path / `v` / URL hết hạn (chờ khung test) / `download-url` sau TTL ⇒ `expectMedia404`, body giống hệt |
+| SEC-CH-11 | F | `chat-media.sec.ts` | Sửa `exp` / `sig` / path / `v` / URL hết hạn (chờ khung test) / `download-url` sau TTL ⇒ `expectMedia404`, body giống hệt · **Thước đo hộp đen (TL 18/10):** log debug `media.sig_invalid {reason: format \| signature \| expired}` — có ⇒ bị chặn trước DB / đĩa; không có ⇒ qua chữ ký. **Giới hạn:** "404 không chạm DB / đĩa" KHÔNG quan sát trực tiếp được từ hộp đen — dựa vào thứ tự trong `media-router.ts` + unit test của G (`media-router.test.ts`); S chỉ khẳng định log + trang lỗi giống hệt |
 | SEC-CH-12 | F | `chat-upload-limits.sec.ts` | multipart / text/plain có Bearer ⇒ 415; không Bearer ⇒ 401; không ghi |
 | SEC-CH-13 | H | `e2e/specs/chat.e2e.ts` (E) + `chat-idor.sec.ts` (S: thân lưu nguyên văn) | E: `arm()` + `assertInert`; link chỉ `http(s)`; `a[href^="javascript:"]` = 0 |
 | SEC-CH-14 | F | `chat-limits.sec.ts` | 31 tin / phút ⇒ 429 + `Retry-After`, tin 31 không có trong `messages`; 31 upload / 10 phút ⇒ 429; vượt 2 MB / ngày ⇒ 429; `FILE_STORE_MAX_BYTES` 3 MB ⇒ 507 `STORAGE_FULL` (file riêng env) |
@@ -216,6 +216,20 @@ Kịch bản xem thiết kế §5. Cột "Mong đợi chi tiết" là phần F t
 
 Selector chat: chờ H gửi (T-072). Thiết kế §7 E13: `link "Trò chuyện"`, `log "Tin nhắn"`, `textbox "Soạn tin"`, `button "Gửi"`, `button "Đính kèm"`, `dialog "Xem ảnh"`, `button "Tải xuống <tên>"`; `data-testid` chỉ `chat-message-<id>`, `upload-chip-<n>`.
 
+### 6.1 Selector chat (H, T-072 — `feat/T-072` @bf48bef8, 18/10) cho E2E-CH-02…07
+
+Theo vai trò + nhãn (E13). Mock web KHÔNG phát event chat (parity) ⇒ E2E thật chạy với server T-070.
+
+- **Lối vào:** ≥ md `link` "Trò chuyện" hoặc "Trò chuyện, N tin chưa đọc" (badge "9+", nhãn có số thật) trong `navigation "Tài khoản"`; < md `link "Trò chuyện"` trong ☰ (`button "Menu"` có chấm khi có tin) + ô ở `/w` cùng nhãn. Trang ws: `link "Trò chuyện"` trong `navigation "Workspace"` ⇒ `/chat/ws/[wsId]` ⇒ tự chuyển `/chat/[id]`.
+- **`/chat`:** `navigation "Danh sách trò chuyện"`, heading "Trò chuyện"; mỗi hội thoại `link` "<tên>[, N tin chưa đọc][, đã tắt tiếng]" (DIRECT = tên người kia, nhóm = tên nhóm, phòng ws = "# <tên ws>"). `button "Tin nhắn mới"` ⇒ `dialog "Tin nhắn mới"` + `combobox "Tìm người"` + `option "<tên>"`. `button "Tạo nhóm"` ⇒ `dialog "Tạo nhóm"`, `textbox "Tên nhóm"`, `combobox "Thêm người"`, `button "Tạo nhóm"`.
+- **`/chat/[id]`:** `region "<tên hội thoại>"`, heading = tên; `log "Tin nhắn"`; mỗi tin `data-testid="chat-message-<id>"` (article, nhãn "<người gửi>, HH:mm"); `textbox "Soạn tin"`, `button "Gửi"`.
+- **Đính kèm:** `button "Đính kèm"` (input file ẩn nhãn "Chọn tệp đính kèm" ⇒ `setInputFiles`); chip `data-testid="upload-chip-<n>"` (đang tải: `progressbar "Đang tải <tên>"`; gỡ: `button "Bỏ tệp <tên>"`); ảnh: `button "Xem ảnh <tên>"` ⇒ `dialog "Xem ảnh"`; tệp: `button "Tải xuống <tên>"` (POST download-url ⇒ `location.assign` ⇒ `waitForEvent('download')`).
+- **Hành động trên tin:** `button "Trả lời tin của <người>"`, "Sửa", "Xóa" ⇒ `dialog "Xóa tin nhắn"`; tin đã xóa: text "Tin nhắn đã bị xóa"; "(đã sửa)"; "Đã xem" (DIRECT); `separator "Tin chưa đọc"`; "Tải tin cũ hơn"; gửi lỗi: `alert` "Chưa gửi được" + `button "Thử lại"` / "Bỏ".
+- **Nhóm:** `button "Thành viên"` ⇒ `dialog "Thành viên nhóm"` ("Bớt <tên>", "Giao trưởng nhóm cho <tên>", "Rời nhóm"); `button "Tắt tiếng"` / "Bỏ tắt tiếng" (`aria-pressed`).
+- **Giờ (H 18/10):** HH:mm trên nhãn tin / cạnh tin / danh sách theo **múi giờ trình duyệt** (giờ cá nhân, khác bảng công theo lịch công ty) ⇒ E2E đặt `timezoneId: 'Asia/Ho_Chi_Minh'`. Danh sách: cùng ngày hiện HH:mm, khác ngày hiện dd/MM.
+- **Chọn tin:** theo `data-testid="chat-message-<id>"`, id lấy từ API / event — nhãn article có thể trùng (cùng người, cùng phút). Tin lạc quan có testid tạm `chat-message-<clientMsgId>` rồi đổi sang id thật ⇒ ca bám tin vừa gửi chờ `page.waitForResponse(POST …/messages)` rồi mới chọn.
+- **a11y (E2E-CH-07):** vùng `[aria-live="polite"].sr-only` riêng chỉ đọc tin ĐẾN sau lúc mở ("Vic Phạm: …"); `log` có `aria-live="off"`.
+
 ## 7. Hiệu năng (tầng P — F; máy rảnh, ADR-107)
 
 - `apps/api/test/perf/chat-seed.ts`: script DB seed 100 000 tin / 1 hội thoại, phòng ws 300 người, 50 hội thoại / người. **Chỉ tầng P**; DB riêng.
@@ -241,8 +255,8 @@ Selector chat: chờ H gửi (T-072). Thiết kế §7 E13: `link "Trò chuyện
 | `chat-people.sec.ts` | F | SEC-CH-18 | chưa |
 | `chat-realtime.sec.ts` | F | SEC-CH-19 | chưa |
 | `chat-logs.sec.ts` | F | SEC-CH-20 (API) | chưa |
-| `chat-media.sec.ts` | F | SEC-CH-10, 11, 31, 35 (B); 22 (F) | chưa |
-| `chat-media-rotate.sec.ts` | F | SEC-CH-35 (xoay khóa) | chưa |
+| `chat-media.sec.ts` | F | SEC-CH-10, 11, 20 (vế /media), 31 (vế IP), 35 (đổi tuple / purpose) — **5/5 xanh** trên `feat/T-067` f8ae89e7; vế cần tệp thật (header ảnh, `deleteBlob`, SEC-CH-22) chờ T-068 / T-069 | một phần |
+| `chat-media-rotate.sec.ts` | F | SEC-CH-35r (xoay khóa `_PREVIOUS`) — **1/1 xanh** | xong |
 | `chat-upload-types.sec.ts` | F | SEC-CH-06, 07, 21, 23, 32, 33, 36 | chưa |
 | `chat-upload-limits.sec.ts` (NẶNG) | F | SEC-CH-08, 09, 12, 24, 26, 27, 34 (đã viết, pending `T-067`, chưa chạy); SEC-CH-37, CC-CH-09 chưa | một phần |
 | `chat-races.sec.ts` | F | CC-CH-01, 02, 03, 05, 06 (F); 04, 07, 08 (B) | chưa |

@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import { afterAll, expect } from 'vitest';
 
 import { useCompanyApi } from './company';
@@ -55,3 +57,37 @@ export function expectMedia404(res: RawResponse, what = '/media'): void {
 export async function expectNoTmp(store: TempFileStore, withinMs = 2_000): Promise<void> {
   expect(await waitNoTmp(store, withinMs), 'tệp tmp/ còn sót').toEqual([]);
 }
+
+export type MediaKind = 'avatars' | 'chat';
+export type MediaVariant = '256' | '64' | 'preview' | 'thumb' | 'file';
+export interface MediaTupleInput {
+  kind: MediaKind;
+  id: string;
+  variant: MediaVariant;
+  version?: number;
+  /** Giây Unix. */
+  exp: number;
+}
+
+/**
+ * Ký URL `/media` ĐỘC LẬP với code API (ADR-141, test-spec-chat §1.4): HMAC-SHA256 base64url trên
+ * `v1|<purpose>|<kind>|<id>|<variant>|<version>|<exp>`, `purpose` = `download` khi `variant = file`, còn lại `view`.
+ * `sign` cho phép ký tuple KHÁC tuple trên URL (ca đổi tuple giữ chữ ký — SEC-CH-35).
+ */
+export function signMediaUrl(
+  t: MediaTupleInput,
+  opts: { secret?: string; sign?: Partial<MediaTupleInput> & { purpose?: string } } = {},
+): string {
+  const version = t.version ?? 1;
+  const s = { ...t, version, ...opts.sign };
+  const purpose = opts.sign?.purpose ?? (s.variant === 'file' ? 'download' : 'view');
+  const canonical = ['v1', purpose, s.kind, s.id, s.variant, s.version, s.exp].join('|');
+  const sig = createHmac('sha256', opts.secret ?? TEST_FILE_URL_SECRET)
+    .update(canonical)
+    .digest('base64url');
+  const qs = new URLSearchParams({ v: String(version), exp: String(t.exp), sig }).toString();
+  return `/api/v1/media/${t.kind}/${t.id}/${t.variant}?${qs}`;
+}
+
+/** Giây Unix hiện tại theo giờ máy — `/media` so `exp` với đồng hồ nghiệp vụ (= giờ thật khi không neo). */
+export const nowSec = (): number => Math.floor(Date.now() / 1000);
