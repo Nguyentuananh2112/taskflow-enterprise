@@ -3,7 +3,12 @@
 import Link from 'next/link';
 
 import { useAttendanceToday } from '@/entities/attendance';
-import { daysText, useMyLeaveBalance, useMyLeaveRequests } from '@/entities/leave';
+import {
+  balanceBreakdown,
+  daysText,
+  useMyLeaveBalance,
+  useMyLeaveRequests,
+} from '@/entities/leave';
 import { useCompanyPermission } from '@/entities/session';
 import { LeaveRequestForm } from '@/features/leave-submit';
 import { Button } from '@/shared/ui/button';
@@ -49,14 +54,24 @@ export function LeavePage() {
           Phép năm {b?.year ?? ''}
         </h2>
         {b ? (
-          <p className="text-sm">
-            Còn{' '}
-            <strong className={b.remainingDays < 0 ? 'text-danger' : undefined}>
-              {daysText(b.remainingDays)}
-            </strong>
-            {b.pendingDays > 0 && ` · đang chờ duyệt ${daysText(b.pendingDays)}`} · đã dùng{' '}
-            {daysText(b.usedDays)} / {daysText(b.entitledDays + b.adjustmentDays)}
-          </p>
+          <>
+            <p className="text-sm">
+              Còn{' '}
+              <strong className={b.remainingDays < 0 ? 'text-danger' : undefined}>
+                {daysText(b.remainingDays)}
+              </strong>
+            </p>
+            <p className="text-sm text-text-muted">
+              {balanceBreakdown(b)
+                .map((part) => `${part.label} ${part.value}`)
+                .join(' · ')}
+            </p>
+            {b.missingHireDate && (
+              <p className="text-xs text-text-muted">
+                Chưa có ngày vào công ty nên chưa tính thâm niên — báo bộ phận nhân sự.
+              </p>
+            )}
+          </>
         ) : (
           <Skeleton className="mt-2 h-5 w-64" />
         )}
