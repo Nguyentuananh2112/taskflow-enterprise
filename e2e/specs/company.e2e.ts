@@ -232,7 +232,7 @@ test(`E2E-HR-17 [${T065B}]: Hana thêm nhân viên ở 360 px (tên chứa paylo
 
 // ---------------------------------------------------------------- E2E-HR-19
 
-test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox; Hana cho Mia nghỉ với ngày làm cuối đã qua ⇒ tab Mia về /login (SESSION_REVOKED); W3 mồ côi ở /admin/workspaces; Ada giao OWNER cho Max`, async ({
+test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox; Hana cho Mia nghỉ với ngày làm cuối đã qua ⇒ tab Mia về /login (phiên bị thu hồi); W3 mồ côi ở /admin/workspaces; Ada giao OWNER cho Max`, async ({
   page,
   browser,
   request,
@@ -275,15 +275,21 @@ test(`E2E-HR-19 [${T065B} + ${T065C}]: Mia (OWNER W3) thêm Max bằng combobox;
   await done.getByRole('button', { name: 'Đóng' }).click();
   await hana.close();
 
-  // Tab của Mia: thao tác kế tiếp ⇒ 401 SESSION_REVOKED ⇒ về /login, không lặp refresh.
+  // Tab của Mia về /login. Hoàn tất nghỉ việc ⇒ thu hồi phiên + ngắt socket (B T-062) ⇒ web thường kết thúc phiên NGAY
+  // (đo 17/10: tab đã ở /login trước khi Hana đóng dialog, toast "Phiên đăng nhập đã hết" đã tắt) — nếu tab còn ở app
+  // thì thao tác kế tiếp trong SPA (không goto: tải lại = khởi động mới) phải đưa về /login. Không lặp refresh.
   const refreshes: string[] = [];
   page.on('request', (r) => {
     if (r.url() === `${API_URL}/auth/refresh`) refreshes.push(r.url());
   });
-  await page.goto(HOME);
+  if (!/\/login/.test(page.url())) {
+    await page
+      .getByRole('navigation', { name: 'Công ty' })
+      .getByRole('link', { name: 'Trang chính' })
+      .click();
+  }
   await expect(page).toHaveURL(/\/login/);
-  await expect(page.getByText('Phiên đăng nhập đã hết')).toBeVisible();
-  expect(refreshes.length, 'SESSION_REVOKED không được refresh lặp').toBeLessThanOrEqual(1);
+  expect(refreshes.length, 'phiên bị thu hồi không được refresh lặp').toBeLessThanOrEqual(1);
 
   // Ada: W3 mồ côi ⇒ giao OWNER cho Max.
   await loginViaUi(page, adaUser());
