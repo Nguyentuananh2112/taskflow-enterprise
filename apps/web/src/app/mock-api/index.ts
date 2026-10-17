@@ -1,6 +1,7 @@
 import { createActivationHandlers } from './activation-handlers';
 import { createAdminHandlers } from './admin-handlers';
 import { createAttendanceHandlers } from './attendance-handlers';
+import { createCorrectionHandlers } from './correction-handlers';
 import { createEmployeeHandlers } from './employee-handlers';
 import { createAuthHandlers } from './auth-handlers';
 import { createHrAttendanceHandlers } from './hr-attendance-handlers';
@@ -72,6 +73,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createNotificationHandlers(baseUrl, db, notifications),
       // HR trước leave của E: `GET leave-requests` không có `mine` thuộc HR (T-041c).
       ...createHrLeaveHandlers(baseUrl, hr, notifications),
+      ...createCorrectionHandlers(baseUrl, hr),
       ...createHrAttendanceHandlers(baseUrl, hr),
       ...createHrCalendarHandlers(baseUrl, hr),
       ...createEmployeeHandlers(baseUrl, hr),
