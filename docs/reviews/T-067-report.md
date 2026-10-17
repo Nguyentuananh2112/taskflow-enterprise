@@ -34,7 +34,10 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 | — | 346716f | rule `IMAGE_TOO_COMPLEX` |
 | — | 7bed90e7 | contract avatar sớm (phần contract của T-068) + `PENDING_SERVER_EMIT` |
 | — | b37ff159 | `X-Upload-Name` trong CORS + test preflight |
-| 3 | (commit này) | `rawUpload` + ngoại lệ content-type đúng cặp method + path + `UploadSlots` |
+| 3 | edc564ae, 68c44f70 | `rawUpload` + ngoại lệ content-type đúng cặp method + path + `UploadSlots` (+ soát B L1–L3) |
+| — | 5be35027 | sharp 0.35.5 + `THIRD_PARTY_NOTICES.md` |
+| — | f5c94890 | `avatarUrl` ở `MemberDto` / `MemberCandidateDto` (H) |
+| 4 | (commit này) | `IImagePipeline` + `SharpImagePipeline` (pool worker sharp) + `DisabledImagePipeline` |
 
 ## sharp 0.35.5 — kiểm trước khi thêm (TL cho phép 18/10, B soát)
 
@@ -70,8 +73,31 @@ Khác (đã thống nhất với F): env chỉ cho `APP_ENV=test` là `FILES_SWE
 - Bước 4 (ghi chú B): worker đọc bản tạm (`readAll`) trước khi có thể bị discard do response đóng; client hủy
   sau khi body đủ mà worker còn chạy ⇒ commit gặp ENOENT ⇒ 503 có kiểm soát — thêm test ở bước 4.
 
+## Bước 4 — worker sharp
+
+- Worker chạy mã nhúng (`new Worker(src, { eval: true })`), sharp nạp theo đường dẫn tuyệt đối
+  (`createRequire(import.meta.url).resolve('sharp')`) qua `workerData` ⇒ giống nhau ở tsx / Vitest / bản build.
+- Cấu hình theo B: `cache(false)`, `concurrency(1)`; MỌI `sharp()` dùng `{ pages: 1, animated: false,
+  limitInputPixels: 40e6, failOn: 'error' }`; `metadata()` trước: `format` ∈ `IMAGE_TYPES` (hằng số DUY NHẤT
+  dùng chung với `sniffType`: jpeg / png / webp / gif — B đồng ý giữ GIF theo ADR-141) VÀ = loại đã sniff, và
+  `width × height` ≤ trần; rồi `.rotate()` ⇒ resize ⇒ WebP q82, không `withMetadata`. Thông điệp lỗi libvips
+  không ra khỏi worker.
+- Pool 2 worker, `resourceLimits.maxOldGenerationSizeMb = 256` (chỉ heap V8 — bộ nhớ libvips chặn bằng
+  `limitInputPixels`), mỗi worker một việc, hàng chờ 4 ⇒ việc thứ 7: 503 `IMAGE_PROCESSING_BUSY` +
+  `Retry-After: 5`; quá 10 s ⇒ giết worker (libvips không hủy được giữa chừng) + dựng mới + 422
+  `IMAGE_TOO_COMPLEX`; worker chết giữa việc ⇒ 422 `IMAGE_TOO_COMPLEX`; chết trước khi sẵn sàng 2 lần liên
+  tiếp ⇒ 503 `IMAGE_PROCESSING_UNAVAILABLE`, gauge 0; `selfTest` dựng lại pool khi sharp nạp lại được.
+- Ánh xạ lỗi: format ≠ sniff ⇒ 415; vượt trần điểm ảnh ⇒ 422 `IMAGE_TOO_COMPLEX` (TL chốt); ảnh hỏng ⇒ 422
+  `IMAGE_UNREADABLE`.
+- Đo thực tế: GIF 60 khung `pages: 1` 9 ms vs giải mã mọi khung 58 ms. **GIF khai canvas 60000² với khung 1×1:**
+  libvips lấy kích thước khung (1×1), không cấp phát canvas ⇒ xử lý bình thường trong vài ms (B dự đoán 422
+  — đã báo B; không phải lỗ hổng).
+- Tệp mẫu tối giản `tiff()` / `svgScript()` làm chính `metadata()` lỗi ⇒ 422 `IMAGE_UNREADABLE` (không đọc được
+  format); tầng route đã 415 ở `sniffType` trước đó. SVG hợp lệ khai là png ⇒ 415 ở `metadata().format`.
+- Commit sau `discard` (client đi khi worker còn chạy) ⇒ 503 `SERVICE_UNAVAILABLE` (test tầng route).
+
 ## Còn lại
-4 worker sharp · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
+5 `/media` · 5 `/media` · 6 env · 7 `files-sweep` · 8 compose
 volume + runbook backup tệp · 9 ca SEC-CH của G.
 
 ## Soát của B (18/10) — đã xử lý

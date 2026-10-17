@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream';
 
 import type { FileKey } from './domain/file-key';
+import type { ImageType } from './domain/sniff-type';
 import type { RandomAccessSource } from './domain/inspect-zip';
 
 /**
@@ -60,4 +61,35 @@ export class FileExistsError extends Error {
     super('Blob đích đã tồn tại');
     this.name = 'FileExistsError';
   }
+}
+
+/** Một biến thể đầu ra: cạnh dài tối đa `size` px; `cover` = cắt vuông (avatar), `inside` = giữ tỉ lệ (chat). */
+export interface ImageVariantSpec {
+  name: string;
+  size: number;
+  fit: 'cover' | 'inside';
+}
+
+export interface ImageVariant {
+  name: string;
+  /** WebP mã hóa lại, không metadata. */
+  data: Buffer;
+  width: number;
+  height: number;
+}
+
+/**
+ * Mã hóa lại ảnh trong worker (ADR-141, B HIGH-2). Lỗi: định dạng ≠ `expected` ⇒ `UnsupportedFileTypeError`
+ * (415); ảnh hỏng ⇒ 422 `IMAGE_UNREADABLE`; vượt trần điểm ảnh / quá thời gian ⇒ 422 `IMAGE_TOO_COMPLEX`;
+ * hàng đợi đầy ⇒ 503 `IMAGE_PROCESSING_BUSY`; không nạp được ⇒ 503 `IMAGE_PROCESSING_UNAVAILABLE`.
+ */
+export interface IImagePipeline {
+  transform(
+    input: Buffer,
+    expected: ImageType,
+    variants: readonly ImageVariantSpec[],
+  ): Promise<ImageVariant[]>;
+  /** Tự kiểm (biến đổi ảnh 1 px) — lúc khởi động và mỗi 5 phút; cập nhật gauge `files_image_worker_up`. */
+  selfTest(): Promise<boolean>;
+  close(): Promise<void>;
 }

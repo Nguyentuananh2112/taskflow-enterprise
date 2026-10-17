@@ -6,7 +6,12 @@ import type { OfficeType } from './inspect-zip';
  * loại đã nhận diện. Danh sách cho phép hẹp; mọi thứ khác ⇒ 415 `UNSUPPORTED_FILE_TYPE`.
  */
 
-export type ImageType = 'jpeg' | 'png' | 'webp' | 'gif';
+/**
+ * Định dạng ảnh DUY NHẤT được đưa vào sharp (ADR-141; B 18/10: một hằng số dùng chung cho `sniffType` và
+ * worker — worker kiểm lại `metadata().format` ∈ danh sách này). SVG/PDF/HEIF/TIFF/AVIF/JXL chặn ở sniff.
+ */
+export const IMAGE_TYPES = ['jpeg', 'png', 'webp', 'gif'] as const;
+export type ImageType = (typeof IMAGE_TYPES)[number];
 export type FileType = ImageType | 'pdf' | OfficeType | 'txt' | 'csv';
 
 export type SniffResult =
@@ -18,9 +23,9 @@ export type SniffResult =
 /** Số byte đầu tệp đưa vào `sniffType` (đủ cho magic + mẫu văn bản). */
 export const SNIFF_HEAD_BYTES = 64 * 1024;
 
-const IMAGE_TYPES: ReadonlySet<FileType> = new Set<FileType>(['jpeg', 'png', 'webp', 'gif']);
+const IMAGE_TYPE_SET: ReadonlySet<FileType> = new Set<FileType>(IMAGE_TYPES);
 
-export const isImageType = (type: FileType): type is ImageType => IMAGE_TYPES.has(type);
+export const isImageType = (type: FileType): type is ImageType => IMAGE_TYPE_SET.has(type);
 
 /** Đuôi hợp lệ cho từng loại. */
 const EXTENSIONS: Readonly<Record<FileType, readonly string[]>> = {

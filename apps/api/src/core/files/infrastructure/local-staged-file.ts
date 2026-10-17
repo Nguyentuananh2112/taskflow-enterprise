@@ -53,7 +53,9 @@ export class LocalStagedFile implements StagedFile {
   }
 
   async commit(key?: FileKey): Promise<StoredFile> {
-    if (this.#state !== 'staged') throw new Error('bản tạm đã kết thúc');
+    // Đã bị bỏ (client đi khi worker sharp còn chạy ⇒ response đóng ⇒ discard — B) ⇒ 503 có kiểm soát.
+    if (this.#state === 'discarded') throw new ServiceUnavailableError();
+    if (this.#state === 'committed') throw new Error('bản tạm đã commit');
     this.#state = 'discarded'; // mọi lối ra bên dưới đều kết thúc bản tạm
     await this.#closeReader();
     const finalKey = key ?? randomFileKey(randomBytes(16));

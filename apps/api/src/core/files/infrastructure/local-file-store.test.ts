@@ -143,6 +143,13 @@ describe('LocalFileStore — ghi', () => {
     expect(await tmpEntries()).toEqual([]);
   });
 
+  it('commit sau discard (client đã đi khi worker còn chạy) ⇒ 503 có kiểm soát (B)', async () => {
+    const store = await make();
+    const staged = await store.stage(Buffer.from('abc'), { maxBytes: 10 });
+    await staged.discard();
+    await expect(staged.commit()).rejects.toBeInstanceOf(ServiceUnavailableError);
+  });
+
   it('bản tạm bị sweep xóa trước commit ⇒ 503 có kiểm soát, không 500 trần (B M-b)', async () => {
     const store = await make();
     const staged = await store.stage(Buffer.from('abc'), { maxBytes: 10 });
