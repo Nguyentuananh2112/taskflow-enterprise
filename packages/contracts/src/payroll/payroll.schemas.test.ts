@@ -107,5 +107,8 @@ describe('payroll contracts (T-048, payroll.md ADR-124…127)', () => {
       revision: 2,
     });
     expect(Object.keys(MyPayslipDto.shape)).not.toContain('lockVersion');
+    // Lý do sửa công là ghi chú nội bộ (có thể nhắc sức khỏe) — nhân viên không thấy; lý do điều chỉnh thì thấy.
+    expect(Object.keys(MyPayslipDto.shape)).not.toContain('overrideReason');
+    expect(Object.keys(MyPayslipDto.shape)).toContain('revisionReason');
   });
 });

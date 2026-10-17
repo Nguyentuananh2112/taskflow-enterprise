@@ -299,8 +299,12 @@ export const PayslipDto = z.object({
 });
 export type PayslipDto = z.infer<typeof PayslipDto>;
 
-/** Bản nhân viên xem — không khóa sửa của kế toán. Chỉ PUBLISHED. */
-export const MyPayslipDto = PayslipDto.omit({ lockVersion: true });
+/**
+ * Bản nhân viên xem — chỉ PUBLISHED. Bỏ khóa sửa của kế toán và `overrideReason` (ghi chú nội bộ của kế toán, có thể
+ * nhắc sức khỏe — như B-H2; B chốt 18/10): nhân viên vẫn thấy `overrideHalfDays` (biết công đã được sửa) và
+ * `revisionReason` (lý do bản điều chỉnh — thiết kế cho nhân viên xem).
+ */
+export const MyPayslipDto = PayslipDto.omit({ lockVersion: true, overrideReason: true });
 export type MyPayslipDto = z.infer<typeof MyPayslipDto>;
 
 /** `GET payslips` — KHÔNG số tiền (riêng tư); mới nhất trước; chỉ bản hiệu lực. */
