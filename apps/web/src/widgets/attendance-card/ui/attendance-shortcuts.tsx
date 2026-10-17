@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 
-import { useHrPendingLeaveCount } from '@/entities/hr';
 import { daysText, useMyLeaveBalance, useMyPendingLeaveCount } from '@/entities/leave';
 
-type Props = Readonly<{ today: string; canManageHr: boolean }>;
+type Props = Readonly<{ today: string }>;
 
 const countText = (c: { count: number; more: boolean } | undefined) =>
   c && c.count > 0 ? `${c.more ? `${c.count}+` : c.count}` : null;
@@ -17,15 +16,15 @@ const LINK =
   'flex h-full min-h-12 w-full items-center rounded-control border border-border px-3 py-1 text-sm leading-tight text-text hover:bg-bg-subtle md:inline-flex md:min-h-9 md:w-auto md:py-0';
 
 /**
- * Lối tắt dưới thẻ Chấm công (T-045): Bảng công · Xin nghỉ (số phép còn) · Đơn nghỉ của tôi (số chờ duyệt) · Nhân sự
- * (số đơn chờ — chỉ khi có `hr:manage`). Số chưa tải ⇒ chỉ nhãn, link vẫn dùng được. `today` = ngày của SERVER.
+ * Lối tắt của nhân viên (T-045; Mốc 3.5 ở trang chính, ngoài thẻ): Bảng công · Xin nghỉ (số phép còn) · Đơn nghỉ của
+ * tôi (số chờ duyệt). "Nhân sự" ở khối "Việc quản lý". Số chưa tải ⇒ chỉ nhãn, link vẫn dùng được. `today` = ngày của
+ * SERVER.
  */
-export function AttendanceShortcuts({ today, canManageHr }: Props) {
+export function AttendanceShortcuts({ today }: Props) {
   const balance = useMyLeaveBalance(Number(today.slice(0, 4))).data;
   const mine = countText(useMyPendingLeaveCount(true).data);
-  const hr = countText(useHrPendingLeaveCount(canManageHr).data);
   return (
-    <nav aria-label="Lối tắt chấm công và nghỉ phép" className="border-t border-border pt-3">
+    <nav aria-label="Lối tắt chấm công và nghỉ phép">
       <ul className={LIST}>
         <li>
           <Link href="/attendance" className={LINK}>
@@ -42,14 +41,6 @@ export function AttendanceShortcuts({ today, canManageHr }: Props) {
             Đơn nghỉ của tôi{mine ? ` · ${mine} chờ duyệt` : ''}
           </Link>
         </li>
-        {/* Hiện NGAY khi được cấp (myGrants đổi realtime — E2E-HR-03). */}
-        {canManageHr && (
-          <li>
-            <Link href="/hr?tab=leave" className={LINK}>
-              Nhân sự{hr ? ` · ${hr} đơn chờ` : ''}
-            </Link>
-          </li>
-        )}
       </ul>
     </nav>
   );

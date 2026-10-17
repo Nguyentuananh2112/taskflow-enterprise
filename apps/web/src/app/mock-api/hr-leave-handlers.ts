@@ -75,9 +75,9 @@ export function createHrLeaveHandlers(
           ? l.status === 'APPROVED' && l.startDate > leave.today()
           : l.status === 'PENDING';
       if (!valid) return conflictFail('invalid_transition');
-      const requester = db.membershipIn(l.userId, wsId);
-      if (action === 'approve' && (!requester || requester.role === 'VIEWER'))
-        return conflictFail('requester_not_member');
+      // Mốc 3.5: người xin nghỉ phải còn là NHÂN VIÊN công ty (không phải thành viên workspace).
+      const employed = db.company.joinedAt(l.userId) !== undefined;
+      if (action === 'approve' && !employed) return conflictFail('requester_not_member');
       if (action === 'approve' && l.type === 'ANNUAL') {
         const bal = leave.balance(wsId, l.userId, Number(l.startDate.slice(0, 4)));
         if (bal.remainingDays < l.days) return ruleFail('INSUFFICIENT_BALANCE');
@@ -95,7 +95,7 @@ export function createHrLeaveHandlers(
         type: NOTIFY[action],
         refId: l.id,
         workspaceId: wsId,
-        workspaceName: requester?.workspaceName ?? '',
+        workspaceName: db.company.name,
         actor: by,
         leave: { type: l.type, startDate: l.startDate, endDate: l.endDate },
       });
@@ -127,8 +127,7 @@ export function createHrLeaveHandlers(
       if (query.response) return query.response;
       const wsId = COMPANY_SCOPE;
       const rows = db
-        .membersOf(wsId)
-        .filter((m) => m.membership.role !== 'VIEWER')
+        .companyEmployees()
         .map((m) => rowOf(wsId, m.user.id, query.data.year))
         .sort(
           (a, b) =>

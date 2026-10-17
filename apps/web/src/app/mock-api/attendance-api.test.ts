@@ -2,8 +2,10 @@ import { getResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
 import { createMockApi } from './index';
+import { COMPANY_SCOPE } from './mock-guard';
 
-// Mock chấm công (T-041a) phải khó tính như API thật sẽ làm (mã lỗi đã chốt với A — T-038).
+// Mock chấm công (T-041a) phải khó tính như API thật sẽ làm (mã lỗi đã chốt với A — T-038). Mốc 3.5: route cấp
+// CÔNG TY `/attendance/…` (ADR-136).
 
 const BASE = 'http://localhost:4000/api/v1';
 const ORIGIN = 'http://localhost:4000';
@@ -55,15 +57,14 @@ function setup() {
 }
 
 const key = () => crypto.randomUUID();
-const path = (ws: string, p: string) => `/workspaces/${ws}/attendance${p}`;
+const path = (p: string) => `/attendance${p}`;
 
 describe('mock chấm công', () => {
   it('hôm nay: serverNow, múi giờ, ngày làm, PENDING trước khi vào; Vào ⇒ PRESENT + inProgress; Ra ⇒ hết inProgress', async () => {
     const { send, register } = setup();
     now = Date.parse('2026-10-15T09:50:00.000Z'); // 16:50 giờ VN; đăng ký SAU khi đặt giờ (token còn hạn)
     const lan = await register('lan@example.com');
-    const ws = lan.defaultWorkspaceId;
-    const today = await send('GET', path(ws, '/me/today'), lan.accessToken);
+    const today = await send('GET', path('/me/today'), lan.accessToken);
     expect(today.status).toBe(200);
     expect(today.body.data).toMatchObject({
       serverNow: '2026-10-15T09:50:00.000Z',
@@ -73,13 +74,13 @@ describe('mock chấm công', () => {
       status: 'PENDING',
       firstIn: null,
     });
-    const inn = await send('POST', path(ws, '/check-in'), lan.accessToken, {
+    const inn = await send('POST', path('/check-in'), lan.accessToken, {
       'idempotency-key': key(),
     });
     expect(inn.status).toBe(200);
     expect(inn.body.data).toMatchObject({ status: 'PRESENT', inProgress: true, late: true });
     now += 10 * 60_000; // 17:00 — trước giờ kết thúc 17:30 ⇒ về sớm
-    const out = await send('POST', path(ws, '/check-out'), lan.accessToken, {
+    const out = await send('POST', path('/check-out'), lan.accessToken, {
       'idempotency-key': key(),
     });
     expect(out.body.data).toMatchObject({ inProgress: false, early: true });
@@ -88,16 +89,15 @@ describe('mock chấm công', () => {
   it('Idempotency-Key: thiếu ⇒ 400; lặp cùng key ⇒ 200 không tạo lượt mới; key của IN dùng cho OUT ⇒ 422', async () => {
     const { send, register, api } = setup();
     const lan = await register('lan@example.com');
-    const ws = lan.defaultWorkspaceId;
-    expect((await send('POST', path(ws, '/check-in'), lan.accessToken)).status).toBe(400);
+    expect((await send('POST', path('/check-in'), lan.accessToken)).status).toBe(400);
     const k = key();
-    await send('POST', path(ws, '/check-in'), lan.accessToken, { 'idempotency-key': k });
-    const again = await send('POST', path(ws, '/check-in'), lan.accessToken, {
+    await send('POST', path('/check-in'), lan.accessToken, { 'idempotency-key': k });
+    const again = await send('POST', path('/check-in'), lan.accessToken, {
       'idempotency-key': k,
     });
     expect(again.status).toBe(200);
-    expect(api.attendance.punches(ws, lan.user.id, '2026-10-15')).toHaveLength(1);
-    const reused = await send('POST', path(ws, '/check-out'), lan.accessToken, {
+    expect(api.attendance.punches(COMPANY_SCOPE, lan.user.id, '2026-10-15')).toHaveLength(1);
+    const reused = await send('POST', path('/check-out'), lan.accessToken, {
       'idempotency-key': k,
     });
     expect(reused.status).toBe(422);
@@ -107,44 +107,38 @@ describe('mock chấm công', () => {
   it('IN lần 2 (key mới) ⇒ 409 already_checked_in; OUT khi chưa IN ⇒ 422 NOT_CHECKED_IN', async () => {
     const { send, register } = setup();
     const lan = await register('lan@example.com');
-    const ws = lan.defaultWorkspaceId;
-    const out = await send('POST', path(ws, '/check-out'), lan.accessToken, {
+    const out = await send('POST', path('/check-out'), lan.accessToken, {
       'idempotency-key': key(),
     });
     expect(out.status).toBe(422);
     expect(out.body.error.details).toEqual({ rule: 'NOT_CHECKED_IN' });
-    await send('POST', path(ws, '/check-in'), lan.accessToken, { 'idempotency-key': key() });
-    const twice = await send('POST', path(ws, '/check-in'), lan.accessToken, {
+    await send('POST', path('/check-in'), lan.accessToken, { 'idempotency-key': key() });
+    const twice = await send('POST', path('/check-in'), lan.accessToken, {
       'idempotency-key': key(),
     });
     expect(twice.status).toBe(409);
     expect(twice.body.error.details).toEqual({ reason: 'already_checked_in' });
   });
 
-  it('VIEWER ⇒ 403 attendance:self; người ngoài ⇒ 404 workspace', async () => {
+  it('Admin (không phải nhân viên) ⇒ 403 attendance:self; người đã nghỉ việc ⇒ 401 SESSION_REVOKED', async () => {
     const { send, register, api } = setup();
-    const lan = await register('lan@example.com');
-    const vic = await register('vic@example.com');
-    const ws = lan.defaultWorkspaceId;
-    const membership = api.db.membershipIn(lan.user.id, ws);
-    if (!membership) throw new Error('thiếu membership');
-    const outsider = await send('GET', path(ws, '/me/today'), vic.accessToken);
-    expect(outsider.status).toBe(404);
-    api.db.setMembership(vic.user.id, membership, 'VIEWER');
-    const viewer = await send('GET', path(ws, '/me/today'), vic.accessToken);
-    expect(viewer.status).toBe(403);
-    expect(viewer.body.error.details).toEqual({ required: 'attendance:self' });
+    const olivia = await register('olivia@example.com');
+    const quinn = await register('quinn@example.com');
+    api.db.company.setAccess(olivia.user.id, 'ADMIN');
+    const admin = await send('GET', path('/me/today'), olivia.accessToken);
+    expect(admin.status).toBe(403);
+    expect(admin.body.error.details).toEqual({ required: 'attendance:self' });
+    api.db.company.remove(quinn.user.id);
+    const gone = await send('GET', path('/me/today'), quinn.accessToken);
+    expect(gone.status).toBe(401);
+    expect(gone.body.error.code).toBe('SESSION_REVOKED');
   });
 
   it('tháng: đủ mọi ngày; trước khi gia nhập ⇒ NOT_EMPLOYED; ngày làm đã qua không chấm ⇒ ABSENT; Chủ nhật ⇒ OFF; tương lai ⇒ PENDING', async () => {
     const { send, register } = setup();
     now = Date.parse('2026-10-14T12:00:00.000Z'); // 19:00 thứ 4 giờ VN — gia nhập hôm đó, đã qua giờ làm
     const lan = await register('lan@example.com');
-    const month = await send(
-      'GET',
-      path(lan.defaultWorkspaceId, '/me?month=2026-10'),
-      lan.accessToken,
-    );
+    const month = await send('GET', path('/me?month=2026-10'), lan.accessToken);
     const days = month.body.data.days ?? [];
     expect(days).toHaveLength(31);
     expect(days[13]).toMatchObject({

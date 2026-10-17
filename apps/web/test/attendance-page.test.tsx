@@ -6,14 +6,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
 import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
-import { API_BASE, startMockApi } from '@test/mock-api';
+import { API_BASE, COMPANY_SCOPE, startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
 import { getClientId } from '@/shared/lib/client-id';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
 
-// T-041a: /w/:ws/attendance — bảng công tháng (attendance-leave.md §6, E2E-HR-07).
+// T-041a: /attendance (Mốc 3.5 — cấp công ty) — bảng công tháng (attendance-leave.md §6, E2E-HR-07).
 // Mock: thứ 5 2026-10-15 10:00 giờ Việt Nam.
 
 let mock: ReturnType<typeof startMockApi>;
@@ -27,7 +27,7 @@ function open(path = '') {
   const f = seedBoard(mock);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
   f.signInAs(f.owner);
-  openApp(`/w/${f.wsId}/attendance${path}`, hub.client(getClientId(), f.owner.id));
+  openApp(`/attendance${path}`, hub.client(getClientId(), f.owner.id));
   return f;
 }
 
@@ -178,15 +178,15 @@ describe('bảng công tháng', () => {
   it('bấm một ngày ⇒ lượt chấm kèm IP/thiết bị; lượt đã hủy gạch ngang + người hủy + lý do (hiển thị như TEXT)', async () => {
     const f = open();
     const me = { id: f.owner.id, fullName: f.owner.fullName };
-    mock.attendance.punch(f.wsId, me, 'IN', crypto.randomUUID(), {
+    mock.attendance.punch(COMPANY_SCOPE, me, 'IN', crypto.randomUUID(), {
       ip: '10.0.0.7',
       userAgent: 'Firefox/141',
     });
-    mock.attendance.punch(f.wsId, me, 'OUT', crypto.randomUUID());
-    const out = mock.attendance.events(f.wsId, f.owner.id, '2026-10-15')[1];
+    mock.attendance.punch(COMPANY_SCOPE, me, 'OUT', crypto.randomUUID());
+    const out = mock.attendance.events(COMPANY_SCOPE, f.owner.id, '2026-10-15')[1];
     const evil = '<img src=x onerror="alert(1)">';
     mock.attendance.voidPunch(
-      f.wsId,
+      COMPANY_SCOPE,
       f.owner.id,
       '2026-10-15',
       out?.id ?? '',
@@ -218,11 +218,11 @@ describe('bảng công tháng', () => {
         { status: 500 },
       );
     const f = seedBoard(mock);
-    const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    const url = `${API_BASE}/attendance/me/today`;
     mock.server.use(...[1, 2, 3].map(() => http.get(url, boom, { once: true })));
     f.signInAs(f.owner);
     const hub = new FakeRealtimeHub(mock.board, mock.db);
-    openApp(`/w/${f.wsId}/attendance`, hub.client(getClientId(), f.owner.id));
+    openApp('/attendance', hub.client(getClientId(), f.owner.id));
     expect(
       await screen.findByText('Không tải được bảng công', {}, { timeout: 10_000 }),
     ).toBeTruthy();

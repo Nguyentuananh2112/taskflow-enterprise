@@ -111,9 +111,7 @@ describe('luồng xác thực trên mock API', () => {
     await user.type(screen.getByLabelText(/Email/), 'an.nguyen@example.com');
     await user.type(screen.getByLabelText(/Mật khẩu/), 'cay-tre-xanh-ven-song');
     await user.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Workspace của bạn' }),
-    ).toBeDefined();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Trang chính' })).toBeDefined();
     expect(window.location.pathname).toBe('/w');
     expect(await screen.findByText('Workspace của Nguyễn Văn An')).toBeDefined();
     expect(screen.getByText('Chủ sở hữu')).toBeDefined();
@@ -177,9 +175,7 @@ describe('luồng xác thực trên mock API', () => {
     await user.type(await screen.findByLabelText(/Email/), 'binh@example.com');
     await user.type(screen.getByLabelText(/Mật khẩu/), BINH_PASSWORD);
     await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Workspace của bạn' }),
-    ).toBeDefined();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Trang chính' })).toBeDefined();
     expect(window.location.pathname).toBe('/w');
   });
 });

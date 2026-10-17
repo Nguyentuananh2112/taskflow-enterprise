@@ -6,14 +6,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { expectNoA11yViolations } from '@test/a11y';
 import { openApp } from '@test/app-harness';
 import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
-import { API_BASE, startMockApi } from '@test/mock-api';
+import { API_BASE, COMPANY_SCOPE, startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
 import { getClientId } from '@/shared/lib/client-id';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
 
-// T-041b: /w/:ws/leave (attendance-leave.md §6, ADR-122; mã lỗi D chốt). Hôm nay theo server: thứ 5
+// T-041b: /leave (Mốc 3.5 — cấp công ty) (attendance-leave.md §6, ADR-122; mã lỗi D chốt). Hôm nay theo server: thứ 5
 // 2026-10-15 (giờ Việt Nam). Ngày làm mock: T2–T7.
 
 let mock: ReturnType<typeof startMockApi>;
@@ -24,18 +24,15 @@ afterAll(() => mock.stop());
 afterEach(() => cleanupApp());
 
 function open(
-  role: 'OWNER' | 'VIEWER' = 'OWNER',
+  access: 'EMPLOYEE' | 'ADMIN' = 'EMPLOYEE',
   before?: (f: ReturnType<typeof seedBoard>) => void,
 ) {
   const f = seedBoard(mock);
   before?.(f);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
-  const user =
-    role === 'OWNER'
-      ? f.owner
-      : f.addUser('Khách Vy', `vy-${crypto.randomUUID()}@example.com`, 'VIEWER');
-  f.signInAs(user);
-  openApp(`/w/${f.wsId}/leave`, hub.client(getClientId(), user.id));
+  f.setCompanyAccess(f.owner, access);
+  f.signInAs(f.owner);
+  openApp('/leave', hub.client(getClientId(), f.owner.id));
   return f;
 }
 
@@ -100,11 +97,11 @@ describe('trang Nghỉ phép', () => {
   });
 
   it('đơn ĐÃ DUYỆT bắt đầu hôm nay (theo lịch của server) ⇒ không còn nút hủy', async () => {
-    open('OWNER', (f) => {
+    open('EMPLOYEE', (f) => {
       const at = '2026-10-14T03:00:00.000Z';
       mock.leave.items.push({
         id: crypto.randomUUID(),
-        workspaceId: f.wsId,
+        workspaceId: COMPANY_SCOPE,
         userId: f.owner.id,
         user: { id: f.owner.id, fullName: f.owner.fullName },
         type: 'ANNUAL',
@@ -151,21 +148,20 @@ describe('trang Nghỉ phép', () => {
     ).toBeTruthy();
   });
 
-  it('VIEWER: không có form, chỉ câu giải thích (server vẫn 403)', async () => {
-    open('VIEWER');
-    expect(
-      await screen.findByText('Vai trò Người xem không xin nghỉ trong workspace này'),
-    ).toBeTruthy();
+  it('Admin (không phải nhân viên): không có form, chỉ câu giải thích + lối về (server vẫn 403)', async () => {
+    open('ADMIN');
+    expect(await screen.findByText('Tài khoản Quản trị không xin nghỉ phép')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Về trang chính' }).getAttribute('href')).toBe('/w');
     expect(screen.queryByRole('form', { name: 'Gửi đơn nghỉ' })).toBeNull();
   });
 
   it('"Đơn của tôi" > 50 đơn ⇒ trang đầu 50 + "Tải thêm" ⇒ đủ 51 đơn, hết nút', async () => {
-    open('OWNER', (f) => {
+    open('EMPLOYEE', (f) => {
       const at = (i: number) => new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString();
       for (let i = 0; i < 51; i++) {
         mock.leave.items.push({
           id: crypto.randomUUID(),
-          workspaceId: f.wsId,
+          workspaceId: COMPANY_SCOPE,
           userId: f.owner.id,
           user: { id: f.owner.id, fullName: f.owner.fullName },
           type: 'UNPAID',
@@ -198,8 +194,8 @@ describe('trang Nghỉ phép', () => {
         { success: false, error: { code: 'INTERNAL_ERROR', message: 'x' } },
         { status: 500 },
       );
-    open('OWNER', (f) => {
-      const url = `${API_BASE}/workspaces/${f.wsId}/attendance/me/today`;
+    open('EMPLOYEE', () => {
+      const url = `${API_BASE}/attendance/me/today`;
       mock.server.use(...[1, 2, 3].map(() => http.get(url, boom, { once: true })));
     });
     expect(

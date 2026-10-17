@@ -1,5 +1,4 @@
 import { NotificationDto, UnreadNotificationCountDto } from '@taskflow/contracts/hr';
-import { hasPermission } from '@taskflow/contracts/rbac';
 import { NotificationNewEvent } from '@taskflow/contracts/realtime';
 import { http, type HttpHandler } from 'msw';
 import * as z from 'zod';
@@ -57,15 +56,16 @@ export class MockNotifications {
     return item;
   }
 
-  /** Chỉ workspace còn là thành viên; thông báo dành cho HR chỉ hiện khi VẪN còn `hr:manage` (§9 B-H3). */
+  /**
+   * Mốc 3.5: thông báo HR thuộc CÔNG TY (bỏ lọc "ws còn là thành viên" — company-level.md §4); thông báo dành cho HR
+   * chỉ hiện khi VẪN còn `hr:manage` cấp công ty (§9 B-H3).
+   */
   of(userId: string, db: MockDb): Stored[] {
-    return this.#items.filter((n) => {
-      const m = n.recipientId === userId && db.membershipIn(userId, n.workspaceId);
-      if (!m) return false;
-      // Quyền HIỆN TẠI = role ∪ grants (ADR-119, B-H3): bị thu HR_MANAGE ⇒ thông báo dành cho HR biến mất.
-      const grants = db.workspaces.member(n.workspaceId, userId)?.grants ?? [];
-      return !HR_ONLY.has(n.type) || hasPermission(m.role, grants, 'hr:manage');
-    });
+    const permissions = db.company.of(userId)?.permissions ?? [];
+    return this.#items.filter(
+      (n) =>
+        n.recipientId === userId && (!HR_ONLY.has(n.type) || permissions.includes('hr:manage')),
+    );
   }
 }
 

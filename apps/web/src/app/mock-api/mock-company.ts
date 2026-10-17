@@ -31,6 +31,11 @@ export class MockCompany {
     if (row) Object.assign(row, { role, grants: role === 'ADMIN' ? [] : grants });
   }
 
+  /** Nghỉ việc đã hoàn tất (xóa dòng — ADR-133): phiên còn lại nhận 401 SESSION_REVOKED. */
+  remove(userId: string): void {
+    this.rows.delete(userId);
+  }
+
   setOffboarding(userId: string, lastDay: string | null): void {
     const row = this.rows.get(userId);
     if (row) row.offboardLastDay = lastDay;

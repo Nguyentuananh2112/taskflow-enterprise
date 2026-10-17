@@ -70,6 +70,15 @@ export function seedBoard(mock: ReturnType<typeof startMockApi>) {
   const moveTask = (task: TaskDto, status: TaskStatus, by = owner.user) =>
     apiAs(by, 'PATCH', `${tasksPath}/${task.id}/move`, { expectedVersion: task.version, status });
 
+  /**
+   * Mốc 3.5: quyền CẤP CÔNG TY (như Admin làm ở Quản trị › Phân quyền). Mặc định mọi user mock là nhân viên; `HR`
+   * = EMPLOYEE + HR_MANAGE (vẫn chấm công), `ADMIN` = Admin (không chấm công / xin nghỉ — ADR-134).
+   */
+  const setCompanyAccess = (user: typeof owner.user, access: 'EMPLOYEE' | 'HR' | 'ADMIN') =>
+    access === 'HR'
+      ? mock.db.company.setAccess(user.id, 'EMPLOYEE', ['HR_MANAGE'])
+      : mock.db.company.setAccess(user.id, access);
+
   /** Đăng nhập tab này bằng `user` (thay cho luồng /auth/refresh — đã test ở auth-flow). */
   const signInAs = (user: typeof owner.user) =>
     act(() => session.signIn(mock.db.issueAccess(user), UserDto.parse(user)));
@@ -84,6 +93,7 @@ export function seedBoard(mock: ReturnType<typeof startMockApi>) {
     apiAs,
     createTask,
     moveTask,
+    setCompanyAccess,
     signInAs,
   };
 }

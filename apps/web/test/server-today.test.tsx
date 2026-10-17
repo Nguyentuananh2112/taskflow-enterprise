@@ -25,8 +25,9 @@ afterEach(() => cleanupApp());
 function open(path: string) {
   const f = seedBoard(mock);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
+  f.setCompanyAccess(f.owner, 'HR'); // trang /hr cần hr:manage cấp công ty; nhân viên HR vẫn chấm công
   f.signInAs(f.owner);
-  openApp(`/w/${f.wsId}${path}`, hub.client(getClientId(), f.owner.id));
+  openApp(path, hub.client(getClientId(), f.owner.id));
   return f;
 }
 
@@ -54,7 +55,7 @@ describe('giờ máy lệch xa giờ server ⇒ UI theo server', () => {
   });
 
   it('chuông: thông báo tạo "bây giờ" theo server ⇒ "phút này", không phải số ngày theo giờ máy', async () => {
-    const f = open('/projects');
+    const f = open('/w');
     mock.notifications.notify(f.owner.id, {
       type: 'LEAVE_APPROVED',
       refId: crypto.randomUUID(),

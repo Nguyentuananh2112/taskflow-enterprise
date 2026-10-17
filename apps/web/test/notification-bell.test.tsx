@@ -1,4 +1,3 @@
-import { MemberGrantsChangedEvent } from '@taskflow/contracts/realtime';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -9,7 +8,6 @@ import { FakeRealtimeHub, seedBoard } from '@test/board-harness';
 import { startMockApi } from '@test/mock-api';
 import { cleanupApp } from '@test/render';
 
-import { userRoom } from '@/app/mock-api/workspace-events';
 import { getClientId } from '@/shared/lib/client-id';
 
 vi.mock('next/navigation', async () => (await import('@test/navigation')).nextNavigationMock);
@@ -26,6 +24,8 @@ afterEach(() => cleanupApp());
 function open() {
   const f = seedBoard(mock);
   const hub = new FakeRealtimeHub(mock.board, mock.db);
+  // Mốc 3.5: LEAVE_SUBMITTED chỉ hiện cho người CÒN hr:manage cấp công ty ⇒ Lan là HR.
+  f.setCompanyAccess(f.owner, 'HR');
   f.signInAs(f.owner);
   openApp(`/w/${f.wsId}/projects`, hub.client(getClientId(), f.owner.id));
   const notify = (
@@ -47,7 +47,7 @@ const bell = () => screen.getByRole('button', { name: /^Thông báo/ });
 
 describe('chuông thông báo', () => {
   it('số chưa đọc ⇒ danh sách câu chữ dựng ở web ⇒ link tới đúng trang, bấm ⇒ đã đọc; a11y', async () => {
-    const { f, notify } = open();
+    const { notify } = open();
     notify();
     await waitFor(() => expect(bell().getAttribute('aria-label')).toBe('Thông báo, 1 chưa đọc'));
     const u = userEvent.setup({ delay: null });
@@ -58,7 +58,7 @@ describe('chuông thông báo', () => {
     });
     expect(item.textContent).toContain('Công ty Lan');
     // jsdom không điều hướng <Link> của Next ⇒ kiểm đích + hiệu ứng đánh dấu đã đọc.
-    expect(item.getAttribute('href')).toBe(`/w/${f.wsId}/leave`);
+    expect(item.getAttribute('href')).toBe('/leave'); // route công ty ở gốc (ADR-139)
     await expectNoA11yViolations();
     await u.click(item);
     await waitFor(() => expect(bell().getAttribute('aria-label')).toBe('Thông báo'));
@@ -112,24 +112,8 @@ describe('thông báo dành cho HR (§9 B-H3)', () => {
   });
 });
 
-describe('member:grants-changed', () => {
-  it('được cấp HR ⇒ báo ngay (usePermission đổi theo myGrants, không reload)', async () => {
-    const { f } = open();
-    await screen.findByRole('region', { name: 'Chấm công' });
-    act(() =>
-      mock.board.publish({
-        room: userRoom(f.owner.id),
-        name: 'member:grants-changed',
-        payload: MemberGrantsChangedEvent.parse({
-          eventId: crypto.randomUUID(),
-          type: 'member:grants-changed',
-          occurredAt: new Date().toISOString(),
-          actorId: f.owner.id,
-          originClientId: null,
-          data: { workspaceId: f.wsId, grants: ['HR_MANAGE'] },
-        }),
-      }),
-    );
-    expect(await screen.findByText('Bạn được cấp quyền Quản lý nhân sự')).toBeTruthy();
-  });
+describe('company:access-changed', () => {
+  // `member:grants-changed` (quyền HR theo workspace) bị thay bởi `company:access-changed` (ADR-135) — chờ B thêm
+  // event vào contracts realtime (T-061 code commit) rồi viết ca này.
+  it.todo('được cấp HR ⇒ báo ngay + /auth/me làm mới (menu Nhân sự hiện, không reload)');
 });

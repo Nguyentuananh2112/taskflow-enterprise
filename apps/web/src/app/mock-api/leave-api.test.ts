@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createMockApi } from './index';
 
-// `GET leave-requests?mine=1` strict như server (ListLeaveRequestsQuery) + phân trang cursor.
+// `GET leave/requests?mine=1` (Mốc 3.5 — cấp công ty) strict như server (ListLeaveRequestsQuery) + phân trang cursor.
 
 const BASE = 'http://localhost:4000/api/v1';
 const ORIGIN = 'http://localhost:4000';
@@ -38,14 +38,14 @@ async function setup() {
     password: 'cay-tre-xanh-ven-song',
     fullName: 'Trần Lan',
   });
-  const me = reg.body.data as unknown as { accessToken: string; defaultWorkspaceId: string };
-  return { call, token: me.accessToken, ws: me.defaultWorkspaceId };
+  const me = reg.body.data as unknown as { accessToken: string };
+  return { call, token: me.accessToken };
 }
 
 describe('mock: đơn của tôi', () => {
   it('tham số lạ (userId — SEC-HR-03) hoặc limit > 100 ⇒ 400; trang có meta.page', async () => {
-    const { call, token, ws } = await setup();
-    const path = `/workspaces/${ws}/leave-requests`;
+    const { call, token } = await setup();
+    const path = '/leave/requests';
     const other = crypto.randomUUID();
     expect((await call('GET', `${path}?mine=1&userId=${other}`, token)).status).toBe(400);
     expect((await call('GET', `${path}?mine=1&limit=101`, token)).status).toBe(400);
