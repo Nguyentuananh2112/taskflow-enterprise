@@ -10,6 +10,7 @@ import {
 import { adaUser, apiCreateUser } from '../support/company';
 import { expect, loginViaUi, newUser, test } from '../support/fixtures';
 import { apiAdjust, ddMm, hrCall, refreshed, vnDate, type HrPerson } from '../support/hr';
+import { loadUntilVisible } from '../support/load-more';
 import { openAs } from '../support/users';
 import { arm, assertInert } from '../support/xss';
 
@@ -591,19 +592,15 @@ test.describe('E2E-HR-23 chính sách phép năm sau', () => {
     const table = page.getByRole('table', {
       name: `Số phép năm ${String(nextYear)} của từng nhân viên`,
     });
-    // Một công ty, một DB cho cả lượt E2E (§0.4): bảng phân trang — Mia (tạo mới) có thể không ở trang 1 ⇒ "Tải thêm"
-    // tới khi thấy dòng (như HR-08c). Chờ bảng có dữ liệu trước khi đếm (F, lượt E2E đầy đủ 189bcdcf).
+    // Một công ty, một DB cho cả lượt E2E (§0.4): bảng phân trang ⇒ "Tải thêm" tới khi thấy Mia (helper chờ số dòng
+    // tăng sau mỗi lần bấm — E phân tích trace 18/10: đếm trước khi trang 2 render, rồi chờ nút đã bị gỡ).
     const miaRow = table.getByRole('row').filter({ hasText: mia.user.fullName });
-    const more = page.getByRole('button', { name: 'Tải thêm' });
     await expect(table.getByRole('row').nth(1)).toBeVisible();
-    for (let page_ = 0; page_ < 20 && (await miaRow.count()) === 0; page_ += 1) {
-      // Mỗi trang 50 dòng, server tính số dư từng người ⇒ ở DB của lượt đầy đủ (~150 người, máy tải) một trang có thể
-      // > 10 s (lượt 1aa6bd0a: trang 3 còn aria-busy sau 10 s — đã báo D đo).
-      await expect(more).toBeEnabled({ timeout: 30_000 });
-      await more.click();
-      await expect(miaRow.or(more)).toBeVisible({ timeout: 30_000 });
-    }
-    await expect(miaRow).toBeVisible();
+    await loadUntilVisible(
+      miaRow,
+      table.getByRole('row'),
+      page.getByRole('button', { name: 'Tải thêm' }),
+    );
     const headers = await table.getByRole('columnheader').allTextContents();
     const col = headers.findIndex((h) => h.trim() === 'Chuyển sang');
     expect(col, JSON.stringify(headers)).toBeGreaterThan(0);
