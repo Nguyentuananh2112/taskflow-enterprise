@@ -17,7 +17,7 @@ import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
 import { RATE_LIMIT_RULES } from './core/http/rate-limit/rules';
 import { createValkeyStore } from './core/http/rate-limit/store';
-import { CryptoRandom, SystemClock, UuidV7Generator } from './core/infrastructure/system';
+import { CryptoRandom, UuidV7Generator, clocksForEnv } from './core/infrastructure/system';
 import { connectInBackground, createValkeyClient } from './core/infrastructure/valkey';
 import { createRealtimeQuota } from './core/realtime/shared-quota';
 import { createGracefulShutdown, type GracefulShutdown } from './core/lifecycle/graceful-shutdown';
@@ -62,7 +62,7 @@ export async function startServer(
     logger.warn({ modules: inMemoryModules }, 'persistence.in_memory_data_lost_on_restart');
   }
 
-  const clock = new SystemClock();
+  const { clock, businessClock } = clocksForEnv(env.TEST_CLOCK_ANCHOR, logger); // E2E: neo + trôi
   const ids = new UuidV7Generator();
   const lifecycleRef: { current?: GracefulShutdown } = {};
   const rateLimitStore = (rule: Parameters<typeof createValkeyStore>[1]) =>
@@ -77,6 +77,7 @@ export async function startServer(
     },
     logger,
     clock,
+    businessClock,
     ids,
     random: new CryptoRandom(),
     hasher: await Argon2idPasswordHasher.forEnv(env.APP_ENV, logger),

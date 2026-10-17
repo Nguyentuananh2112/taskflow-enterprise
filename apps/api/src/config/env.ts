@@ -49,6 +49,12 @@ const EnvSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.coerce.number().int().min(5).max(900).optional(),
     ),
+    // CHỈ APP_ENV=test (E2E giờ nghiệp vụ tất định — anchored-clock.ts): ISO có offset, vd
+    // 2026-10-20T10:00:00+07:00. Môi trường khác có biến này ⇒ từ chối khởi động.
+    TEST_CLOCK_ANCHOR: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.iso.datetime({ offset: true }).optional(),
+    ),
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
@@ -106,6 +112,9 @@ const EnvSchema = z
     if (env.METRICS_PORT === env.PORT) fail('METRICS_PORT', 'phải khác PORT (cổng nội bộ riêng)');
     if (env.JWT_ACCESS_TTL_SECONDS !== undefined && env.APP_ENV !== 'test') {
       fail('JWT_ACCESS_TTL_SECONDS', 'chỉ được đặt khi APP_ENV=test');
+    }
+    if (env.TEST_CLOCK_ANCHOR !== undefined && env.APP_ENV !== 'test') {
+      fail('TEST_CLOCK_ANCHOR', 'chỉ được đặt khi APP_ENV=test');
     }
     if (env.NODE_ENV === 'production' && !isDeployed(env.APP_ENV)) {
       fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');

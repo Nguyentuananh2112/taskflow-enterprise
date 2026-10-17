@@ -55,6 +55,12 @@ export interface ContainerDeps {
   config: ContainerConfig;
   logger: Logger;
   clock: IClock;
+  /**
+   * Giờ NGHIỆP VỤ (attendance, leave, notifications, workspace — workDate, "hôm nay", serverNow, createdAt, joinedAt /
+   * leftAt của nhiệm kỳ). Thiếu ⇒ `clock`. Chỉ E2E đặt khác (TEST_CLOCK_ANCHOR, APP_ENV=test — anchored-clock.ts);
+   * auth/JWT, task, rate limit, meta.timestamp, socket luôn theo `clock` (giờ thật).
+   */
+  businessClock?: IClock;
   ids: IIdGenerator;
   random: IRandom;
   hasher: IPasswordHasher;
@@ -95,7 +101,10 @@ const rolePermissions: IRolePermissions = {
  */
 export function createContainer(d: ContainerDeps): Container {
   const { config, logger, clock, ids, random, persistence } = d;
-  const responder = new HttpResponder(clock);
+  const business = d.businessClock ?? clock;
+  const businessDeps = { ...d, clock: business };
+  // meta.timestamp của MỌI envelope theo giờ nghiệp vụ: web suy độ lệch giờ server từ đó (E).
+  const responder = new HttpResponder(business);
   const events = new InProcessEventBus(logger);
   const realtime = new LateBoundRealtime();
   const rateLimitDeps: RateLimitDeps = {
@@ -133,7 +142,7 @@ export function createContainer(d: ContainerDeps): Container {
     realtime,
     uow: persistence.uow,
     ids,
-    clock,
+    clock: business,
     responder,
     limit,
   });
@@ -145,7 +154,7 @@ export function createContainer(d: ContainerDeps): Container {
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
-    clock,
+    clock: business,
     random,
     logger,
     responder,
@@ -163,7 +172,7 @@ export function createContainer(d: ContainerDeps): Container {
     notifier: attendanceNotifierFrom(notifications.publisher),
     membership: attendanceMembership(() => workspace),
     uow: persistence.uow,
-    clock,
+    clock: business,
     ids,
     responder,
     limit,
@@ -193,7 +202,7 @@ export function createContainer(d: ContainerDeps): Container {
   });
 
   const leave = lateLeaves.bind(
-    wireLeave(d, { workspace, attendance, notifications, auth }, { responder, limit }),
+    wireLeave(businessDeps, { workspace, attendance, notifications, auth }, { responder, limit }),
   );
 
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
