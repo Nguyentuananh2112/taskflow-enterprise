@@ -32,6 +32,8 @@ export function maintenanceJobs(d: {
    * phiên, dọn đơn), không phải dọn dẹp. Thiếu ⇒ không đăng ký (test cũ).
    */
   offboarding?: { completeDueOffboardings(signal?: AbortSignal): Promise<unknown> };
+  /** T-049: nhắc làm lương — LUÔN chạy (luật nghiệp vụ, như hoàn tất nghỉ việc). Thiếu ⇒ không đăng ký. */
+  payroll?: { remindIfDue(): Promise<unknown> };
   /** T-057: chụp phép chuyển sang năm hiện tại — LUÔN chạy (luật nghiệp vụ, như offboarding). */
   carryover?: { runOnce(signal?: AbortSignal): Promise<unknown> };
 }): ScheduledJob[] {
@@ -47,6 +49,18 @@ export function maintenanceJobs(d: {
       firstRunAfterMs: 5_000,
       run: async (signal) => {
         await offboarding.completeDueOffboardings(signal);
+      },
+    });
+  }
+  const payroll = d.payroll;
+  if (payroll) {
+    jobs.push({
+      name: 'payroll-reminder',
+      intervalMs: env.PAYROLL_REMINDER_INTERVAL_MS ?? PAYROLL_REMINDER_INTERVAL_MS,
+      jitterMs: env.PAYROLL_REMINDER_INTERVAL_MS === undefined ? 60_000 : 0,
+      firstRunAfterMs: env.PAYROLL_REMINDER_ON_START ? 0 : 60_000,
+      run: async () => {
+        await payroll.remindIfDue();
       },
     });
   }
@@ -96,6 +110,9 @@ export function maintenanceJobs(d: {
   }
   return jobs;
 }
+
+/** Nhắc làm lương: chạy mỗi giờ; chống lặp theo (kỳ, ngày) ⇒ mỗi ngày tối đa một nhắc. */
+export const PAYROLL_REMINDER_INTERVAL_MS = 3_600_000;
 
 /** R40: socket đã nối của người hết `access_until` bị ngắt trễ tối đa ~1 phút. */
 export const OFFBOARDING_INTERVAL_MS = 60_000;

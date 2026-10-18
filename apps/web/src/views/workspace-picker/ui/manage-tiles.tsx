@@ -10,14 +10,15 @@ const TILE =
 
 /**
  * Khối "Việc quản lý" ở trang chính (ADR-139 mục 2, E A1): ô LỚN theo quyền công ty — người không rành IT bấm ô to dễ
- * hơn tìm menu. "Bảng lương" thêm ở Mốc 4 (chưa có trang). Không quyền nào ⇒ không có khối.
+ * hơn tìm menu. Thứ tự như ☰: Nhân sự · Bảng lương · Quản trị. Không quyền nào ⇒ không có khối.
  */
 export function ManageTiles() {
   const { can } = useCompanyPermission();
   const hr = can('hr:manage');
   const admin = can('company:admin');
+  const payroll = can('payroll:manage');
   const pending = useHrPendingLeaveCount(hr).data;
-  if (!hr && !admin) return null;
+  if (!hr && !admin && !payroll) return null;
   const waiting =
     pending && pending.count > 0 ? `${pending.more ? `${pending.count}+` : pending.count}` : null;
   return (
@@ -34,6 +35,14 @@ export function ManageTiles() {
               <span className="text-sm text-text-muted">
                 {waiting ? `${waiting} đơn nghỉ chờ duyệt` : 'Chấm công, đơn nghỉ, ngày lễ'}
               </span>
+            </Link>
+          </li>
+        )}
+        {payroll && (
+          <li>
+            <Link href="/payroll" className={TILE}>
+              <span className="font-medium">Bảng lương</span>
+              <span className="text-sm text-text-muted">Phiếu lương tháng, hồ sơ lương</span>
             </Link>
           </li>
         )}

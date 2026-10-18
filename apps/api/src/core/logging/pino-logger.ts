@@ -25,6 +25,16 @@ export const REDACT_PATHS = [
   '*.refreshToken',
   'passwordHash',
   '*.passwordHash',
+  // Mốc 4 (payroll.md §6, SEC-PAY-09/14): số tiền không vào log — use case chỉ log id / kỳ; đây là lưới dự phòng.
+  'baseSalary',
+  '*.baseSalary',
+  'netPay',
+  '*.netPay',
+  'seniorityPerYear',
+  '*.seniorityPerYear',
+  '*.lines',
+  'overrideReason',
+  '*.overrideReason',
   // Dự phòng (T-031 mục 0): lớp chính là serializer `err` theo allow-list — đường dẫn dưới chỉ bắt
   // lỗi Prisma lỡ được log dưới key khác `err` (dữ liệu dòng nằm trong cause.detail).
   'meta.driverAdapterError',

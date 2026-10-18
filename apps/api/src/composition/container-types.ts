@@ -1,3 +1,4 @@
+import type { PayrollModule } from '../modules/payroll/payroll.module';
 import type { Store } from 'express-rate-limit';
 import type { GatewayWiring } from './late-realtime';
 import type { Express, Router } from 'express';
@@ -78,6 +79,8 @@ export interface Container {
   notifications: NotificationsModule;
   /** Mốc 3.5: công ty — quyền / nhiệm kỳ / HrAuditLog cho attendance, leave, payroll (nối khi gỡ loại tạm). */
   company: CompanyModule;
+  /** Mốc 4 (T-049): job nhắc làm lương. */
+  payroll: PayrollModule;
   /** Chấm công cấp công ty (T-063). */
   attendance: AttendanceModule;
   /** Nghỉ phép cấp công ty (T-064). */

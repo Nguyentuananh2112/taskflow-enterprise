@@ -218,6 +218,7 @@ describe('cổng công ty ở login / refresh / me (Mốc 3.5, B HIGH-2)', () =>
         'attendance:self',
         'hr:manage',
         'leave:self',
+        'payslip:self',
         'profile:self',
         'workspace:create',
       ],

@@ -51,11 +51,7 @@ export class InMemoryCompanyStore
     return Promise.resolve({ ...this.#state.company });
   }
 
-  update(input: {
-    name?: string | undefined;
-    privacyContact?: string | null | undefined;
-    expectedVersion: number;
-  }): Promise<CompanyProfile | null> {
+  update(input: Parameters<ICompanyRepository['update']>[0]): Promise<CompanyProfile | null> {
     const c = this.#state.company;
     if (!c || c.version !== input.expectedVersion) return Promise.resolve(null);
     this.#state.company = {
@@ -79,6 +75,12 @@ export class InMemoryCompanyStore
   listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
     return Promise.resolve(
       this.members().filter((m) => m.role === 'ADMIN' || m.grants.includes('HR_MANAGE')),
+    );
+  }
+
+  listPayrollManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
+    return Promise.resolve(
+      this.members().filter((m) => m.role === 'ADMIN' || m.grants.includes('PAYROLL_MANAGE')),
     );
   }
 

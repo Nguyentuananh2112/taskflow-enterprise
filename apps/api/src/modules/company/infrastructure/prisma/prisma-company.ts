@@ -50,9 +50,19 @@ export class PrismaCompanyMembers implements ICompanyMemberRepository {
     return r ? toSnapshot(r) : null;
   }
 
-  async listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
+  listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
+    return this.#managerCandidates('HR_MANAGE');
+  }
+
+  listPayrollManagerCandidates(): Promise<CompanyMemberSnapshot[]> {
+    return this.#managerCandidates('PAYROLL_MANAGE');
+  }
+
+  async #managerCandidates(
+    grant: 'HR_MANAGE' | 'PAYROLL_MANAGE',
+  ): Promise<CompanyMemberSnapshot[]> {
     const rows = await this.db().companyMember.findMany({
-      where: { OR: [{ role: 'ADMIN' }, { grants: { has: 'HR_MANAGE' } }] },
+      where: { OR: [{ role: 'ADMIN' }, { grants: { has: grant } }] },
       select: { userId: true },
     });
     const out: CompanyMemberSnapshot[] = [];

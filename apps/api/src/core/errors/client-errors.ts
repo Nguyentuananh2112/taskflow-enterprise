@@ -97,6 +97,9 @@ export type ResourceKind =
   | 'notification'
   // Mốc 3.5: chưa `admin:bootstrap` ⇒ chưa có dòng `companies`
   | 'company'
+  // Mốc 4 (T-049)
+  | 'payroll_run'
+  | 'payslip'
   // Mốc 5 (T-056): đơn bổ sung giờ
   | 'correction_request'
   // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)

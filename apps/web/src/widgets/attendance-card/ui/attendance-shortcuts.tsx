@@ -17,7 +17,7 @@ const LINK =
 
 /**
  * Lối tắt của nhân viên (T-045; Mốc 3.5 ở trang chính, ngoài thẻ): Bảng công · Xin nghỉ (số phép còn) · Đơn nghỉ của
- * tôi (số chờ duyệt). "Nhân sự" ở khối "Việc quản lý". Số chưa tải ⇒ chỉ nhãn, link vẫn dùng được. `today` = ngày của
+ * tôi (số chờ duyệt) · Phiếu lương. "Nhân sự" ở khối "Việc quản lý". Số chưa tải ⇒ chỉ nhãn, link vẫn dùng được. `today` = ngày của
  * SERVER.
  */
 export function AttendanceShortcuts({ today }: Props) {
@@ -39,6 +39,12 @@ export function AttendanceShortcuts({ today }: Props) {
         <li>
           <Link href="/leave#my-leave" className={LINK}>
             Đơn nghỉ của tôi{mine ? ` · ${mine} chờ duyệt` : ''}
+          </Link>
+        </li>
+        {/* Mốc 4 (payroll.md §5.1): ô thứ 4 của lưới 2 cột ⇒ vẫn 2 hàng, không đổi chiều cao. */}
+        <li>
+          <Link href="/payslips" className={LINK}>
+            Phiếu lương
           </Link>
         </li>
       </ul>

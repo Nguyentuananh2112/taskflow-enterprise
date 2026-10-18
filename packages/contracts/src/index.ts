@@ -15,5 +15,6 @@ export * from './hr/hr.schemas';
 export * from './leave';
 export * from './company';
 export * from './chat';
+export * from './payroll';
 export * from './privacy';
 export * from './system/healthz.schemas';

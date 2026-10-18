@@ -13,6 +13,7 @@ import {
   useAttendanceToday,
 } from '@/entities/attendance';
 import { useCompanyPermission } from '@/entities/session';
+import { MissingOutAlert } from '@/features/correction-request';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { PageMain } from '@/shared/ui/page';
@@ -35,11 +36,13 @@ export function AttendancePage() {
   const { company, can } = useCompanyPermission();
   const allowed = can('attendance:self');
   const today = useAttendanceToday(allowed);
-  const asked = useSearchParams().get('month');
+  const params = useSearchParams();
+  const asked = params.get('month');
   // Tháng mặc định = tháng của "hôm nay" THEO SERVER (múi giờ của lịch), không theo máy.
   const month = asked && MONTH.test(asked) ? asked : today.data?.date.slice(0, 7);
   const data = useAttendanceMonth(month ?? '', allowed && month !== undefined);
-  const [day, setDay] = useState<string | null>(null);
+  // `?day=` (từ cảnh báo quên chấm ra ở trang chính) ⇒ mở sẵn chi tiết ngày đó.
+  const [day, setDay] = useState<string | null>(() => params.get('day'));
   const [mode, setMode] = useViewMode();
   const t = today.data;
   const serverToday = t?.date ?? '';
@@ -103,6 +106,7 @@ export function AttendancePage() {
       ) : (
         <>
           {t && month === serverToday.slice(0, 7) && <TodayBox today={t} />}
+          {serverToday && <MissingOutAlert today={serverToday} onOpenDay={setDay} />}
           <MonthSummary totals={data.data.totals} title={`Tổng kết ${monthTitle(month)}`} />
           <ViewToggle mode={mode} onChange={setMode} />
           {mode === 'calendar' ? (
