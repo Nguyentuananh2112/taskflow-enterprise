@@ -37,6 +37,15 @@ export type PrivacyDto = z.infer<typeof PrivacyDto>;
 export const AckPrivacyBody = z.strictObject({ version: z.int().min(1) });
 export type AckPrivacyBody = z.infer<typeof AckPrivacyBody>;
 
-/** `PUT /me/privacy/consent` — rút lại đồng ý KHÔNG xóa lý do cũ (job 13 tháng vẫn xóa — D3). */
+/**
+ * `PUT /me/privacy/consent`. Rút lại (`false`) ⇒ CÙNG transaction xóa (NULL) lý do của các đơn nghỉ ĐANG CHỜ DUYỆT
+ * của chính mình (NĐ 13 Đ.12 — dừng xử lý tiếp); đơn đã quyết giữ tới hạn D3 (13 tháng).
+ */
 export const PrivacyConsentBody = z.strictObject({ leaveReason: z.boolean() });
 export type PrivacyConsentBody = z.infer<typeof PrivacyConsentBody>;
+
+/** Response của `PUT /me/privacy/consent`: như PrivacyDto + số đơn PENDING vừa bị xóa lý do (0 khi đồng ý). */
+export const PrivacyConsentResultDto = PrivacyDto.extend({
+  clearedPendingReasons: z.int().min(0),
+});
+export type PrivacyConsentResultDto = z.infer<typeof PrivacyConsentResultDto>;

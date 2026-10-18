@@ -115,6 +115,8 @@ export const HrAuditAction = z.enum([
   'CORRECTION_DECIDE',
   // Mốc 6 (ADR-142): HR / Admin gỡ ảnh đại diện không phù hợp của nhân viên.
   'AVATAR_REMOVED',
+  // T-075: Admin đổi đầu mối liên hệ quyền riêng tư (hiện cho mọi nhân viên) — before/after {privacyContact}.
+  'COMPANY_PRIVACY_CONTACT_SET',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

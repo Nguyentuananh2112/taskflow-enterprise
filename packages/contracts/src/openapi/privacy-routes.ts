@@ -1,4 +1,9 @@
-import { AckPrivacyBody, PrivacyConsentBody, PrivacyDto } from '../privacy/privacy.schemas';
+import {
+  AckPrivacyBody,
+  PrivacyConsentBody,
+  PrivacyConsentResultDto,
+  PrivacyDto,
+} from '../privacy/privacy.schemas';
 import type { ApiRoute } from './route-types';
 
 // T-075 — thông báo quyền riêng tư (data-retention.md §5). Chính mình; cổng công ty ⇒ SESSION_REVOKED.
@@ -28,9 +33,10 @@ export const PRIVACY_API_ROUTES: readonly ApiRoute[] = [
     ...base,
     method: 'put',
     path: '/me/privacy/consent',
-    summary: 'Đồng ý / rút lại đồng ý xử lý lý do nghỉ (rút lại không xóa lý do cũ)',
+    summary:
+      'Đồng ý / rút lại đồng ý xử lý lý do nghỉ (rút lại ⇒ xóa lý do của đơn đang chờ duyệt)',
     body: PrivacyConsentBody,
-    response: { status: 200, data: PrivacyDto },
+    response: { status: 200, data: PrivacyConsentResultDto },
     errors: ['SESSION_REVOKED'],
   },
 ];

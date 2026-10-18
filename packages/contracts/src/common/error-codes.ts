@@ -37,8 +37,6 @@ export const ErrorCode = z.enum([
   'IMAGE_PROCESSING_BUSY',
   'IMAGE_PROCESSING_UNAVAILABLE',
   'STORAGE_FULL',
-  // T-075: gửi `reason` của đơn nghỉ khi chưa đồng ý xử lý lý do nghỉ (400 — reason vốn tùy chọn, bỏ trống thì gửi được)
-  'LEAVE_REASON_CONSENT_REQUIRED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -98,6 +96,9 @@ export const BusinessRule = z.enum([
   'TOO_MANY_ATTACHMENTS',
   // Lưới an toàn của store (B soát T-069a M1): đính kèm mất giữa lúc claim và lúc gắn (purge mồ côi) ⇒ rollback tin.
   'ATTACHMENT_UNAVAILABLE',
+  // T-075 (TL theo soát B): đơn nghỉ CÓ lý do mà người gửi chưa đồng ý xử lý lý do nghỉ — luật nghiệp vụ (422), không
+  // phải sai định dạng; lý do vốn tùy chọn ⇒ bỏ trống thì gửi được.
+  'LEAVE_REASON_CONSENT_REQUIRED',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 

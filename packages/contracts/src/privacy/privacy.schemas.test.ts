@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { BusinessRule, ErrorCode } from '../common/error-codes';
 import { CompanyDto, UpdateCompanyBody } from '../company/company.schemas';
 import {
   AckPrivacyBody,
   PRIVACY_NOTICE_VERSION,
   PrivacyConsentBody,
+  PrivacyConsentResultDto,
   PrivacyDto,
 } from './privacy.schemas';
 
@@ -21,6 +23,15 @@ describe('T-075 thông báo quyền riêng tư', () => {
       privacyContact: null,
     };
     expect(PrivacyDto.strict().parse(dto)).toEqual(dto);
+    expect(
+      PrivacyConsentResultDto.parse({ ...dto, clearedPendingReasons: 2 }).clearedPendingReasons,
+    ).toBe(2);
+    expect(PrivacyConsentResultDto.safeParse(dto).success).toBe(false);
+  });
+
+  it('LEAVE_REASON_CONSENT_REQUIRED là BusinessRule (422), không phải ErrorCode', () => {
+    expect(BusinessRule.options).toContain('LEAVE_REASON_CONSENT_REQUIRED');
+    expect(ErrorCode.options).not.toContain('LEAVE_REASON_CONSENT_REQUIRED');
   });
 
   it('ack / consent: strict, kiểu đúng', () => {
