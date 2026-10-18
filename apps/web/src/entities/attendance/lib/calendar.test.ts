@@ -105,6 +105,40 @@ describe('dayText — câu chữ đời thường', () => {
     );
   });
 
+  it('TL #A1: ngày nghỉ / ngày lễ CÓ lượt chấm ⇒ giữ nhãn ngày nghỉ / lễ + dòng phụ giờ vào–ra (đang làm ⇒ "…")', () => {
+    const offWork = {
+      status: 'OFF',
+      isWorkday: false,
+      firstIn: vn('2026-10-11', '12:04'),
+    } as const;
+    expect(dayText(day('2026-10-11', offWork), today)).toMatchObject({
+      label: 'Chủ nhật',
+      detail: '12:04–…',
+      tone: 'off',
+    });
+    expect(
+      dayText(
+        day('2026-10-10', {
+          ...offWork,
+          firstIn: vn('2026-10-10', '09:00'),
+          lastOut: vn('2026-10-10', '11:00'),
+        }),
+        today,
+      ),
+    ).toMatchObject({ label: 'Ngày nghỉ', detail: '9:00–11:00' });
+    expect(
+      dayText(
+        day('2026-09-02', {
+          status: 'HOLIDAY',
+          holidayName: 'Quốc khánh',
+          firstIn: vn('2026-09-02', '08:00'),
+          lastOut: vn('2026-09-02', '12:00'),
+        }),
+        today,
+      ),
+    ).toMatchObject({ label: 'Ngày lễ', detail: 'Quốc khánh · 8:00–12:00' });
+  });
+
   it('ngày quá thời hạn lưu (RETENTION_EXPIRED, R27) ⇒ "Ngoài thời hạn lưu", trung tính, không phải "Vắng"', () => {
     expect(dayText(day('2024-09-02', { status: 'RETENTION_EXPIRED' }), today)).toMatchObject({
       label: 'Ngoài thời hạn lưu',

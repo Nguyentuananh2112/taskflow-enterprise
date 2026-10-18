@@ -1,4 +1,5 @@
 import { minutesFrom, type LocalDate } from './local-time';
+import { DAY_ROLLOVER_MIN } from './work-date';
 import { isWorkday, type WorkSchedule } from './work-schedule';
 
 /**
@@ -63,6 +64,22 @@ export interface DaySummary {
 const overlap = (a0: number, a1: number, b0: number, b1: number) =>
   Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
 
+/** Phút làm = giao `[inMin, outMin]` với ca `[start, end]` trừ phần giao với nghỉ trưa (không OT). */
+const workedWithin = (
+  schedule: WorkSchedule,
+  inMin: number,
+  outMin: number,
+  start: number,
+  end: number,
+) =>
+  overlap(inMin, outMin, start, end) -
+  overlap(
+    inMin,
+    outMin,
+    Math.max(start, schedule.breakStartMin),
+    Math.min(end, schedule.breakEndMin),
+  );
+
 /**
  * Bảng công một ngày của một người — hàm THUẦN (không đọc đồng hồ, không I/O), test theo bảng SD-*
  * của test-spec-hr §1. Giờ làm = giao của `[firstIn, lastOut]` với ca `[start, end]` trừ phần giao với
@@ -102,8 +119,22 @@ export function summarizeDay(input: DayInput): DaySummary {
 
   // Trước khi gia nhập / sau khi rời: không phải ngày công, 0 ở mọi tổng (bảng HR, CSV) — trừ khi có dữ liệu.
   if (!input.employed && live.length === 0) return { ...base, status: 'NOT_EMPLOYED' };
-  if (input.holiday) return { ...base, status: 'HOLIDAY' };
-  if (!isWorkday(schedule, date)) return { ...base, status: 'OFF' };
+  // TL #A1 (18/10): làm ngày lễ / ngày nghỉ được ghi nhận — status giữ HOLIDAY / OFF (không phải ngày công: không muộn /
+  // sớm / vắng, `payrollDaysOf` không cộng công), nhưng KHÔNG bỏ qua lượt chấm: giờ làm tính như ngày thường trong khung
+  // ca (v1 không OT); IN chưa OUT ⇒ "đang làm" tới giờ chốt 06:00 hôm sau (sau đó OUT không còn gắn vào ngày này).
+  if (input.holiday || !isWorkday(schedule, date)) {
+    const status = input.holiday ? 'HOLIDAY' : 'OFF';
+    if (!firstIn) return { ...base, status };
+    const open = !lastOut && minutesFrom(date, input.now, tz) < 24 * 60 + DAY_ROLLOVER_MIN;
+    return {
+      ...base,
+      status,
+      workedMin: lastOut
+        ? workedWithin(schedule, at(firstIn), at(lastOut), schedule.startMin, schedule.endMin)
+        : 0,
+      flags: { ...base.flags, inProgress: open },
+    };
+  }
   if (leave === 'FULL') return { ...base, status: 'ON_LEAVE' };
 
   const start = leave === 'AM' ? schedule.breakEndMin : schedule.startMin;
@@ -138,14 +169,7 @@ export function summarizeDay(input: DayInput): DaySummary {
   }
 
   const outMin = at(lastOut);
-  const worked =
-    overlap(inMin, outMin, start, end) -
-    overlap(
-      inMin,
-      outMin,
-      Math.max(start, schedule.breakStartMin),
-      Math.min(end, schedule.breakEndMin),
-    );
+  const worked = workedWithin(schedule, inMin, outMin, start, end);
   const early = outMin < end;
   return {
     ...base,

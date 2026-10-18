@@ -15,11 +15,19 @@ const longDay = (t: AttendanceTodayDto) =>
     month: 'numeric',
   }).format(new Date(t.serverNow));
 
-/** Câu trạng thái hôm nay bằng lời thường (T-046). */
-function statusText(t: AttendanceTodayDto): string {
-  if (t.isHoliday) return `Hôm nay nghỉ lễ${t.holidayName ? `: ${t.holidayName}` : ''}`;
+/**
+ * Câu trạng thái hôm nay bằng lời thường (T-046). Ngày lễ / ngày nghỉ CÓ lượt chấm (TL #A1) ⇒ "Đang làm" / "Đã chấm ra"
+ * kèm nhãn "ngày lễ" / "ngày nghỉ".
+ */
+export function statusText(t: AttendanceTodayDto): string {
+  if (t.isHoliday && !t.firstIn)
+    return `Hôm nay nghỉ lễ${t.holidayName ? `: ${t.holidayName}` : ''}`;
   if (t.leave === 'FULL') return 'Hôm nay bạn nghỉ phép cả ngày';
   if (!t.isWorkday && !t.firstIn) return 'Hôm nay không phải ngày làm';
+  if (t.isHoliday || !t.isWorkday) {
+    const day = t.isHoliday ? `ngày lễ${t.holidayName ? `: ${t.holidayName}` : ''}` : 'ngày nghỉ';
+    return `${t.inProgress ? 'Đang làm' : 'Đã chấm ra'} · ${day}`;
+  }
   const extra = [
     t.late && 'đi muộn',
     t.early && 'về sớm',

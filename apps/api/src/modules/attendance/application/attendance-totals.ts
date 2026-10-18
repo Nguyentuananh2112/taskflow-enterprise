@@ -6,7 +6,8 @@ import { lastDayOf, localToday, summarizeRange, type AttendanceDeps } from './at
 /**
  * Tổng tháng của một người — CÙNG một hàm cho `me?month=` và bảng HR / CSV (T-046, TL d9). Chỉ đếm ngày
  * `date ≤ today` (hôm nay theo lịch) ở MỌI cột; phép đã duyệt sau hôm nay ⇒ `upcomingLeaveDays`. Ngày công mới đếm:
- * RETENTION_EXPIRED / NOT_EMPLOYED / HOLIDAY / OFF ⇒ 0 (kể cả phép trùng lễ / ngày nghỉ). Vắng: ABSENT = 1, ABSENT + `absentHalf` = 0,5.
+ * RETENTION_EXPIRED / NOT_EMPLOYED / HOLIDAY / OFF ⇒ 0 (kể cả phép trùng lễ / ngày nghỉ) — trừ giờ làm thật trên ngày
+ * lễ / ngày nghỉ (TL #A1) được cộng vào `workedMin`, không thành ngày đi làm. Vắng: ABSENT = 1, ABSENT + `absentHalf` = 0,5.
  * Nghỉ phép: FULL = 1, AM/PM = 0,5. Đi làm: PRESENT + MISSING_OUT. `workedMin` của ngày chưa có giờ ra đã là 0
  * (summarizeDay) ⇒ hôm nay đang làm không cộng; muộn hôm nay đã biết lúc vào ⇒ có tính.
  */
@@ -34,6 +35,8 @@ export function totalsOf(days: readonly AttendanceDayDto[], today: LocalDate): A
     ) {
       if (d.date <= today && (t.throughDate === null || d.date > t.throughDate))
         t.throughDate = d.date;
+      if (d.date <= today && (d.status === 'HOLIDAY' || d.status === 'OFF'))
+        t.workedMin += d.workedMin;
       continue;
     }
     if (d.date > today) {
