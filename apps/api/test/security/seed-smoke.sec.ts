@@ -153,7 +153,7 @@ describe('seed dev + app thật', () => {
 
   secCase(
     'SEED-SMOKE-02',
-    'dữ liệu do migration chèn vẫn còn sau seed: payroll_settings đọc được qua API (mức thâm niên mặc định 500 000), chính sách phép năm nay có (DEFAULT / SET)',
+    'dữ liệu do migration chèn vẫn còn sau seed: payroll_settings đọc được qua API (mặc định 500 000); GET chính sách phép năm nay trả được (seed không tạo leave_policies ⇒ DEFAULT theo luật — không đòi dòng DB)',
     AREA,
     async () => {
       const s = await call('max', 'GET', '/payroll/settings');
