@@ -117,6 +117,19 @@ describe('bootstrap (tải trang)', () => {
     expect(sessionStore.get().retryAt).toBeUndefined();
   });
 
+  it('409 REFRESH_IN_PROGRESS (tab khác đang xoay) 2 lần rồi thành công ⇒ authenticated, KHÔNG unreachable (TL 18/10)', async () => {
+    const busy = () => new ApiError({ status: 409, code: 'REFRESH_IN_PROGRESS', message: '' });
+    const refresh = vi
+      .fn<() => Promise<typeof TOKEN>>()
+      .mockRejectedValueOnce(busy())
+      .mockRejectedValueOnce(busy())
+      .mockResolvedValueOnce(TOKEN);
+    const { controller } = setup({ refresh });
+    await controller.bootstrap();
+    expect(sessionStore.get().status).toBe('authenticated');
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
+
   it('lỗi #5: 429 không có retryAfterSec ⇒ chờ mặc định 30 s', async () => {
     const refresh = vi
       .fn<() => Promise<typeof TOKEN>>()

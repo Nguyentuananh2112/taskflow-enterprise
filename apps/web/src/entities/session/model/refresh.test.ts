@@ -4,7 +4,9 @@ import { ApiError } from '@/shared/api';
 
 import {
   REFRESH_LOCK,
+  REFRESH_MAX_RETRIES,
   REFRESH_RETRY_DELAY_MS,
+  REFRESH_RETRY_JITTER_MS,
   createRefresher,
   type LockRequester,
 } from './refresh';
@@ -49,22 +51,27 @@ describe('createRefresher', () => {
     expect(names).toEqual([REFRESH_LOCK]);
   });
 
-  it('409 REFRESH_IN_PROGRESS ⇒ đợi 300ms rồi thử lại ĐÚNG 1 lần', async () => {
+  it('409 REFRESH_IN_PROGRESS ⇒ đợi 300–800 ms (jitter) rồi thử lại; 2 lần 409 rồi thành công ⇒ token', async () => {
     const sleep = vi.fn(() => Promise.resolve());
     const call = vi
       .fn<() => Promise<typeof TOKEN>>()
       .mockRejectedValueOnce(apiError(409, 'REFRESH_IN_PROGRESS'))
+      .mockRejectedValueOnce(apiError(409, 'REFRESH_IN_PROGRESS'))
       .mockResolvedValueOnce(TOKEN);
-    await expect(createRefresher({ call, sleep }).run()).resolves.toEqual(TOKEN);
-    expect(sleep).toHaveBeenCalledWith(REFRESH_RETRY_DELAY_MS);
-    expect(call).toHaveBeenCalledTimes(2);
+    const random = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(0.999);
+    await expect(createRefresher({ call, sleep, random }).run()).resolves.toEqual(TOKEN);
+    expect(sleep.mock.calls).toEqual([
+      [REFRESH_RETRY_DELAY_MS],
+      [REFRESH_RETRY_DELAY_MS + REFRESH_RETRY_JITTER_MS - 1],
+    ]);
+    expect(call).toHaveBeenCalledTimes(3);
   });
 
-  it('409 hai lần liên tiếp ⇒ ném lỗi (tạm thời), không thử lần 3, không coi là mất phiên', async () => {
+  it(`409 mãi ⇒ thử lại tối đa ${String(REFRESH_MAX_RETRIES)} lần rồi ném lỗi (tạm thời), không coi là mất phiên`, async () => {
     const call = vi.fn(() => Promise.reject(apiError(409, 'REFRESH_IN_PROGRESS')));
     const refresher = createRefresher({ call, sleep: () => Promise.resolve() });
     await expect(refresher.run()).rejects.toMatchObject({ code: 'REFRESH_IN_PROGRESS' });
-    expect(call).toHaveBeenCalledTimes(2);
+    expect(call).toHaveBeenCalledTimes(REFRESH_MAX_RETRIES + 1);
   });
 
   it.each(['REFRESH_TOKEN_INVALID', 'ORIGIN_NOT_ALLOWED'] as const)(
