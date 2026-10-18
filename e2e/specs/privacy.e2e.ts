@@ -11,14 +11,11 @@ import {
   type E2EUser,
 } from '../support/fixtures';
 import { hrCall } from '../support/hr';
-import { awaiting } from '../support/pending';
 
 // E2E-PRIV-01…03 (T-075 — data-retention.md §5, TL 18/10): thông báo quyền riêng tư trên API thật của G
-// (GET /me/privacy, POST /me/privacy/ack, PUT /me/privacy/consent, privacyContact ở PATCH /company). fixme tới khi
-// E2E_RUN_PENDING chứa T-075 (API của G chưa vào nhánh tích hợp). Lane HR tuần tự (đổi đầu mối của CẢ công ty); ca đổi
+// (GET /me/privacy, POST /me/privacy/ack, PUT /me/privacy/consent, privacyContact ở PATCH /company) — đã vào nhánh
+// tích hợp feat/privacy (3fee5388). Lane HR tuần tự (đổi đầu mối của CẢ công ty); ca đổi
 // đầu mối chạy CUỐI file và trả lại giá trị cũ.
-
-const T075 = 'T-075';
 
 async function seriousViolations(page: Page): Promise<string[]> {
   const result = await new AxeBuilder({ page }).analyze();
@@ -42,7 +39,6 @@ const login = async (request: APIRequestContext, user: E2EUser) =>
   ).accessToken;
 
 test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
-  test.fixme(awaiting(T075), `[PENDING ${T075}] chờ API quyền riêng tư thật (G)`);
   test.use({ privacyPrompt: 'keep' });
 
   test('E2E-PRIV-01: lần đầu ở /leave ⇒ hộp thoại (không ở /w); Esc = để sau; tải lại ⇒ hiện lại; "Tôi đã đọc" ⇒ hết; a11y', async ({
