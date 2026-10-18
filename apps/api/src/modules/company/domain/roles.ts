@@ -16,6 +16,7 @@ export const COMPANY_PERMISSIONS = [
   'attendance:self',
   'leave:self',
   'profile:self',
+  'payslip:self',
 ] as const;
 export type CompanyPermission = (typeof COMPANY_PERMISSIONS)[number];
 
@@ -23,7 +24,7 @@ export type CompanyPermission = (typeof COMPANY_PERMISSIONS)[number];
 export const COMPANY_ROLE_PERMISSIONS: Readonly<Record<CompanyRole, readonly CompanyPermission[]>> =
   {
     ADMIN: ['company:admin', 'company:grant', 'hr:manage', 'payroll:manage', 'workspace:create'],
-    EMPLOYEE: ['attendance:self', 'leave:self', 'profile:self', 'workspace:create'],
+    EMPLOYEE: ['attendance:self', 'leave:self', 'profile:self', 'payslip:self', 'workspace:create'],
   };
 
 /** Mỗi grant mở ĐÚNG một quyền; không grant nào mở `company:*`. Thêm grant phải qua ADR. */

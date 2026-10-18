@@ -118,6 +118,9 @@ const EnvSchema = z
     PURGE_JITTER_MS: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
     // T-043: job retention XÓA dữ liệu ⇒ cờ riêng; local/test chỉ chạy khi = true (composition tính).
     RETENTION_JOB_ENABLED: z.stringbool().optional(),
+    // T-049 (F, CLK-PAY-02…04): job nhắc làm lương — CHỈ APP_ENV=test: chạy một lượt khi khởi động / đổi chu kỳ.
+    PAYROLL_REMINDER_ON_START: z.stringbool().optional(),
+    PAYROLL_REMINDER_INTERVAL_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
     // T-057 (F, CLK-HR-13 / LP-12): job chụp phép chuyển sang — CHỈ APP_ENV=test: chạy một lượt TRƯỚC khi listen;
     // rút ngắn interval (mặc định 1 giờ).
     LEAVE_CARRYOVER_ON_START: z.stringbool().optional(),
@@ -148,6 +151,10 @@ const EnvSchema = z
         fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
     for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS'] as const) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
+    }
+    for (const key of ['PAYROLL_REMINDER_ON_START', 'PAYROLL_REMINDER_INTERVAL_MS'] as const) {
       if (env[key] !== undefined && env.APP_ENV !== 'test')
         fail(key, 'chỉ được đặt khi APP_ENV=test');
     }

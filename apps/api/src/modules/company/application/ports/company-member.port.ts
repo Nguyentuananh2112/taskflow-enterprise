@@ -9,6 +9,8 @@ export interface ICompanyMemberRepository {
   findForShare(userId: string): Promise<CompanyMemberSnapshot | null>;
   /** Admin + nhân viên có grant HR_MANAGE (lọc `access_until` ở application) — người nhận thông báo nhóm HR. */
   listHrManagerCandidates(): Promise<CompanyMemberSnapshot[]>;
+  /** Admin + nhân viên có grant PAYROLL_MANAGE (chưa lọc access_until) — người nhận nhắc làm lương (T-049). */
+  listPayrollManagerCandidates(): Promise<CompanyMemberSnapshot[]>;
   /** Thêm dòng (version 1). Đã có dòng của user ⇒ 409 `ResourceConflictError('already_employee')`. */
   insert(input: NewCompanyMember): Promise<CompanyMemberSnapshot>;
   /** Có ít nhất một ADMIN (bootstrap từ chối khi đã có — SEC-HR-64). */

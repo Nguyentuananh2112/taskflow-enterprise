@@ -2,6 +2,7 @@ import type { IClock } from '../../../core/domain';
 import { ResourceNotFoundError } from '../../../core/errors';
 import {
   LEAVE_TYPES,
+  PAYSLIP_TYPES,
   type NotificationRecord,
   type NotificationType,
   type VisibilityScope,
@@ -21,6 +22,8 @@ export interface NotificationView {
   refId: string;
   actor: { id: string; fullName: string; avatarUrl?: string | null } | null;
   leave: LeaveSummary | null;
+  /** PAYSLIP_* (T-049): kỳ lương của phiếu — KHÔNG số tiền. */
+  payslip: { period: string } | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -75,17 +78,23 @@ export class NotificationQueries {
     const access = await this.d.audience.accessOf(userId);
     return {
       recipientId: userId,
-      access: access ? { since: access.since, hr: access.canManageHr } : null,
+      access: access
+        ? { since: access.since, hr: access.canManageHr, payroll: access.canManagePayroll }
+        : null,
     };
   }
 
   async #views(rows: readonly NotificationRecord[]): Promise<NotificationView[]> {
     const actorIds = rows.flatMap((r) => (r.actorId ? [r.actorId] : []));
     const leaveRefs = rows.filter((r) => LEAVE_TYPES.includes(r.type)).map((r) => r.refId);
-    const [actors, leaves, avatars] = await Promise.all([
+    const payslipRefs = rows.filter((r) => PAYSLIP_TYPES.includes(r.type)).map((r) => r.refId);
+    const [actors, leaves, avatars, periods] = await Promise.all([
       this.d.context.actorNames(actorIds),
       this.d.context.leaveSummaries(leaveRefs),
       this.d.context.actorAvatars?.(actorIds),
+      payslipRefs.length
+        ? this.d.context.payslipPeriods(payslipRefs)
+        : Promise.resolve(new Map<string, string>()),
     ]);
     return rows.map((r) => {
       const actorName = r.actorId ? actors.get(r.actorId) : undefined;
@@ -105,6 +114,10 @@ export class NotificationQueries {
         leave: leave
           ? { type: leave.type, startDate: leave.startDate, endDate: leave.endDate }
           : null,
+        payslip:
+          PAYSLIP_TYPES.includes(r.type) && periods.has(r.refId)
+            ? { period: periods.get(r.refId)! }
+            : null,
         readAt: r.readAt ? r.readAt.toISOString() : null,
         createdAt: r.createdAt.toISOString(),
       };

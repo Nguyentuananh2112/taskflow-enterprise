@@ -148,6 +148,7 @@ export async function startServer(
       businessClock,
       logger,
       offboarding: container.company,
+      payroll: container.payroll,
       carryover: container.leave.carryover,
     }),
     // Mốc 6 (ADR-141): dọn kho tệp — bật theo cờ bảo trì, hoặc ở test qua FILES_SWEEP_*.

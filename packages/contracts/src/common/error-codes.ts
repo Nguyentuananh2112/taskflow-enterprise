@@ -96,6 +96,12 @@ export const BusinessRule = z.enum([
   'TOO_MANY_ATTACHMENTS',
   // Lưới an toàn của store (B soát T-069a M1): đính kèm mất giữa lúc claim và lúc gắn (purge mồ côi) ⇒ rollback tin.
   'ATTACHMENT_UNAVAILABLE',
+  // Mốc 4 (payroll.md ADR-125/126/127, T-048): tạo nháp khi tháng chưa hết (kỳ không có ngày làm
+  // dùng lại NO_WORKING_DAYS của Mốc 3); phát hành bị chặn
+  // (`details.blockers` — PublishBlockedDetails); kỳ có ngày quá hạn lưu chấm công ⇒ cấm tính lại công.
+  'PERIOD_NOT_ENDED',
+  'PUBLISH_BLOCKED',
+  'ATTENDANCE_RETENTION_EXPIRED',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
@@ -127,6 +133,9 @@ export const NotFoundDetails = z.object({
     'notification',
     // Mốc 3.5: chưa `admin:bootstrap` ⇒ chưa có dòng `companies`
     'company',
+    // Mốc 4 (T-049): bảng lương tháng / phiếu chưa có
+    'payroll_run',
+    'payslip',
     // Mốc 5 (T-056)
     'correction_request',
     // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)
