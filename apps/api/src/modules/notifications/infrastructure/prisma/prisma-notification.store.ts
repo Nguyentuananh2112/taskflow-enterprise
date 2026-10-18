@@ -1,6 +1,7 @@
 import type { Prisma } from '../../../../generated/prisma/client';
 import {
   HR_AUDIENCE_TYPES,
+  PAYROLL_AUDIENCE_TYPES,
   type NotificationRecord,
   type VisibilityScope,
 } from '../../domain/notification';
@@ -20,7 +21,12 @@ export function visibleWhere(scope: VisibilityScope): Prisma.NotificationWhereIn
   return {
     recipientId: scope.recipientId,
     createdAt: { gte: scope.access.since },
-    ...(scope.access.hr ? {} : { type: { notIn: [...HR_AUDIENCE_TYPES] } }),
+    type: {
+      notIn: [
+        ...(scope.access.hr ? [] : HR_AUDIENCE_TYPES),
+        ...(scope.access.payroll === true ? [] : PAYROLL_AUDIENCE_TYPES),
+      ],
+    },
   };
 }
 
@@ -36,6 +42,12 @@ const SELECT = {
 
 export class PrismaNotificationStore implements INotificationStore {
   constructor(private readonly db: DbProvider) {}
+
+  async exists(q: { type: NotificationRecord['type']; refId: string }): Promise<boolean> {
+    return (
+      (await this.db().notification.count({ where: { type: q.type, refId: q.refId }, take: 1 })) > 0
+    );
+  }
 
   async addMany(records: readonly NotificationRecord[]): Promise<void> {
     if (records.length === 0) return;

@@ -10,18 +10,14 @@ import {
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import { createAuthModule } from '../modules/auth/auth.module';
 import { rolePermissions } from './role-permissions';
-import { TASKS_PATH } from '../modules/task/presentation/task.routes';
-import {
-  NOTIFICATIONS_PATH,
-  createNotificationsModule,
-} from '../modules/notifications/notifications.module';
+import { createNotificationsModule } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
-import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
 import { attendanceShared, wireAttendance } from './attendance-adapters';
-import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
 import { wireLeaveAndProfile } from './hr-wiring';
+import { wirePayroll } from './payroll-wiring';
+import { apiRouters } from './api-routers';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { gatedSocketAuth, gatewayOptions, LateBoundRealtime } from './late-realtime';
@@ -158,35 +154,35 @@ export function createContainer(d: ContainerDeps): Container {
   });
   accountsRef.current = auth.accounts;
   // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
+  // Báo cáo .xlsx của phép / lương: cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
+  const xlsx = { exportSlots, exportLimits: config.exportLimits };
   const { leave, hrProfile } = wireLeaveAndProfile(
     { persistence, clock: business, ids, logger },
-    {
-      company,
-      attendance,
-      notifications,
-      auth,
-      // Cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
-      exportSlots,
-      exportLimits: config.exportLimits,
-    },
+    { company, attendance, notifications, auth, ...xlsx },
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
+  // Lương (Mốc 4, T-049): quyền / audit ← company, công ← attendance, `hireDate` ← hồ sơ (ADR-128).
+  const payroll = wirePayroll(
+    { persistence, clock: business, ids },
+    { company, attendance, hrProfile, notifications, ...xlsx },
+    { responder, limit },
+  );
 
   const chat = chatRouters(d, { persistence, auth, company, responder, limit, business, realtime });
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
-    { path: '/auth', router: auth.router },
-    ...company.routers(auth.authenticate),
-    ...hrProfile.routers(auth.authenticate),
-    // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
-    // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
-    { path: TASKS_PATH, router: task.routes(auth.authenticate) },
-    // Attendance cũng TRƯỚC /workspaces (cùng lý do với Task).
-    { path: ATTENDANCE_PATH, router: attendance.routes(auth.authenticate) },
-    { path: LEAVE_PATH, router: leave.router },
-    { path: '/workspaces', router: workspace.routes(auth.authenticate) },
-    { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
+    ...apiRouters({
+      auth,
+      company,
+      hrProfile,
+      payroll,
+      task,
+      attendance,
+      leave,
+      workspace,
+      notifications,
+    }),
     ...(auth.avatar ? [{ path: ME_PATH, router: auth.avatar.meRouter }] : []),
     ...chat.routers,
   ];
@@ -211,6 +207,7 @@ export function createContainer(d: ContainerDeps): Container {
     task,
     notifications,
     company,
+    payroll,
     attendance,
     leave,
     socketAuth,

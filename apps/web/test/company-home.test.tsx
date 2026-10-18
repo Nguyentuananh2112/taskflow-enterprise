@@ -53,6 +53,7 @@ describe('header công ty', () => {
       ['Bảng công của tôi', '/attendance'],
       ['Nghỉ phép', '/leave'],
       ['Hồ sơ của tôi', '/my-profile'],
+      ['Phiếu lương', '/payslips'],
       ['Trò chuyện', '/chat'], // Mốc 6 — thứ tự TL chốt; ≥ md là icon cạnh chuông, không ở hàng link
     ]);
     expect(screen.getByRole('button', { name: 'Menu' }).getAttribute('aria-expanded')).toBe('true');
@@ -76,6 +77,7 @@ describe('header công ty', () => {
       ['Trang chính', '/w'],
       ['Trò chuyện', '/chat'], // Admin cũng nhắn tin (ADR-143)
       ['Nhân sự', '/hr'],
+      ['Bảng lương', '/payroll'],
       ['Quản trị', '/admin'],
     ]);
   });

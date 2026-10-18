@@ -12,7 +12,7 @@ import {
   isWorkday,
   type WorkSchedule,
 } from '../domain/work-schedule';
-import type { ApprovedLeavePort } from './ports/approved-leave.port';
+import type { ApprovedLeaveDay, ApprovedLeavePort } from './ports/approved-leave.port';
 import type { IAttendanceEventStore } from './ports/attendance-event-store.port';
 import type { ICompanyTenurePort } from './ports/collaborators.port';
 import type { IRetentionWindow } from './ports/retention-window.port';
@@ -74,12 +74,14 @@ export function mergeLeavePart(prev: LeavePart | undefined, part: LeavePart): Le
 export async function summarizeUsers(
   d: AttendanceDeps,
   q: { userIds: readonly string[]; from: LocalDate; to: LocalDate },
+  /** Phép đã đọc sẵn (T-049: công tính lương dùng CÙNG một lần đọc phép cho ô ngày và các nửa — ADR-126). */
+  preloadedLeaves?: readonly ApprovedLeaveDay[],
 ): Promise<Map<string, AttendanceDayDto[]>> {
   const { userIds, from, to } = q;
   const [versions, holidays, leaves, events, tenures] = await Promise.all([
     d.calendar.scheduleVersions(),
     d.calendar.holidays({ from, to }),
-    d.leaves.approvedLeaves({ userIds, from, to }),
+    preloadedLeaves ?? d.leaves.approvedLeaves({ userIds, from, to }),
     d.events.listForUsers({ userIds, from, to }),
     d.tenures.tenuresOf({ userIds, from, to }),
   ]);

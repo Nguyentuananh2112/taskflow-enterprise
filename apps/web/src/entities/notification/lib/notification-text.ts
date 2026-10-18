@@ -51,6 +51,13 @@ export function notificationText(n: NotificationDto): string {
       return 'Đơn bổ sung giờ của bạn bị từ chối';
     case 'CORRECTION_CANCELLED':
       return `${who} đã hủy đơn bổ sung giờ`;
+    // Mốc 4 (payroll.md §4): KHÔNG số tiền — chi tiết ở trang Phiếu lương.
+    case 'PAYSLIP_PUBLISHED':
+      return 'Phiếu lương tháng của bạn đã có';
+    case 'PAYSLIP_REVISED':
+      return 'Phiếu lương của bạn vừa được điều chỉnh';
+    case 'PAYROLL_REMINDER':
+      return 'Nhắc: bảng lương tháng trước chưa phát hành';
   }
 }
 
@@ -79,5 +86,11 @@ export function notificationHref(n: NotificationDto): string {
     case 'CORRECTION_APPROVED':
     case 'CORRECTION_REJECTED':
       return '/attendance';
+    case 'PAYSLIP_PUBLISHED':
+    case 'PAYSLIP_REVISED':
+      // payroll.md §4: mở đúng tháng; kỳ chưa join được (phiếu hết hạn lưu) ⇒ phiếu mới nhất.
+      return n.payslip ? `/payslips/${n.payslip.period}` : '/payslips';
+    case 'PAYROLL_REMINDER':
+      return '/payroll';
   }
 }

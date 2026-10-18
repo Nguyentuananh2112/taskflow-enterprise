@@ -46,13 +46,16 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 | D7 HrAuditLog | 2 năm | **5 năm** (không chứa D1/D3) | 10 năm |
 | D12 / D14 trò chuyện (Mốc 6 — **người dùng chốt 17/10**) | — | **12 tháng** kể từ `created_at` (`CHAT_RETENTION_DAYS=365`); tin bị xóa: thân NULL **ngay**, blob ≤ 1 giờ; upload mồ côi 24 giờ; purge ws cascade | — |
 | D13 ảnh đại diện | — | tự xóa / bị gỡ / rời công ty ⇒ blob xóa sau **30 ngày** (đổi ảnh: bản cũ xóa khi version mới đã lên) | — |
-| D15 hồ sơ lương, phiếu lương (Mốc 4 — TL chốt 18/10) | — | **10 năm** kể từ kỳ lương — chứng từ kế toán (Luật Kế toán 2015 Đ.41, NĐ 174/2016 Đ.12); giữ cả sau khi nghỉ việc; ẩn danh tài khoản vẫn giữ tên trên phiếu; lý do sửa công (`overrideReason`) và lý do bản điều chỉnh (`revisionReason`) lưu cùng phiếu (kế toán xác nhận loại chứng từ trước go-live — R27 Q2). v1 chưa có job xóa — **backlog có hạn**: thêm bước retention D15 trước kỳ lương đầu tiên + 10 năm; bản backup còn thêm tới hết tầng giữ (R48) | — |
+| D15 hồ sơ lương, phiếu lương (Mốc 4 — TL chốt 18/10) | — | **10 năm** kể từ kỳ lương — chứng từ kế toán (Luật Kế toán 2015 Đ.41, NĐ 174/2016 Đ.12); giữ cả sau khi nghỉ việc; ẩn danh tài khoản vẫn giữ tên trên phiếu; lý do sửa công (`overrideReason`) và lý do bản điều chỉnh (`revisionReason`) lưu cùng phiếu (kế toán xác nhận loại chứng từ trước go-live — R27 Q2). v1 chưa có job xóa — **backlog có hạn**: thêm bước retention D15 trước kỳ lương đầu tiên + 10 năm; bản backup còn thêm tới hết tầng giữ (R48); kể cả audit `PAYROLL_*` (gồm `after.note`) — ngoài D7 / D7' | — |
+| D16 lịch sử xác nhận / đồng ý (T-075 — TL chốt 18/10) | — | **5 năm** kể từ `at` (`privacy_consent_events`, chỉ-thêm: xác nhận đã đọc thông báo, cấp / rút đồng ý lý do nghỉ — bằng chứng theo NĐ 13/2023 Đ.11); rút đồng ý ⇒ NULL lý do các đơn nghỉ PENDING của người đó ngay, đơn đã quyết giữ theo D3 | — |
 
 **Khuyến nghị B** vì:
 - 13 tháng phủ thời hiệu tranh chấp 1 năm cộng 1 tháng xử lý;
 - dữ liệu nhạy cảm D3 không sống lâu hơn nhu cầu đối chiếu;
 - app giữ đủ 2 năm cho HR xem lại và xuất lại, nghĩa vụ 5–10 năm do hồ sơ CSV của kế toán gánh;
 - D7 dài hơn D2 để giữ trách nhiệm giải trình cho thao tác quản trị, mà không giữ lại dữ liệu nhạy cảm.
+
+**D15 — audit lương (Mốc 4, TL chốt 18/10):** phiếu lương là chứng từ kế toán ⇒ không theo D2 / D7. Lý do sửa công / lý do bản điều chỉnh (có thể nhắc sức khỏe) nằm trên phiếu và trong `after.note` của audit `PAYROLL_*` ⇒ giữ cùng hạn phiếu (không scrub theo D3). Ranh giới kỹ thuật: D7 / D7' bỏ qua `action LIKE 'PAYROLL\_%'` (RD-11). Giảm thiểu: form sửa công nhắc "Nhân viên sẽ thấy lý do này — không ghi chẩn đoán/bệnh"; phiếu chỉ chính nhân viên, Kế toán, Admin đọc (audit lương chỉ Admin); không vào thông báo / log / Sentry.
 
 Hạn chế của B, cần người dùng chấp nhận: sau 2 năm HR không xuất lại được bảng công cũ từ app; phải lấy từ kho CSV của kế toán.
 

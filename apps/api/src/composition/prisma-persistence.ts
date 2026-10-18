@@ -35,6 +35,7 @@ import {
   PrismaTaskProjectStore,
 } from '../modules/workspace/infrastructure/persistence/prisma/prisma-task-ports';
 import { PrismaEmployeeProfiles } from '../modules/hr-profile/infrastructure/prisma/prisma-employee-profiles';
+import { createPrismaPayrollRepositories } from '../modules/payroll/payroll.module';
 import { prismaLeaveRepositories } from './leave-adapters';
 import { notificationContextFrom } from './notification-adapters';
 import { prismaMaintenance } from './retention-stores';
@@ -66,6 +67,7 @@ export function createPrismaPersistence(d: {
   const userRefs = new PrismaUserRefReader(db);
   const leave = prismaLeaveRepositories(db);
   const profiles = new PrismaEmployeeProfiles(db);
+  const payroll = createPrismaPayrollRepositories(db);
   return {
     kind: 'prisma',
     modules: allModules('prisma'),
@@ -91,10 +93,15 @@ export function createPrismaPersistence(d: {
       users: userRefs,
       audit: new PrismaTaskAuditLogRepository(db),
     },
+    payroll,
     // Cùng `db` ⇒ thông báo ghi trong transaction của leave / attendance / workspace (ADR-123).
     notifications: {
       store: new PrismaNotificationStore(db),
-      context: notificationContextFrom({ users: userRefs, leaves: leave.readModel }),
+      context: notificationContextFrom({
+        users: userRefs,
+        leaves: leave.readModel,
+        payslips: payroll.store,
+      }),
     },
     company: {
       company: new PrismaCompany(db),

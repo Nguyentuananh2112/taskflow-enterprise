@@ -42,6 +42,11 @@ export function HrLeaveQueue({ today, isAdmin, viewerId }: Props) {
           onChange={(e) => setFilter(e.target.value as Filter)}
         />
       </div>
+      {/* payroll.md ADR-126: phép đã duyệt THẮNG lượt chấm khi tính lương. */}
+      <p className="text-xs text-text-muted">
+        Nhân viên đã chấm công nhưng có đơn nghỉ không lương được duyệt ⇒ ngày đó không tính công.
+        Nếu thực tế nhân viên đi làm, hãy thu hồi đơn.
+      </p>
       {list.isError ? (
         <EmptyState
           title="Không tải được danh sách đơn"

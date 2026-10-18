@@ -118,6 +118,20 @@ enum NotificationType {
   CORRECTION_APPROVED
   CORRECTION_REJECTED
   CORRECTION_CANCELLED
+  PAYSLIP_PUBLISHED // Mốc 4 (payroll.md §4): phiếu tháng đã phát hành — không số tiền
+  PAYSLIP_REVISED // bản điều chỉnh phiếu của bạn
+  PAYROLL_REMINDER // nhắc kế toán từ ngày 5 tới khi phát hành
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum PayslipSection {
+  INCOME
+  BONUS
+  DEDUCTION
 }
 
 enum CorrectionStatus {
@@ -172,11 +186,19 @@ model User {
   employeeProfile EmployeeProfile?  @relation("ProfileUser")
   profilesUpdated EmployeeProfile[] @relation("ProfileUpdater")
 
+  // Mốc 4 (T-048, payroll.md §3) — Restrict: phiếu của người đã nghỉ giữ theo hạn lưu lương
+  payrollSettingsUpdated PayrollSettings[] @relation("PayrollSettingsUpdater")
+  salaryProfiles         SalaryProfile[]   @relation("SalaryProfileUser")
+  salaryProfilesCreated  SalaryProfile[]   @relation("SalaryProfileCreator")
+  payrollRunsCreated     PayrollRun[]      @relation("PayrollRunCreator")
+  payrollRunsPublished   PayrollRun[]      @relation("PayrollRunPublisher")
+  payslips               Payslip[]         @relation("PayslipUser")
+
   // Mốc 5 (T-055, ADR-129)
-  correctionRequests AttendanceCorrectionRequest[] @relation("CorrectionRequester")
-  correctionsDecided AttendanceCorrectionRequest[] @relation("CorrectionDecider")
+  correctionRequests       AttendanceCorrectionRequest[] @relation("CorrectionRequester")
+  correctionsDecided       AttendanceCorrectionRequest[] @relation("CorrectionDecider")
   // Mốc 6 — trò chuyện (T-069a, ADR-143/144): mọi tham chiếu tới users là Restrict (v1 không xóa cứng user).
-  chatConversationsCreated ChatConversation[] @relation("ChatConversationCreator")
+  chatConversationsCreated ChatConversation[]            @relation("ChatConversationCreator")
   chatParticipations       ChatParticipant[]
   chatReadStates           ChatReadState[]
   chatMessagesSent         ChatMessage[]
@@ -743,4 +765,116 @@ model ChatAttachment {
   @@index([previewKey]) // files-sweep existingBlobKeys (B M3)
   @@index([thumbKey])
   @@map("chat_attachments")
+}
+
+// ---------------------------------------------------------------- Mốc 4: phiếu lương (payroll.md v4 §3, T-048)
+// Tiền BIGINT đồng (ADR-125); công là số nguyên NỬA ngày. CHECK + trigger bất biến: SQL tay trong migration 7.
+// NGOÀI mọi bước retention hiện có (RD-11) — hạn lưu riêng chốt cùng R27.
+
+/// Đúng MỘT dòng (CHECK id = 1) — migration INSERT (1, 500 000).
+model PayrollSettings {
+  id               Int      @id @db.SmallInt
+  seniorityPerYear BigInt   @default(500000) @map("seniority_per_year")
+  version          Int      @default(1)
+  updatedById      String?  @map("updated_by_id") @db.Uuid // NULL = giá trị migration
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User? @relation("PayrollSettingsUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([updatedById])
+  @@map("payroll_settings")
+}
+
+/// Hồ sơ lương theo phiên bản từ kỳ `effective_from` (không có hireDate — ADR-128). Chỉ thêm, không sửa.
+model SalaryProfile {
+  id            String   @id @db.Uuid // UUIDv7 từ app
+  userId        String   @map("user_id") @db.Uuid
+  effectiveFrom String   @map("effective_from") @db.Char(7) // YYYY-MM
+  level         String   @db.VarChar(32)
+  baseSalary    BigInt   @map("base_salary")
+  createdById   String   @map("created_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user      User @relation("SalaryProfileUser", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy User @relation("SalaryProfileCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([userId, effectiveFrom])
+  @@index([createdById])
+  @@map("salary_profiles")
+}
+
+/// Bảng lương tháng — tạo nháp idempotent (unique period); PUBLISHED ⇒ trigger cấm mọi UPDATE / DELETE.
+model PayrollRun {
+  id               String           @id @db.Uuid
+  period           String           @unique @db.Char(7) // YYYY-MM
+  status           PayrollRunStatus @default(DRAFT)
+  standardDays     Int              @map("standard_days") @db.SmallInt // công chuẩn S — ảnh chụp
+  seniorityPerYear BigInt           @map("seniority_per_year") // ảnh chụp lúc tạo / tính lại nháp
+  companyName      String?          @map("company_name") @db.VarChar(100) // ảnh chụp lúc phát hành
+  publishedAt      DateTime?        @map("published_at") @db.Timestamptz(3)
+  publishedById    String?          @map("published_by_id") @db.Uuid
+  createdById      String           @map("created_by_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  publishedBy User?     @relation("PayrollRunPublisher", fields: [publishedById], references: [id], onDelete: Restrict)
+  createdBy   User      @relation("PayrollRunCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  payslips    Payslip[]
+
+  @@index([publishedById])
+  @@index([createdById])
+  @@map("payroll_runs")
+}
+
+/// Phiếu — mọi số là ẢNH CHỤP (ADR-125). Bản điều chỉnh = dòng mới `revision + 1`; bản cũ chỉ được đặt `superseded_at`.
+model Payslip {
+  id                 String    @id @db.Uuid
+  runId              String    @map("run_id") @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  revision           Int       @default(1)
+  lockVersion        Int       @default(1) @map("lock_version")
+  fullName           String    @map("full_name") @db.VarChar(100)
+  level              String?   @db.VarChar(32) // NULL = thiếu hồ sơ lương (chặn phát hành)
+  baseSalary         BigInt?   @map("base_salary")
+  hireDate           DateTime? @map("hire_date") @db.Date
+  seniorityYears     Int       @default(0) @map("seniority_years") @db.SmallInt
+  seniorityAllowance BigInt    @default(0) @map("seniority_allowance")
+  paidHalfDays       Int       @map("paid_half_days") @db.SmallInt
+  overrideHalfDays   Int?      @map("override_half_days") @db.SmallInt
+  overrideReason     String?   @map("override_reason") @db.VarChar(500)
+  revisionReason     String?   @map("revision_reason") @db.VarChar(500)
+  salaryByDays       BigInt    @map("salary_by_days")
+  incomeTotal        BigInt    @map("income_total")
+  bonusTotal         BigInt    @map("bonus_total")
+  deductionTotal     BigInt    @map("deduction_total")
+  netPay             BigInt    @map("net_pay") // có thể âm trên NHÁP (chặn phát hành)
+  note               String?   @db.VarChar(1000)
+  hasSickDays        Boolean   @default(false) @map("has_sick_days")
+  supersededAt       DateTime? @map("superseded_at") @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  run   PayrollRun    @relation(fields: [runId], references: [id], onDelete: Restrict)
+  user  User          @relation("PayslipUser", fields: [userId], references: [id], onDelete: Restrict)
+  lines PayslipLine[]
+
+  @@unique([runId, userId, revision])
+  @@unique([runId, userId], map: "payslips_current_key", where: raw("superseded_at IS NULL"))
+  @@index([userId])
+  @@map("payslips")
+}
+
+/// Dòng kế toán gõ tay (thâm niên KHÔNG là dòng — cột `seniority_allowance`). ≤ 50 / phiếu ở contract.
+model PayslipLine {
+  id        String         @id @db.Uuid
+  payslipId String         @map("payslip_id") @db.Uuid
+  section   PayslipSection
+  label     String         @db.VarChar(120)
+  amount    BigInt
+  sortOrder Int            @map("sort_order") @db.SmallInt
+
+  payslip Payslip @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@unique([payslipId, sortOrder])
+  @@map("payslip_lines")
 }

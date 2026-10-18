@@ -32,6 +32,11 @@ import { DecideCorrectionUseCases } from './application/use-cases/decide-correct
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from './application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
+import {
+  payrollDaysFor,
+  payrollMembersOf,
+  type PayrollPeriodDays,
+} from './application/payroll-days';
 import { scheduleTimeZoneNow } from './application/schedule-timezone';
 import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
 import { InMemoryCorrectionStore } from './infrastructure/persistence/in-memory/in-memory-corrections';
@@ -112,6 +117,13 @@ export interface AttendanceModule {
    * (CLK-HR-08: lịch múi Berlin ⇒ ngày / 06:00 theo Berlin).
    */
   timeZoneNow(): Promise<string>;
+  /** Port công tính lương cho module payroll (payroll.md ADR-126/127, T-049). */
+  payroll: {
+    payrollDaysFor(q: { userIds: readonly string[]; period: string }): Promise<PayrollPeriodDays>;
+    payrollMembersOf(period: string): Promise<string[]>;
+    /** Mọi người TỪNG có nhiệm kỳ EMPLOYEE (màn hồ sơ lương). */
+    everEmployed(): Promise<string[]>;
+  };
   /**
    * Hoàn tất nghỉ việc / nâng Admin (company-level ADR-137 · hr-extended ADR-129): mọi đơn bổ sung giờ PENDING ⇒ CANCELLED.
    * Gọi TRONG transaction của bên gọi (đã giữ `punch:<user>`). Trả số đơn đã hủy.
@@ -165,6 +177,17 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
       }),
     workCalendar: new AttendanceWorkCalendar(d.repos.calendar),
     timeZoneNow: () => scheduleTimeZoneNow(d.repos.calendar, d.clock),
+    payroll: {
+      payrollDaysFor: (q) => payrollDaysFor(deps, q),
+      payrollMembersOf: (period) => payrollMembersOf(deps, period),
+      everEmployed: async () => [
+        ...new Set(
+          (await d.tenures.tenuresOf({ from: '1900-01-01', to: '9999-12-31' })).map(
+            (t) => t.userId,
+          ),
+        ),
+      ],
+    },
     cancelPendingCorrections: async (userId) =>
       (await d.repos.corrections.cancelPendingOf(userId, d.clock.now())).length,
   };

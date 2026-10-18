@@ -20,6 +20,10 @@ import { MockAvatars } from './mock-avatars';
 import { MockChat } from './mock-chat';
 import { MockDb, type MockDbOptions } from './mock-db';
 import { MockHr } from './mock-hr';
+import { MockPayroll } from './mock-payroll';
+import { createPayrollEditHandlers } from './payroll-edit-handlers';
+import { createPayrollRunHandlers } from './payroll-run-handlers';
+import { createPayslipHandlers } from './payslip-handlers';
 import { createMemberHandlers } from './member-handlers';
 import { MockNotifications, createNotificationHandlers } from './notification-handlers';
 import { createPolicyHandlers } from './policy-handlers';
@@ -65,6 +69,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
   const leave = new MockLeave(attendance, options.now ?? Date.now);
   leave.hireDateOf = (userId) => db.company.profiles.get(userId).hireDate;
   const hr = new MockHr(db, attendance, leave);
+  const payroll = new MockPayroll(hr);
   const avatars = new MockAvatars(baseUrl, options.now ?? Date.now);
   board.avatarOf = (userId) => avatars.urlOf(userId, '64');
   db.company.avatarOf = board.avatarOf;
@@ -76,6 +81,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
     notifications,
     leave,
     hr,
+    payroll,
     avatars,
     chat,
     handlers: [
@@ -103,6 +109,9 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createEmployeeHandlers(baseUrl, hr),
       ...createProfileHandlers(baseUrl, hr),
       ...createLeaveHandlers(baseUrl, db, leave),
+      ...createPayslipHandlers(baseUrl, payroll, db),
+      ...createPayrollEditHandlers(baseUrl, payroll, db),
+      ...createPayrollRunHandlers(baseUrl, payroll, db, attendance.today),
     ],
   };
 }
