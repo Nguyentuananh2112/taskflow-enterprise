@@ -1,9 +1,10 @@
 import type { AuthTokenDto, UserDto } from '@taskflow/contracts/auth';
 
-import { setAuthHooks, type AuthHooks } from '@/shared/api';
+import { isApiError, setAuthHooks, type AuthHooks } from '@/shared/api';
 
 import { authApi, type AuthApi } from '../api/auth.api';
 import { openAuthChannel, type AuthChannel, type AuthMessage } from './auth-channel';
+import { retryAfterOf } from './rate-limit';
 import { createRefresher, type LockRequester } from './refresh';
 import { sessionStore } from './session-store';
 import { tokenStore } from './token-store';
@@ -79,15 +80,22 @@ export function createSessionController(deps: SessionDeps) {
    * mở request ngay trong lượt render đầu (không chờ effect sau khi cả cây hydrate), `bootstrap` dùng lại đúng promise
    * đó. Dùng MỘT lần; bỏ khi phiên kết thúc / tab khác đăng nhập để không áp kết quả cũ.
    */
-  type Restored = { kind: 'authenticated'; user: UserDto } | { kind: 'anonymous' | 'unreachable' };
+  type Restored =
+    | { kind: 'authenticated'; user: UserDto }
+    | { kind: 'anonymous' | 'unreachable' }
+    | { kind: 'rate_limited'; retryAfterSec: number };
   let restoring: Promise<Restored> | null = null;
   function restore(): Promise<Restored> {
     restoring ??= (async (): Promise<Restored> => {
       try {
         if (!(await renew())) return { kind: 'anonymous' };
         return { kind: 'authenticated', user: (await deps.api.me()).user };
-      } catch {
-        return { kind: 'unreachable' }; // mạng/5xx: màn "Không kết nối được" + Thử lại
+      } catch (error) {
+        // 429 (hạn mức refresh / me theo IP) ⇒ đếm ngược rồi tự thử lại; còn lại (mạng/5xx) ⇒ "Không kết nối được".
+        if (isApiError(error, 'RATE_LIMITED')) {
+          return { kind: 'rate_limited', retryAfterSec: retryAfterOf(error) };
+        }
+        return { kind: 'unreachable' };
       }
     })();
     return restoring;
@@ -141,7 +149,7 @@ export function createSessionController(deps: SessionDeps) {
     async bootstrap(): Promise<void> {
       controller.start();
       const { status } = sessionStore.get();
-      if (status !== 'idle' && status !== 'unreachable') return;
+      if (status !== 'idle' && status !== 'unreachable' && status !== 'rate_limited') return;
       if (logoutPending) {
         set('anonymous', null); // người dùng đã chọn đăng xuất — không đăng nhập lại im lặng
         return;
@@ -153,7 +161,13 @@ export function createSessionController(deps: SessionDeps) {
       // Phiên đã đổi trong lúc chờ (đăng nhập / đăng xuất ở tab này) ⇒ không ghi đè.
       if (sessionStore.get().status !== 'bootstrapping') return;
       if (result.kind === 'authenticated') set('authenticated', result.user);
-      else set(result.kind, null);
+      else if (result.kind === 'rate_limited') {
+        sessionStore.set({
+          status: 'rate_limited',
+          user: null,
+          retryAt: Date.now() + result.retryAfterSec * 1000,
+        });
+      } else set(result.kind, null);
     },
 
     /** Sau đăng nhập / kích hoạt tài khoản thành công. */

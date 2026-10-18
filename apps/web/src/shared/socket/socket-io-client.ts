@@ -60,6 +60,11 @@ export function createSocketIoClient({
     transports: ['websocket'],
     autoConnect: false,
     withCredentials: false,
+    // Nối lại TỰ ĐỘNG của socket.io (mất mạng / server khởi động lại): trần 30 s như backoff của ta + giữ ngẫu nhiên ⇒
+    // các tab không dồn handshake cùng lúc làm hạn mức handshake theo IP không xả kịp (G phân tích, T-076).
+    reconnectionDelay: RECONNECT_BASE_MS,
+    reconnectionDelayMax: RECONNECT_MAX_MS,
+    randomizationFactor: 0.5,
     auth: (cb) => cb({ token: auth.token(), clientId }),
     ...(extraHeaders ? { extraHeaders: { ...extraHeaders } } : {}),
   });
