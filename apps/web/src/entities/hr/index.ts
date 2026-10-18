@@ -10,6 +10,7 @@ export {
   useHrEvents,
   useHrLeaveRequests,
   useHrPendingLeaveCount,
+  useLeavePolicy,
   useLeaveBalances,
   useSchedules,
   useTimesheet,

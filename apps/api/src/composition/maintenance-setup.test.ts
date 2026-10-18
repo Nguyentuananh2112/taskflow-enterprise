@@ -10,7 +10,12 @@ import {
   testEnvVars,
 } from '../../test/support';
 import { loadEnv } from '../config/env';
-import { isRetentionActive, maintenanceJobs, retentionCutoffFor } from './maintenance-setup';
+import {
+  isRetentionActive,
+  LEAVE_CARRYOVER_JOB,
+  maintenanceJobs,
+  retentionCutoffFor,
+} from './maintenance-setup';
 import { recordsRetentionCutoff } from './retention-job';
 import type { Persistence } from './persistence';
 
@@ -22,7 +27,12 @@ const prismaLike = {
   workspacePurger: {},
   refreshTokenPurger: { purgeExpired: noop },
   retention: {
-    attendance: { scrubClientInfo: noop, deleteEvents: noop },
+    attendance: {
+      scrubClientInfo: noop,
+      deleteEvents: noop,
+      deleteCorrections: noop,
+      scrubCorrectionReasons: noop,
+    },
     leave: {
       scrubReasons: noop,
       deleteRequestsBeforeYear: noop,
@@ -30,6 +40,7 @@ const prismaLike = {
     },
     company: { deleteDepartures: noop, deleteHrAuditLogs: noop, scrubHrAuditNotes: noop },
     notifications: { deleteNotifications: noop },
+    hrProfile: { deleteProfiles: noop },
     tryLock: () => Promise.resolve(true),
   },
 } as unknown as Persistence;
@@ -99,7 +110,12 @@ describe('maintenanceJobs — đồng hồ của từng job (R31)', () => {
       refreshTokenPurger: { purgeExpired: record('tokenCutoff') },
       retention: {
         ...(prismaLike.retention as object),
-        attendance: { scrubClientInfo: noop, deleteEvents: record('eventsCutoff') },
+        attendance: {
+          scrubClientInfo: noop,
+          deleteEvents: record('eventsCutoff'),
+          deleteCorrections: noop,
+          scrubCorrectionReasons: noop,
+        },
       },
     } as unknown as Persistence;
     const real = new FakeClock('2026-12-01T00:00:00.000Z');
@@ -153,5 +169,29 @@ describe('isRetentionActive / retentionCutoffFor (T-047 — mốc OUTSIDE_RETENT
     expect(cutoff()).toBe(recordsRetentionCutoff({ recordsDays: 400 }, business.now()).cutoffDate);
     business.advance(24 * 3600_000);
     expect(cutoff()).toBe('2025-10-14');
+  });
+});
+
+describe('T-057: job leave-carryover', () => {
+  const jobs = (vars: NodeJS.ProcessEnv) =>
+    maintenanceJobs({
+      persistence: prismaLike,
+      env: loadEnv(vars),
+      clock: new FakeClock(),
+      businessClock: new FakeClock(),
+      logger: new SpyLogger(),
+      carryover: { runOnce: noop },
+    });
+
+  it('LUÔN đăng ký (kể cả local/test không cờ — luật nghiệp vụ): 1 giờ + jitter 5 s, lượt đầu sau 5–10 s', () => {
+    const job = jobs(testEnvVars({ APP_ENV: 'test' })).find((j) => j.name === LEAVE_CARRYOVER_JOB);
+    expect(job).toMatchObject({ intervalMs: 3_600_000, jitterMs: 5_000, firstRunAfterMs: 5_000 });
+  });
+
+  it('LEAVE_CARRYOVER_INTERVAL_MS (test) ⇒ đúng interval, không jitter', () => {
+    const job = jobs(testEnvVars({ APP_ENV: 'test', LEAVE_CARRYOVER_INTERVAL_MS: '2000' })).find(
+      (j) => j.name === LEAVE_CARRYOVER_JOB,
+    );
+    expect(job).toMatchObject({ intervalMs: 2_000, jitterMs: 0 });
   });
 });

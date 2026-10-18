@@ -1,6 +1,7 @@
 import type { CalendarDate, CalendarDay, HalfDays, LeaveDayPart } from '../../domain/leave-days';
 import type { LeaveType } from '../../domain/leave-balance';
 import type { LeaveStatus } from '../../domain/leave-status';
+import type { LeavePolicy } from '../../domain/leave-policy';
 import type { LeaveTenure } from '../../domain/leave-tenure';
 
 // Phạm vi CÔNG TY (company-level.md ADR-133/136): một công ty, không `workspaceId` ở bảng / khóa / port.
@@ -44,8 +45,11 @@ export interface LeaveRequestRecord {
 }
 
 export interface LeaveBalanceRecord {
-  readonly entitled: HalfDays;
+  /** T-057 (ADR-131): `null` = theo chính sách năm (tính khi đọc); khác null = ghi đè cố định. */
+  readonly entitled: HalfDays | null;
   readonly adjustment: HalfDays;
+  /** Phép năm trước chuyển sang đã CHỤP; `null` = chưa chụp (đọc ⇒ tính tạm, `carriedFinal: false`). */
+  readonly carried: HalfDays | null;
 }
 
 export interface ILeaveRepository {
@@ -63,9 +67,54 @@ export interface ILeaveRepository {
   add(record: LeaveRequestRecord): Promise<void>;
   /** UPDATE có điều kiện `version = expectedVersion`; `false` ⇒ 409 `version_conflict`. */
   save(record: LeaveRequestRecord, expectedVersion: number): Promise<boolean>;
-  /** Tạo lười `entitled 24, adjustment 0` bằng `INSERT … ON CONFLICT DO NOTHING` rồi đọc (LB-01). */
+  /** Tạo lười (entitled NULL, adjustment 0, carried NULL) bằng `INSERT … ON CONFLICT DO NOTHING` rồi đọc (LB-01). */
   getOrCreateBalance(userId: string, year: number): Promise<LeaveBalanceRecord>;
   setBalanceAdjustment(userId: string, year: number, adjustment: HalfDays): Promise<void>;
+  /**
+   * Chụp phép chuyển sang (ADR-131): `ifNull` ⇒ chỉ ghi khi đang NULL (đường ghi / job 01/01, idempotent);
+   * `overwrite` ⇒ tính lại khi năm Y−1 đổi sau khi đã chụp (PATCH Y−1, duyệt muộn đơn Y−1). Tạo dòng nếu chưa có.
+   */
+  setCarried(
+    userId: string,
+    year: number,
+    carried: HalfDays,
+    mode: 'ifNull' | 'overwrite',
+  ): Promise<void>;
+}
+
+// ---------------------------------------------------------------- chính sách phép (T-057, ADR-131)
+
+export interface LeavePolicyRow {
+  year: number;
+  policy: LeavePolicy;
+  version: number;
+  updatedById: string;
+  updatedAt: Date;
+}
+
+export interface ILeavePolicyStore {
+  /**
+   * `taskflow:leave-policy` — bậc 1 của bảng khóa ADR-136: mọi lệnh ghi phép lấy bản `shared` TRƯỚC
+   * `taskflow:leave:<user>`; `PUT leave/policy` lấy bản `exclusive` rồi mới chốt ghi HR (row, bậc 5).
+   */
+  lock(mode: 'shared' | 'exclusive'): Promise<void>;
+  /** Mọi dòng (ít — một dòng mỗi năm), sắp theo năm. */
+  list(): Promise<LeavePolicyRow[]>;
+  /**
+   * Ghi cả bộ cho `year` khi `version` khớp (`expectedVersion` 0 = chưa có dòng ⇒ INSERT). Lệch ⇒ `null` (409).
+   */
+  put(input: {
+    year: number;
+    policy: LeavePolicy;
+    expectedVersion: number;
+    updatedById: string;
+    at: Date;
+  }): Promise<LeavePolicyRow | null>;
+}
+
+/** Ngày vào công ty (hồ sơ — T-054 sở hữu, adapter nối ở composition; chưa có ⇒ null cho mọi người). */
+export interface ILeaveHireDates {
+  hireDateOf(userId: string): Promise<CalendarDate | null>;
 }
 
 // ---------------------------------------------------------------- công ty & quyền (adapter: company, T-061)
@@ -142,14 +191,22 @@ export interface ILeaveNotifier {
 }
 
 export type HrAuditAction =
-  'LEAVE_SUBMIT' | 'LEAVE_CANCEL' | 'LEAVE_DECIDE' | 'LEAVE_REVOKE' | 'BALANCE_ADJUST';
+  | 'LEAVE_SUBMIT'
+  | 'LEAVE_CANCEL'
+  | 'LEAVE_DECIDE'
+  | 'LEAVE_REVOKE'
+  | 'BALANCE_ADJUST'
+  // T-057: HR đặt chính sách phép một năm (không có người bị tác động ⇒ targetUserId null).
+  | 'POLICY_SET'
+  // T-057: báo cáo phép .xlsx (ADR-130).
+  | 'EXPORT';
 
 /** `HrAuditLog` chỉ thêm. `before`/`after` KHÔNG chứa `reason` của đơn (B-H2). */
 export interface IHrAudit {
   record(input: {
     actorId: string;
     action: HrAuditAction;
-    targetUserId: string;
+    targetUserId: string | null;
     refId: string | null;
     before: Readonly<Record<string, unknown>> | null;
     after: Readonly<Record<string, unknown>> | null;

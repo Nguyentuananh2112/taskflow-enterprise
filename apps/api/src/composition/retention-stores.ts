@@ -6,12 +6,16 @@ import { PrismaAttendanceRetention } from '../modules/attendance/infrastructure/
 import { PrismaLeaveRetention } from '../modules/leave/infrastructure/persistence/prisma/prisma-leave-retention';
 import { PrismaNotificationRetention } from '../modules/notifications/infrastructure/prisma/prisma-notification-retention';
 import { PrismaCompanyRetention } from '../modules/company/infrastructure/prisma/prisma-company-retention';
+import { PrismaEmployeeProfileRetention } from '../modules/hr-profile/infrastructure/prisma/prisma-employee-profiles';
 
 /** Bước dọn của từng module (chỉ Prisma) — khớp cấu trúc các lớp `Prisma*Retention`. */
 export interface RetentionStores {
   attendance: {
     scrubClientInfo(cutoff: Date, limit: number): Promise<number>;
     deleteEvents(cutoffDate: string, limit: number): Promise<number>;
+    /** D9 / D9' (Mốc 5, T-055): đơn bổ sung giờ. */
+    deleteCorrections(cutoffDate: string, limit: number): Promise<number>;
+    scrubCorrectionReasons(cutoffDate: string, limit: number): Promise<number>;
   };
   leave: {
     scrubReasons(cutoffDate: string, limit: number): Promise<number>;
@@ -24,6 +28,8 @@ export interface RetentionStores {
     scrubHrAuditNotes(cutoff: Date, limit: number): Promise<number>;
   };
   notifications: { deleteNotifications(cutoff: Date, limit: number): Promise<number> };
+  /** D8 (Mốc 5, T-054): hồ sơ của người đã nghỉ quá mốc D5. */
+  hrProfile: { deleteProfiles(cutoffDate: string, limit: number): Promise<number> };
   /** Câu ĐẦU của mỗi transaction lô; `false` ⇒ instance khác đang chạy. */
   tryLock(): Promise<boolean>;
 }
@@ -46,6 +52,7 @@ export function prismaRetentionStores(db: () => Prisma.TransactionClient): Reten
     leave: new PrismaLeaveRetention(db),
     company: new PrismaCompanyRetention(db),
     notifications: new PrismaNotificationRetention(db),
+    hrProfile: new PrismaEmployeeProfileRetention(db),
     tryLock: prismaRetentionLock(db),
   };
 }

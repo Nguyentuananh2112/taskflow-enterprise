@@ -45,6 +45,17 @@ export interface LeaveNotifierPort {
 
 export interface AttendanceNotifierPort {
   attendanceAdjusted(q: { recipientId: string; eventId: string; actorId: string }): Promise<void>;
+  /** Đơn bổ sung giờ (T-056) — như leave: `hr` ⇒ mọi `hr:manage` hiện tại trừ actor; `refId` = id đơn. */
+  notify(input: {
+    type:
+      | 'CORRECTION_SUBMITTED'
+      | 'CORRECTION_APPROVED'
+      | 'CORRECTION_REJECTED'
+      | 'CORRECTION_CANCELLED';
+    requestId: string;
+    actorId: string;
+    recipient: { kind: 'user'; userId: string } | { kind: 'hr' };
+  }): Promise<void>;
 }
 
 type Publisher = Pick<NotificationPublisher, 'notify'>;
@@ -67,5 +78,7 @@ export function attendanceNotifierFrom(publisher: Publisher): AttendanceNotifier
         actorId,
         recipient: { kind: 'user', userId: recipientId },
       }),
+    notify: ({ type, requestId, actorId, recipient }) =>
+      publisher.notify({ type, refId: requestId, actorId, recipient }),
   };
 }

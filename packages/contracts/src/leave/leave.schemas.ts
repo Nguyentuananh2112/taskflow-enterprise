@@ -11,6 +11,7 @@ import {
   Version,
 } from '../common/primitives';
 import { LeaveDayPart, LeaveStatus, LeaveType } from '../hr/hr.schemas';
+import { LeaveBalanceBreakdown } from './leave-policy.schemas';
 
 // Nghỉ phép (T-039, thiết kế attendance-leave.md §2, §5, §9; hợp đồng web chốt với E/H). Số ngày là thập phân bước
 // 0,5 (server đếm bằng số nguyên nửa ngày). Enum lấy từ hr.schemas (B) — không khai báo lại.
@@ -152,15 +153,19 @@ export const AdjustLeaveBalanceBody = z.strictObject({
 });
 export type AdjustLeaveBalanceBody = z.infer<typeof AdjustLeaveBalanceBody>;
 
-export const LeaveBalanceDto = z.object({
-  year: z.int(),
-  entitledDays: z.number(),
-  adjustmentDays: z.number(),
-  usedDays: z.number().min(0),
-  pendingDays: z.number().min(0),
-  /** Có thể âm (Q4). */
-  remainingDays: z.number(),
-});
+/** Giữ trường cũ (Mốc 3) + phân rã của T-057 (ADR-131). */
+export const LeaveBalanceDto = z
+  .object({
+    year: z.int(),
+    /** Phép năm hiệu lực (theo chính sách hoặc ghi đè) — 0 khi năm không giao nhiệm kỳ nào. */
+    entitledDays: z.number(),
+    adjustmentDays: z.number(),
+    usedDays: z.number().min(0),
+    pendingDays: z.number().min(0),
+    /** Có thể âm (Q4). */
+    remainingDays: z.number(),
+  })
+  .extend(LeaveBalanceBreakdown.shape);
 export type LeaveBalanceDto = z.infer<typeof LeaveBalanceDto>;
 
 export const LeaveBalanceRowDto = LeaveBalanceDto.extend({ userId: Uuid, user: UserRefDto });

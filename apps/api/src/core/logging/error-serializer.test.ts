@@ -100,4 +100,16 @@ describe('serializeError — allow-list (T-031 mục 0)', () => {
     expect(scrubText(`jwt ${'a'.repeat(40)}`)).toBe('jwt [REDACTED]');
     expect(scrubText('x'.repeat(2_000)).length).toBeLessThan(1_100);
   });
+
+  it('SEC-PAY-14: Postgres nhắc lại giá trị gốc (khóa trùng, ngoài miền, sai cú pháp kiểu) ⇒ che giá trị, giữ tên cột', () => {
+    expect(scrubText('Key (user_id, base_salary)=(abc, 9876543) already exists.')).toBe(
+      'Key (user_id, base_salary)=([REDACTED]) already exists.',
+    );
+    expect(scrubText('value "98765430000000000000" is out of range for type bigint')).toBe(
+      'value "[REDACTED]" is out of range for type bigint',
+    );
+    expect(scrubText('invalid input syntax for type bigint: "7654321.5"')).toBe(
+      'invalid input syntax for type bigint: "[REDACTED]"',
+    );
+  });
 });

@@ -21,7 +21,8 @@ describe('LeaveCommands.submit (test-spec §2, §3)', () => {
       userId: U.Mia,
       reason: 'về quê',
     });
-    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
+    // ADR-131 + ADR-136: policy SHARED (bậc 1) TRƯỚC leave:<user> (bậc 3).
+    expect(h.locks).toEqual(['taskflow:leave-policy:shared', `taskflow:leave:${U.Mia}`]);
     expect(h.notifier.sent).toEqual([
       {
         type: 'LEAVE_SUBMITTED',
@@ -157,7 +158,8 @@ describe('LeaveCommands — HR duyệt / từ chối (test-spec §3)', () => {
       decidedAt: '2026-11-17T03:00:00.000Z',
       days: 1,
     });
-    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
+    // ADR-131 + ADR-136: policy SHARED (bậc 1) TRƯỚC leave:<user> (bậc 3).
+    expect(h.locks).toEqual(['taskflow:leave-policy:shared', `taskflow:leave:${U.Mia}`]);
     expect(h.notifier.sent).toEqual([
       {
         type: 'LEAVE_APPROVED',
@@ -442,11 +444,14 @@ describe('LeaveCommands.adjustBalance (test-spec §4)', () => {
   it('LB-04: Hana chỉnh số dư của Mia ⇒ audit BALANCE_ADJUST trước/sau, khóa (ws, Mia)', async () => {
     const h = await createLeaveHarness();
     await h.leave.adjustBalance(h.as(U.Hana), { userId: U.Mia, year: 2026, adjustment: -3 });
+    // T-057: entitled NULL = theo chính sách; năm 2026 đã bắt đầu ⇒ PATCH chụp carried (mặc định tắt ⇒ 0).
     expect(await h.requests.getOrCreateBalance(U.Mia, 2026)).toEqual({
-      entitled: 24,
+      entitled: null,
       adjustment: -3,
+      carried: 0,
     });
-    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
+    // ADR-131 + ADR-136: policy SHARED (bậc 1) TRƯỚC leave:<user> (bậc 3).
+    expect(h.locks).toEqual(['taskflow:leave-policy:shared', `taskflow:leave:${U.Mia}`]);
     expect(h.audit.entries[0]).toMatchObject({
       action: 'BALANCE_ADJUST',
       targetUserId: U.Mia,

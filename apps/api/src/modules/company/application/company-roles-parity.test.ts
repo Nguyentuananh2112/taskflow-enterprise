@@ -53,6 +53,7 @@ describe('CO-01 effectiveCompanyPermissions — mọi tổ hợp role × grants 
       : [
           'attendance:self',
           'leave:self',
+          'profile:self',
           'workspace:create',
           ...(grants.includes('HR_MANAGE') ? ['hr:manage'] : []),
           ...(grants.includes('PAYROLL_MANAGE') ? ['payroll:manage'] : []),

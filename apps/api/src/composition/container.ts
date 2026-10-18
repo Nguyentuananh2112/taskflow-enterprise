@@ -18,11 +18,11 @@ import {
 } from '../modules/notifications/notifications.module';
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
-import { companyAdminDeps, employmentCollaborators } from './company-adapters';
+import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
-import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
+import { attendanceShared, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
-import { wireLeave } from './leave-wiring';
+import { wireLeaveAndProfile } from './hr-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
 import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
@@ -89,11 +89,12 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     accounts: accountsRef,
-    collaborators: () => employmentCollaborators({ workspace, leave, notifications, realtime }),
+    collaborators: () =>
+      employmentCollaborators({ workspace, leave, attendance, notifications, realtime, hrProfile }),
     ...companyAdminDeps(
       () => notifications,
       realtime,
-      () => leave.employment,
+      () => ({ employment: leave.employment, attendance }),
       () => workspace.adminWorkspaces,
     ),
   });
@@ -114,11 +115,7 @@ export function createContainer(d: ContainerDeps): Container {
     notifier: realtime,
     // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
     // người chưa có lịch nghỉ (ADR-134).
-    company: {
-      isActive: (userId) => company.sessionGate.isActive(userId),
-      canJoinWorkspace: async (userId) =>
-        (await company.members.find(userId))?.offboardLastDay === null,
-    },
+    company: workspaceGate(company),
     cleaner: task.cleaner,
     uow: persistence.uow,
     ids,
@@ -130,11 +127,11 @@ export function createContainer(d: ContainerDeps): Container {
   });
   workspaceRef.current = workspace;
   // Chấm công (T-063). Đơn nghỉ gắn trễ: leave cần lịch của attendance + `authenticate` của auth ⇒ dựng sau, `bind`.
-  const approvedLeaves = new LateApprovedLeavePort();
+  const { approvedLeaves, exportSlots } = attendanceShared();
   const attendance = wireAttendance(
     { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
     { company: () => company, notifications, leaves: approvedLeaves },
-    { responder, limit },
+    { responder, limit, exports: { limits: config.exportLimits, slots: exportSlots } },
   );
   const auth = createAuthModule({
     repos: persistence.auth,
@@ -163,15 +160,17 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
   accountsRef.current = auth.accounts;
-  // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
-  const leave = wireLeave(
-    { persistence, clock: business, ids },
+  // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
+  const { leave, hrProfile } = wireLeaveAndProfile(
+    { persistence, clock: business, ids, logger },
     {
-      company: () => ({ ...company, clock: business }),
-      hrAudit: () => company.hrAudit,
+      company,
       attendance,
       notifications,
       auth,
+      // Cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
+      exportSlots,
+      exportLimits: config.exportLimits,
     },
     { responder, limit },
   );
@@ -181,6 +180,7 @@ export function createContainer(d: ContainerDeps): Container {
   const routers = [
     { path: '/auth', router: auth.router },
     ...company.routers(auth.authenticate),
+    ...hrProfile.routers(auth.authenticate),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: task.routes(auth.authenticate) },

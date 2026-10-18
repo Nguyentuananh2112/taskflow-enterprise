@@ -1,6 +1,10 @@
 import type { RequestHandler, Router } from 'express';
 
 import type { IClock, IIdGenerator } from '../../core/domain';
+import type { ExportLimits } from '../../core/export/export-limits';
+import type { ExportSlots } from '../../core/export/export-slots';
+import type { ISpreadsheetWriter } from '../../core/export/xlsx/xlsx-writer';
+import type { IReadSnapshot } from '../../core/persistence/read-snapshot';
 import type { HttpResponder } from '../../core/http/envelope';
 import type { RateLimitRule } from '../../core/http/rate-limit/rules';
 import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
@@ -10,42 +14,60 @@ import type { ApprovedLeavePort } from './application/ports/approved-leave.port'
 import type { IAttendanceEventStore } from './application/ports/attendance-event-store.port';
 import type {
   AttendanceNotifier,
+  CorrectionNotifier,
   ICompanyAccess,
   ICompanyTenurePort,
-  IHrAuditRecorder,
+  ICorrectionAuditRecorder,
   IUserRefReader,
 } from './application/ports/collaborators.port';
+import type { ICorrectionStore } from './application/ports/correction-store.port';
 import type { IRetentionWindow } from './application/ports/retention-window.port';
 import type { IWorkCalendarStore } from './application/ports/work-calendar-store.port';
 import { AttendanceEventsUseCases } from './application/use-cases/attendance-events.use-cases';
 import { AttendanceExportUseCase } from './application/use-cases/attendance-export.use-case';
 import { CheckInOutUseCase } from './application/use-cases/check-in-out.use-case';
+import { AttendanceXlsxExportUseCase } from './application/use-cases/attendance-xlsx-export.use-case';
+import { CorrectionRequestsUseCases } from './application/use-cases/correction-requests.use-cases';
+import { DecideCorrectionUseCases } from './application/use-cases/decide-correction.use-cases';
 import { HrAttendanceQueries } from './application/use-cases/hr-attendance.queries';
 import { MyAttendanceQueries } from './application/use-cases/my-attendance.queries';
 import { WorkCalendarUseCases } from './application/use-cases/work-calendar.use-cases';
 import { scheduleTimeZoneNow } from './application/schedule-timezone';
 import { InMemoryAttendanceEventStore } from './infrastructure/persistence/in-memory/in-memory-attendance';
+import { InMemoryCorrectionStore } from './infrastructure/persistence/in-memory/in-memory-corrections';
 import { InMemoryWorkCalendarStore } from './infrastructure/persistence/in-memory/in-memory-work-calendar';
 import type { DbProvider } from './infrastructure/persistence/prisma/db';
 import { PrismaAttendanceEventStore } from './infrastructure/persistence/prisma/prisma-attendance-event.store';
+import { PrismaCorrectionStore } from './infrastructure/persistence/prisma/prisma-correction.store';
 import { PrismaWorkCalendarStore } from './infrastructure/persistence/prisma/prisma-work-calendar.store';
 import type { AttendanceCompanyMembership } from './presentation/attendance-access';
 import { AttendanceController } from './presentation/attendance.controller';
+import { CorrectionController } from './presentation/correction.controller';
 import { attendanceRoutes } from './presentation/attendance.routes';
 
 export interface AttendanceRepositories {
   events: IAttendanceEventStore;
   calendar: IWorkCalendarStore;
+  /** Đơn bổ sung giờ (Mốc 5, T-056 — migration 8). */
+  corrections: ICorrectionStore;
 }
 
 /** Repository Prisma — `db` = `uow.db()` dùng chung transaction với module khác (composition root). */
 export function createPrismaAttendanceRepositories(db: DbProvider): AttendanceRepositories {
-  return { events: new PrismaAttendanceEventStore(db), calendar: new PrismaWorkCalendarStore(db) };
+  return {
+    events: new PrismaAttendanceEventStore(db),
+    calendar: new PrismaWorkCalendarStore(db),
+    corrections: new PrismaCorrectionStore(db),
+  };
 }
 
 /** Lưu trữ trong bộ nhớ (local/test). */
 export function createInMemoryAttendanceRepositories() {
-  return { events: new InMemoryAttendanceEventStore(), calendar: new InMemoryWorkCalendarStore() };
+  return {
+    events: new InMemoryAttendanceEventStore(),
+    calendar: new InMemoryWorkCalendarStore(),
+    corrections: new InMemoryCorrectionStore(),
+  };
 }
 
 export interface AttendanceModuleDeps {
@@ -61,10 +83,19 @@ export interface AttendanceModuleDeps {
   users: IUserRefReader;
   /** `CompanyAccess` của module company (T-061). */
   company: ICompanyAccess;
-  audit: IHrAuditRecorder;
-  notifier: AttendanceNotifier;
+  /** Audit HR — gồm action `CORRECTION_*` của đơn bổ sung giờ. */
+  audit: ICorrectionAuditRecorder;
+  notifier: AttendanceNotifier & CorrectionNotifier;
   membership: AttendanceCompanyMembership;
   uow: IUnitOfWork;
+  /** Xuất .xlsx (ADR-130): snapshot đọc, suất export của công ty, trần / nhịp đọc, bộ ghi. */
+  exports: {
+    snapshot: IReadSnapshot;
+    slots: Pick<ExportSlots, 'acquire'>;
+    limits: ExportLimits;
+    writer: ISpreadsheetWriter;
+    sleep: (ms: number) => Promise<void>;
+  };
   clock: IClock;
   ids: IIdGenerator;
   responder: HttpResponder;
@@ -81,6 +112,11 @@ export interface AttendanceModule {
    * (CLK-HR-08: lịch múi Berlin ⇒ ngày / 06:00 theo Berlin).
    */
   timeZoneNow(): Promise<string>;
+  /**
+   * Hoàn tất nghỉ việc / nâng Admin (company-level ADR-137 · hr-extended ADR-129): mọi đơn bổ sung giờ PENDING ⇒ CANCELLED.
+   * Gọi TRONG transaction của bên gọi (đã giữ `punch:<user>`). Trả số đơn đã hủy.
+   */
+  cancelPendingCorrections(userId: string): Promise<number>;
 }
 
 /** Composition của module Attendance (ADR-016): wire nội bộ module, port ngoài được tiêm vào. */
@@ -108,12 +144,28 @@ export function createAttendanceModule(d: AttendanceModuleDeps): AttendanceModul
     events: new AttendanceEventsUseCases({ ...deps, ...collaborators }),
     calendar: new WorkCalendarUseCases({ ...deps, ...collaborators }),
     exporter: new AttendanceExportUseCase({ ...deps, ...collaborators }),
+    xlsx: new AttendanceXlsxExportUseCase({ ...deps, ...collaborators, ...d.exports }),
+    writer: d.exports.writer,
+    responder: d.responder,
+  });
+  const correctionDeps = { ...deps, ...collaborators, corrections: d.repos.corrections };
+  const corrections = new CorrectionController({
+    requests: new CorrectionRequestsUseCases(correctionDeps),
+    decide: new DecideCorrectionUseCases(correctionDeps),
     responder: d.responder,
   });
   return {
     routes: (authenticate) =>
-      attendanceRoutes({ controller, membership: d.membership, authenticate, limit: d.limit }),
+      attendanceRoutes({
+        controller,
+        corrections,
+        membership: d.membership,
+        authenticate,
+        limit: d.limit,
+      }),
     workCalendar: new AttendanceWorkCalendar(d.repos.calendar),
     timeZoneNow: () => scheduleTimeZoneNow(d.repos.calendar, d.clock),
+    cancelPendingCorrections: async (userId) =>
+      (await d.repos.corrections.cancelPendingOf(userId, d.clock.now())).length,
   };
 }

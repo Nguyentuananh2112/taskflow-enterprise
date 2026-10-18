@@ -26,7 +26,12 @@ function fakeStores(remaining: Record<string, number> = {}, locked = true) {
     return Promise.resolve(n);
   };
   const stores: RetentionStores = {
-    attendance: { scrubClientInfo: take('scrubClientInfo'), deleteEvents: take('deleteEvents') },
+    attendance: {
+      scrubClientInfo: take('scrubClientInfo'),
+      deleteEvents: take('deleteEvents'),
+      deleteCorrections: take('deleteCorrections'),
+      scrubCorrectionReasons: take('scrubCorrectionReasons'),
+    },
     leave: {
       scrubReasons: take('scrubReasons'),
       deleteRequestsBeforeYear: take('deleteRequestsBeforeYear'),
@@ -38,6 +43,7 @@ function fakeStores(remaining: Record<string, number> = {}, locked = true) {
       scrubHrAuditNotes: take('scrubHrAuditNotes'),
     },
     notifications: { deleteNotifications: take('deleteNotifications') },
+    hrProfile: { deleteProfiles: take('deleteProfiles') },
     tryLock: () => Promise.resolve(locked),
   };
   return { stores, calls };
@@ -51,14 +57,19 @@ describe('retentionSteps — mốc tính theo phương án B (NOW = 2026-12-01)'
     const { stores, calls } = fakeStores();
     for (const step of retentionSteps(stores, B, NOW)) await step.run(10);
     expect(calls.map((c) => [c.name, c.arg])).toEqual([
+      // D9 TRƯỚC D2 (FK created_event_id NO ACTION), cùng mốc ngày công.
+      ['deleteCorrections', '2024-12-01'],
       ['deleteEvents', '2024-12-01'],
       ['deleteRequestsBeforeYear', 2024],
       ['deleteBalancesBeforeYear', 2024],
+      // EP-10: D8 (hồ sơ) TRƯỚC D5 (departure là căn cứ giữ hồ sơ), cùng mốc ngày.
+      ['deleteProfiles', '2024-12-01'],
       ['deleteDepartures', '2024-12-01'],
       ['deleteNotifications', new Date('2026-06-04T00:00:00.000Z')],
       ['deleteHrAuditLogs', new Date('2021-12-01T00:00:00.000Z')],
       ['scrubClientInfo', new Date('2025-11-01T00:00:00.000Z')],
       ['scrubReasons', '2025-11-01'],
+      ['scrubCorrectionReasons', '2025-11-01'],
       ['scrubHrAuditNotes', new Date('2025-11-01T00:00:00.000Z')],
     ]);
   });
@@ -96,10 +107,11 @@ describe('RetentionJob', () => {
       ctrl.abort();
       return original.deleteEvents(cutoff, limit);
     };
+    // Lô 1 = D9 (deleteCorrections, rỗng), lô 2 = D2 hủy giữa chừng ⇒ không có lô 3.
     expect(await job(stores).execute({ batchSize: 2, signal: ctrl.signal })).toMatchObject({
-      batches: 1,
+      batches: 2,
       complete: false,
     });
-    expect(calls).toHaveLength(1);
+    expect(calls.map((c) => c.name)).toEqual(['deleteCorrections', 'deleteEvents']);
   });
 });

@@ -20,6 +20,7 @@ import { PayrollRunPage } from '@/views/payroll-run';
 import { PayrollProfilesPage } from '@/views/payroll-profiles';
 import { PayrollRunsPage } from '@/views/payroll-runs';
 import { PayslipEditPage } from '@/views/payslip-edit';
+import { MyProfilePage } from '@/views/my-profile';
 import { ProjectListPage } from '@/views/project-list';
 import { ProjectSettingsPage } from '@/views/project-settings';
 import { WorkspaceNewPage } from '@/views/workspace-new';
@@ -43,6 +44,7 @@ const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/payroll\/profiles$/, () => <PayrollProfilesPage />],
   [/^\/payroll\/\d{4}-\d{2}$/, () => <PayrollRunPage />],
   [/^\/payroll\/\d{4}-\d{2}\/[0-9a-f-]{36}$/, () => <PayslipEditPage />],
+  [/^\/my-profile$/, () => <MyProfilePage />],
   [/^\/admin$/, () => <AdminPage />],
   [/^\/admin\/access$/, () => <AdminAccessPage />],
   [/^\/admin\/workspaces$/, () => <AdminWorkspacesPage />],

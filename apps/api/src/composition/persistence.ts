@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import type { IReadSnapshot } from '../core/persistence/read-snapshot';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
@@ -10,7 +11,10 @@ import type { CompanyRepositories } from '../modules/company/company.module';
 import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
+import type { HrProfileRepositories } from '../modules/hr-profile/hr-profile.module';
+import { InMemoryEmployeeProfiles } from '../modules/hr-profile/infrastructure/in-memory/in-memory-employee-profiles';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeavePolicyStore } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave-policy.store';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import {
   createInMemoryNotificationStore,
@@ -56,6 +60,8 @@ export interface Persistence {
   attendance: AttendanceRepositories;
   /** Module leave (T-039/T-064): đơn nghỉ + số dư + phía đọc + danh bạ nhân viên. */
   leave: LeaveRepositories;
+  /** Hồ sơ nhân viên (Mốc 5, T-054). */
+  hrProfile: HrProfileRepositories;
   /** Chỉ bộ nhớ: bảng công ty để seed / harness (Prisma: dữ liệu ở DB). */
   companyStore?: InMemoryCompanyStore;
   /** Purger cho job bảo trì (T-033) — chỉ có ở Prisma; bộ nhớ không purge (local/test). */
@@ -64,7 +70,8 @@ export interface Persistence {
   refreshTokenPurger?: IRefreshTokenPurger;
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
-  uow: IUnitOfWork;
+  /** `snapshot`: ảnh chụp đọc REPEATABLE READ READ ONLY cho báo cáo .xlsx (ADR-130, T-055y). */
+  uow: IUnitOfWork & { snapshot: IReadSnapshot };
 }
 
 /** Lưu trữ trong bộ nhớ — chỉ local/test, MẤT DỮ LIỆU khi khởi động lại. */
@@ -94,7 +101,14 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const notificationStore = createInMemoryNotificationStore();
   const attendance = createInMemoryAttendanceRepositories();
   const leaveStore = new InMemoryLeaveRepository();
-  const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
+  const profiles = new InMemoryEmployeeProfiles();
+  const leavePolicies = new InMemoryLeavePolicyStore();
+  const leave = memoryLeaveRepositories(
+    leaveStore,
+    leavePolicies,
+    companyStore,
+    task.db.state.users,
+  );
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -109,7 +123,10 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       hrAudit,
       attendance.events,
       attendance.calendar,
+      attendance.corrections,
       leaveStore,
+      profiles,
+      leavePolicies,
     ],
     logger,
   );
@@ -138,6 +155,7 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     companyStore,
     attendance,
     leave,
+    hrProfile: { profiles, locks: profiles },
     uow,
   };
 }
