@@ -112,7 +112,9 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
     await form.getByRole('link', { name: 'Đồng ý ở trang Quyền riêng tư' }).click();
     await expect(page).toHaveURL(/\/privacy$/);
     const consent = page.getByRole('checkbox', { name: /Tôi đồng ý để công ty xử lý lý do nghỉ/ });
-    await consent.check();
+    // Ô theo server (bấm ⇒ PUT): click + khẳng định trạng thái thay cho check() (check() đòi đổi ngay sau click).
+    await consent.click();
+    await expect(consent).toBeChecked();
     await expect(page.getByText('Đã ghi nhận đồng ý', { exact: true })).toBeVisible();
 
     await page.goto('/leave');
@@ -131,6 +133,7 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
       .getByRole('button', { name: 'Rút lại đồng ý' })
       .click();
     await expect(page.getByText('Đã rút lại đồng ý', { exact: true })).toBeVisible();
+    await expect(consent).not.toBeChecked();
     await page.goto('/leave');
     await expect(form.getByLabel(/^Lý do/)).toBeDisabled();
   });

@@ -51,6 +51,9 @@ export function LeaveReasonConsent({ privacy }: Readonly<{ privacy: PrivacyDto }
     },
   });
   const when = privacy.consentLeaveReasonAt;
+  // Hiện ngay giá trị vừa chọn trong lúc lưu (optimistic, E2E-PRIV-02): ô tích ngay khi bấm, khóa + "Đang lưu…" tới khi
+  // server trả; lỗi ⇒ tự về giá trị của server + báo lỗi.
+  const checked = save.isPending ? save.variables : privacy.consentLeaveReason;
   return (
     <div className="flex flex-col gap-2">
       {save.isError && <Alert>{serverErrorMessage(save.error)}</Alert>}
@@ -58,8 +61,9 @@ export function LeaveReasonConsent({ privacy }: Readonly<{ privacy: PrivacyDto }
         <input
           type="checkbox"
           className="mt-0.5"
-          checked={privacy.consentLeaveReason}
+          checked={checked}
           disabled={save.isPending}
+          aria-busy={save.isPending}
           onChange={(e) => (e.target.checked ? save.mutate(true) : setConfirming(true))}
         />
         <span>
@@ -71,7 +75,12 @@ export function LeaveReasonConsent({ privacy }: Readonly<{ privacy: PrivacyDto }
           </span>
         </span>
       </label>
-      {when && (
+      {save.isPending && (
+        <p role="status" className="text-xs text-text-muted">
+          Đang lưu…
+        </p>
+      )}
+      {when && !save.isPending && (
         <p className="text-xs text-text-muted">
           {privacy.consentLeaveReason ? 'Đã ghi nhận đồng ý lúc' : 'Đã rút lại đồng ý lúc'}{' '}
           {at(when)}.
