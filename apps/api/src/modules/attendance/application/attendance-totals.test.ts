@@ -116,4 +116,22 @@ describe('totalsOf', () => {
     ).toEqual({ ...ZERO, upcomingLeaveDays: 1, throughDate: null });
     expect(totalsOf([], '2026-11-17')).toEqual({ ...ZERO, throughDate: null });
   });
+
+  it('TL #A1: giờ làm ngày nghỉ / ngày lễ (đã qua) cộng vào TỔNG GIỜ — không thành ngày đi làm, không muộn / vắng', () => {
+    const t = totalsOf(
+      [
+        present('2026-11-13'),
+        day('2026-11-15', { status: 'OFF', isWorkday: false, workedMin: 120 }),
+        day('2026-11-16', { status: 'HOLIDAY', holidayName: 'Lễ', workedMin: 240 }),
+        day('2026-11-22', { status: 'OFF', isWorkday: false, workedMin: 60 }), // sau hôm nay ⇒ không đếm
+      ],
+      '2026-11-20',
+    );
+    expect(t).toMatchObject({
+      workedMin: 480 + 120 + 240,
+      presentDays: 1,
+      absentDays: 0,
+      lateDays: 0,
+    });
+  });
 });

@@ -204,9 +204,10 @@ describe('summarizeDay — lễ, OFF, vắng, chưa tới (SD-19..SD-26b, SD-34)
     expect(day(SAT, [], { holiday: true }).status).toBe('HOLIDAY');
   });
 
-  it('SD-20 ngày lễ có chấm ⇒ HOLIDAY + giờ thô, không tính công', () => {
+  it('SD-20 ngày lễ có chấm ⇒ HOLIDAY + giờ vào/ra + giờ làm như ngày thường (TL #A1: làm thêm được ghi nhận)', () => {
     const r = day(SAT, [ev('IN', SAT, '08:00'), ev('OUT', SAT, '12:00')], { holiday: true });
-    expect(r).toMatchObject({ status: 'HOLIDAY', workedMin: 0 });
+    expect(r).toMatchObject({ status: 'HOLIDAY', workedMin: 240, lateMin: 0, earlyMin: 0 });
+    expect(r.flags).toMatchObject({ late: false, early: false, inProgress: false });
     expect(r.firstIn).toEqual(at(SAT, '08:00'));
   });
 
@@ -214,10 +215,62 @@ describe('summarizeDay — lễ, OFF, vắng, chưa tới (SD-19..SD-26b, SD-34)
     expect(day(SAT, [], { holiday: true, leave: 'FULL' }).status).toBe('HOLIDAY');
   });
 
-  it('SD-22 Chủ nhật có chấm ⇒ OFF + giờ thô', () => {
+  it('SD-22 Chủ nhật có chấm ⇒ OFF + giờ vào/ra + giờ làm (vào muộn / ra sớm không tính trên ngày nghỉ)', () => {
     const r = day(SUN, [ev('IN', SUN, '09:00'), ev('OUT', SUN, '11:00')]);
-    expect(r).toMatchObject({ status: 'OFF', workedMin: 0 });
+    expect(r).toMatchObject({ status: 'OFF', workedMin: 120, lateMin: 0, earlyMin: 0 });
+    expect(r.flags).toMatchObject({ late: false, early: false, inProgress: false });
     expect(r.lastOut).toEqual(at(SUN, '11:00'));
+  });
+
+  it('SD-22b ngày nghỉ: giờ làm trong khung ca trừ nghỉ trưa, KHÔNG tính ngoài ca (v1 không OT)', () => {
+    expect(day(SUN, [ev('IN', SUN, '07:00'), ev('OUT', SUN, '19:00')]).workedMin).toBe(480);
+    expect(day(SUN, [ev('IN', SUN, '18:00'), ev('OUT', SUN, '20:00')]).workedMin).toBe(0);
+    expect(
+      day(SAT, [ev('IN', SAT, '12:30'), ev('OUT', SAT, '14:30')], { holiday: true }).workedMin,
+    ).toBe(60);
+  });
+
+  it('SD-22c ngày nghỉ chỉ IN ⇒ inProgress ("Đang làm") tới trước 06:00 hôm sau, 0 phút; từ 06:00 hết', () => {
+    const open = [ev('IN', SUN, '12:04')];
+    expect(day(SUN, open, { nowLocal: '12:05' })).toMatchObject({
+      status: 'OFF',
+      workedMin: 0,
+      flags: { inProgress: true, notCheckedInYet: false },
+    });
+    expect(day(SUN, open, { now: at(MON, '05:59') }).flags.inProgress).toBe(true);
+    expect(day(SUN, open, { now: at(MON, '06:00') }).flags.inProgress).toBe(false);
+    expect(
+      day(SAT, [ev('IN', SAT, '09:00')], { holiday: true, nowLocal: '10:00' }).flags.inProgress,
+    ).toBe(true);
+  });
+
+  it('SD-22e ngày nghỉ KHÔNG có IN (trống / chỉ OUT mồ côi) ⇒ không "đang làm", 0 phút, OUT giữ giờ thô', () => {
+    expect(day(SUN, [], { nowLocal: '12:00' })).toMatchObject({
+      status: 'OFF',
+      workedMin: 0,
+      flags: { inProgress: false },
+    });
+    const orphan = day(SUN, [ev('OUT', SUN, '11:00')], { nowLocal: '12:00' });
+    expect(orphan).toMatchObject({
+      status: 'OFF',
+      workedMin: 0,
+      firstIn: null,
+      flags: { inProgress: false },
+    });
+    expect(orphan.lastOut).toEqual(at(SUN, '11:00'));
+  });
+
+  it('SD-22d ngày nghỉ IN rồi OUT cùng phút ⇒ đã ra (không còn đang làm), 0 phút', () => {
+    const r = day(
+      SUN,
+      [
+        ev('IN', SUN, '12:04'),
+        { ...ev('OUT', SUN, '12:04'), occurredAt: new Date(at(SUN, '12:04').getTime() + 30_000) },
+      ],
+      { nowLocal: '12:05' },
+    );
+    expect(r).toMatchObject({ status: 'OFF', workedMin: 0, flags: { inProgress: false } });
+    expect(r.lastOut).not.toBeNull();
   });
 
   it('SD-23 ngày làm đã qua, không gì ⇒ ABSENT (không absentHalf)', () => {
