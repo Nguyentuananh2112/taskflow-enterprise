@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createMockApi } from './index';
 
 // Mock thông báo quyền riêng tư (T-075, contracts G e01c5c85): như API thật — chưa xác nhận / chưa đồng ý mặc định, ack
-// đúng phiên bản (khác ⇒ 409 privacy_version_outdated), đồng ý lý do nghỉ chặn `reason` của đơn nghỉ (400), Admin cũng
+// đúng phiên bản (khác ⇒ 409 privacy_version_outdated), đồng ý lý do nghỉ chặn `reason` của đơn nghỉ (422 rule), rút lại xóa lý do đơn đang chờ, Admin cũng
 // gọi được, đầu mối liên hệ qua PATCH /company. Dữ liệu bịa.
 
 const BASE = 'http://localhost:4000/api/v1';
@@ -77,20 +77,32 @@ describe('mock quyền riêng tư (T-075)', () => {
     });
   });
 
-  it('đơn nghỉ có lý do khi chưa đồng ý ⇒ 400 LEAVE_REASON_CONSENT_REQUIRED; lý do trống vẫn gửi; đồng ý ⇒ gửi được', async () => {
+  it('đơn nghỉ có lý do khi chưa đồng ý ⇒ 422 rule LEAVE_REASON_CONSENT_REQUIRED; lý do trống vẫn gửi; đồng ý ⇒ gửi được; rút lại ⇒ lý do đơn chờ bị xóa', async () => {
     const { send, asMia } = setup();
     const blocked = await send('POST', '/leave/requests', asMia, leave('Về quê'));
-    expect(blocked.status).toBe(400);
-    expect(blocked.body.error?.code).toBe('LEAVE_REASON_CONSENT_REQUIRED');
+    expect(blocked.status).toBe(422);
+    expect(blocked.body.error).toMatchObject({
+      code: 'BUSINESS_RULE_VIOLATION',
+      details: { rule: 'LEAVE_REASON_CONSENT_REQUIRED' },
+    });
     expect((await send('POST', '/leave/requests', asMia, leave('   '))).status).toBe(201);
     const consent = await send('PUT', '/me/privacy/consent', asMia, { leaveReason: true });
-    expect(consent.body.data).toMatchObject({ consentLeaveReason: true });
+    expect(consent.body.data).toMatchObject({ consentLeaveReason: true, clearedPendingReasons: 0 });
     const withReason = await send('POST', '/leave/requests', asMia, {
       ...leave('Về quê'),
       startDate: '2026-10-20',
       endDate: '2026-10-20',
     });
     expect(withReason.status).toBe(201);
+    const id = String(withReason.body.data.id);
+    const withdraw = await send('PUT', '/me/privacy/consent', asMia, { leaveReason: false });
+    expect(withdraw.body.data).toMatchObject({
+      consentLeaveReason: false,
+      clearedPendingReasons: 1,
+    });
+    const mine = await send('GET', '/leave/requests?mine=1', asMia);
+    const rows = mine.body.data as unknown as Array<{ id: string; reason: string | null }>;
+    expect(rows.find((r) => r.id === id)?.reason).toBeNull();
   });
 
   it('PATCH /company privacyContact (Admin) ⇒ hiện trong /me/privacy; chuỗi rỗng ⇒ xóa; giữ tên', async () => {

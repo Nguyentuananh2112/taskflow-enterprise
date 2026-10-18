@@ -46,7 +46,12 @@ describe('quyền riêng tư (T-075)', () => {
     const f = open('/privacy');
     expect(await screen.findByRole('heading', { level: 1, name: 'Quyền riêng tư' })).toBeTruthy();
     expect(await screen.findByText(mock.db.company.name)).toBeTruthy();
-    for (const name of ['Chấm công & Nghỉ phép', 'Trò chuyện & ảnh đại diện', 'Phiếu lương']) {
+    for (const name of [
+      'Chấm công & Nghỉ phép',
+      'Hồ sơ nhân sự',
+      'Trò chuyện & ảnh đại diện',
+      'Phiếu lương',
+    ]) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeTruthy();
     }
     expect(screen.getByText('quản trị viên của công ty')).toBeTruthy();
@@ -61,6 +66,22 @@ describe('quyền riêng tư (T-075)', () => {
     await u.click(screen.getByRole('checkbox', { name: /Tôi đồng ý để công ty xử lý lý do nghỉ/ }));
     await waitFor(() => expect(mock.db.company.privacy.get(f.owner.id).consent).toBe(true));
     expect(screen.getByRole('checkbox', { name: /lý do nghỉ/ })).toHaveProperty('checked', true);
+    expect(await screen.findByText(/Đã ghi nhận đồng ý lúc/)).toBeTruthy();
+
+    // Rút lại ⇒ hỏi lại (lý do ở đơn đang chờ bị xóa); Hủy ⇒ giữ nguyên; xác nhận ⇒ rút.
+    await u.click(screen.getByRole('checkbox', { name: /lý do nghỉ/ }));
+    const confirm = await screen.findByRole('dialog', { name: 'Rút lại đồng ý?' });
+    expect(confirm.textContent).toContain('đang chờ duyệt của bạn sẽ bị xóa');
+    await u.click(within(confirm).getByRole('button', { name: 'Hủy' }));
+    expect(mock.db.company.privacy.get(f.owner.id).consent).toBe(true);
+    await u.click(screen.getByRole('checkbox', { name: /lý do nghỉ/ }));
+    await u.click(
+      within(await screen.findByRole('dialog', { name: 'Rút lại đồng ý?' })).getByRole('button', {
+        name: 'Rút lại đồng ý',
+      }),
+    );
+    await waitFor(() => expect(mock.db.company.privacy.get(f.owner.id).consent).toBe(false));
+    expect(await screen.findByText(/Đã rút lại đồng ý lúc/)).toBeTruthy();
   });
 
   it('hộp thoại lần đầu ở /leave (không ở /w); Esc = để sau ⇒ không hiện lại trong phiên; phiên mới hiện lại; a11y', async () => {

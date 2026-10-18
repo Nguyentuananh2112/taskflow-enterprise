@@ -87,7 +87,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createChatMessageHandlers(baseUrl, db, chat, limit),
       ...createActivationHandlers(baseUrl, db),
       ...createAdminHandlers(baseUrl, db),
-      ...createPrivacyHandlers(baseUrl, db),
+      ...createPrivacyHandlers(baseUrl, db, leave),
       ...createWorkspaceHandlers(baseUrl, db, board, limit),
       ...createMemberHandlers(baseUrl, db, board, limit),
       ...createProjectHandlers(baseUrl, db, board),

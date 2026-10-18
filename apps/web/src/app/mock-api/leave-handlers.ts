@@ -65,9 +65,10 @@ export function createLeaveHandlers(baseUrl: string, db: MockDb, leave: MockLeav
       const body = await parseBody(request, SubmitLeaveBody);
       if (body.response) return body.response;
       const b = body.data;
-      // T-075 (G): chưa đồng ý xử lý lý do nghỉ mà có lý do ⇒ 400 LEAVE_REASON_CONSENT_REQUIRED (lý do trống vẫn gửi được).
+      // T-075 (G 1521579e): chưa đồng ý xử lý lý do nghỉ mà có lý do ⇒ 422 rule LEAVE_REASON_CONSENT_REQUIRED (lý do
+      // trống / chỉ khoảng trắng vẫn gửi được).
       if (b.reason?.trim() && !db.company.privacy.get(ctx.ok.user.id).consent) {
-        return fail(400, 'LEAVE_REASON_CONSENT_REQUIRED');
+        return fail(422, 'BUSINESS_RULE_VIOLATION', { rule: 'LEAVE_REASON_CONSENT_REQUIRED' });
       }
       const wsId = COMPANY_SCOPE;
       const checked = evaluate(leave, ctx.ok, wsId, b);

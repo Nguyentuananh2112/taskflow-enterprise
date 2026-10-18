@@ -49,12 +49,30 @@ export function PrivacyNotice({ companyName, contact, level = 2 }: Props) {
           kết thúc đơn.
         </li>
         <li>
+          <strong>Đơn bổ sung giờ chấm.</strong> Lý do bổ sung giờ là bắt buộc — chỉ cần nêu việc
+          quên / lỗi chấm; đừng ghi thông tin sức khỏe. Lý do chỉ bạn và người được giao quản lý
+          nhân sự xem được; lý do và ghi chú quyết định tự động xóa sau <strong>13 tháng</strong>,
+          đơn bị xóa cùng giờ chấm sau <strong>2 năm</strong>.
+        </li>
+        <li>
           Thông báo trong ứng dụng được giữ <strong>180 ngày</strong>; nhật ký thao tác quản trị
           nhân sự giữ <strong>5 năm</strong> (không chứa IP hay lý do nghỉ).
         </li>
         <li>
           Bạn có thể xem giờ chấm và thông tin IP của chính mình trong mục &quot;Lịch sử chấm
           công&quot;.
+        </li>
+      </Section>
+      <Section title="Hồ sơ nhân sự" level={level}>
+        <li>
+          Ngày vào công ty, phòng ban, chức vụ và số điện thoại công việc — để tính lương, phép năm
+          và thâm niên, và để liên hệ công việc. Chỉ bạn (trang &quot;Hồ sơ của tôi&quot;) và người
+          được giao quản lý nhân sự xem được. Công ty <strong>không</strong> lưu số CCCD, ngày sinh
+          hay địa chỉ.
+        </li>
+        <li>
+          Hồ sơ bị xóa khi bạn đã nghỉ việc và quá <strong>2 năm</strong> kể từ ngày làm việc cuối
+          (nhận lại trong thời gian đó thì hồ sơ được giữ).
         </li>
       </Section>
       <Section title="Trò chuyện & ảnh đại diện" level={level}>
@@ -101,6 +119,10 @@ export function PrivacyNotice({ companyName, contact, level = 2 }: Props) {
       <p className="text-sm">
         Để yêu cầu xem, sửa hoặc xóa dữ liệu (kể cả thắc mắc về phiếu lương), liên hệ{' '}
         <strong>{who}</strong>.
+      </p>
+      <p className="text-sm text-text-muted">
+        Lần bạn xác nhận đã đọc thông báo này và lần bạn đồng ý / rút lại đồng ý được lưu{' '}
+        <strong>5 năm</strong> làm bằng chứng.
       </p>
     </div>
   );
