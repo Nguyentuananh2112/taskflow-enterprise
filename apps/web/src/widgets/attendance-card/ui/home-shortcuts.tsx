@@ -1,6 +1,7 @@
 'use client';
 
 import { useAttendanceToday } from '@/entities/attendance';
+import { MissingOutAlert } from '@/features/correction-request';
 import { Skeleton } from '@/shared/ui/skeleton';
 
 import { AttendanceShortcuts } from './attendance-shortcuts';
@@ -19,8 +20,15 @@ export function HomeShortcuts({ enabled }: Readonly<{ enabled: boolean }>) {
         <Skeleton className="h-12 md:h-9 md:w-36" />
         <Skeleton className="h-12 md:h-9 md:w-40" />
         <Skeleton className="h-12 md:h-9 md:w-40" />
+        <Skeleton className="h-12 md:h-9 md:w-28" />
       </div>
     );
   }
-  return <AttendanceShortcuts today={today.date} />;
+  return (
+    <>
+      <AttendanceShortcuts today={today.date} />
+      {/* Sau lối tắt (không đẩy thẻ chấm công) — chỉ hiện khi có ngày quên chấm ra (payroll.md §5.1). */}
+      <MissingOutAlert today={today.date} />
+    </>
+  );
 }

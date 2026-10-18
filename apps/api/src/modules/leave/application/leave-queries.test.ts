@@ -226,9 +226,9 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
       to: '2026-11-30',
     });
     expect(all).toEqual([
-      { userId: U.Mia, date: '2026-11-15', part: 'FULL' },
-      { userId: U.Mia, date: '2026-11-16', part: 'FULL' },
-      { userId: U.Max, date: '2026-11-20', part: 'AM' },
+      { userId: U.Mia, date: '2026-11-15', part: 'FULL', type: 'ANNUAL' },
+      { userId: U.Mia, date: '2026-11-16', part: 'FULL', type: 'ANNUAL' },
+      { userId: U.Max, date: '2026-11-20', part: 'AM', type: 'ANNUAL' },
     ]);
     await expect(
       h.queries.approvedLeaves({
@@ -236,7 +236,7 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
         from: '2026-11-01',
         to: '2026-11-30',
       }),
-    ).resolves.toEqual([{ userId: U.Max, date: '2026-11-20', part: 'AM' }]);
+    ).resolves.toEqual([{ userId: U.Max, date: '2026-11-20', part: 'AM', type: 'ANNUAL' }]);
     await expect(
       h.queries.approvedLeaves({
         userIds: [],
@@ -246,7 +246,7 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
     ).resolves.toEqual([]);
   });
 
-  it('T-052 hai đơn nửa ngày AM (ANNUAL) + PM (UNPAID) cùng ngày ⇒ HAI dòng — attendance tự gộp thành cả ngày', async () => {
+  it('T-052 hai đơn nửa ngày AM (ANNUAL) + PM (UNPAID) cùng ngày ⇒ HAI dòng giữ loại (T-049) — attendance tự gộp thành cả ngày', async () => {
     const h = await createLeaveHarness();
     await h.seed({
       id: id(1),
@@ -272,8 +272,8 @@ describe('LeaveQueries — ApprovedLeavePort cho attendance (thiết kế §4)',
     expect(rows).toHaveLength(2);
     expect(rows).toEqual(
       expect.arrayContaining([
-        { userId: U.Mia, date: '2026-11-24', part: 'AM' },
-        { userId: U.Mia, date: '2026-11-24', part: 'PM' },
+        { userId: U.Mia, date: '2026-11-24', part: 'AM', type: 'ANNUAL' },
+        { userId: U.Mia, date: '2026-11-24', part: 'PM', type: 'UNPAID' },
       ]),
     );
   });

@@ -1,5 +1,5 @@
 import type { RealtimeEventMeta } from '../../workspace';
-import type { NotificationRecord, VisibilityScope } from '../domain/notification';
+import type { NotificationRecord, NotificationType, VisibilityScope } from '../domain/notification';
 
 /**
  * Bảng `notifications`. Ghi bằng `db()` của UoW ⇒ cùng transaction với thay đổi nghiệp vụ của bên gọi
@@ -17,6 +17,8 @@ export interface INotificationStore {
   /** Đánh dấu một thông báo (idempotent). `false` ⇒ không tồn tại / không thấy được ⇒ 404. */
   markRead(scope: VisibilityScope, id: string, at: Date): Promise<boolean>;
   markAllRead(scope: VisibilityScope, at: Date): Promise<number>;
+  /** Đã có thông báo nào `(type, refId)` (mọi người nhận) — `notifyOnce`. */
+  exists(q: { type: NotificationType; refId: string }): Promise<boolean>;
 }
 
 export interface NotificationKey {
@@ -30,9 +32,13 @@ export interface NotificationKey {
  */
 export interface INotificationAudience {
   /** null = không còn thuộc công ty / quá `access_until`. `since` = đầu tư cách hiện tại. */
-  accessOf(userId: string): Promise<{ since: Date; canManageHr: boolean } | null>;
+  accessOf(
+    userId: string,
+  ): Promise<{ since: Date; canManageHr: boolean; canManagePayroll: boolean } | null>;
   /** Người có `hr:manage` HIỆN TẠI (Admin + nhân viên có grant HR), còn quyền — đọc trong transaction bên gọi. */
   hrRecipients(): Promise<string[]>;
+  /** Người có `payroll:manage` HIỆN TẠI (Admin + nhân viên có grant Kế toán) — nhắc làm lương (T-049). */
+  payrollRecipients(): Promise<string[]>;
 }
 
 export interface LeaveSummary {
@@ -56,6 +62,8 @@ export interface INotificationContextReader {
   /** Mốc 6 (ADR-142): URL ký variant 64 của người thực hiện (chỉ người còn thuộc công ty có ảnh). Thiếu ⇒ không gắn. */
   actorAvatars?(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   leaveSummaries(refIds: readonly string[]): Promise<ReadonlyMap<string, LeaveSummary>>;
+  /** Kỳ lương `YYYY-MM` theo id phiếu (PAYSLIP_*) — KHÔNG số tiền. Module payroll hiện thực (T-049). */
+  payslipPeriods(refIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 /** `notification:new` tới `user:{id}` — gateway (`UserNotifications.notification`) qua LateBoundRealtime. */

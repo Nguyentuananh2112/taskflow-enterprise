@@ -3,6 +3,7 @@ import type {
   CompanyTenure,
   ICompanyTenurePort,
 } from '../../../application/ports/collaborators.port';
+import type { PayrollLeaveType } from '../../../domain/payroll-days';
 import type { LeavePart } from '../../../domain/summarize-day';
 
 // Fake của các cổng sang module khác (leave, company) cho test tầng A — cùng ngữ nghĩa với adapter thật.
@@ -30,7 +31,8 @@ export class FakeCompanyTenures implements ICompanyTenurePort {
 
 /** Fake `ApprovedLeavePort` (adapter thật ở module leave). */
 export class FakeApprovedLeaves implements ApprovedLeavePort {
-  readonly rows: { userId: string; date: string; part: LeavePart }[] = [];
+  /** `type` bỏ trống ⇒ ANNUAL (test bảng công cũ không quan tâm loại). */
+  readonly rows: { userId: string; date: string; part: LeavePart; type?: PayrollLeaveType }[] = [];
 
   approvedLeaves(q: { userIds?: readonly string[]; from: string; to: string }) {
     return Promise.resolve(
@@ -38,7 +40,7 @@ export class FakeApprovedLeaves implements ApprovedLeavePort {
         .filter(
           (l) => (!q.userIds || q.userIds.includes(l.userId)) && l.date >= q.from && l.date <= q.to,
         )
-        .map(({ userId, date, part }) => ({ userId, date, part })),
+        .map(({ userId, date, part, type }) => ({ userId, date, part, type: type ?? 'ANNUAL' })),
     );
   }
 }

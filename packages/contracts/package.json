@@ -18,11 +18,13 @@
     "./hr": "./src/hr/hr.schemas.ts",
     "./company": "./src/company/index.ts",
     "./chat": "./src/chat/index.ts",
+    "./payroll": "./src/payroll/index.ts",
     "./system": "./src/system/healthz.schemas.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:coverage": "vitest run --coverage --maxWorkers=2"
+    "test:coverage": "vitest run --coverage --maxWorkers=2",
+    "mutation:payroll-math": "node ../../apps/api/node_modules/@stryker-mutator/core/bin/stryker.js run stryker/payroll-math.config.mjs"
   },
   "dependencies": {
     "zod": "catalog:"

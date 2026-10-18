@@ -58,4 +58,10 @@ export class InMemoryNotificationStore implements INotificationStore {
   #visible(scope: VisibilityScope): NotificationRecord[] {
     return [...this.#rows.values()].filter((r) => isVisible(r, scope));
   }
+
+  exists(q: { type: NotificationRecord['type']; refId: string }): Promise<boolean> {
+    return Promise.resolve(
+      [...this.#rows.values()].some((r) => r.type === q.type && r.refId === q.refId),
+    );
+  }
 }

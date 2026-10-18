@@ -26,11 +26,26 @@ const LOG = 'media.sig_invalid';
 const sigInvalidLines = () => api.logs().filter((l) => l.includes(LOG));
 
 /** Gửi một request `/media` và trả lý do `media.sig_invalid` mới (hoặc null nếu không có log mới). */
-async function probe(url: string, headers: Record<string, string> = {}) {
+/** Log debug đi qua stdout của process con ⇒ tới harness bất đồng bộ; máy tải nặng có thể trễ hàng trăm ms. */
+const LOG_WAIT_MS = 3_000;
+/** Ca kỳ vọng KHÔNG có log: chờ đủ lâu để một dòng trễ kịp tới rồi mới khẳng định (âm tính không đến quá sớm). */
+const QUIET_WAIT_MS = 800;
+
+/**
+ * Gửi một request `/media` và trả lý do `media.sig_invalid` mới. `expectLog`: ca kỳ vọng CÓ log ⇒ poll tới khi dòng mới
+ * xuất hiện (≤ 3 s); kỳ vọng KHÔNG ⇒ chờ 800 ms rồi đọc. Cổng Mốc 4 18/10: chờ cố định 150 ms ⇒ đỏ 1/3 khi máy tải.
+ */
+async function probe(url: string, expectLog = true, headers: Record<string, string> = {}) {
   const before = sigInvalidLines().length;
   const res = await media(api, url, headers);
-  // Log ghi đồng bộ trước khi trả lời, nhưng stdout của process con tới harness bất đồng bộ.
-  await new Promise((r) => setTimeout(r, 150));
+  if (expectLog) {
+    const deadline = Date.now() + LOG_WAIT_MS;
+    while (sigInvalidLines().length === before && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  } else {
+    await new Promise((r) => setTimeout(r, QUIET_WAIT_MS));
+  }
   const fresh = sigInvalidLines().slice(before);
   const reason =
     fresh.length > 0
@@ -56,7 +71,7 @@ describe('/media — chữ ký, hạn, định dạng', () => {
     async () => {
       const t = tuple();
       const good = signMediaUrl(t);
-      const ok = await probe(good);
+      const ok = await probe(good, false);
       expectMedia404(ok.res, 'URL ký đúng, id chưa có');
       expect(
         ok.reason,
@@ -127,6 +142,7 @@ describe('/media — chữ ký, hạn, định dạng', () => {
       const upper = parseSignedUrl(signMediaUrl(file));
       const r = await probe(
         upper.with({ path: `/api/v1/media/chat/${file.id.toUpperCase()}/file` }),
+        false,
       );
       expectMedia404(r.res, 'id in hoa');
       expect(r.reason, 'id in hoa của tuple ký thường phải qua chữ ký').toBeNull();
@@ -181,7 +197,7 @@ describe('/media — chữ ký, hạn, định dạng', () => {
       const t = tuple();
       const url = signMediaUrl(t);
       const sig = parseSignedUrl(url).sig ?? '';
-      await probe(url);
+      await probe(url, false);
       await probe(parseSignedUrl(url).with({ exp: String(t.exp + 7) }));
       const logs = api.logs().join('\n');
       expect(logs).not.toContain(sig);

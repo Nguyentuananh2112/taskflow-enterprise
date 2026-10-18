@@ -16,6 +16,7 @@ export type Tag =
   | 'hr'
   | 'company'
   | 'notifications'
+  | 'payroll'
   | 'chat';
 
 export interface ApiRoute {
