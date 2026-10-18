@@ -122,6 +122,6 @@ describe('seed dev Mốc 3.5 (CO-07)', () => {
       { id: 1, seniorityPerYear: 500_000n, version: 1 },
     ]);
     const warn = t.logs.find((l) => l.includes('payroll.settings_restored_default'));
-    expect(warn && JSON.parse(warn)).toMatchObject({ level: 40 });
+    expect(warn && JSON.parse(warn)).toMatchObject({ level: 'warn' });
   });
 });
