@@ -252,15 +252,18 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     for (let i = 0; i < 5; i++) expect(call(i).headers.get('Authorization')).toBe('Bearer new');
   });
 
-  it('token còn hạn dài ⇒ không refresh chủ động; còn < 10 s ⇒ refresh trước', async () => {
-    let expiresAt = Date.now() + 5 * 60_000;
+  it('token còn hạn ⇒ không refresh chủ động, kể cả TTL ngắn 10 s vừa cấp (E2E — hồi quy cổng 798e4c0f); đã hết ⇒ refresh', async () => {
+    let expiresAt = Date.now() + 10_000; // JWT_ACCESS_TTL_SECONDS=10 của E2E, token vừa cấp
     const auth = fakeAuth({ expiresAt: () => expiresAt });
-    const { http } = setup([ok({ id: 'a' }), ok({ id: 'b' })], auth);
+    const { http } = setup([ok({ id: 'a' }), ok({ id: 'b' }), ok({ id: 'c' })], auth);
+    await http.get('/me', { schema: Item });
+    expiresAt = Date.now() + 3_000; // còn 3 s: vẫn dùng token cũ, đường TOKEN_EXPIRED lo nếu hết giữa chừng
     await http.get('/me', { schema: Item });
     expect(auth.refresh).not.toHaveBeenCalled();
-    expiresAt = Date.now() + SEND_MIN_TOKEN_MS - 1_000;
+    expiresAt = Date.now() - 1; // đã hết hạn (máy thức dậy)
     await http.get('/me', { schema: Item });
     expect(auth.refresh).toHaveBeenCalledTimes(1);
+    expect(SEND_MIN_TOKEN_MS).toBeLessThanOrEqual(1_000);
   });
 
   it('TOKEN_EXPIRED lần 2 sau khi đã refresh ⇒ không lặp vô hạn, kết thúc phiên', async () => {
