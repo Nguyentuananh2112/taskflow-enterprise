@@ -225,3 +225,61 @@ describe('B review T-049', () => {
     expect(completedYears('2028-02-29', '2029-03-01')).toBe(1);
   });
 });
+
+describe('Stryker payroll-math (T-049): message nêu đúng trường, regex neo hai đầu, biên', () => {
+  const base = {
+    baseSalary: 1,
+    paidHalfDays: 1,
+    standardDays: 1,
+    seniorityAllowance: 0,
+    lines: [],
+  };
+
+  it('RangeError nêu TÊN trường + khoảng (không giá trị) — web / log biết sai ở đâu', () => {
+    expect(() => salaryByDays(-1, 1, 1)).toThrow(
+      /^baseSalary phải là số nguyên trong \[0, 1000000000000\]$/,
+    );
+    expect(() => salaryByDays(1, 63, 1)).toThrow(
+      /^paidHalfDays phải là số nguyên trong \[0, 62\]$/,
+    );
+    expect(() => salaryByDays(1, 1, 0)).toThrow(/^standardDays phải là số nguyên trong \[1, 31\]$/);
+    expect(() => computePayslip({ ...base, seniorityAllowance: -1 })).toThrow(
+      /^seniorityAllowance /,
+    );
+    expect(() => computePayslip({ ...base, lines: [{ section: 'BONUS', amount: -1 }] })).toThrow(
+      /^amount /,
+    );
+    expect(() =>
+      computePayslip({
+        ...base,
+        lines: Array.from({ length: MAX_PAYSLIP_LINES + 1 }, () => ({
+          section: 'BONUS' as const,
+          amount: 1,
+        })),
+      }),
+    ).toThrow(/^Tối đa 50 dòng \/ phiếu$/);
+    expect(() => seniorityAllowanceOf(-1, 1)).toThrow(/^seniorityPerYear /);
+    expect(() => seniorityAllowanceOf(1, 81)).toThrow(/^seniorityYears /);
+    expect(() => seniorityAllowanceOf(MAX_MONEY_VND, 2)).toThrow(/^seniorityAllowance vượt trần$/);
+    expect(() => completedYears('2026-1-01', '2026-11-30')).toThrow(
+      /^Ngày phải có dạng YYYY-MM-DD: /,
+    );
+    expect(() => completedYears('2026-02-30', '2026-11-30')).toThrow(/^Ngày không tồn tại: /);
+    expect(() => periodLastDay('2026-13')).toThrow(/^Kỳ lương phải có dạng YYYY-MM: /);
+  });
+
+  it('ngày / kỳ phải khớp CẢ chuỗi (không tiền tố / hậu tố); ngày 00 không tồn tại', () => {
+    for (const bad of ['x2026-11-30', '2026-11-30x', '2026-11-30T00:00', '2026-01-00']) {
+      expect(() => completedYears(bad, '2027-01-01'), bad).toThrow(RangeError);
+    }
+    for (const bad of ['x2026-11', '2026-11x', '2026-11-01']) {
+      expect(() => periodLastDay(bad), bad).toThrow(RangeError);
+    }
+  });
+
+  it('thâm niên đúng bằng trần 1e12 được; vượt một đồng ⇒ RangeError', () => {
+    expect(seniorityAllowanceOf(MAX_MONEY_VND, 1)).toBe(MAX_MONEY_VND);
+    expect(seniorityAllowanceOf(MAX_MONEY_VND / 2, 2)).toBe(MAX_MONEY_VND);
+    expect(() => seniorityAllowanceOf(MAX_MONEY_VND / 2 + 1, 2)).toThrow(RangeError);
+  });
+});
