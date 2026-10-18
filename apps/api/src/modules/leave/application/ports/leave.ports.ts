@@ -63,6 +63,11 @@ export interface ILeaveRepository {
   listHolding(userId: string, year: number): Promise<LeaveRequestRecord[]>;
   /** Mọi đơn PENDING/APPROVED của người đó (mọi năm) — `offboardCleanup`. Sắp `startDate`, `id`. */
   listOpen(userId: string): Promise<LeaveRequestRecord[]>;
+  /**
+   * T-075 (TL theo soát B, NĐ 13 Đ.12): người dùng rút đồng ý xử lý lý do nghỉ ⇒ NULL `reason` của các đơn PENDING của
+   * chính họ (cùng transaction với việc rút). Đơn đã quyết giữ tới hạn D3. Không tăng version. Trả số đơn đã xóa lý do.
+   */
+  clearPendingReasons(userId: string): Promise<number>;
   find(id: string): Promise<LeaveRequestRecord | null>;
   add(record: LeaveRequestRecord): Promise<void>;
   /** UPDATE có điều kiện `version = expectedVersion`; `false` ⇒ 409 `version_conflict`. */

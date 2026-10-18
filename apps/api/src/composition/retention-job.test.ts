@@ -44,6 +44,7 @@ function fakeStores(remaining: Record<string, number> = {}, locked = true) {
     },
     notifications: { deleteNotifications: take('deleteNotifications') },
     hrProfile: { deleteProfiles: take('deleteProfiles') },
+    privacy: { purgeEventsBefore: take('purgeEventsBefore') },
     tryLock: () => Promise.resolve(locked),
   };
   return { stores, calls };
@@ -67,6 +68,8 @@ describe('retentionSteps — mốc tính theo phương án B (NOW = 2026-12-01)'
       ['deleteDepartures', '2024-12-01'],
       ['deleteNotifications', new Date('2026-06-04T00:00:00.000Z')],
       ['deleteHrAuditLogs', new Date('2021-12-01T00:00:00.000Z')],
+      // D16 (T-075): 5 năm (5 × 365 + 1 ngày) kể từ `at`.
+      ['purgeEventsBefore', new Date('2021-12-01T00:00:00.000Z')],
       ['scrubClientInfo', new Date('2025-11-01T00:00:00.000Z')],
       ['scrubReasons', '2025-11-01'],
       ['scrubCorrectionReasons', '2025-11-01'],

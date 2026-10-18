@@ -39,6 +39,8 @@ export function retentionPolicyFrom(env: {
 }
 
 const DAY_MS = 86_400_000;
+/** D16 (T-075, TL): sự kiện bằng chứng đồng ý quyền riêng tư giữ 5 năm kể từ `at` (như D7), không theo env. */
+export const PRIVACY_CONSENT_RETENTION_DAYS = 5 * 365 + 1;
 export const RETENTION_BATCH = 1_000;
 /** Trần số lô mỗi lượt (≤ 200k dòng) — phần còn lại để lượt sau (ngày mai). */
 export const RETENTION_MAX_BATCHES = 200;
@@ -86,6 +88,10 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
       run: (n) => s.notifications.deleteNotifications(before(p.notificationsDays), n),
     },
     { name: 'hr_audit_logs', run: (n) => s.company.deleteHrAuditLogs(before(p.hrAuditDays), n) },
+    {
+      name: 'privacy_consent_events',
+      run: (n) => s.privacy.purgeEventsBefore(before(PRIVACY_CONSENT_RETENTION_DAYS), n),
+    },
     {
       name: 'attendance_client_info',
       run: (n) => s.attendance.scrubClientInfo(before(p.clientInfoDays), n),

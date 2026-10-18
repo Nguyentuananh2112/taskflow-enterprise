@@ -63,6 +63,14 @@ export class PrismaLeaveRepository implements ILeaveRepository {
     return rows.map(toRecord);
   }
 
+  async clearPendingReasons(userId: string): Promise<number> {
+    const { count } = await this.db().leaveRequest.updateMany({
+      where: { userId, status: 'PENDING', reason: { not: null } },
+      data: { reason: null },
+    });
+    return count;
+  }
+
   async find(id: string): Promise<LeaveRequestRecord | null> {
     const row = await this.db().leaveRequest.findUnique({ where: { id } });
     return row ? toRecord(row) : null;

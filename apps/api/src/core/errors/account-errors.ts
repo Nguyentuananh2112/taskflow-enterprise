@@ -32,18 +32,3 @@ export class ActivationGoneError extends AppError {
     super(message);
   }
 }
-
-/**
- * 400 — T-075 (data-retention §5): đơn nghỉ có `reason` mà người gửi CHƯA đồng ý để công ty xử lý lý do nghỉ. Lý do
- * vốn tùy chọn ⇒ bỏ trống thì gửi được; web mời đồng ý ở trang "Quyền riêng tư".
- */
-export class LeaveReasonConsentRequiredError extends AppError {
-  readonly statusCode = 400;
-  readonly code: ErrorCode = 'LEAVE_REASON_CONSENT_REQUIRED';
-
-  constructor() {
-    super(
-      'Bạn chưa đồng ý để công ty xử lý lý do nghỉ — bỏ trống lý do hoặc đồng ý ở trang Quyền riêng tư.',
-    );
-  }
-}

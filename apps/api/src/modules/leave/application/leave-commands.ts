@@ -9,8 +9,8 @@ import { SubmitLeaveUseCase, type SubmitLeaveInput } from './use-cases/submit-le
 export { PERMISSION_HR_MANAGE, PERMISSION_LEAVE_SELF } from './leave-kit';
 
 export interface LeaveCommandDeps extends KitDeps {
-  /** T-075: thiếu ⇒ không kiểm đồng ý xử lý lý do nghỉ (test cũ). */
-  reasonConsent?: ILeaveReasonConsent | undefined;
+  /** T-075: đồng ý xử lý lý do nghỉ — BẮT BUỘC (fail-closed: không có nguồn ⇒ không có đường gửi lý do). */
+  reasonConsent: ILeaveReasonConsent;
 }
 export type { SubmitLeaveInput } from './use-cases/submit-leave.use-case';
 

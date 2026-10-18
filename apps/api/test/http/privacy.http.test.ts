@@ -1,6 +1,6 @@
 // T-075 — thông báo quyền riêng tư qua route thật (data-retention.md §5; TL chốt thay Q3/Q4 R27): GET / ack theo
 // phiên bản / consent lý do nghỉ; Admin cũng có; người đã rời ⇒ 401; đơn nghỉ có `reason` khi chưa đồng ý ⇒ 400.
-import { PRIVACY_NOTICE_VERSION, PrivacyDto } from '@taskflow/contracts';
+import { PRIVACY_NOTICE_VERSION, PrivacyConsentResultDto, PrivacyDto } from '@taskflow/contracts';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -85,33 +85,82 @@ describe('GET / POST ack /me/privacy', () => {
   });
 });
 
+const ruleOf = (res: request.Response) => (errorOf(res).details as { rule?: string } | null)?.rule;
+const mineReasons = async (by: TestUser) =>
+  new Map(
+    (
+      envelopeOf<{ id: string; reason: string | null }[]>(
+        await request(t.app).get('/api/v1/leave/requests?mine=1').set(by.auth),
+      ).data ?? []
+    ).map((r) => [r.id, r.reason]),
+  );
+
 describe('PUT /me/privacy/consent + đơn nghỉ có lý do (Q3)', () => {
-  it('chưa đồng ý: đơn CÓ lý do ⇒ 400 LEAVE_REASON_CONSENT_REQUIRED, không tạo đơn; KHÔNG lý do ⇒ 201', async () => {
+  it('chưa đồng ý: đơn CÓ lý do ⇒ 422 rule LEAVE_REASON_CONSENT_REQUIRED, không tạo đơn; KHÔNG lý do ⇒ 201', async () => {
     const blocked = await submitLeave(mia, 'Khám răng');
-    expect([blocked.status, errorOf(blocked).code]).toEqual([400, 'LEAVE_REASON_CONSENT_REQUIRED']);
+    expect([blocked.status, errorOf(blocked).code, ruleOf(blocked)]).toEqual([
+      422,
+      'BUSINESS_RULE_VIOLATION',
+      'LEAVE_REASON_CONSENT_REQUIRED',
+    ]);
     expect((await submitLeave(mia, '   ')).status).toBe(201); // chỉ khoảng trắng = không có lý do
   });
 
-  it('đồng ý ⇒ đơn có lý do 201; rút lại ⇒ lại 400, lý do của đơn cũ vẫn còn (job 13 tháng xóa)', async () => {
+  it('rút lại ⇒ lý do của đơn ĐANG CHỜ bị xóa (đếm trong response), đơn đã duyệt giữ (D3); gửi lý do lại ⇒ 422', async () => {
     const on = await send(mia, 'put', '/consent', { leaveReason: true });
-    expect(PrivacyDto.parse(envelopeOf(on).data)).toMatchObject({
+    expect(PrivacyConsentResultDto.parse(envelopeOf(on).data)).toMatchObject({
       consentLeaveReason: true,
       consentLeaveReasonAt: t.clock.now().toISOString(),
+      clearedPendingReasons: 0,
     });
-    const sent = await submitLeave(mia, 'Khám răng');
-    expect(sent.status).toBe(201);
-    const id = envelopeOf<{ id: string }>(sent).data?.id;
+    const pending = envelopeOf<{ id: string }>(await submitLeave(mia, 'Khám răng')).data?.id ?? '';
+    const decided =
+      envelopeOf<{ id: string }>(
+        await request(t.app).post('/api/v1/leave/requests').set(mia.auth).send({
+          type: 'ANNUAL',
+          startDate: '2026-11-25',
+          endDate: '2026-11-25',
+          reason: 'Đi cưới',
+        }),
+      ).data?.id ?? '';
+    await request(t.app)
+      .post(`/api/v1/leave/requests/${decided}/approve`)
+      .set(olivia.auth)
+      .send({ expectedVersion: 1 })
+      .expect(200);
+
+    const off = await send(mia, 'put', '/consent', { leaveReason: false });
+    expect(PrivacyConsentResultDto.parse(envelopeOf(off).data)).toMatchObject({
+      consentLeaveReason: false,
+      clearedPendingReasons: 1,
+    });
+    const reasons = await mineReasons(mia);
+    expect([reasons.get(pending), reasons.get(decided)]).toEqual([null, 'Đi cưới']);
+    expect(ruleOf(await submitLeave(mia, 'Lần 2'))).toBe('LEAVE_REASON_CONSENT_REQUIRED');
+  });
+
+  it('bằng chứng: mỗi lần ĐỔI thêm một sự kiện chỉ-thêm (kèm phiên bản thông báo); ack lặp / đồng ý lặp không thêm, giữ thời điểm đầu', async () => {
+    await send(mia, 'post', '/ack', { version: PRIVACY_NOTICE_VERSION });
+    const firstAck = (await privacy(mia)).ackedAt;
+    t.clock.advance(60_000);
+    await send(mia, 'post', '/ack', { version: PRIVACY_NOTICE_VERSION });
+    expect((await privacy(mia)).ackedAt).toBe(firstAck);
+    await send(mia, 'put', '/consent', { leaveReason: true });
+    await send(mia, 'put', '/consent', { leaveReason: true });
     await send(mia, 'put', '/consent', { leaveReason: false });
-    expect((await privacy(mia)).consentLeaveReason).toBe(false);
-    const again = await request(t.app)
-      .post('/api/v1/leave/requests')
-      .set(mia.auth)
-      .send({ type: 'ANNUAL', startDate: '2026-11-25', endDate: '2026-11-25', reason: 'Lần 2' });
-    expect(errorOf(again).code).toBe('LEAVE_REASON_CONSENT_REQUIRED');
-    const mine = envelopeOf<{ id: string; reason: string | null }[]>(
-      await request(t.app).get('/api/v1/leave/requests?mine=1').set(mia.auth),
-    ).data;
-    expect(mine?.find((r) => r.id === id)?.reason).toBe('Khám răng');
+    const store = t.persistence.auth.privacy as unknown as {
+      events(): { userId: string; kind: string; value: boolean; noticeVersion: number }[];
+    };
+    expect(
+      store
+        .events()
+        .filter((e) => e.userId === mia.id)
+        .map((e) => [e.kind, e.value, e.noticeVersion]),
+    ).toEqual([
+      ['ACK', true, PRIVACY_NOTICE_VERSION],
+      ['LEAVE_REASON', true, PRIVACY_NOTICE_VERSION],
+      ['LEAVE_REASON', false, PRIVACY_NOTICE_VERSION],
+    ]);
   });
 
   it('body sai ⇒ 400', async () => {

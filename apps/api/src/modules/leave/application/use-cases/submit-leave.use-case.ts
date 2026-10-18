@@ -1,4 +1,4 @@
-import { LeaveReasonConsentRequiredError } from '../../../../core/errors';
+import { BusinessRuleViolationError } from '../../../../core/errors';
 import type { LeaveType } from '../../domain/leave-balance';
 import {
   assertLeaveRange,
@@ -41,7 +41,7 @@ export function normalizeReason(reason: string | null | undefined): string | nul
 export class SubmitLeaveUseCase {
   constructor(
     private readonly kit: LeaveKit,
-    private readonly reasonConsent?: ILeaveReasonConsent,
+    private readonly reasonConsent: ILeaveReasonConsent,
   ) {}
 
   async execute(scope: LeaveScope, input: SubmitLeaveInput): Promise<LeaveRequestDto> {
@@ -52,13 +52,15 @@ export class SubmitLeaveUseCase {
       await this.kit.lockFor(actorId); // policy SHARED → leave:<user> (ADR-131/136)
       await this.kit.requireActor(actorId, PERMISSION_LEAVE_SELF);
       await d.company.assertActiveEmployee(actorId);
-      // T-075: có lý do mà chưa đồng ý xử lý lý do nghỉ ⇒ 400 (sau 401 / 403, trước luật nghiệp vụ).
+      // T-075 (TL theo soát B): có lý do mà chưa đồng ý xử lý lý do nghỉ ⇒ 422 rule (sau 401 / 403).
       if (
         normalizeReason(input.reason) !== null &&
-        this.reasonConsent &&
         !(await this.reasonConsent.hasLeaveReasonConsent(actorId))
       ) {
-        throw new LeaveReasonConsentRequiredError();
+        throw new BusinessRuleViolationError(
+          'LEAVE_REASON_CONSENT_REQUIRED',
+          'Bạn chưa đồng ý để công ty xử lý lý do nghỉ — bỏ trống lý do hoặc đồng ý ở trang Quyền riêng tư.',
+        );
       }
       const employment = await d.company.employmentOf(actorId);
       assertNotAfterLastDay(input, employment.lastDay);

@@ -61,7 +61,7 @@ describe('/company', () => {
     ]);
   });
 
-  it('T-075: Admin đặt đầu mối quyền riêng tư (giữ tên, KHÔNG audit); chuỗi rỗng ⇒ xóa; > 200 ⇒ 400', async () => {
+  it('T-075: Admin đặt đầu mối quyền riêng tư (giữ tên) ⇒ audit COMPANY_PRIVACY_CONTACT_SET; chuỗi rỗng ⇒ xóa; > 200 ⇒ 400', async () => {
     const set = await patch(olivia, {
       privacyContact: '  dpo@cty.vn — 0901 234 567 ',
       expectedVersion: 1,
@@ -71,7 +71,14 @@ describe('/company', () => {
       version: 2,
       privacyContact: 'dpo@cty.vn — 0901 234 567',
     });
-    expect((await t.persistence.company.hrAudit.list({ limit: 10 })).items).toEqual([]);
+    expect((await t.persistence.company.hrAudit.list({ limit: 10 })).items).toEqual([
+      expect.objectContaining({
+        actorId: olivia.id,
+        action: 'COMPANY_PRIVACY_CONTACT_SET',
+        before: { privacyContact: null },
+        after: { privacyContact: 'dpo@cty.vn — 0901 234 567' },
+      }),
+    ]);
     const cleared = await patch(olivia, { privacyContact: '', expectedVersion: 2 });
     expect(envelopeOf<{ privacyContact: string | null }>(cleared).data?.privacyContact).toBeNull();
     const long = await patch(olivia, { privacyContact: 'x'.repeat(201), expectedVersion: 3 });

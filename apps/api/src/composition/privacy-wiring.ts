@@ -5,6 +5,7 @@ import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import { PrivacyUseCases } from '../modules/auth/application/use-cases/privacy.use-cases';
 import { PRIVACY_PATH, privacyRoutes } from '../modules/auth/presentation/privacy.routes';
+import { requestContext } from '../core/context/request-context';
 import type { Persistence } from './persistence';
 
 /**
@@ -12,7 +13,7 @@ import type { Persistence } from './persistence';
  * — nối ở đây, không thêm phụ thuộc chéo giữa module.
  */
 export function privacyRouters(x: {
-  persistence: Pick<Persistence, 'auth' | 'company' | 'uow'>;
+  persistence: Pick<Persistence, 'auth' | 'company' | 'leave' | 'uow'>;
   auth: { authenticate: RequestHandler };
   company: { sessionGate: { isActive(userId: string): Promise<boolean> } };
   responder: HttpResponder;
@@ -28,8 +29,10 @@ export function privacyRouters(x: {
         return c && { name: c.name, privacyContact: c.privacyContact };
       },
     },
+    pendingLeaveReasons: persistence.leave.requests,
     uow: persistence.uow,
     clock: x.clock,
+    requestId: () => requestContext.requestId() ?? null,
   });
   const router = privacyRoutes({
     privacy,

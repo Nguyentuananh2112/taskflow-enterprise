@@ -31,7 +31,8 @@ export class GetCompanyQuery {
 /**
  * `PATCH /company {name?, privacyContact?, expectedVersion}` — `company:admin` (ADR-134) chốt dưới khóa FOR SHARE dòng
  * của actor (B-H3); `version` lệch ⇒ 409 VERSION_CONFLICT kèm bản hiện tại (ADR-010). Audit `COMPANY_RENAMED` {name}
- * cùng transaction CHỈ khi tên đổi (B: tên hiện ở mọi trang); đầu mối quyền riêng tư (T-075) không audit (TL).
+ * cùng transaction CHỈ khi tên đổi (B: tên hiện ở mọi trang); đổi đầu mối quyền riêng tư (T-075) ⇒ audit
+ * `COMPANY_PRIVACY_CONTACT_SET` {privacyContact} (TL theo soát B).
  * `privacyContact` rỗng ⇒ null (xóa).
  */
 export class RenameCompanyUseCase {
@@ -65,6 +66,17 @@ export class RenameCompanyUseCase {
       if (!next) {
         const current = (await this.d.company.get()) ?? before;
         throw new VersionConflictError(current.version, current);
+      }
+      if (next.privacyContact !== before.privacyContact) {
+        // T-075 (TL theo soát B L3): đầu mối hiện cho mọi nhân viên ⇒ Admin phải biết ai đổi.
+        await this.d.audit.record({
+          actorId: input.actorId,
+          action: 'COMPANY_PRIVACY_CONTACT_SET',
+          targetUserId: null,
+          refId: null,
+          before: { privacyContact: before.privacyContact },
+          after: { privacyContact: next.privacyContact },
+        });
       }
       if (next.name === before.name) return next;
       await this.d.audit.record({
