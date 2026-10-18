@@ -29,15 +29,17 @@ export class GetCompanyQuery {
 }
 
 /**
- * `PATCH /company {name, expectedVersion}` — `company:admin` (ADR-134) chốt dưới khóa FOR SHARE dòng của actor
- * (B-H3); `version` lệch ⇒ 409 VERSION_CONFLICT kèm bản hiện tại (ADR-010). Audit `COMPANY_RENAMED` {name} cùng
- * transaction (B: tên hiện ở mọi trang, Admin cần biết ai đổi).
+ * `PATCH /company {name?, privacyContact?, expectedVersion}` — `company:admin` (ADR-134) chốt dưới khóa FOR SHARE dòng
+ * của actor (B-H3); `version` lệch ⇒ 409 VERSION_CONFLICT kèm bản hiện tại (ADR-010). Audit `COMPANY_RENAMED` {name}
+ * cùng transaction CHỈ khi tên đổi (B: tên hiện ở mọi trang); đổi đầu mối quyền riêng tư (T-075) ⇒ audit
+ * `COMPANY_PRIVACY_CONTACT_SET` {privacyContact} (TL theo soát B).
+ * `privacyContact` rỗng ⇒ null (xóa).
  */
 export class RenameCompanyUseCase {
   constructor(
     private readonly d: {
       access: Pick<CompanyAccess, 'authorizeWrite'>;
-      company: Pick<ICompanyRepository, 'get' | 'rename'>;
+      company: Pick<ICompanyRepository, 'get' | 'update'>;
       audit: Pick<HrAuditWriter, 'record'>;
       uow: IUnitOfWork;
       clock: IClock;
@@ -47,18 +49,36 @@ export class RenameCompanyUseCase {
 
   execute(input: {
     actorId: string;
-    name: string;
+    name?: string | undefined;
+    privacyContact?: string | null | undefined;
     expectedVersion: number;
   }): Promise<CompanyProfile> {
     return this.d.uow.run(async () => {
       await this.d.access.authorizeWrite({ actorId: input.actorId, permission: 'company:admin' });
       const before = await this.d.company.get();
       if (!before) throw new ResourceNotFoundError('company');
-      const next = await this.d.company.rename({ ...input, at: this.d.clock.now() });
+      const next = await this.d.company.update({
+        name: input.name,
+        privacyContact: input.privacyContact === '' ? null : input.privacyContact,
+        expectedVersion: input.expectedVersion,
+        at: this.d.clock.now(),
+      });
       if (!next) {
         const current = (await this.d.company.get()) ?? before;
         throw new VersionConflictError(current.version, current);
       }
+      if (next.privacyContact !== before.privacyContact) {
+        // T-075 (TL theo soát B L3): đầu mối hiện cho mọi nhân viên ⇒ Admin phải biết ai đổi.
+        await this.d.audit.record({
+          actorId: input.actorId,
+          action: 'COMPANY_PRIVACY_CONTACT_SET',
+          targetUserId: null,
+          refId: null,
+          before: { privacyContact: before.privacyContact },
+          after: { privacyContact: next.privacyContact },
+        });
+      }
+      if (next.name === before.name) return next;
       await this.d.audit.record({
         actorId: input.actorId,
         action: 'COMPANY_RENAMED',

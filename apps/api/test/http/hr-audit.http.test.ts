@@ -29,6 +29,7 @@ beforeEach(async () => {
   olivia = await t.register('Olivia', undefined, { role: 'ADMIN' });
   hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'] });
   mia = await t.register('Mia');
+  await t.consentLeaveReason(hana, mia); // T-075: ca dưới gửi đơn CÓ lý do
   await t.persistence.company.company.ensure('Công ty Mẫu', t.clock.now());
 });
 

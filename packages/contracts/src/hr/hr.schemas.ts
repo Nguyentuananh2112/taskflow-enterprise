@@ -136,6 +136,8 @@ export const HrAuditAction = z.enum([
   'PAYROLL_PAYSLIP_REVISE',
   'PAYROLL_PAYSLIP_VIEW',
   'PAYROLL_EXPORT',
+  // T-075: Admin đổi đầu mối liên hệ quyền riêng tư (hiện cho mọi nhân viên) — before/after {privacyContact}.
+  'COMPANY_PRIVACY_CONTACT_SET',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

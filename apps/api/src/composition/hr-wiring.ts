@@ -21,7 +21,7 @@ type LeaveCompanyAudit = ReturnType<Parameters<typeof wireLeave>[1]['hrAudit']>;
  */
 export function wireLeaveAndProfile(
   d: {
-    persistence: Pick<Persistence, 'leave' | 'task' | 'uow' | 'hrProfile'>;
+    persistence: Pick<Persistence, 'leave' | 'task' | 'uow' | 'hrProfile' | 'auth'>;
     clock: IClock;
     ids: IIdGenerator;
     logger: ILogger;

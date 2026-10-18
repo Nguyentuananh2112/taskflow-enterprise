@@ -5,19 +5,35 @@ import { Cursor, DateOnly, IsoDateTime, limitQuery, searchQuery, Uuid, Version }
 import { WorkspaceRole } from '../rbac/permissions';
 import { CompanyGrant, CompanyRole, EmployeeStatus } from './company-roles';
 import { EmployeeProfileFields, SeniorityDto } from './employee-profile.schemas';
+import { PrivacyContact } from '../privacy/privacy.schemas';
 
 // Mốc 3.5 — cấp công ty (docs/design/company-level.md, ADR-133…140). Dữ liệu thuần cho FE / harness;
 // nguồn sự thật là `company/domain/roles.ts` của API, có test parity (ADR-080).
 
 // ---------------------------------------------------------------- công ty
 
-export const CompanyDto = z.object({ name: z.string(), version: Version });
+export const CompanyDto = z.object({
+  name: z.string(),
+  version: Version,
+  /** T-075: đầu mối liên hệ về dữ liệu cá nhân (chữ tự do ≤ 200); null ⇒ web hiện "liên hệ quản trị viên". */
+  privacyContact: z.string().nullable(),
+});
 export type CompanyDto = z.infer<typeof CompanyDto>;
 
-export const UpdateCompanyBody = z.strictObject({
-  name: z.string().trim().min(1).max(100),
-  expectedVersion: Version,
-});
+/**
+ * `PATCH /company` (company:admin): đổi tên và / hoặc đầu mối liên hệ — ít nhất một trường. `privacyContact` chuỗi rỗng
+ * hoặc null ⇒ xóa. Audit COMPANY_RENAMED chỉ khi tên đổi.
+ */
+export const UpdateCompanyBody = z
+  .strictObject({
+    name: z.string().trim().min(1).max(100).optional(),
+    privacyContact: PrivacyContact.nullable().optional(),
+    expectedVersion: Version,
+  })
+  .refine((b) => b.name !== undefined || b.privacyContact !== undefined, {
+    message: 'Cần ít nhất một trường để sửa.',
+    path: ['name'],
+  });
 export type UpdateCompanyBody = z.infer<typeof UpdateCompanyBody>;
 
 // ---------------------------------------------------------------- nhân viên (hr:manage)

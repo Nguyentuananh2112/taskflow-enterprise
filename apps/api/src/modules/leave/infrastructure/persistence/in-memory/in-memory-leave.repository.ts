@@ -76,6 +76,17 @@ export class InMemoryLeaveRepository implements ILeaveRepository, ILeaveReadMode
     );
   }
 
+  clearPendingReasons(userId: string): Promise<number> {
+    let n = 0;
+    for (const r of this.rows()) {
+      if (r.userId === userId && r.status === 'PENDING' && r.reason !== null) {
+        this.#s.requests.set(r.id, { ...r, reason: null });
+        n += 1;
+      }
+    }
+    return Promise.resolve(n);
+  }
+
   find(id: string): Promise<LeaveRequestRecord | null> {
     return Promise.resolve(this.#s.requests.get(id) ?? null);
   }

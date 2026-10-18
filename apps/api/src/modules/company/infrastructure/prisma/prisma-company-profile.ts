@@ -16,7 +16,7 @@ export class PrismaCompany implements ICompanyRepository {
   get(): Promise<CompanyProfile | null> {
     return this.db().company.findUnique({
       where: { id: COMPANY_ID },
-      select: { name: true, version: true },
+      select: { name: true, version: true, privacyContact: true },
     });
   }
 
@@ -30,14 +30,20 @@ export class PrismaCompany implements ICompanyRepository {
     return row;
   }
 
-  async rename(input: {
-    name: string;
+  async update(input: {
+    name?: string | undefined;
+    privacyContact?: string | null | undefined;
     expectedVersion: number;
     at: Date;
   }): Promise<CompanyProfile | null> {
     const { count } = await this.db().company.updateMany({
       where: { id: COMPANY_ID, version: input.expectedVersion },
-      data: { name: input.name, version: { increment: 1 }, updatedAt: input.at },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.privacyContact !== undefined ? { privacyContact: input.privacyContact } : {}),
+        version: { increment: 1 },
+        updatedAt: input.at,
+      },
     });
     return count === 1 ? this.get() : null;
   }

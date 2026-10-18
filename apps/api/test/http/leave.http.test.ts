@@ -44,6 +44,7 @@ beforeEach(async () => {
   hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'] });
   [mia, max, otto] = [await t.register('Mia'), await t.register('Max'), await t.register('Otto')];
   t.persistence.companyStore!.removeMember(otto.id);
+  await t.consentLeaveReason(hana, mia, max); // T-075: ca dưới gửi đơn CÓ lý do
 });
 
 describe('leave HTTP — luồng chính', () => {

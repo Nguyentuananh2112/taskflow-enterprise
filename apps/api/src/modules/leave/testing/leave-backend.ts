@@ -63,6 +63,9 @@ export class RecordingLeaveRepository implements ILeaveRepository {
   listHolding(userId: string, year: number): Promise<LeaveRequestRecord[]> {
     return this.inner.listHolding(userId, year);
   }
+  clearPendingReasons(userId: string): Promise<number> {
+    return this.inner.clearPendingReasons(userId);
+  }
   listOpen(userId: string): Promise<LeaveRequestRecord[]> {
     return this.inner.listOpen(userId);
   }

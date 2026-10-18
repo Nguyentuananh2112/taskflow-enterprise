@@ -7,6 +7,7 @@ import { PrismaLeaveRetention } from '../modules/leave/infrastructure/persistenc
 import { PrismaNotificationRetention } from '../modules/notifications/infrastructure/prisma/prisma-notification-retention';
 import { PrismaCompanyRetention } from '../modules/company/infrastructure/prisma/prisma-company-retention';
 import { PrismaEmployeeProfileRetention } from '../modules/hr-profile/infrastructure/prisma/prisma-employee-profiles';
+import { PrismaPrivacyStore } from '../modules/auth/infrastructure/persistence/prisma/prisma-privacy.store';
 
 /** Bước dọn của từng module (chỉ Prisma) — khớp cấu trúc các lớp `Prisma*Retention`. */
 export interface RetentionStores {
@@ -30,6 +31,8 @@ export interface RetentionStores {
   notifications: { deleteNotifications(cutoff: Date, limit: number): Promise<number> };
   /** D8 (Mốc 5, T-054): hồ sơ của người đã nghỉ quá mốc D5. */
   hrProfile: { deleteProfiles(cutoffDate: string, limit: number): Promise<number> };
+  /** D16 (T-075): sự kiện bằng chứng đồng ý — 5 năm kể từ `at`. */
+  privacy: { purgeEventsBefore(cutoff: Date, limit: number): Promise<number> };
   /** Câu ĐẦU của mỗi transaction lô; `false` ⇒ instance khác đang chạy. */
   tryLock(): Promise<boolean>;
 }
@@ -53,6 +56,7 @@ export function prismaRetentionStores(db: () => Prisma.TransactionClient): Reten
     company: new PrismaCompanyRetention(db),
     notifications: new PrismaNotificationRetention(db),
     hrProfile: new PrismaEmployeeProfileRetention(db),
+    privacy: new PrismaPrivacyStore(db),
     tryLock: prismaRetentionLock(db),
   };
 }

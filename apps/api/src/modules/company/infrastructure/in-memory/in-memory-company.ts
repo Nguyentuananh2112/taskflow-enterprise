@@ -47,14 +47,18 @@ export class InMemoryCompanyStore
   }
 
   ensure(name: string): Promise<CompanyProfile> {
-    this.#state.company ??= { name, version: 1 };
+    this.#state.company ??= { name, version: 1, privacyContact: null };
     return Promise.resolve({ ...this.#state.company });
   }
 
-  rename(input: { name: string; expectedVersion: number }): Promise<CompanyProfile | null> {
+  update(input: Parameters<ICompanyRepository['update']>[0]): Promise<CompanyProfile | null> {
     const c = this.#state.company;
     if (!c || c.version !== input.expectedVersion) return Promise.resolve(null);
-    this.#state.company = { name: input.name, version: c.version + 1 };
+    this.#state.company = {
+      name: input.name ?? c.name,
+      privacyContact: input.privacyContact !== undefined ? input.privacyContact : c.privacyContact,
+      version: c.version + 1,
+    };
     return Promise.resolve({ ...this.#state.company });
   }
 

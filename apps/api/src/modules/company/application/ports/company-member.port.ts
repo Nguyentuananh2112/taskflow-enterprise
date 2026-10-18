@@ -69,6 +69,8 @@ export interface NewCompanyMember {
 export interface CompanyProfile {
   name: string;
   version: number;
+  /** T-075: đầu mối liên hệ về dữ liệu cá nhân (chữ tự do ≤ 200); null = chưa đặt. */
+  privacyContact: string | null;
 }
 
 /** Đọc `companies`; `null` khi DB vừa migrate, chưa `admin:bootstrap`. */
@@ -76,9 +78,13 @@ export interface ICompanyRepository {
   get(): Promise<CompanyProfile | null>;
   /** Tạo dòng `companies` nếu chưa có (bootstrap); đã có ⇒ giữ nguyên tên cũ. */
   ensure(name: string, at: Date): Promise<CompanyProfile>;
-  /** Đổi tên khi `version` khớp (ADR-010) ⇒ bản mới (`version + 1`); lệch / chưa có dòng ⇒ `null`. */
-  rename(input: {
-    name: string;
+  /**
+   * Đổi tên và / hoặc đầu mối liên hệ khi `version` khớp (ADR-010) ⇒ bản mới (`version + 1`); lệch / chưa có dòng ⇒
+   * `null`. Trường `undefined` ⇒ giữ nguyên; `privacyContact: null` ⇒ xóa.
+   */
+  update(input: {
+    name?: string | undefined;
+    privacyContact?: string | null | undefined;
     expectedVersion: number;
     at: Date;
   }): Promise<CompanyProfile | null>;

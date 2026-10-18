@@ -1,4 +1,5 @@
 import { applyVietnameseZodLocale } from '@taskflow/contracts';
+import { PRIVACY_NOTICE_VERSION } from '@taskflow/contracts';
 import { MemoryStore } from 'express-rate-limit';
 import request, { type Response } from 'supertest';
 
@@ -172,6 +173,20 @@ export function createTestApp(
     return { ip, token: data.accessToken, cookie: refreshCookieOf(res, cookieName) };
   }
 
+  /** T-075: người dùng đồng ý xử lý lý do nghỉ (như `PUT /me/privacy/consent`) — test gửi đơn CÓ `reason`. */
+  const consentLeaveReason = (...users: { id: string }[]) =>
+    persistence.uow.run(async () => {
+      for (const u of users) {
+        await persistence.auth.privacy.setLeaveReasonConsent({
+          userId: u.id,
+          consent: true,
+          noticeVersion: PRIVACY_NOTICE_VERSION,
+          at: clock.now(),
+          requestId: null,
+        });
+      }
+    });
+
   return {
     app,
     container,
@@ -182,6 +197,7 @@ export function createTestApp(
     register,
     login,
     nextIp,
+    consentLeaveReason,
   };
 }
 
