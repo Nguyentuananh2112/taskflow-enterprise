@@ -271,7 +271,7 @@ describe('createGlobalRateLimit & helpers', () => {
     expect((await request(app).get('/r')).status).toBe(429);
   });
 
-  it('review T-016: "Authorization: Bearer garbage" KHÔNG né được giới hạn IP — sau 30 lần 401 ⇒ 429', async () => {
+  it('review T-016: "Authorization: Bearer garbage" KHÔNG né được giới hạn IP — hết suất 401 ⇒ 429', async () => {
     const app = guardedApp({ authFailure: 3 });
     for (let i = 0; i < 3; i++) {
       expect((await request(app).get('/r').set('Authorization', 'Bearer garbage')).status).toBe(
