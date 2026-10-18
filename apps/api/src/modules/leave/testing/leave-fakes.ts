@@ -202,4 +202,7 @@ export class FakeHireDates implements ILeaveHireDates {
   hireDateOf(userId: string): Promise<CalendarDate | null> {
     return Promise.resolve(this.dates.get(userId) ?? null);
   }
+  hireDatesOf(userIds: readonly string[]): Promise<ReadonlyMap<string, CalendarDate | null>> {
+    return Promise.resolve(new Map(userIds.map((id) => [id, this.dates.get(id) ?? null])));
+  }
 }

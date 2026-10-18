@@ -49,7 +49,7 @@ describe('SEC-30 — CORS whitelist chính xác', () => {
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  // T-037: PUT (members/:userId/grants) + Idempotency-Key (check-in/out T-038) là thay đổi có chủ đích —
+  // T-037: PUT (members/:userId/grants) + Idempotency-Key (check-in/out T-038) + X-Upload-Name (T-067) là thay đổi có chủ đích —
   // khẳng định ĐÚNG tập khai báo (không thừa, không thiếu), method / header lạ vẫn bị từ chối.
   const listOf = (h: string | undefined) =>
     (h ?? '')
@@ -80,6 +80,8 @@ describe('SEC-30 — CORS whitelist chính xác', () => {
       'idempotency-key',
       'x-client-id',
       'x-request-id',
+      // Mốc 6 (T-067, ADR-141): tên gốc của upload nhị phân.
+      'x-upload-name',
     ]);
   });
 

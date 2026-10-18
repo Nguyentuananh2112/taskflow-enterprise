@@ -88,7 +88,9 @@ describe('handshake xác thực (SEC-35)', () => {
     const socket = rt.client({ token: 'user:u1:s1', clientId: 'not-a-uuid' });
     await connected(socket);
     const [server] = await rt.gateway.io.fetchSockets();
-    expect([...(server?.rooms ?? [])]).toEqual(expect.arrayContaining(['user:u1', 'session:s1']));
+    expect([...(server?.rooms ?? [])]).toEqual(
+      expect.arrayContaining(['user:u1', 'session:s1', 'company']),
+    );
     expect(server?.data.clientId).toBeNull();
   });
 
@@ -633,7 +635,8 @@ describe('auth:renew & hết hạn (security §5.3)', () => {
     expect(await emitWithAck(socket, 'auth:renew', { token: 'user:u1:s9' })).toEqual({ ok: true });
     const [server] = await rt.gateway.io.fetchSockets();
     expect([...(server?.rooms ?? [])].sort()).toEqual(
-      ['project:' + P1, 'session:s9', 'user:u1', server?.id ?? ''].sort(),
+      // `company` (Mốc 6 — T-068): mọi socket đã xác thực lại, cho `user:avatar-changed`.
+      ['company', 'project:' + P1, 'session:s9', 'user:u1', server?.id ?? ''].sort(),
     );
     expect(await noEvent(socket, 'auth:expired', 350)).toBe(true); // timer cũ (200ms) đã bị thay
   });

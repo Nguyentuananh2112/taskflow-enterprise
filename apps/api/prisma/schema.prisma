@@ -136,6 +136,7 @@ model User {
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
   lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(3)
   deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3) // D2; khác null ⇒ login/refresh bị từ chối như sai thông tin; set cùng tx với tăng token_version + thu hồi token (USER_DELETED)
+  avatarVersion     Int?      @map("avatar_version") // Mốc 6 (ADR-142): blob avatars/<id>/<v>/{256,64}; NULL = chữ cái; CHECK 1…999999999 bằng SQL tay
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -174,6 +175,12 @@ model User {
   // Mốc 5 (T-055, ADR-129)
   correctionRequests AttendanceCorrectionRequest[] @relation("CorrectionRequester")
   correctionsDecided AttendanceCorrectionRequest[] @relation("CorrectionDecider")
+  // Mốc 6 — trò chuyện (T-069a, ADR-143/144): mọi tham chiếu tới users là Restrict (v1 không xóa cứng user).
+  chatConversationsCreated ChatConversation[] @relation("ChatConversationCreator")
+  chatParticipations       ChatParticipant[]
+  chatReadStates           ChatReadState[]
+  chatMessagesSent         ChatMessage[]
+  chatUploads              ChatAttachment[]
 
   @@map("users")
 }
@@ -214,9 +221,11 @@ model Workspace {
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   archivedAt  DateTime? @map("archived_at") @db.Timestamptz(3) // Mốc 3.5: Admin lưu trữ ws mồ côi 0 thành viên (ADR-134)
 
-  deletedBy User?             @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
-  members   WorkspaceMember[]
-  projects  Project[]
+  deletedBy        User?             @relation("WorkspaceDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
+  members          WorkspaceMember[]
+  projects         Project[]
+  // Mốc 6: phòng trò chuyện của ws (tạo lười, Cascade khi purge — R20).
+  chatConversation ChatConversation?
 
   @@index([purgeAt], map: "workspaces_purge_at_idx", where: raw("purge_at IS NOT NULL")) // partialIndexes (ADR-062)
   @@index([deletedById])
@@ -604,4 +613,134 @@ model AttendanceCorrectionRequest {
   @@index([userId, workDate])
   @@index([decidedById])
   @@map("attendance_correction_requests")
+}
+
+// ================================================================ Mốc 6 — trò chuyện (T-069a; avatar-chat.md §3, ADR-143/144)
+// CHECK (loại ⇔ cột, thân ≤ 4 000, kích thước ≥ 0) nằm trong migration SQL — Prisma không biểu diễn được.
+
+enum ChatConversationKind {
+  DIRECT
+  GROUP
+  WORKSPACE
+
+  @@map("chat_conversation_kind")
+}
+
+enum ChatParticipantRole {
+  OWNER
+  MEMBER
+
+  @@map("chat_participant_role")
+}
+
+enum ChatAttachmentKind {
+  IMAGE
+  FILE
+
+  @@map("chat_attachment_kind")
+}
+
+model ChatConversation {
+  id            String               @id @default(uuid(7)) @db.Uuid
+  kind          ChatConversationKind
+  title         String?              @db.VarChar(80) // GROUP: bắt buộc
+  directKey     String?              @unique @map("direct_key") @db.VarChar(73) // DIRECT: "<uuid nhỏ>:<uuid lớn>"
+  workspaceId   String?              @unique @map("workspace_id") @db.Uuid // WORKSPACE: tạo lười
+  createdById   String               @map("created_by_id") @db.Uuid
+  lastMessageAt DateTime?            @map("last_message_at") @db.Timestamptz(3)
+  lastMessageId String?              @map("last_message_id") @db.Uuid // không FK (cập nhật trong transaction gửi)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace    Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User              @relation("ChatConversationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  participants ChatParticipant[]
+  readStates   ChatReadState[]
+  messages     ChatMessage[]
+
+  @@index([createdById])
+  @@map("chat_conversations")
+}
+
+/// Chỉ DIRECT / GROUP (WORKSPACE tính từ workspace_members). Hiệu lực: left_at NULL VÀ joined_at ≥ company_members.created_at (ADR-143).
+model ChatParticipant {
+  conversationId String              @map("conversation_id") @db.Uuid
+  userId         String              @map("user_id") @db.Uuid
+  role           ChatParticipantRole @default(MEMBER)
+  joinedAt       DateTime            @map("joined_at") @db.Timestamptz(3)
+  leftAt         DateTime?           @map("left_at") @db.Timestamptz(3)
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([conversationId, userId])
+  @@index([userId, leftAt])
+  @@map("chat_participants")
+}
+
+model ChatReadState {
+  conversationId    String   @map("conversation_id") @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  lastReadMessageId String?  @map("last_read_message_id") @db.Uuid // không FK (tin có thể bị purge)
+  muted             Boolean  @default(false)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("chat_read_states")
+}
+
+model ChatMessage {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  conversationId String    @map("conversation_id") @db.Uuid
+  senderId       String    @map("sender_id") @db.Uuid
+  clientMsgId    String    @map("client_msg_id") @db.Uuid
+  requestHash    String    @map("request_hash") @db.Char(64)
+  body           String? // NULL khi đã xóa / chỉ đính kèm; CHECK ≤ 4 000 ký tự ở SQL
+  replyToId      String?   @map("reply_to_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  editedAt       DateTime? @map("edited_at") @db.Timestamptz(3)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User             @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  replyTo      ChatMessage?     @relation("ChatReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      ChatMessage[]    @relation("ChatReply")
+  attachments  ChatAttachment[]
+
+  @@unique([senderId, clientMsgId])
+  @@index([conversationId, createdAt, id])
+  @@index([createdAt])
+  @@index([replyToId])
+  @@map("chat_messages")
+}
+
+model ChatAttachment {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  uploaderId   String             @map("uploader_id") @db.Uuid
+  messageId    String?            @map("message_id") @db.Uuid // NULL = upload chưa gắn (mồ côi sau 24 giờ)
+  kind         ChatAttachmentKind
+  originalName String             @map("original_name") @db.VarChar(255) // đã làm sạch — chỉ hiển thị
+  mime         String             @db.VarChar(100)
+  sizeBytes    Int                @map("size_bytes")
+  sha256       String             @db.Char(64)
+  width        Int?
+  height       Int?
+  fileKey      String             @unique @map("file_key") @db.VarChar(128) // một blob ⇔ một dòng (B M3)
+  previewKey   String?            @map("preview_key") @db.VarChar(128)
+  thumbKey     String?            @map("thumb_key") @db.VarChar(128)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  uploader User         @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  message  ChatMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([createdAt], map: "chat_attachments_orphan_created_at_idx", where: raw("message_id IS NULL"))
+  @@index([uploaderId, createdAt])
+  @@index([previewKey]) // files-sweep existingBlobKeys (B M3)
+  @@index([thumbKey])
+  @@map("chat_attachments")
 }

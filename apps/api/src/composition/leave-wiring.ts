@@ -29,7 +29,10 @@ export type LeaveModule = ReturnType<typeof createLeaveModule>;
  * Module leave (T-039/T-064) với adapter thật: lịch ← attendance, quyền / nhân viên / nhiệm kỳ + audit ← company
  * (T-061), thông báo ← notifications, tên ← reader user của task/auth.
  */
-const NO_HIRE_DATES: ILeaveHireDates = { hireDateOf: () => Promise.resolve(null) };
+const NO_HIRE_DATES: ILeaveHireDates = {
+  hireDateOf: () => Promise.resolve(null),
+  hireDatesOf: () => Promise.resolve(new Map()),
+};
 
 export function wireLeave(
   d: {

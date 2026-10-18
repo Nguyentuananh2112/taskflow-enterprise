@@ -26,8 +26,12 @@ export const testRouter = {
   pathname: () => window.location.pathname,
 };
 
-/** Tham số động của route app/ (`/w/[wsId]`, `/w/[wsId]/p/[projectId]`). */
+/** Tham số động của route app/ (`/w/[wsId]`, `/w/[wsId]/p/[projectId]`, Mốc 6: `/chat/[id]`, `/chat/ws/[wsId]`). */
 function paramsOf(pathname: string): Record<string, string> {
+  const room = /^\/chat\/ws\/([^/]+)/.exec(pathname);
+  if (room) return { wsId: room[1] ?? '' };
+  const chat = /^\/chat\/([^/]+)/.exec(pathname);
+  if (chat) return { id: chat[1] ?? '' };
   const match = /^\/w\/([^/]+)(?:\/p\/([^/]+))?/.exec(pathname);
   if (!match) return {};
   return { wsId: match[1] ?? '', ...(match[2] ? { projectId: match[2] } : {}) };

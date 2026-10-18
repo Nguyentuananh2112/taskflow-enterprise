@@ -169,10 +169,20 @@ describe('header bảo mật (security.md §6.2–6.3)', () => {
     expect(ok.headers['access-control-allow-origin']).toBe(ORIGIN);
     expect(ok.headers['access-control-allow-credentials']).toBe('true');
     expect(ok.headers['access-control-allow-headers']).toBe(
-      'Content-Type,Authorization,X-Request-Id,X-Client-Id,Idempotency-Key',
+      'Content-Type,Authorization,X-Request-Id,X-Client-Id,Idempotency-Key,X-Upload-Name',
     );
     // T-037: PUT (members/:userId/grants) phải qua preflight của trình duyệt.
     expect(ok.headers['access-control-allow-methods']?.split(',')).toContain('PUT');
+    // Mốc 6: upload nhị phân (PUT me/avatar, POST chat/uploads) gửi header X-Upload-Name ⇒ preflight
+    // phải cho phép (H, T-071).
+    const upload = await request(build())
+      .options('/api/v1/me/avatar')
+      .set('Origin', ORIGIN)
+      .set('Access-Control-Request-Method', 'PUT')
+      .set('Access-Control-Request-Headers', 'authorization,content-type,x-upload-name');
+    expect(upload.status).toBe(204);
+    expect(upload.headers['access-control-allow-origin']).toBe(ORIGIN);
+    expect(upload.headers['access-control-allow-headers']?.split(',')).toContain('X-Upload-Name');
     const bad = await request(build())
       .options('/api/v1/context')
       .set('Origin', 'https://evil.example')

@@ -54,6 +54,8 @@ export interface MemberView {
   fullName: string;
   role: WorkspaceRole;
   joinedAt: Date;
+  /** Mốc 6 (ADR-142): URL ký variant 64 khi nguồn có (composition). */
+  avatarUrl?: string | null;
 }
 
 export interface ProjectView {
@@ -86,7 +88,7 @@ export function toDeletedWorkspaceView(ws: WorkspaceSnapshot): DeletedWorkspaceV
 
 export function toMemberView(
   m: MembershipSnapshot,
-  user: Pick<UserSummary, 'email' | 'fullName'>,
+  user: Pick<UserSummary, 'email' | 'fullName' | 'avatarUrl'>,
 ): MemberView {
   return {
     userId: m.userId,
@@ -94,6 +96,7 @@ export function toMemberView(
     fullName: user.fullName,
     role: m.role,
     joinedAt: m.joinedAt,
+    ...(user.avatarUrl === undefined ? {} : { avatarUrl: user.avatarUrl }),
   };
 }
 

@@ -102,8 +102,12 @@ Lưu ý về Hetzner: ngày 2026-10-15, trang Cloud ghi dòng Cost-Optimized (CX
 
 ### 1.3 Đề xuất (đã được chọn làm ứng viên mặc định)
 
-**Phương án C, region Singapore; staging chạy trên 1 droplet compose.** Lý do:
+> **Cập nhật Mốc 6 (T-074, `avatar-chat.md` ADR-141, B HIGH-1 — TL chốt 17/10):** ảnh đại diện + tệp trò chuyện lưu trên **ổ đĩa máy chủ** (người dùng không muốn dịch vụ lưu trữ cloud trả phí). App Platform (phương án C) **không có ổ lâu dài** cho container ⇒ **ứng viên mặc định đổi sang phương án A**: 1 VPS (hoặc **máy văn phòng** luôn bật) chạy Docker Compose + Caddy, kho tệp là volume Docker `filestore:/var/lib/taskflow/files` trên ổ cục bộ (§4.6). Phương án C chỉ dùng lại được khi kho tệp chuyển sang MinIO / S3 tự host (adapter `IFileStore` mới — không đổi use case).
+> - Phương án A kéo theo mọi nghĩa vụ của cột A: **WAL-G hoặc pgBackRest** (PITR) sang storage của nhà cung cấp khác, backup tệp mã hóa (§4.3), diễn tập restore hằng tháng (§4.4), tự vá OS / firewall (§9).
+> - **Người dùng chốt hosting (có ổ lâu dài) — bắt buộc TRƯỚC deploy** (`security-go-live.md`). Hai lựa chọn cần người dùng so: VPS (≈ $36/tháng, §1.2 cột A) hoặc máy văn phòng (không tốn thuê; rủi ro mất điện / mất mạng / hỏng ổ cao hơn ⇒ cần UPS + ổ RAID1 hoặc backup ngoài máy mỗi ngày là tối thiểu).
+> - Lý do PaaS bên dưới (PITR có sẵn, không vá OS) vẫn đúng — đó là cái giá của việc tự lưu tệp; R47.
 
+**(Trước Mốc 6) Phương án C, region Singapore; staging chạy trên 1 droplet compose.** Lý do:
 1. Dữ liệu thật mà không có DBA → cần PITR 7 ngày có sẵn.
 2. Không phải vá OS.
 3. Scale ngang chỉ là kéo số instance.
@@ -324,15 +328,15 @@ Nguyên tắc: **code phiên bản N và N+1 phải cùng chạy được trên 
 - CI kiểm tra (ADR-062): `pnpm exec prisma migrate diff --from-migrations … --to-schema … --exit-code` phải rỗng (quên tạo migration thì đỏ), và migrate từ DB rỗng lên head phải thành công. Prisma 7 đã **bỏ** `--shadow-database-url`; CI (T-011) chạy `migrate deploy` rồi `migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (DB sau migrate phải khớp schema).
 
 ### 4.3 Backup (áp dụng khi lên staging/prod — Phase 5)
+| Lớp | Phương án C (ứng viên) | Phương án A (dự phòng) |
+|---|---|---|
+| PITR | Có sẵn: daily full + WAL, khôi phục mọi thời điểm trong **7 ngày** | WAL-G/pgBackRest đẩy WAL liên tục + base backup hằng ngày sang object storage **khác nhà cung cấp** |
+| Logical backup độc lập (ADR-074) | Job hằng ngày chạy `pg_dump -Fc` (client **18.x** khớp server) → object storage **ngoài nhà cung cấp hosting**, mã hóa phía client (age/gpg), bucket bật versioning/object lock | như cột trái |
+| Thời gian giữ | PITR 7 ngày; logical: 14 bản hằng ngày + 8 bản hằng tuần + 12 bản hằng tháng | như vậy |
+| Valkey | Không backup (dữ liệu dựng lại được) | như vậy |
+| **Kho tệp (Mốc 6, ADR-141)** | — (C không có ổ lâu dài, xem §1.3) | **Hằng ngày, MÃ HÓA phía máy chủ trước khi rời máy**: `restic` (repo mã hóa sẵn) hoặc `tar \| age` theo runbook `backup-restore.md`. **Khóa giải mã KHÔNG nằm trên máy chủ** (két mật khẩu của Admin + bản giấy). Đích tách khỏi máy chủ: ổ / máy khác hoặc cùng kho backup ngoài nhà cung cấp của DB. Giữ theo cùng tầng với logical backup DB (14 / 8 / 12) — R48: dữ liệu đã xóa còn trong backup tới hết tầng giữ |
 
-| Lớp                              | Phương án C (ứng viên)                                                                                                                                                          | Phương án A (dự phòng)                                                                              |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| PITR                             | Có sẵn: daily full + WAL, khôi phục mọi thời điểm trong **7 ngày**                                                                                                              | WAL-G/pgBackRest đẩy WAL liên tục + base backup hằng ngày sang object storage **khác nhà cung cấp** |
-| Logical backup độc lập (ADR-074) | Job hằng ngày chạy `pg_dump -Fc` (client **18.x** khớp server) → object storage **ngoài nhà cung cấp hosting**, mã hóa phía client (age/gpg), bucket bật versioning/object lock | như cột trái                                                                                        |
-| Thời gian giữ                    | PITR 7 ngày; logical: 14 bản hằng ngày + 8 bản hằng tuần + 12 bản hằng tháng                                                                                                    | như vậy                                                                                             |
-| Valkey                           | Không backup (dữ liệu dựng lại được)                                                                                                                                            | như vậy                                                                                             |
-
-**Mục tiêu:** RPO ≤ 5 phút (PITR), ≤ 24h nếu mất cả tài khoản hosting; RTO ≤ 2 giờ.
+**Mục tiêu:** RPO ≤ 5 phút (PITR), ≤ 24h nếu mất cả tài khoản hosting; RTO ≤ 2 giờ. **Kho tệp:** RPO ≤ 24h (backup hằng ngày — hỏng ổ ⇒ mất tệp từ lần backup cuối, R47).
 
 Repo public → file backup, dump và dữ liệu thật **không bao giờ** nằm trong repo hay artifact CI (ADR-072). Đã chặn trong `.gitignore` và gitleaks.
 
@@ -348,6 +352,7 @@ Repo public → file backup, dump và dữ liệu thật **không bao giờ** n�
      - collation `"C"` và partial unique index còn nguyên
      - role `taskflow_app`/`taskflow_migrator` và quyền còn đúng
   4. Ghi kết quả vào `docs/ops/restore-drills.md`, rồi xóa cluster tạm.
+- **Kho tệp (Mốc 6):** cùng buổi diễn tập, khôi phục **DB trước, tệp sau** vào thư mục tạm; kiểm (a) mẫu ngẫu nhiên ≥ 20 khóa trong DB mở được qua `/media` (thiếu tệp ⇒ 404 + log `media.blob_missing`, F-09 — không 500); (b) tệp thừa không có dòng DB bị `files-sweep` dọn; (c) giải mã bằng khóa lấy từ két (chứng minh khóa không chỉ nằm trên máy chủ). Ghi vào `docs/ops/restore-drills.md`.
 - Sau mỗi lần dump, job tự chạy `pg_restore --list` để chắc file không hỏng. Job lỗi, hoặc không chạy quá 26h → gửi email cảnh báo (§6.5).
 - Trước Phase 5 vẫn diễn tập được ở local: dump từ compose → restore vào `postgres-test`. Nên làm 1 lần ở Phase 3, khi đã có schema thật.
 
@@ -365,6 +370,15 @@ Repo public → file backup, dump và dữ liệu thật **không bao giờ** n�
   ≥ 6 / 10 (`DATABASE_POOL_MAX` mặc định) cho request thường. Tăng số export đồng thời thì phải tăng `DATABASE_POOL_MAX`
   tương ứng (và ngân sách ở dòng trên).
 - Khi nào tăng N / bật PgBouncer / nâng gói, cách đo giới hạn kết nối thật của cụm: `docs/runbook/scaling.md` §1, §4.
+
+### 4.6 Kho tệp trên ổ cục bộ (Mốc 6 — ADR-141, T-067; B review T-074)
+- **Volume:** `filestore:/var/lib/taskflow/files`, chủ `node`, **ngoài** thư mục app / web root (`FILE_STORE_DIR` tuyệt đối — sai ⇒ API từ chối khởi động). Hệ thống tệp phải hỗ trợ **hard link** (ext4 / xfs trên Linux, NTFS trên Windows): commit tệp là `link(tmp, đích)` + `unlink(tmp)` để KHÔNG BAO GIỜ ghi đè (G, B M-a); API thử `link` lúc khởi động, không được ⇒ từ chối khởi động. **Không** dùng FAT / exFAT, ổ mạng SMB/NFS, hay bind mount của Docker Desktop cho kho production.
+- **Độ bền khi mất điện:** tệp được `fsync` trước khi đặt vào chỗ, nhưng **thư mục chưa `fsync`** sau link/unlink ⇒ mất điện đúng lúc đó có thể mất tệp vừa tải lên dù DB đã ghi (mở ra ⇒ 404 + log, không 500). Chấp nhận ở v1 (một máy, upload nhỏ); máy văn phòng ⇒ **UPS**. Nâng sau: `fsync` thư mục cha sau mỗi commit.
+- **Dung lượng:** trần `FILE_STORE_MAX_BYTES` (mặc định 50 GiB, người dùng) ⇒ 507 `STORAGE_FULL`; ổ phải còn ≥ trần + 20 % + chỗ cho Postgres / log / image. Mỗi upload kiểm ổ trống ≥ kích thước + 10 % trước khi ghi. Cảnh báo email khi ổ còn < 15 % (§6.5). Quota có thể vượt tối đa ≈ số upload đồng thời (12) × 20 MB vì kiểm trước khi cộng — chấp nhận.
+- **Bộ nhớ của worker ảnh (sharp / libvips):** `resourceLimits` của worker chỉ giới hạn heap **V8**; bộ nhớ giải mã của libvips là **native**, không bị chặn. Trường hợp xấu: 2 worker × trần 40 MP × 4 byte ≈ **320 MB native** + bộ đệm resize, cộng heap Node của API. ⇒ container `api` đặt `mem_limit` ≥ **1,5 GiB** (đo lại bằng ảnh 40 MP trước go-live) và để `restart: unless-stopped`; VPS 4 GiB (§1.2 cột A) đủ cho api + web + Postgres + Valkey. Hạ trần pixel theo mục đích (avatar thấp hơn chat — T-068) nếu máy nhỏ hơn.
+- **Một instance** (R47): đếm upload đồng thời / export đồng thời trong bộ nhớ tiến trình; lên ≥ 2 instance ⇒ volume chung hoặc MinIO tự host + chuyển các bộ đếm sang Valkey cùng lúc.
+- **Secret:** `FILE_URL_SECRET` (≥ 32 byte, KHÁC JWT) ký URL `/media`; xoay bằng `FILE_URL_SECRET_PREVIOUS` (chỉ để kiểm) giữ tối thiểu bằng khung dài nhất của URL (avatar 24 giờ) rồi bỏ. Staging/production bắt buộc; `MEDIA_BASE_URL` https; `MEDIA_CORP` = `same-site` khi web + API chung eTLD+1, không thì `cross-origin` có chủ ý (smoke sau deploy kiểm ảnh hiện được từ origin web thật).
+- **Log của reverse proxy:** URL `/media` mang `sig` (bearer — R43) ⇒ Caddy KHÔNG ghi query của đường `/api/v1/media/*` (format log bỏ `uri` query hoặc filter riêng); API đã chỉ ghi path.
 
 ---
 

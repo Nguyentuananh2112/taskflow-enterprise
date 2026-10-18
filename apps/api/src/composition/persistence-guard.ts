@@ -11,6 +11,7 @@ export const allModules = (kind: StorageKind) =>
     attendance: kind,
     leave: kind,
     hrProfile: kind,
+    chat: kind,
   }) as const;
 
 /**

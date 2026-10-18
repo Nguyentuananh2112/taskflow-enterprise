@@ -1,5 +1,6 @@
 import * as z from 'zod';
 
+import { ConversationDto, MessageDto } from '../chat/chat.schemas';
 import { ErrorCode } from '../common/error-codes';
 import { IsoDateTime, Uuid } from '../common/primitives';
 import { ProjectDto } from '../project/project.schemas';
@@ -24,6 +25,14 @@ export const REALTIME_EVENTS = Object.freeze({
   memberRoleChanged: 'member:role-changed',
   companyAccessChanged: 'company:access-changed',
   notificationNew: 'notification:new',
+  userAvatarChanged: 'user:avatar-changed',
+  // Mốc 6 (ADR-145): tới `user:{id}` của từng người nhận, sau commit. `chat:typing` hai chiều.
+  chatMessageNew: 'chat:message:new',
+  chatMessageUpdated: 'chat:message:updated',
+  chatRead: 'chat:read',
+  chatConversationUpdated: 'chat:conversation:updated',
+  chatConversationRemoved: 'chat:conversation:removed',
+  chatTyping: 'chat:typing',
 } as const);
 
 // ---------- Client → Server ----------
@@ -35,6 +44,10 @@ export type ProjectLeavePayload = z.infer<typeof ProjectLeavePayload>;
 
 export const AuthRenewPayload = z.strictObject({ token: z.string().min(1) });
 export type AuthRenewPayload = z.infer<typeof AuthRenewPayload>;
+
+/** Mốc 6: ≤ 1 / 3 s / socket, không ack; server kiểm quyền (cache ≤ 5 s — B L1). */
+export const ChatTypingPayload = z.strictObject({ conversationId: Uuid });
+export type ChatTypingPayload = z.infer<typeof ChatTypingPayload>;
 
 export const SocketAck = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }),
@@ -115,11 +128,63 @@ export const NotificationNewEvent = realtimeEnvelope(
 );
 export type NotificationNewEvent = z.infer<typeof NotificationNewEvent>;
 
+/**
+ * Mốc 6 (ADR-142): tới MỌI socket (một công ty, đã qua cổng công ty) — web invalidate mọi query có `UserRefDto`.
+ * `avatarUrl` = variant 64; `null` = đã gỡ. Chính người đó (thiết bị khác) tải lại `/auth/me` để lấy variant 256.
+ */
+export const UserAvatarChangedEventDto = realtimeEnvelope(
+  'user:avatar-changed',
+  z.object({ userId: Uuid, avatarUrl: z.url({ protocol: /^https?$/ }).nullable() }),
+);
+export type UserAvatarChangedEventDto = z.infer<typeof UserAvatarChangedEventDto>;
+
+// ---------- Mốc 6 — trò chuyện (ADR-145) ----------
+/** Tin mới (đầy đủ, kèm `clientMsgId` để người gửi khử trùng — E6). */
+export const ChatMessageNewEvent = realtimeEnvelope(
+  'chat:message:new',
+  z.object({ message: MessageDto }),
+);
+export type ChatMessageNewEvent = z.infer<typeof ChatMessageNewEvent>;
+
+/** Sửa / xóa (xóa: `body` null, `attachments` rỗng, `deletedAt`). */
+export const ChatMessageUpdatedEvent = realtimeEnvelope(
+  'chat:message:updated',
+  z.object({ message: MessageDto }),
+);
+export type ChatMessageUpdatedEvent = z.infer<typeof ChatMessageUpdatedEvent>;
+
+/** Thiết bị khác của mình; DIRECT: cả người kia ("Đã xem"). */
+export const ChatReadEvent = realtimeEnvelope(
+  'chat:read',
+  z.object({ conversationId: Uuid, userId: Uuid, messageId: Uuid }),
+);
+export type ChatReadEvent = z.infer<typeof ChatReadEvent>;
+
+export const ChatConversationUpdatedEvent = realtimeEnvelope(
+  'chat:conversation:updated',
+  z.object({ conversation: ConversationDto }),
+);
+export type ChatConversationUpdatedEvent = z.infer<typeof ChatConversationUpdatedEvent>;
+
+/** Bị bớt / rời nhóm, rời ws, ws xóa mềm ⇒ web bỏ hội thoại khỏi danh sách + cache. */
+export const ChatConversationRemovedEvent = realtimeEnvelope(
+  'chat:conversation:removed',
+  z.object({ conversationId: Uuid }),
+);
+export type ChatConversationRemovedEvent = z.infer<typeof ChatConversationRemovedEvent>;
+
+export const ChatTypingEvent = realtimeEnvelope(
+  'chat:typing',
+  z.object({ conversationId: Uuid, userId: Uuid }),
+);
+export type ChatTypingEvent = z.infer<typeof ChatTypingEvent>;
+
 /** Generic event map cho `Server<C2S, S2C>` / `Socket<S2C, C2S>` — chỉ là type, không import socket.io. */
 export type ClientToServerEvents = {
   'project:join': (payload: ProjectJoinPayload, ack: (res: SocketAck) => void) => void;
   'project:leave': (payload: ProjectLeavePayload, ack: (res: SocketAck) => void) => void;
   'auth:renew': (payload: AuthRenewPayload, ack: (res: SocketAck) => void) => void;
+  'chat:typing': (payload: ChatTypingPayload) => void;
 };
 
 export type ServerToClientEvents = {
@@ -133,4 +198,11 @@ export type ServerToClientEvents = {
   'member:role-changed': (event: MemberRoleChangedEvent) => void;
   'company:access-changed': (event: CompanyAccessChangedEventEnvelope) => void;
   'notification:new': (event: NotificationNewEvent) => void;
+  'user:avatar-changed': (event: UserAvatarChangedEventDto) => void;
+  'chat:message:new': (event: ChatMessageNewEvent) => void;
+  'chat:message:updated': (event: ChatMessageUpdatedEvent) => void;
+  'chat:read': (event: ChatReadEvent) => void;
+  'chat:conversation:updated': (event: ChatConversationUpdatedEvent) => void;
+  'chat:conversation:removed': (event: ChatConversationRemovedEvent) => void;
+  'chat:typing': (event: ChatTypingEvent) => void;
 };
