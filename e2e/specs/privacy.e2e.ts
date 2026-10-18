@@ -153,7 +153,7 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
     const form = page.getByRole('form', { name: 'Đầu mối liên hệ dữ liệu cá nhân' });
     await form.getByLabel(/^Đầu mối liên hệ/).fill(contact);
     await form.getByRole('button', { name: 'Lưu' }).click();
-    await expect(page.getByText('Đã lưu đầu mối liên hệ')).toBeVisible();
+    await expect(page.getByText('Đã lưu đầu mối liên hệ', { exact: true })).toBeVisible();
 
     const vic = await employee(request, 'priv03-vic');
     const other = await browser.newContext();
