@@ -64,10 +64,22 @@ export class PrismaPrivacyStore implements IPrivacyStore {
     return (await this.get(userId)).consentLeaveReason;
   }
 
+  /**
+   * D16: chỉ xóa sự kiện `at < cutoff` ĐÃ BỊ THAY bởi một sự kiện mới hơn cùng (user, kind) — sự kiện MỚI NHẤT của mỗi
+   * (user, kind) là bằng chứng của trạng thái hiện tại nên giữ dù cũ hơn 5 năm (soát B M1). SKIP LOCKED như các bước
+   * retention khác.
+   */
   purgeEventsBefore(cutoff: Date, limit: number): Promise<number> {
     return this.db().$executeRaw`
       DELETE FROM privacy_consent_events WHERE id IN (
-        SELECT id FROM privacy_consent_events WHERE at < ${cutoff} ORDER BY at, id LIMIT ${limit})`;
+        SELECT e.id FROM privacy_consent_events e
+         WHERE e.at < ${cutoff}
+           AND EXISTS (
+             SELECT 1 FROM privacy_consent_events n
+              WHERE n.user_id = e.user_id AND n.kind = e.kind AND (n.at, n.id) > (e.at, e.id))
+         ORDER BY e.at, e.id
+         LIMIT ${limit}
+         FOR UPDATE SKIP LOCKED)`;
   }
 
   async #alive(userId: string): Promise<boolean> {

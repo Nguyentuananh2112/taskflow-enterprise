@@ -41,7 +41,10 @@ export interface IPrivacyStore {
   ): Promise<boolean>;
   /** Cho module leave (`ILeaveReasonConsent` — khớp cấu trúc): đã đồng ý xử lý lý do nghỉ. */
   hasLeaveReasonConsent(userId: string): Promise<boolean>;
-  /** Retention D16 (5 năm kể từ `at`): xóa tối đa `limit` sự kiện `at < cutoff`; trả số đã xóa. */
+  /**
+   * Retention D16 (5 năm kể từ `at`): xóa tối đa `limit` sự kiện `at < cutoff` ĐÃ BỊ THAY bởi sự kiện mới hơn cùng
+   * (user, kind) — sự kiện mới nhất mỗi (user, kind) luôn giữ (bằng chứng trạng thái hiện tại). Trả số đã xóa.
+   */
   purgeEventsBefore(cutoff: Date, limit: number): Promise<number>;
 }
 

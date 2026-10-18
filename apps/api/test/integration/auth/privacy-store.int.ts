@@ -1,6 +1,7 @@
 // T-075 trên Postgres thật: cột quyền riêng tư trên `users` (CHECK cặp version ⇔ at), sự kiện chỉ-thêm
 // `privacy_consent_events` ghi cùng transaction khi trạng thái ĐỔI (ack lặp giữ thời điểm đầu — soát B M1), user đã xóa
-// ⇒ false, retention D16 xóa theo `at`; leave: rút đồng ý xóa lý do đơn PENDING (đơn đã quyết giữ).
+// ⇒ false, retention D16 chỉ xóa sự kiện cũ đã bị thay, UPDATE bị trigger chặn; leave: rút đồng ý xóa lý do
+// đơn PENDING (đơn đã quyết giữ).
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -89,12 +90,32 @@ describe('PrismaPrivacyStore (T-075)', () => {
     ).rejects.toThrow(/privacy_consent_events_notice_version_chk/);
   });
 
-  it('retention D16: purgeEventsBefore xóa theo `at` (theo lô), giữ sự kiện mới', async () => {
+  it('retention D16: chỉ xóa sự kiện cũ ĐÃ BỊ THAY; sự kiện mới nhất mỗi (user, kind) giữ dù > 5 năm (soát B M1)', async () => {
     const mia = await seed('Mia');
+    const cutoff = new Date('2021-12-01T00:00:00Z');
     await store.ack({ userId: mia, version: 1, ...ev(new Date('2020-01-01T00:00:00Z')) });
-    await store.setLeaveReasonConsent({ userId: mia, consent: true, noticeVersion: 1, ...ev(AT) });
-    expect(await store.purgeEventsBefore(new Date('2021-12-01T00:00:00Z'), 10)).toBe(1);
-    expect((await events(mia)).map((e) => e.kind)).toEqual(['LEAVE_REASON']);
+    await store.ack({ userId: mia, version: 2, ...ev(new Date('2021-06-01T00:00:00Z')) });
+    // Đồng ý 6 năm trước, không đổi gì ⇒ vẫn là bằng chứng hiện hành ⇒ KHÔNG xóa.
+    await store.setLeaveReasonConsent({
+      userId: mia,
+      consent: true,
+      noticeVersion: 1,
+      ...ev(new Date('2020-06-01T00:00:00Z')),
+    });
+    expect(await store.purgeEventsBefore(cutoff, 10)).toBe(1);
+    expect((await events(mia)).map((e) => [e.kind, e.noticeVersion])).toEqual([
+      ['LEAVE_REASON', 1],
+      ['ACK', 2],
+    ]);
+    expect(await store.purgeEventsBefore(cutoff, 10)).toBe(0);
+  });
+
+  it('chỉ thêm: UPDATE sự kiện bị trigger chặn (soát B L1)', async () => {
+    const mia = await seed('Mia');
+    await store.ack({ userId: mia, version: 1, ...ev(AT) });
+    await expect(
+      testPrisma().privacyConsentEvent.updateMany({ where: { userId: mia }, data: { at: LATER } }),
+    ).rejects.toThrow(/chỉ thêm/);
   });
 });
 

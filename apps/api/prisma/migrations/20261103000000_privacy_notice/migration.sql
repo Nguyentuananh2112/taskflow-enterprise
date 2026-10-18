@@ -38,3 +38,14 @@ CREATE INDEX "privacy_consent_events_at_idx" ON "privacy_consent_events"("at");
 
 ALTER TABLE "privacy_consent_events" ADD CONSTRAINT "privacy_consent_events_user_id_fkey"
   FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Chỉ thêm THẬT (soát B L1): cấm UPDATE ở DB; DELETE chỉ để bước retention D16.
+CREATE FUNCTION "privacy_consent_events_no_update"() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'privacy_consent_events là bảng chỉ thêm — không sửa sự kiện';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "privacy_consent_events_immutable"
+  BEFORE UPDATE ON "privacy_consent_events"
+  FOR EACH ROW EXECUTE FUNCTION "privacy_consent_events_no_update"();

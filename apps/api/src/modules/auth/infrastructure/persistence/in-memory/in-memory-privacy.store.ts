@@ -67,10 +67,18 @@ export class InMemoryPrivacyStore implements IPrivacyStore {
     return (await this.get(userId)).consentLeaveReason;
   }
 
+  /** Như Prisma: giữ sự kiện MỚI NHẤT của mỗi (user, kind) — bằng chứng trạng thái hiện tại (soát B M1). */
   purgeEventsBefore(cutoff: Date, limit: number): Promise<number> {
+    const newer = (e: PrivacyEventRow) =>
+      this.#events.some(
+        (n) =>
+          n.userId === e.userId &&
+          n.kind === e.kind &&
+          (n.at > e.at || (n.at.getTime() === e.at.getTime() && n.id > e.id)),
+      );
     const doomed = new Set(
       [...this.#events]
-        .filter((e) => e.at < cutoff)
+        .filter((e) => e.at < cutoff && newer(e))
         .sort((a, b) => a.at.getTime() - b.at.getTime())
         .slice(0, limit)
         .map((e) => e.id),
