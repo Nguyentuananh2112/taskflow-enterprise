@@ -231,7 +231,7 @@ Domain đếm bằng **số nguyên nửa ngày** (×2), chỉ đổi sang thậ
 | CLK-HR-01 | thứ Ba 17:29:00    | Mia đã vào, Max chưa vào; chờ qua 17:30 (hết ca S0)                   | trước 17:30: Mia `PRESENT` + `inProgress`, Max `PENDING`; sau: Mia `MISSING_OUT` (không `inProgress`), Max `ABSENT`. **Theo PHÚT (TL d9 chốt):** cả phút 17:30 (17:30:00–17:30:59) vẫn thuộc ca, đổi lúc 17:31:00 — ca 08:00–17:30 tính cả phút cuối, không đổi domain |
 | CLK-HR-02 | thứ Ba 23:59:00    | Mia vào 23:59; chờ qua 00:00; Mia chấm ra                             | OUT 201, gắn **thứ Ba** (IN còn mở, trước 06:00); `me/today` thứ Tư không có lượt nào (SD-11 ở tầng HTTP)       |
 | CLK-HR-03 | thứ Tư 05:59:00    | HR thêm IN thứ Ba 08:00 (ADJUSTMENT) cho Mia, Max; Mia ra trước 06:00; chờ qua 06:00; Max ra | Mia: OUT gắn thứ Ba; Max: **422** `NOT_CHECKED_IN`, vì IN hôm qua không còn mở sau giờ chốt (SD-12b/12c ở tầng HTTP) |
-| CLK-HR-04 | Chủ nhật 10:00     | `me/today` rồi Mia chấm vào                                            | `isWorkday: false`, `OFF`; chấm vào 201 nhưng vẫn `OFF`, `inProgress: false` (OFF ưu tiên hơn PRESENT)        |
+| CLK-HR-04 | Chủ nhật 10:00     | `me/today` rồi Mia chấm vào; HR thêm IN 08:00 cho Max, Max chấm ra | `isWorkday: false`, `OFF`; **#A1 (TL 18/10):** chấm vào 201 ⇒ vẫn `OFF` nhưng `inProgress: true`, `firstIn` có; chấm ra ⇒ `inProgress: false`, `workedMin` > 0; KHÔNG thành ngày công (`presentDays` / `payrollDaysOf` không cộng, không vắng) |
 
 UI (E2E) chạy MỘT mốc (thứ Ba 10:00). Các biên trên kiểm ở tầng HTTP, cùng logic `summarizeDay` / `workDateFor`; web chỉ hiển thị DTO.
 
