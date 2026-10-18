@@ -13,7 +13,8 @@ const CI = !!process.env.CI;
  * trình duyệt vẫn có thể chạy cùng lúc — ca đã khẳng định theo thông báo của chính ca, ngày lễ theo dải reserveDate().
  */
 // Mốc 5: hr-extended.e2e.ts cùng dữ liệu một công ty ⇒ cùng lane tuần tự (F soát c000228b).
-const HR_SPECS = /(hr|hr-extended|company)\.e2e\.ts$/;
+// T-075: privacy.e2e.ts đổi đầu mối liên hệ của công ty (một dòng cho cả công ty) ⇒ cùng lane tuần tự.
+const HR_SPECS = /(hr|hr-extended|company|privacy)\.e2e\.ts$/;
 function withHrLane<P extends { name: string }>(project: P) {
   return [
     { ...project, testIgnore: HR_SPECS },

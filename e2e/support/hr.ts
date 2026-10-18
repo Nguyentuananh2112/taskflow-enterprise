@@ -137,16 +137,39 @@ export interface LeaveRef {
   status: string;
 }
 
-export const apiSubmitLeave = (
+/**
+ * T-075 (G): đơn nghỉ CÓ lý do cần người gửi đã đồng ý xử lý lý do nghỉ (không thì 400 LEAVE_REASON_CONSENT_REQUIRED) ⇒
+ * bật đồng ý trước. API chưa có route (trước khi T-075 vào nhánh) ⇒ 404 ⇒ bỏ qua.
+ */
+async function consentLeaveReason(request: APIRequestContext, token: string): Promise<void> {
+  const res = await request.fetch(`${API_URL}/me/privacy/consent`, {
+    method: 'PUT',
+    headers: {
+      origin: WEB_ORIGIN,
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+    data: JSON.stringify({ leaveReason: true }),
+  });
+  if (res.status() !== 200 && res.status() !== 404) {
+    throw new Error(
+      `PUT /me/privacy/consent — ${String(res.status())}: ${(await res.text()).slice(0, 200)}`,
+    );
+  }
+}
+
+export const apiSubmitLeave = async (
   request: APIRequestContext,
   who: HrPerson,
   body: { type: string; startDate: string; endDate: string; reason?: string },
-) =>
-  hrCall<LeaveRef>(request, 'POST', '/leave/requests', {
+) => {
+  if (body.reason?.trim()) await consentLeaveReason(request, who.accessToken);
+  return hrCall<LeaveRef>(request, 'POST', '/leave/requests', {
     token: who.accessToken,
     body: { dayPart: 'FULL', ...body },
     expected: 201,
   });
+};
 
 export const apiDecideLeave = (
   request: APIRequestContext,
