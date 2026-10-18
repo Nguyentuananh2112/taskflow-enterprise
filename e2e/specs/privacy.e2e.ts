@@ -63,7 +63,12 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
     await page.goto('/leave');
     const dialog = privacyPrompt(page);
     await expect(dialog).toBeVisible();
-    for (const name of ['Chấm công & Nghỉ phép', 'Trò chuyện & ảnh đại diện', 'Phiếu lương']) {
+    for (const name of [
+      'Chấm công & Nghỉ phép',
+      'Hồ sơ nhân sự',
+      'Trò chuyện & ảnh đại diện',
+      'Phiếu lương',
+    ]) {
       await expect(dialog.getByRole('heading', { name })).toBeVisible();
     }
     expect(await seriousViolations(page)).toEqual([]);
@@ -84,7 +89,7 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
     expect(me.needsAck).toBe(false);
   });
 
-  test('E2E-PRIV-02: lý do nghỉ — chưa đồng ý ⇒ ô khóa (API 400); đồng ý ở /privacy ⇒ gửi được; rút lại ⇒ khóa lại', async ({
+  test('E2E-PRIV-02: lý do nghỉ — chưa đồng ý ⇒ ô khóa (API 422); đồng ý ở /privacy ⇒ gửi được; rút lại ⇒ khóa lại', async ({
     page,
     request,
   }) => {
@@ -95,7 +100,7 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
       body: { version: 1 },
       expected: 200,
     });
-    // Server là lớp chặn chính (G): có lý do mà chưa đồng ý ⇒ 400.
+    // Server là lớp chặn chính (G): có lý do mà chưa đồng ý ⇒ 422 LEAVE_REASON_CONSENT_REQUIRED.
     await expect(
       hrCall(request, 'POST', '/leave/requests', {
         token,
@@ -112,7 +117,7 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
     await expect(page).toHaveURL(/\/privacy$/);
     const consent = page.getByRole('checkbox', { name: /Tôi đồng ý để công ty xử lý lý do nghỉ/ });
     await consent.check();
-    await expect(page.getByText('Đã ghi nhận đồng ý')).toBeVisible();
+    await expect(page.getByText('Đã ghi nhận đồng ý', { exact: true })).toBeVisible();
 
     await page.goto('/leave');
     await expect(form.getByLabel(/^Lý do/)).toBeEnabled();
@@ -124,8 +129,12 @@ test.describe.serial('E2E-PRIV thông báo quyền riêng tư', () => {
     expect((await sent).status()).toBe(201);
 
     await page.goto('/privacy');
-    await consent.uncheck();
-    await expect(page.getByText('Đã rút lại đồng ý')).toBeVisible();
+    await consent.click(); // rút lại ⇒ hỏi lại (lý do ở đơn đang chờ bị xóa)
+    await page
+      .getByRole('dialog', { name: 'Rút lại đồng ý?' })
+      .getByRole('button', { name: 'Rút lại đồng ý' })
+      .click();
+    await expect(page.getByText('Đã rút lại đồng ý', { exact: true })).toBeVisible();
     await page.goto('/leave');
     await expect(form.getByLabel(/^Lý do/)).toBeDisabled();
   });
