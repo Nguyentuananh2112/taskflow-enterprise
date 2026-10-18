@@ -134,7 +134,7 @@ describe('createRateLimit', () => {
 
   it('mỗi route chọn rule từ bảng security §6.4; activation/refresh cũng fail-closed', () => {
     expect(RATE_LIMIT_RULES.loginIp.map((r) => [r.id, r.limit, r.windowMs])).toEqual([
-      ['login-ip', 20, 900_000],
+      ['login-ip', 300, 900_000],
     ]);
     // ADR-108: chỉ đếm 401, (IP, email) 10/15 phút, email 100/giờ.
     expect(
@@ -143,6 +143,10 @@ describe('createRateLimit', () => {
       ['login-fail-ip-email', 10, 900_000, [401]],
       ['login-fail-email', 100, 3_600_000, [401]],
     ]);
+    // Lỗi #2 localhost: cả văn phòng chung IP NAT ⇒ handshake 600/phút/IP, Valkey lỗi ⇒ cho qua.
+    expect(
+      RATE_LIMIT_RULES.socketHandshake.map((r) => [r.id, r.limit, r.windowMs, r.key, r.failMode]),
+    ).toEqual([['socket-handshake-ip', 600, 60_000, 'ip', 'open']]);
     // Mốc 6: `avatar` fail-closed có chủ đích (tốn đĩa + CPU worker sharp — B).
     const closed = [
       'login',
@@ -162,6 +166,35 @@ describe('createRateLimit', () => {
     expect(others.flatMap(([, rules]) => rules).every((r) => r.failMode === 'open')).toBe(true);
     const ids = Object.values(RATE_LIMIT_RULES).flatMap((rules) => rules.map((r) => r.id));
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('một văn phòng chung một IP NAT (T-076, lỗi #2 localhost)', () => {
+  it('mọi luật theo IP đo cho văn phòng ~200 người; luật chống dò theo (IP, email) / email giữ chặt', () => {
+    const ipRules = Object.values(RATE_LIMIT_RULES)
+      .flat()
+      .filter((r) => r.key === 'ip')
+      .map((r) => [r.id, r.limit, r.windowMs]);
+    expect(ipRules).toEqual([
+      ['login-ip', 300, 900_000],
+      ['activation-ip', 10, 900_000], // chỉ đếm lần sai (400 / 410)
+      ['refresh-ip', 1200, 300_000],
+      ['logout-ip', 120, 60_000],
+      ['api-ip', 600, 60_000],
+      ['api-bearer-ip', 3000, 60_000],
+      ['api-auth-fail-ip', 300, 60_000],
+      ['socket-handshake-ip', 600, 60_000],
+      ['media-ip', 2000, 60_000],
+    ]);
+    expect(RATE_LIMIT_RULES.login.map((r) => r.limit)).toEqual([10, 100]);
+  });
+
+  it('login-ip: 300 lần đăng nhập từ cùng IP trong 15 phút đều qua; lần 301 ⇒ 429', async () => {
+    const app = appWith(createRateLimits(RATE_LIMIT_RULES.loginIp, deps()));
+    for (let i = 0; i < 300; i++) {
+      expect((await request(app).post('/t').send({})).status, `lần ${i + 1}`).toBe(200);
+    }
+    expect((await request(app).post('/t').send({})).status).toBe(429);
   });
 });
 
@@ -251,12 +284,12 @@ describe('createGlobalRateLimit & helpers', () => {
     expect((await request(app).get('/r')).status).toBe(200);
   });
 
-  it('bảng mặc định: 100 / 1000 / 30 lần 401 mỗi phút theo IP', () => {
+  it('bảng mặc định: 600 / 3000 / 300 lần 401 mỗi phút theo IP', () => {
     expect([
       RATE_LIMIT_RULES.anonymous[0].limit,
       RATE_LIMIT_RULES.bearerIp[0].limit,
       RATE_LIMIT_RULES.authFailure[0].limit,
-    ]).toEqual([100, 1000, 30]);
+    ]).toEqual([600, 3000, 300]);
     expect(RATE_LIMIT_RULES.authFailure[0].countOnlyStatuses).toEqual([401]);
     expect(createGlobalRateLimit(deps())).toHaveLength(3);
   });

@@ -35,10 +35,19 @@ const HOUR = 60 * MINUTE;
 
 const rule = (r: RateLimitRule): RateLimitRule => r;
 
+/*
+ * Luật theo IP (lỗi #2 localhost, T-076): MỘT công ty ⇒ cả văn phòng thường chung MỘT IP NAT. Mọi luật `key: 'ip'`
+ * đo cho một văn phòng ~200 người (8:00 mở app, API khởi động lại ⇒ mọi tab nối lại, chiều về đăng xuất). Lá chắn
+ * chống dò / lạm dụng nằm ở luật theo (IP, email), email, user, socket — giữ chặt; luật IP chỉ còn là trần thô.
+ */
+
 export const RATE_LIMIT_RULES = {
-  /** Login, lớp 1 — tổng theo IP, chạy TRƯỚC validate (mọi request, kể cả body sai). */
+  /**
+   * Login, lớp 1 — tổng theo IP, chạy TRƯỚC validate (mọi request, kể cả body sai). 300 / 15 phút: sáng thứ Hai cả
+   * văn phòng đăng nhập (kèm vài lần gõ sai) không bị khóa; dò mật khẩu vẫn bị lớp 2 chặn theo (IP, email) / email.
+   */
   loginIp: [
-    rule({ id: 'login-ip', windowMs: 15 * MINUTE, limit: 20, key: 'ip', failMode: 'closed' }),
+    rule({ id: 'login-ip', windowMs: 15 * MINUTE, limit: 300, key: 'ip', failMode: 'closed' }),
   ],
   /**
    * Login, lớp 2 (ADR-108 — chống khóa tài khoản từ xa, M4 của T-028): chạy SAU validate (400 không
@@ -68,6 +77,7 @@ export const RATE_LIMIT_RULES = {
   /**
    * `inspect` + `activate` (ADR-137, SEC-HR-57): CHUNG một bộ đếm theo IP, chỉ đếm lần sai (400 / 410) —
    * 10 lần / 15 phút, lần 11 ⇒ 429. Fail-closed như login (dò token không được tự do khi Valkey chết).
+   * Giữ 10 dù văn phòng chung IP (T-076): CHỈ lần sai được đếm, kích hoạt đúng link không tốn suất.
    */
   activation: [
     rule({
@@ -79,10 +89,15 @@ export const RATE_LIMIT_RULES = {
       countOnlyStatuses: [400, 410],
     }),
   ],
+  /**
+   * Mỗi lần tải trang + mỗi ~15 phút mỗi tab đều refresh ⇒ văn phòng ~200 người × vài tab cần cỡ trăm lượt / phút.
+   * Refresh token 256 bit + phát hiện dùng lại theo family mới là lá chắn; trần IP chỉ chặn flood.
+   */
   refresh: [
-    rule({ id: 'refresh-ip', windowMs: 5 * MINUTE, limit: 60, key: 'ip', failMode: 'closed' }),
+    rule({ id: 'refresh-ip', windowMs: 5 * MINUTE, limit: 1200, key: 'ip', failMode: 'closed' }),
   ],
-  logout: [rule({ id: 'logout-ip', windowMs: MINUTE, limit: 10, key: 'ip', failMode: 'open' })],
+  /** Cuối giờ cả văn phòng đăng xuất trong vài phút. */
+  logout: [rule({ id: 'logout-ip', windowMs: MINUTE, limit: 120, key: 'ip', failMode: 'open' })],
   logoutAll: [
     rule({ id: 'logout-all-user', windowMs: MINUTE, limit: 10, key: 'user', failMode: 'open' }),
   ],
@@ -176,39 +191,46 @@ export const RATE_LIMIT_RULES = {
   authenticated: [
     rule({ id: 'api-user', windowMs: MINUTE, limit: 300, key: 'user', failMode: 'open' }),
   ],
-  anonymous: [rule({ id: 'api-ip', windowMs: MINUTE, limit: 100, key: 'ip', failMode: 'open' })],
+  /** Request KHÔNG có Authorization — gồm cả login / refresh / logout / activation ⇒ phải ≥ nhu cầu refresh của văn phòng. */
+  anonymous: [rule({ id: 'api-ip', windowMs: MINUTE, limit: 600, key: 'ip', failMode: 'open' })],
   /**
    * Trần THÔ theo IP cho request CÓ `Authorization` (review T-016): giới hạn chính vẫn là 300/phút/user
-   * sau `authenticate`; trần này chỉ chặn việc xoay token để né giới hạn IP. 1000 ≈ 3 người dùng ở
-   * mức trần user cùng lúc, trong khi sử dụng thực tế mỗi người ≪ 300/phút ⇒ văn phòng NAT vài chục
-   * người không bị chạm tới.
+   * sau `authenticate`; trần này chỉ chặn việc xoay token để né giới hạn IP. 3000 ≈ 10 người ở trần user, đủ cho
+   * văn phòng ~200 người dùng thực tế (mỗi người ≪ 300/phút) — T-076.
    */
   bearerIp: [
-    rule({ id: 'api-bearer-ip', windowMs: MINUTE, limit: 1000, key: 'ip', failMode: 'open' }),
+    rule({ id: 'api-bearer-ip', windowMs: MINUTE, limit: 3000, key: 'ip', failMode: 'open' }),
   ],
   /**
-   * Xác thực thất bại (401) theo IP: 30/phút — chặn token rác TRƯỚC bước verify (CPU + log).
-   * `TOKEN_EXPIRED` cũng là 401: dùng bình thường mỗi người ≤ 1 lần/15 phút ⇒ xa ngưỡng.
+   * Xác thực thất bại (401) theo IP: 300/phút — chặn token rác TRƯỚC bước verify (CPU + log).
+   * `TOKEN_EXPIRED` cũng là 401: sáng ra mọi tab mở từ hôm qua cùng gửi token hết hạn một lượt ⇒ văn phòng ~200
+   * người × vài tab cần cỡ vài trăm (T-076; 30 cũ khóa cả văn phòng).
    */
   authFailure: [
     rule({
       id: 'api-auth-fail-ip',
       windowMs: MINUTE,
-      limit: 30,
+      limit: 300,
       key: 'ip',
       failMode: 'open',
       countOnlyStatuses: [401],
     }),
   ],
-  /** Socket.io handshake (security.md §5.1). */
+  /**
+   * Socket.io handshake (security.md §5.1). Một công ty ⇒ cả văn phòng thường chung MỘT IP NAT: 8:00 nhiều người mở
+   * app, hoặc API khởi động lại ⇒ mọi tab nối lại cùng lúc. 20/phút làm người thứ 21+ mất realtime (lỗi #2 localhost)
+   * ⇒ 600/phút chỉ còn là trần chống flood thô. Lá chắn chính: JWT ở handshake + `MAX_SOCKETS_PER_USER` + hạn mức
+   * join / renew theo user / socket. Valkey lỗi ⇒ cho qua.
+   */
   socketHandshake: [
-    rule({ id: 'socket-handshake-ip', windowMs: MINUTE, limit: 20, key: 'ip', failMode: 'open' }),
+    rule({ id: 'socket-handshake-ip', windowMs: MINUTE, limit: 600, key: 'ip', failMode: 'open' }),
   ],
   /**
-   * `/media` (ADR-141, F-10): không Bearer — hạn mức IP nhẹ. Một trang chat tải vài chục ảnh ⇒ 600/phút đủ
-   * rộng; Valkey lỗi ⇒ cho qua (chữ ký + kiểm DB vẫn chặn truy cập trái phép).
+   * `/media` (ADR-141, F-10): không Bearer — hạn mức IP nhẹ. Một trang chat tải vài chục ảnh (trình duyệt cache
+   * `private, max-age` tới hạn chữ ký) ⇒ cả văn phòng cùng mở chat ~2000/phút (T-076); Valkey lỗi ⇒ cho qua (chữ
+   * ký + kiểm DB vẫn chặn truy cập trái phép).
    */
-  media: [rule({ id: 'media-ip', windowMs: MINUTE, limit: 600, key: 'ip', failMode: 'open' })],
+  media: [rule({ id: 'media-ip', windowMs: MINUTE, limit: 2000, key: 'ip', failMode: 'open' })],
   /**
    * Ảnh đại diện (ADR-142): đặt / gỡ — kể cả HR gỡ cho người khác — CHUNG một bucket 10 / giờ / user. Fail-closed
    * (B): đặt ảnh tốn đĩa + CPU worker sharp; một quy tắc cho cả nhóm cho đơn giản.

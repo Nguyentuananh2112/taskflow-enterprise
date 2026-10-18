@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 
+import { MemoryStore } from 'express-rate-limit';
 import { Server, type Namespace, type ServerOptions } from 'socket.io';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +13,10 @@ import {
   noEvent,
   startRealtime,
 } from '../../../test/support/realtime';
+import { SpyLogger } from '../../../test/support';
 import { ServiceUnavailableError, TokenExpiredError, UnauthorizedError } from '../errors';
+import { createHitLimiter } from '../http/rate-limit/rate-limit';
+import { RATE_LIMIT_RULES } from '../http/rate-limit/rules';
 import type { RealtimeEnvelope } from './events';
 import { clientIp } from './gateway';
 
@@ -759,6 +763,24 @@ describe('handshake rate limit, đóng gateway, IP client', () => {
     });
     await connected(rt.client());
     expect(keys).toEqual(['127.0.0.1']);
+  });
+
+  it('rule thật socket-handshake-ip: 50 handshake từ 1 IP trong 1 phút đều qua; vượt ngưỡng ⇒ từ chối (lỗi #2)', async () => {
+    const rule = RATE_LIMIT_RULES.socketHandshake[0];
+    const limiter = createHitLimiter(rule, {
+      storeFor: () => new MemoryStore(),
+      logger: new SpyLogger(),
+    });
+    rt = await startRealtime({ handshakeLimiter: limiter });
+    // Cả văn phòng chung một IP NAT (127.0.0.1 ở đây), mỗi người một tài khoản.
+    for (let i = 0; i < 50; i++) {
+      const socket = rt.client({ token: `user:office${i}:s${i}` });
+      await connected(socket);
+      socket.close();
+    }
+    for (let i = 50; i < rule.limit; i++) await limiter.hit('127.0.0.1');
+    expect((await connectError(rt.client({ token: 'user:late:s1' }))).message).not.toBe('');
+    expect((await limiter.hit('10.0.0.2')).allowed).toBe(true);
   });
 
   it('close() ngắt mọi socket của instance', async () => {

@@ -9,12 +9,14 @@ import { flushRateLimitCounters as flushCounters } from './harness/valkey';
 
 const api = useApi({ TRUST_PROXY_HOPS: '0' });
 const PROBE = '/api/v1/__sec-probe';
-const ANON_LIMIT = 100;
+// T-076: luật IP đo cho một văn phòng ~200 người chung IP NAT (security.md §6.4).
+const ANON_LIMIT = 600;
+const AUTH_FAIL_LIMIT = 300;
 /**
- * Trần cho request mang Authorization (T-016 rev2: 1000/phút/IP). Gửi vượt trần một khoảng an toàn;
+ * Trần cho request mang Authorization (T-016 rev2: 1000/phút/IP; T-076: 3000). Gửi vượt trần một khoảng an toàn;
  * tới đó vẫn chưa 429 ⇒ bypass. Trần đổi ⇒ sửa ở đây (security.md §6.4 là nguồn).
  */
-const AUTH_HEADER_CEILING = 1_000;
+const AUTH_HEADER_CEILING = 3_000;
 const AUTH_PROBE_MAX = AUTH_HEADER_CEILING + 50;
 
 let limiterLive = false;
@@ -68,20 +70,20 @@ describe('Rate limit toàn cục — request chưa xác thực', () => {
     }));
     // Bản T-016 9f79853: bỏ qua limiter khi có header ⇒ không bao giờ 429 ⇒ test đỏ.
     expect(hit, `${AUTH_PROBE_MAX} request với token rác không bị chặn`).toBeDefined();
-  }, 60_000);
+  }, 180_000);
 
   it('Authorization không phải Bearer cũng không thoát giới hạn', async () => {
     const hit = await firstRateLimited(AUTH_PROBE_MAX, () => ({
       authorization: 'Basic Og==',
     }));
     expect(hit).toBeDefined();
-  }, 60_000);
+  }, 180_000);
 });
 
 describe('Rate limit theo endpoint', () => {
   secCase(
     'GATE-T016-401',
-    'Token rác trên route CẦN xác thực: bucket 401 (30/phút/IP) ⇒ request thứ 31 bị 429',
+    `Token rác trên route CẦN xác thực: bucket 401 (${AUTH_FAIL_LIMIT}/phút/IP) ⇒ request thứ ${AUTH_FAIL_LIMIT + 1} bị 429`,
     'route đã xác thực (T-021)',
     async () => {
       const me = () =>
@@ -89,15 +91,16 @@ describe('Rate limit theo endpoint', () => {
           path: '/api/v1/auth/me',
           headers: { authorization: 'Bearer garbage.token.x' },
         });
-      for (let i = 1; i <= 30; i += 1) {
+      for (let i = 1; i <= AUTH_FAIL_LIMIT; i += 1) {
         const res = await me();
         expect(res.status, `request ${i}`).toBe(401);
       }
       const blocked = await me();
-      expect(blocked.status, 'request 31').toBe(429);
+      expect(blocked.status, `request ${AUTH_FAIL_LIMIT + 1}`).toBe(429);
       expect(errorEnvelope(blocked).error.code).toBe('RATE_LIMITED');
       expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
     },
+    60_000,
   );
   secCase(
     'SEC-28',
@@ -120,7 +123,7 @@ describe('Rate limit theo endpoint', () => {
       expect(blocked.status, 'lần 11').toBe(429);
       expect(errorEnvelope(blocked).error.code).toBe('RATE_LIMITED');
       expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
-      // Bucket theo CẶP (IP, email): cùng IP, email khác chưa bị chặn (chưa tới trần 20/15 phút/IP).
+      // Bucket theo CẶP (IP, email): cùng IP, email khác chưa bị chặn (chưa tới trần 300/15 phút/IP — T-076).
       expect((await login(`other-${victim}`, 'wrong-passphrase')).status).toBe(401);
     },
   );
