@@ -7,12 +7,15 @@ import { appConfigFromEnv } from './app';
 import { createContainer } from './composition/container';
 import { assertPersistenceAllowed, createMemoryPersistence } from './composition/persistence';
 import { createPrismaPersistence } from './composition/prisma-persistence';
-import { MaintenanceScheduler, type ScheduledJob } from './composition/maintenance-jobs';
+import { MaintenanceScheduler } from './composition/maintenance-jobs';
 import {
   LEAVE_CARRYOVER_JOB,
   maintenanceJobs,
+  measuredBy,
   retentionCutoffFor,
 } from './composition/maintenance-setup';
+import { chatSettingsFromEnv } from './composition/chat-wiring';
+import { serverFiles } from './composition/files-server';
 import type { Env } from './config/env';
 import { databaseProbe, valkeyProbe } from './core/http/health';
 import { createHitLimiter } from './core/http/rate-limit/rate-limit';
@@ -68,6 +71,15 @@ export async function startServer(
   const lifecycleRef: { current?: GracefulShutdown } = {};
   const rateLimitStore = (rule: Parameters<typeof createValkeyStore>[1]) =>
     createValkeyStore(valkey, rule);
+  // Mốc 6 (ADR-141): kho tệp — FILE_STORE_DIR không dùng được ⇒ ném ⇒ từ chối khởi động.
+  const files = await serverFiles({
+    env,
+    clock,
+    logger,
+    metrics,
+    storeFor: rateLimitStore,
+    valkey,
+  });
   const container = createContainer({
     config: {
       ...appConfigFromEnv(env),
@@ -91,6 +103,8 @@ export async function startServer(
     isShuttingDown: () => lifecycleRef.current?.isShuttingDown() ?? false,
     metrics,
     errorReporter: reporter,
+    files,
+    chat: chatSettingsFromEnv(env),
   });
 
   const server = createHttpServer(container.app);
@@ -106,8 +120,7 @@ export async function startServer(
   const gateway = new RealtimeGateway(server, {
     corsOrigins: env.CORS_ORIGINS,
     trustProxyHops: env.TRUST_PROXY_HOPS,
-    authenticator: container.socketAuth,
-    accessChecker: container.workspace.accessChecker,
+    ...container.gateway,
     handshakeLimiter: createHitLimiter(RATE_LIMIT_RULES.socketHandshake[0], {
       storeFor: rateLimitStore,
       logger,
@@ -126,30 +139,25 @@ export async function startServer(
   );
   // Job bảo trì (T-033, ADR-095): purge workspace hết ân hạn mỗi giờ, khóa advisory theo lô.
   // Kết quả mỗi lượt ⇒ metrics `scheduled_job_*` (T-035) — bọc `run`, không sửa scheduler.
-  const measured = (job: ScheduledJob): ScheduledJob => ({
-    ...job,
-    run: (signal) =>
-      job.run(signal).then(
-        () => metrics.recordJobRun(job.name, true),
-        (err: unknown) => {
-          metrics.recordJobRun(job.name, false);
-          throw err;
-        },
-      ),
-  });
-  const jobs = maintenanceJobs({
-    persistence,
-    env,
-    clock,
-    businessClock,
-    logger,
-    offboarding: container.company,
-    payroll: container.payroll,
-    carryover: container.leave.carryover,
-  });
+  const measured = measuredBy(metrics);
+  const jobs = [
+    ...maintenanceJobs({
+      persistence,
+      env,
+      clock,
+      businessClock,
+      logger,
+      offboarding: container.company,
+      payroll: container.payroll,
+      carryover: container.leave.carryover,
+    }),
+    // Mốc 6 (ADR-141): dọn kho tệp — bật theo cờ bảo trì, hoặc ở test qua FILES_SWEEP_*.
+    ...(files.sweepJob ? [files.sweepJob] : []),
+  ];
   // Job dọn dẹp tắt ở local/test (mặc định); job hoàn tất nghỉ việc luôn có — xem `maintenanceJobs`.
+  const scheduledJobs = jobs.map(measured);
   const maintenance =
-    jobs.length > 0 ? new MaintenanceScheduler(jobs.map(measured), { logger }) : undefined;
+    scheduledJobs.length > 0 ? new MaintenanceScheduler(scheduledJobs, { logger }) : undefined;
 
   const metricsServer = await startMetricsServer({
     port: env.METRICS_PORT,
@@ -172,6 +180,7 @@ export async function startServer(
         ? [{ name: 'maintenance-jobs', close: () => maintenance.stop(env.SHUTDOWN_TIMEOUT_MS / 2) }]
         : []),
       ...(adapter ? [{ name: 'socket.io-adapter', close: () => adapter.close() }] : []),
+      { name: 'image-workers', close: () => files.close() },
       // Prisma ngắt TRƯỚC pool (adapter không tự đóng pool ngoài — core/persistence/database.ts).
       ...(prisma ? [{ name: 'prisma', close: () => prisma.$disconnect() }] : []),
       { name: 'db-pool', close: () => pool.end() },
@@ -191,8 +200,13 @@ export async function startServer(
   const carryJob = jobs.find((j) => j.name === LEAVE_CARRYOVER_JOB);
   if (env.LEAVE_CARRYOVER_ON_START && maintenance && carryJob)
     await maintenance.runNow(measured(carryJob));
+  // CHỈ APP_ENV=test (env.ts chặn nơi khác): một lượt files-sweep TRƯỚC khi nhận request — test hộp đen sau
+  // restart mốc tiến (CLK-CH) chờ log `maintenance.run_done` {job: 'files-sweep'}.
+  const sweepNow = scheduledJobs.find((j) => j.name === files.sweepJob?.name);
+  if (env.FILES_SWEEP_ON_START && maintenance && sweepNow) await maintenance.runNow(sweepNow);
   await listen(server, env.PORT);
   maintenance?.start();
+  files.startHealthChecks();
   const metricsAddress = metricsServer.address();
   logger.info(
     {

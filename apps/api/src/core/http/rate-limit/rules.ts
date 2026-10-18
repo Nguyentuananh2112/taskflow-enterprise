@@ -204,10 +204,49 @@ export const RATE_LIMIT_RULES = {
   socketHandshake: [
     rule({ id: 'socket-handshake-ip', windowMs: MINUTE, limit: 20, key: 'ip', failMode: 'open' }),
   ],
+  /**
+   * `/media` (ADR-141, F-10): không Bearer — hạn mức IP nhẹ. Một trang chat tải vài chục ảnh ⇒ 600/phút đủ
+   * rộng; Valkey lỗi ⇒ cho qua (chữ ký + kiểm DB vẫn chặn truy cập trái phép).
+   */
+  media: [rule({ id: 'media-ip', windowMs: MINUTE, limit: 600, key: 'ip', failMode: 'open' })],
+  /**
+   * Ảnh đại diện (ADR-142): đặt / gỡ — kể cả HR gỡ cho người khác — CHUNG một bucket 10 / giờ / user. Fail-closed
+   * (B): đặt ảnh tốn đĩa + CPU worker sharp; một quy tắc cho cả nhóm cho đơn giản.
+   */
+  avatar: [rule({ id: 'avatar-user', windowMs: HOUR, limit: 10, key: 'user', failMode: 'closed' })],
+  /** Mốc 6 (ADR-144): gửi tin 30 / phút (+ 600 / giờ — `chatSendRules`, chỉnh được ở test). */
+  chatSend: [
+    rule({ id: 'chat-send-min', windowMs: MINUTE, limit: 30, key: 'user', failMode: 'open' }),
+  ],
+  chatEdit: [rule({ id: 'chat-edit', windowMs: MINUTE, limit: 30, key: 'user', failMode: 'open' })],
+  chatGroupCreate: [
+    rule({
+      id: 'chat-group-create',
+      windowMs: 24 * HOUR,
+      limit: 20,
+      key: 'user',
+      failMode: 'open',
+    }),
+  ],
+  /** Danh bạ `chat/people` (R49): 60 / phút. */
+  chatPeople: [
+    rule({ id: 'chat-people', windowMs: MINUTE, limit: 60, key: 'user', failMode: 'open' }),
+  ],
+  /** Upload chat 30 lượt / 10 phút — fail-closed có chủ đích (tốn đĩa, ADR-141; khác R21). */
+  chatUpload: [
+    rule({ id: 'chat-upload', windowMs: 10 * MINUTE, limit: 30, key: 'user', failMode: 'closed' }),
+  ],
 } as const satisfies Record<string, readonly RateLimitRule[]>;
 
 /** Mọi route .xlsx (ADR-130): CÙNG quy tắc / bucket với xuất CSV — không phải hạn mức riêng (20/giờ/user chung). */
 export const EXPORT_RATE_LIMIT: readonly RateLimitRule[] = RATE_LIMIT_RULES.attendanceExport;
+/** Gửi tin: 30 / phút + `hourly` / giờ (600; `CHAT_SEND_HOURLY` chỉ ở APP_ENV=test). */
+export function chatSendRules(hourly = 600): readonly RateLimitRule[] {
+  return [
+    ...RATE_LIMIT_RULES.chatSend,
+    rule({ id: 'chat-send-hour', windowMs: HOUR, limit: hourly, key: 'user', failMode: 'open' }),
+  ];
+}
 
 /** `project:join`: 30 lần/phút/socket — đếm trong bộ nhớ của socket (trạng thái gắn với kết nối). */
 export const PROJECT_JOIN_LIMIT = { windowMs: MINUTE, limit: 30 } as const;

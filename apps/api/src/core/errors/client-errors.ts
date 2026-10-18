@@ -101,7 +101,11 @@ export type ResourceKind =
   | 'payroll_run'
   | 'payslip'
   // Mốc 5 (T-056): đơn bổ sung giờ
-  | 'correction_request';
+  | 'correction_request'
+  // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)
+  | 'conversation'
+  | 'message'
+  | 'attachment';
 
 /** 404 — không tồn tại **hoặc** thuộc tenant khác (ADR-020): cùng một hình dạng cho cả hai. */
 export class ResourceNotFoundError extends AppError {

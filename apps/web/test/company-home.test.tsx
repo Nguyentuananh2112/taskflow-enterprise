@@ -42,7 +42,7 @@ async function menuLabels() {
 }
 
 describe('header công ty', () => {
-  it('nhân viên: ☰ có Trang chính · Bảng công · Nghỉ phép · Hồ sơ của tôi; hàng link ≥ md chỉ Trang chính; a11y', async () => {
+  it('nhân viên: ☰ có Trang chính · Bảng công · Nghỉ phép · Hồ sơ của tôi · Trò chuyện; hàng link ≥ md chỉ Trang chính; a11y', async () => {
     open('EMPLOYEE');
     await screen.findByRole('region', { name: 'Chấm công' });
     const links = within(screen.getByRole('navigation', { name: 'Công ty' })).getAllByRole('link');
@@ -53,12 +53,13 @@ describe('header công ty', () => {
       ['Bảng công của tôi', '/attendance'],
       ['Nghỉ phép', '/leave'],
       ['Hồ sơ của tôi', '/my-profile'],
+      ['Trò chuyện', '/chat'], // Mốc 6 — thứ tự TL chốt; ≥ md là icon cạnh chuông, không ở hàng link
     ]);
     expect(screen.getByRole('button', { name: 'Menu' }).getAttribute('aria-expanded')).toBe('true');
     await expectNoA11yViolations();
   });
 
-  it('HR: thêm "Nhân sự" (cả hàng link ≥ md); Admin: "Nhân sự" + "Quản trị", KHÔNG có mục chấm công / nghỉ phép', async () => {
+  it('HR: thêm "Nhân sự" (cả hàng link ≥ md); Admin: "Trò chuyện" + "Nhân sự" + "Quản trị", KHÔNG có mục chấm công / nghỉ phép', async () => {
     open('HR');
     await screen.findByRole('region', { name: 'Chấm công' });
     expect(await menuLabels()).toContainEqual(['Nhân sự', '/hr']);
@@ -73,6 +74,7 @@ describe('header công ty', () => {
     await screen.findByRole('heading', { name: 'Việc quản lý' });
     expect(await menuLabels()).toEqual([
       ['Trang chính', '/w'],
+      ['Trò chuyện', '/chat'], // Admin cũng nhắn tin (ADR-143)
       ['Nhân sự', '/hr'],
       ['Quản trị', '/admin'],
     ]);

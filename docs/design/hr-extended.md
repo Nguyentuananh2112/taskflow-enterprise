@@ -258,7 +258,7 @@ Threat-model §6 (B): **R32** hồ sơ nhân viên là dữ liệu cá nhân (4 
 | D8 | `employee_profiles` | xóa khi người đó **không còn dòng `company_members`** (đã nghỉ) **và** không còn `company_member_departures` nào có `last_day ≥ mốc D5` (2 năm). Bước D8 chạy **trước** D5 (D5 xóa departure làm mất căn cứ). Nhận lại ⇒ có dòng `company_members` ⇒ giữ. Payslip giữ ảnh chụp `hireDate` theo thời hạn lương (payroll §3) |
 | D9 | `attendance_correction_requests` | dòng xóa cùng D2 theo `work_date` (2 năm), **trước** lượt chấm cùng ngày trong cùng lượt job (`created_event_id` NO ACTION); `reason` + `decision_note` → NULL sau 13 tháng kể từ `work_date` (như D3), trừ PENDING |
 | D7 | audit `PROFILE_SET`, `CORRECTION_*`, `POLICY_SET`, `EXPORT` | 5 năm; bước D7' (bỏ `after.note` theo mốc D3) áp cả các action mới |
-| D10 | bảng lương (`payroll_settings`, `salary_profiles`, `payroll_runs`, `payslips`, `payslip_lines`) + audit `PAYROLL_*` (payroll.md §3, T-048) | **ngoài mọi bước D1–D9 / D7 / D7'** (RD-11): giữ theo hạn lưu chứng từ lương `RETENTION_PAYROLL_DAYS` (đề xuất 10 năm — chốt cùng R27). Kể cả `after.note` của audit lương (lý do sửa công / điều chỉnh) — TL chốt 18/10: lý do đó vốn có trên phiếu (`overrideReason`, `revisionReason` — nhân viên xem được) nên giữ theo phiếu; biện pháp giảm là dòng nhắc trong form "Nhân viên sẽ thấy lý do này — không ghi chẩn đoán/bệnh". Ranh giới kỹ thuật: tiền tố action `PAYROLL_` (`action NOT LIKE 'PAYROLL\_%'` ở D7 / D7') |
+| D15 | bảng lương (`payroll_settings`, `salary_profiles`, `payroll_runs`, `payslips`, `payslip_lines`) + audit `PAYROLL_*` (payroll.md §3, T-048) | **ngoài mọi bước D1–D9 / D7 / D7'** (RD-11): giữ **10 năm** kể từ kỳ lương (`data-retention.md` D15 — chứng từ kế toán). Kể cả `after.note` của audit lương (lý do sửa công / điều chỉnh) — TL chốt 18/10: lý do đó vốn có trên phiếu (`overrideReason`, `revisionReason` — nhân viên xem được) nên giữ theo phiếu; biện pháp giảm là dòng nhắc trong form "Nhân viên sẽ thấy lý do này — không ghi chẩn đoán/bệnh". Ranh giới kỹ thuật: tiền tố action `PAYROLL_` (`action NOT LIKE 'PAYROLL\_%'` ở D7 / D7') |
 | — | `leave_policies` | không phải dữ liệu cá nhân; sống cùng công ty |
 | — | `leave_balances.carried_over_days` | theo D4 |
 
@@ -320,3 +320,9 @@ Thứ tự: **Mốc 3.5 → T-054 → T-048 → (T-049 ‖ T-055) → (T-056 ‖
 4. **Cấp công ty** (Mốc 3.5): Admin không phải nhân viên — không hồ sơ "của tôi", không phép, không đơn bổ sung; vào làm/nghỉ việc ở Mốc 3.5.
 
 Không có câu hỏi mới cho người dùng. R27 Q2/Q4/Q5 vẫn mở như trước (trước deploy).
+
+## 12. Cập nhật khi triển khai (TL, 18/10 — gộp `main` 007c82a6)
+
+- ADR-128: ghi chú (a)–(e) của B ở T-054; `hireDate` tương lai ⇒ 422 `HIRE_DATE_IN_FUTURE`, cận dưới 1950 ⇒ 400.
+- ADR-130: ô ngày = số serial Excel + định dạng dd/mm/yyyy; audit `EXPORT` ghi {report, period, from?, to?, rows (tổng dòng dữ liệu mọi sheet), format}; tên sheet số dư "Số dư YYYY".
+- ADR-131: số truy vấn của trang số dư cố định ≤ 12/trang (T-057d); job chụp `carried` có jitter 5 s.

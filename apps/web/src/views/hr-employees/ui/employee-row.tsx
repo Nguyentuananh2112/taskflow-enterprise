@@ -12,13 +12,17 @@ type Props = Readonly<{
   /** Chưa có hôm nay của server ⇒ chưa có nút (hộp cần ngày mặc định / giới hạn). */
   ready: boolean;
   locked: boolean;
-  /** Thẻ của chính người xem: luật self tuyệt đối (ADR-128) — không "Sửa hồ sơ". */
+  /** Thẻ của chính người xem: luật self tuyệt đối (ADR-128) — không "Sửa hồ sơ"; không tự gỡ ảnh qua route HR. */
   self: boolean;
   onOpen: (kind: 'offboard' | 'rehire' | 'profile', employee: EmployeeDto) => void;
+  /** Mốc 6 (ADR-142): mở dialog gỡ ảnh ở CẤP TRANG (E12). */
+  onRemoveAvatar: (employee: EmployeeDto) => void;
 }>;
 
 /** Một nhân viên: tên + trạng thái (chữ, không chỉ màu), email, ngày vào / ngày làm cuối, MỘT nút theo trạng thái. */
-export function EmployeeRow({ employee: e, ready, locked, self, onOpen }: Props) {
+export function EmployeeRow({ employee: e, ready, locked, self, onOpen, onRemoveAvatar }: Props) {
+  // SEC-CH-17: không tự gỡ qua route HR; người giữ grant chỉ Admin gỡ (`locked`); chỉ khi người đó đang có ảnh.
+  const canRemoveAvatar = !self && !locked && Boolean(e.avatarUrl);
   const dates =
     e.status === 'LEFT'
       ? e.offboardLastDay && `Làm tới ${dmy(e.offboardLastDay)}`
@@ -51,6 +55,16 @@ export function EmployeeRow({ employee: e, ready, locked, self, onOpen }: Props)
         )}
         {dates && <p className="text-sm text-text-muted">{dates}</p>}
       </div>
+      {canRemoveAvatar && (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Gỡ ảnh đại diện ${e.fullName}`}
+          onClick={() => onRemoveAvatar(e)}
+        >
+          Gỡ ảnh đại diện
+        </Button>
+      )}
       {ready && (
         <div className="flex flex-wrap items-center gap-2">
           {self ? (

@@ -30,6 +30,13 @@ export const ErrorCode = z.enum([
   'SESSION_REVOKED',
   'ACTIVATION_INVALID',
   'ACTIVATION_GONE',
+  // Mốc 6 — kho tệp (ADR-141)
+  'INVALID_UPLOAD_NAME',
+  'UNSUPPORTED_FILE_TYPE',
+  'MACRO_OR_ACTIVE_CONTENT',
+  'IMAGE_PROCESSING_BUSY',
+  'IMAGE_PROCESSING_UNAVAILABLE',
+  'STORAGE_FULL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -64,12 +71,6 @@ export const BusinessRule = z.enum([
   'ALREADY_ACTIVATED',
   // Mốc 5 (T-054, ADR-128): `hireDate` sau "hôm nay" của giờ nghiệp vụ — cùng kiểu START_DATE_OUT_OF_RANGE.
   'HIRE_DATE_IN_FUTURE',
-  // Mốc 4 (payroll.md ADR-125/126/127, T-048): tạo nháp khi tháng chưa hết (kỳ không có ngày làm
-  // dùng lại NO_WORKING_DAYS của Mốc 3); phát hành bị chặn
-  // (`details.blockers` — PublishBlockedDetails); kỳ có ngày quá hạn lưu chấm công ⇒ cấm tính lại công.
-  'PERIOD_NOT_ENDED',
-  'PUBLISH_BLOCKED',
-  'ATTENDANCE_RETENTION_EXPIRED',
   // Mốc 5 (T-057, ADR-131): chính sách phép năm đã qua chỉ đọc.
   'POLICY_YEAR_LOCKED',
   // Mốc 5 (hr-extended ADR-129/130, T-056): đơn bổ sung giờ + xuất Excel bảng công.
@@ -81,6 +82,26 @@ export const BusinessRule = z.enum([
   'REQUESTER_NOT_EMPLOYEE',
   'PERIOD_NOT_STARTED',
   'EXPORT_TOO_LARGE',
+  // Mốc 6 (TL 18/10, ADR-141): ảnh hỏng ⇒ IMAGE_UNREADABLE; sharp quá thời gian / vượt trần điểm ảnh ⇒
+  // IMAGE_TOO_COMPLEX (web: "Ảnh quá lớn hoặc phức tạp, hãy chọn ảnh nhỏ hơn").
+  'IMAGE_UNREADABLE',
+  'IMAGE_TOO_COMPLEX',
+  // Mốc 6 — trò chuyện (ADR-143/144, avatar-chat.md §4). NOT_ACTIVE_MEMBER / IDEMPOTENCY_KEY_REUSED dùng lại.
+  'SELF_DIRECT',
+  'RECIPIENT_INACTIVE',
+  'NOT_GROUP',
+  'EDIT_WINDOW_PASSED',
+  'REPLY_OTHER_CONVERSATION',
+  'GROUP_TOO_LARGE',
+  'TOO_MANY_ATTACHMENTS',
+  // Lưới an toàn của store (B soát T-069a M1): đính kèm mất giữa lúc claim và lúc gắn (purge mồ côi) ⇒ rollback tin.
+  'ATTACHMENT_UNAVAILABLE',
+  // Mốc 4 (payroll.md ADR-125/126/127, T-048): tạo nháp khi tháng chưa hết (kỳ không có ngày làm
+  // dùng lại NO_WORKING_DAYS của Mốc 3); phát hành bị chặn
+  // (`details.blockers` — PublishBlockedDetails); kỳ có ngày quá hạn lưu chấm công ⇒ cấm tính lại công.
+  'PERIOD_NOT_ENDED',
+  'PUBLISH_BLOCKED',
+  'ATTENDANCE_RETENTION_EXPIRED',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
@@ -117,6 +138,10 @@ export const NotFoundDetails = z.object({
     'payslip',
     // Mốc 5 (T-056)
     'correction_request',
+    // Mốc 6 (T-069): không phải người tham gia ⇒ cùng 404 như không tồn tại (ADR-146)
+    'conversation',
+    'message',
+    'attachment',
   ]),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;

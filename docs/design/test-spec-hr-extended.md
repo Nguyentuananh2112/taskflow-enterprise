@@ -23,7 +23,7 @@ Như `test-spec-company.md` §0.1: **U** hàm thuần · **A** use case + fake �
 |---|---|---|
 | U / A / I / H | tác giả vé (B T-054/T-055, A T-056, D T-057) | F kiểm phủ theo bảng mã ca + Stryker |
 | S / C / K | **F** (không là tác giả module nào của Mốc 5) | người không viết module đó — cột "Duyệt" ở §9 |
-| E | **F** | E (selector), TL |
+| E | **H** (TL 18/10 — giảm tải F) | **F soát cuối**, E (selector), TL |
 | M | F, chỉ khi TL báo "máy rảnh" | — |
 
 ### 0.2 Bối cảnh chuẩn
@@ -224,11 +224,11 @@ Selector theo E (T-058a/b, TL chuyển 17/10). Mỗi ca tự tạo người qua 
 
 | Mã | Ca | Selector chính |
 |---|---|---|
-| E2E-HR-20 | MISSING_OUT (HR `adjust` IN qua API) ⇒ nhân viên mở ngày ⇒ "Xin bổ sung giờ ra" ⇒ "Giờ ra", "Lý do" ⇒ "Gửi đơn" ⇒ "Đã gửi đơn — chờ duyệt"; HR: chuông có thông báo mới, tab "Bổ sung giờ (1)" (đếm theo delta — §0.4 không số tuyệt đối: kiểm `listitem "{tên} — {ngày}"`) ⇒ "Duyệt đơn bổ sung giờ của {tên}" ⇒ dialog "Duyệt"; nhân viên: chuông + ô ngày "Có mặt". Vế phụ: checkbox "Ra sau nửa đêm (sáng hôm sau)"; "Hủy đơn"; "Từ chối đơn bổ sung giờ của {tên}" ⇒ "Từ chối" | nút "Xin bổ sung giờ ra"/"…vào"; form "Xin bổ sung giờ ra"; ô "Giờ ra"/"Giờ vào", "Lý do"; nút "Gửi đơn", "Hủy đơn"; tab "Bổ sung giờ (N)" |
+| E2E-HR-20 | MISSING_OUT (HR `adjust` IN qua API) ⇒ nhân viên mở ngày ⇒ "Xin bổ sung giờ ra" ⇒ "Giờ ra", "Lý do" ⇒ "Gửi đơn" ⇒ toast "Đã gửi đơn — chờ bộ phận nhân sự duyệt" (ô trong hộp ngày: "Đã gửi đơn (…) — chờ duyệt"); HR: chuông có thông báo mới, tab "Bổ sung giờ (1)" (đếm theo delta — §0.4 không số tuyệt đối: kiểm `listitem "{tên} — {ngày}"`) ⇒ "Duyệt đơn bổ sung giờ của {tên}" ⇒ dialog "Duyệt"; nhân viên: chuông + ô ngày "Đi làm", hết "Quên chấm ra". Vế phụ: checkbox "Ra sau nửa đêm (sáng hôm sau)" (chỉ hiện khi giờ ra < 06:00); "Hủy đơn"; "Từ chối đơn bổ sung giờ của {tên}" ⇒ "Từ chối" | nút "Xin bổ sung giờ ra"/"…vào"; form "Xin bổ sung giờ ra"; ô "Giờ ra"/"Giờ vào", "Lý do"; nút "Gửi đơn", "Hủy đơn"; tab "Bổ sung giờ (N)" |
 | E2E-HR-21 | HR ở 360 px: `/hr/employees` ⇒ "Sửa hồ sơ của {tên}" ⇒ dialog "Sửa hồ sơ — {tên}" ⇒ "Ngày vào công ty", "Phòng ban", "Chức vụ", "Số điện thoại công việc" ⇒ "Lưu"; sửa ngày vào đã có ⇒ "Lý do sửa ngày vào công ty" bắt buộc; 409 (sửa song song qua API) ⇒ "Tải bản mới" giữ dữ liệu; nhân viên: menu "Hồ sơ của tôi" (ngay sau "Nghỉ phép") ⇒ `/my-profile` h1 "Hồ sơ của tôi", 4 dòng chỉ đọc; Admin: không có mục menu. Thêm nhân viên có trường hồ sơ; nhận lại radio "Giữ ngày vào cũ (…)" / "Ngày vào mới"; nút Hủy/Thêm/Nhận lại nằm trong thân hộp | như cột Ca |
 | E2E-HR-22 | tải 2 file Excel: "Tải Excel" (Bảng công tháng), "Tải báo cáo nghỉ phép" (Số phép) ⇒ `download.suggestedFilename()` khớp header; đọc file bằng `readXlsx` (import harness API vào e2e support) ⇒ `expectSafeWorkbook`, ô tổng của người do ca tạo; nút khóa "Đang tạo file…" khi đang tạo; route giả 429 ⇒ câu dễ hiểu, không file | selector E gửi ở T-058c |
-| E2E-HR-23 | "Cài chính sách phép" ⇒ **năm sau** ⇒ bật "Cho chuyển phép chưa dùng sang năm sau", "Tối đa … ngày" ⇒ lưu ⇒ phân rã số phép năm sau hiện "chuyển sang"; khôi phục ở `afterAll` (§0.4) | T-058c |
-| E2E-HR-24 | axe + responsive 360/768/1280: tab "Bổ sung giờ", form đơn, `/my-profile`, hộp "Sửa hồ sơ", form chính sách; `/hr` 7 tab ở 360 không dịch > 8 px (cách đo E2E-HR-14) | — |
+| E2E-HR-23 | "Cài chính sách phép" ⇒ **năm sau** ⇒ bật "Cho chuyển phép chưa dùng sang năm sau", "Tối đa … ngày" ⇒ "Lưu" ⇒ "Xác nhận lưu" ⇒ mở lại thấy đúng giá trị đã lưu; ô "Chuyển sang" của bảng số phép năm sau **khớp API** `leave/balances/me` (0 ⇒ "—"). **Không** khẳng định "chuyển sang > 0": ADR-131 `carried(Y+1)` phụ thuộc `carryOverEnabled(Y)` — chính sách NĂM NAY — mà §0.4 cấm E2E sửa năm nay (H phát hiện 18/10, F sửa spec). Vế `carried > 0` ở tầng S / K (LP-06, CLK-HR-12 / 13). Khôi phục năm sau ở `afterAll` | T-058c |
+| E2E-HR-24 | axe + responsive 360/768/1280: tab "Bổ sung giờ", form đơn, `/my-profile`, hộp "Sửa hồ sơ", form chính sách; `/hr` **6** tab ở 360 (code: Hôm nay, Bảng công tháng, Đơn nghỉ, Bổ sung giờ, Lịch & ngày lễ, Số phép — "Nhân viên" là route `/hr/employees` riêng) không dịch > 8 px (cách đo E2E-HR-14) | — |
 | E2E-HR-25 | XSS ở phòng ban / chức vụ / lý do đơn (`<img src=x onerror=…>`, `javascript:`) ⇒ hiện văn bản, không chạy script (cùng bộ bẫy `xss.e2e.ts`) | — |
 
 E2E-HR-14…19 (Mốc 3.5) vẫn xanh; menu nhân viên có thêm "Hồ sơ của tôi" ⇒ ca kiểm thứ tự menu cập nhật cùng T-058a.
@@ -258,7 +258,7 @@ E2E-HR-14…19 (Mốc 3.5) vẫn xanh; menu nhân viên có thêm "Hồ sơ củ
 | `test/security/hr-extended-clock-nextday.sec.ts` | CLK-HR-11 | T-056 | D |
 | `test/security/hr-extended-clock-expiry.sec.ts` | CLK-HR-12 · LP-06b, 07, 08 (vế K) | T-057 | A |
 | `test/security/hr-extended-clock-newyear.sec.ts` | CLK-HR-13 | T-057 | A |
-| `e2e/specs/hr-extended.e2e.ts` | E2E-HR-20…25 | T-058a / b / c | E (selector) |
+| `e2e/specs/hr-extended.e2e.ts` | E2E-HR-20…25 | T-058a / b / c | H viết · F soát cuối · E (selector) |
 | `docs/reviews/T-059-xlsx-manual.md` | XL-08 | T-055…T-057 | TL |
 | (tác giả) `*.test.ts`, `test/integration/**`, `test/http/**` | U/A/I/H của EP, CR, XL-06, LP | vé tương ứng | F |
 

@@ -38,7 +38,16 @@ services:
       GIT_SHA: ${GIT_SHA:?}
       # Valkey TLS tự ký (env.ts bắt buộc rediss:// ở production) — CA do bootstrap.sh sinh.
       NODE_EXTRA_CA_CERTS: /run/valkey-tls/ca.crt
-    volumes: ['./secrets/valkey-tls/ca.crt:/run/valkey-tls/ca.crt:ro']
+      # Mốc 6 (ADR-141, devops.md §4.6): kho tệp = volume `filestore` (đặt cứng — khớp đường mount bên dưới).
+      FILE_STORE_DIR: /var/lib/taskflow/files
+    volumes:
+      - ./secrets/valkey-tls/ca.crt:/run/valkey-tls/ca.crt:ro
+      # Volume tên ⇒ Docker dùng FS của host (ext4/xfs — có hard link). KHÔNG đổi sang bind mount của Docker Desktop /
+      # ổ mạng: API thử hard link lúc khởi động, không được ⇒ từ chối khởi động.
+      - filestore:/var/lib/taskflow/files
+    # Worker sharp: bộ nhớ libvips là native, ngoài resourceLimits ⇒ trần container (devops.md §4.6 — đo lại bằng
+    # ảnh 40 MP trước go-live).
+    mem_limit: 1536m
     stop_grace_period: 30s # > drain 5 s + SHUTDOWN_TIMEOUT_MS 20 s (§7.3)
     depends_on:
       postgres: { condition: service_healthy }
@@ -130,14 +139,29 @@ services:
     image: ghcr.io/${GHCR_OWNER:?}/taskflow-backup@${BACKUP_DIGEST:-sha256:CHANGE_ME}
     profiles: [backup]
     env_file: .env.backup # BACKUP_* + AWS_* (PutObject-only) + BACKUP_HEARTBEAT_URL — mẫu: .env.backup.example
+    # Chỉ DB (uid postgres của image). Heartbeat ở `backup-files` — systemd chạy backup RỒI backup-files, bước sau
+    # chỉ chạy khi bước trước thành công ⇒ heartbeat CHỈ khi cả hai xong (thiếu một ⇒ email sau 26 h).
+    command: ['backup.sh']
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Kho tệp Mốc 6 (devops.md §4.3/§4.6, runbook backup-restore.md §7) — cùng image, user RIÊNG: blob là 0600 của `node`
+  # (uid 1000) ⇒ chạy bằng uid 1000 mới đọc được (B HIGH-1). Kho mount CHỈ ĐỌC; không cần quyền DB.
+  backup-files:
+    image: ghcr.io/${GHCR_OWNER:?}/taskflow-backup@${BACKUP_DIGEST:-sha256:CHANGE_ME}
+    profiles: [backup]
+    user: '1000:1000'
+    env_file: .env.backup
+    environment:
+      HOME: /tmp # aws CLI ghi cache vào $HOME — uid 1000 không có home trong image
+    volumes: ['filestore:/var/lib/taskflow/files:ro']
     # Ping heartbeat bằng python3 (có sẵn — awscli Debian chạy trên python3); image B2 không có wget/curl.
     entrypoint: ['sh', '-c']
     command:
-      - backup.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then python3 -c "import sys,urllib.request as u; u.urlopen(sys.argv[1], timeout=30).read()" "$${BACKUP_HEARTBEAT_URL}"; fi
-    depends_on:
-      postgres: { condition: service_healthy }
+      - backup-files.sh && if [ -n "$${BACKUP_HEARTBEAT_URL:-}" ]; then python3 -c "import sys,urllib.request as u; u.urlopen(sys.argv[1], timeout=30).read()" "$${BACKUP_HEARTBEAT_URL}"; fi
 
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  filestore: # kho tệp Mốc 6 — sao lưu MÃ HÓA hằng ngày bằng backup-files.sh (runbook backup-restore.md §7)

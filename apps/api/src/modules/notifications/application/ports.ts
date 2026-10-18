@@ -59,6 +59,8 @@ export interface ILeaveSummaryReader {
 /** Ngữ cảnh tối thiểu cho DTO. KHÔNG BAO GIỜ đọc `reason` / `decisionNote` (B-H2). */
 export interface INotificationContextReader {
   actorNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
+  /** Mốc 6 (ADR-142): URL ký variant 64 của người thực hiện (chỉ người còn thuộc công ty có ảnh). Thiếu ⇒ không gắn. */
+  actorAvatars?(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   leaveSummaries(refIds: readonly string[]): Promise<ReadonlyMap<string, LeaveSummary>>;
   /** Kỳ lương `YYYY-MM` theo id phiếu (PAYSLIP_*) — KHÔNG số tiền. Module payroll hiện thực (T-049). */
   payslipPeriods(refIds: readonly string[]): Promise<ReadonlyMap<string, string>>;

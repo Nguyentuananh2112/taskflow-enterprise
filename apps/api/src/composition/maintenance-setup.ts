@@ -1,4 +1,5 @@
 import type { Env } from '../config/env';
+import type { AppMetrics } from '../core/observability/metrics';
 import type { IClock } from '../core/domain';
 import type { ILogger } from '../core/logging/logger';
 import {
@@ -155,3 +156,18 @@ export function retentionEnabled(
 
 /** Tên job chụp phép chuyển sang (T-057) — log `maintenance.run_done {job}` và cờ `LEAVE_CARRYOVER_ON_START`. */
 export const LEAVE_CARRYOVER_JOB = 'leave-carryover';
+
+/** Kết quả mỗi lượt job ⇒ metrics `scheduled_job_*` (T-035) — bọc `run`, không sửa scheduler. */
+export function measuredBy(metrics: Pick<AppMetrics, 'recordJobRun'>) {
+  return (job: ScheduledJob): ScheduledJob => ({
+    ...job,
+    run: (signal) =>
+      job.run(signal).then(
+        () => metrics.recordJobRun(job.name, true),
+        (err: unknown) => {
+          metrics.recordJobRun(job.name, false);
+          throw err;
+        },
+      ),
+  });
+}

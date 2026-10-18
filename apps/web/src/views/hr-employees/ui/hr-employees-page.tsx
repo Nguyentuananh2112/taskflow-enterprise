@@ -120,6 +120,7 @@ export function HrEmployeesPage() {
               employee={e}
               ready={today !== null}
               onOpen={(kind, employee) => setDialog({ kind, employee })}
+              onRemoveAvatar={(employee) => setDialog({ kind: 'avatar', employee })}
               locked={!isAdmin && (e.userId === viewerId || e.grants.length > 0)}
               self={e.userId === viewerId}
             />
@@ -136,7 +137,7 @@ export function HrEmployeesPage() {
           Tải thêm
         </Button>
       )}
-      {today && dialog && <EmployeeDialog dialog={dialog} today={today} onClose={close} />}
+      {dialog && <EmployeeDialog dialog={dialog} today={today} onClose={close} />}
     </PageMain>
   );
 }

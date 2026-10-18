@@ -108,4 +108,15 @@ export class MirroringUserRepository implements IUserRepository {
   lockTokenVersion(userId: string) {
     return this.inner.lockTokenVersion(userId);
   }
+
+  // Mốc 6 (T-068): avatar không nằm trong bản sao tên/email ⇒ chuyển thẳng.
+  lockAvatar(userId: string) {
+    return this.inner.lockAvatar(userId);
+  }
+  setAvatarVersion(input: Parameters<IUserRepository['setAvatarVersion']>[0]) {
+    return this.inner.setAvatarVersion(input);
+  }
+  avatarVersions(ids: readonly string[]) {
+    return this.inner.avatarVersions(ids);
+  }
 }

@@ -8,6 +8,7 @@ import { AppShell } from '@/app/gates';
 import { AppProviders } from '@/app/providers';
 import type { RealtimeClient } from '@/shared/socket';
 import { AccountPage } from '@/views/account';
+import { ChatPage, WorkspaceRoomPage } from '@/views/chat';
 import { AdminAccessPage, AdminCompanyPage, AdminPage, AdminWorkspacesPage } from '@/views/admin';
 import { AttendancePage } from '@/views/attendance';
 import { HrPage } from '@/views/hr';
@@ -27,6 +28,8 @@ import { WorkspaceSettingsPage } from '@/views/workspace-settings';
 
 const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/account$/, () => <AccountPage />],
+  [/^\/chat\/ws\/[^/]+$/, () => <WorkspaceRoomPage />],
+  [/^\/chat(\/[^/]+)?$/, () => <ChatPage />],
   [/^\/w$/, () => <WorkspacePickerPage />],
   [/^\/w\/new$/, () => <WorkspaceNewPage />],
   [/^\/w\/[^/]+\/projects$/, () => <ProjectListPage />],

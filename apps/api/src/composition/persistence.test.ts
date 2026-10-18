@@ -30,6 +30,7 @@ describe('assertPersistenceAllowed (quyết định Tech Lead — T-020)', () =>
     ).toEqual([
       'attendance',
       'auth',
+      'chat',
       'company',
       'hrProfile',
       'leave',
@@ -57,6 +58,7 @@ describe('createPrismaPersistence (T-023)', () => {
       attendance: 'prisma',
       leave: 'prisma',
       hrProfile: 'prisma',
+      chat: 'prisma',
     });
     expect(Object.keys(p.company).sort()).toEqual([
       'company',

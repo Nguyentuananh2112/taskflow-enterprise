@@ -14,5 +14,6 @@ export * from './realtime/events';
 export * from './hr/hr.schemas';
 export * from './leave';
 export * from './company';
+export * from './chat';
 export * from './payroll';
 export * from './system/healthz.schemas';

@@ -25,6 +25,8 @@ export function toEmployee(
       : row.offboardLastDay
         ? 'OFFBOARDING'
         : 'ACTIVE';
+  // Người đã nghỉ ⇒ không ảnh (ADR-142); có ảnh mới thêm trường (giữ DTO cũ của các test trước).
+  const avatarUrl = row ? company.avatarOf(userId) : null;
   return {
     userId,
     fullName: user.fullName,
@@ -36,6 +38,7 @@ export function toEmployee(
       row?.offboardLastDay ?? (left ? (company.departures.get(userId)?.lastDay ?? null) : null),
     version: row?.version ?? null,
     ...company.profiles.summary(userId, today),
+    ...(avatarUrl ? { avatarUrl } : {}),
   };
 }
 

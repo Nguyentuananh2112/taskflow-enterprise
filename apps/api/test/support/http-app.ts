@@ -3,6 +3,8 @@ import { MemoryStore } from 'express-rate-limit';
 import request, { type Response } from 'supertest';
 
 import { createContainer, type ContainerConfig } from '../../src/composition/container';
+import type { ChatSettings } from '../../src/composition/chat-wiring';
+import type { FilesBundle } from '../../src/composition/files-setup';
 import { createMemoryPersistence } from '../../src/composition/persistence';
 import { toLocal } from '../../src/core/domain/local-time';
 import { ResourceConflictError } from '../../src/core/errors';
@@ -33,6 +35,10 @@ export function createTestApp(
     logDestination?: DestinationStream;
     /** Như TEST_CLOCK_ANCHOR: giờ nghiệp vụ neo vào mốc này, trôi theo `clock` (giờ thật giả lập). */
     businessAnchor?: string;
+    /** Mốc 6: kho tệp + `/media` + `/me/avatar` (dựng bằng `createFiles` trước — async). */
+    files?: FilesBundle;
+    /** Mốc 6 (T-069): cửa sổ sửa / hạn mức chat (như env test-only). */
+    chat?: ChatSettings;
   } = {},
 ) {
   applyVietnameseZodLocale();
@@ -75,6 +81,8 @@ export function createTestApp(
     },
     probes: [],
     isShuttingDown: () => false,
+    ...(options.files ? { files: options.files } : {}),
+    ...(options.chat ? { chat: options.chat } : {}),
   });
   const app = container.app;
 

@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import { prismaChatRepositories } from './chat-persistence';
 import { PrismaUnitOfWork, type TransactionCapable } from '../core/persistence/prisma-unit-of-work';
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import {
@@ -8,6 +9,7 @@ import {
 import { PrismaActivationTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-activation-token.repository';
 import { PrismaRefreshTokenRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-refresh-token.repository';
 import { PrismaUserRefReader } from '../modules/auth/infrastructure/persistence/prisma/prisma-user-ref.reader';
+import { PrismaAvatarDirectory } from '../modules/auth/infrastructure/persistence/prisma/prisma-avatar-directory';
 import { PrismaUserRepository } from '../modules/auth/infrastructure/persistence/prisma/prisma-user.repository';
 import { createPrismaAttendanceRepositories } from '../modules/attendance/attendance.module';
 import { PrismaHrAuditLog } from '../modules/company/infrastructure/prisma/prisma-hr-audit-log';
@@ -111,6 +113,8 @@ export function createPrismaPersistence(d: {
     attendance: createPrismaAttendanceRepositories(db),
     leave,
     hrProfile: { profiles, locks: profiles },
+    avatarDirectory: new PrismaAvatarDirectory(db),
+    chat: prismaChatRepositories(db),
     ...prismaMaintenance(db),
     uow,
   };

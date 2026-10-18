@@ -47,7 +47,11 @@ export async function joinPersonalRooms(
   try {
     await socket.join([rooms.user(socket.data.userId), rooms.session(socket.data.sid)]);
     const principal = await deps.authenticator.authenticate(token);
-    if (principal.userId === socket.data.userId) return true;
+    if (principal.userId === socket.data.userId) {
+      // Phòng công ty CHỈ sau khi phiên được xác thực lại (cổng công ty trong authenticator) — B, T-068.
+      await socket.join(rooms.company());
+      return true;
+    }
   } catch (err) {
     if (!(err instanceof AppError)) deps.logger.error({ err }, 'realtime.handshake_recheck_failed');
   }

@@ -1,5 +1,5 @@
--- Mốc 4 (T-048, payroll.md v4 §3, ADR-124…127): phiếu lương cấp công ty. Migration 7 theo thứ tự §8 (sau 6 hồ sơ,
--- trước 8 đơn bổ sung). Timestamp thư mục là tạm — TL đặt lại lúc merge. Không cột workspace_id / company_id (ADR-133).
+-- Mốc 4 (T-048, payroll.md v4 §3, ADR-124…127): phiếu lương cấp công ty. Chạy SAU Mốc 5 (…_hr_leave_policy) và Mốc 6
+-- (…_avatar, …_chat — vào main trước, TL 18/10). Không cột workspace_id / company_id (ADR-133).
 -- Tiền BIGINT đồng, ≤ 1e12 mỗi ô; công là số nguyên NỬA ngày (0..62). Bảng ở đây NGOÀI mọi bước retention (RD-11).
 
 -- CreateEnum
