@@ -9,6 +9,9 @@ import { DEFAULT_SCHEDULE, isWorkday } from '../src/modules/attendance/domain/wo
 import { CryptoRefreshTokenFactory } from '../src/modules/auth/infrastructure/security/crypto-refresh-token-factory';
 import { seedChat, type SeedStore } from './seed-chat';
 import { seedWorkspaces } from './seed-projects';
+import { resetSeedTables } from './seed-reset';
+
+export { SEED_TABLES } from './seed-reset';
 
 const TZ = DEFAULT_SCHEDULE.timezone;
 const ACTIVATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // = ACTIVATION_TTL_MS của auth (link nhân viên 7 ngày)
@@ -52,11 +55,6 @@ function workdaysBefore(before: LocalDate, count: number): LocalDate[] {
 const nextWorkday = (d: LocalDate): LocalDate =>
   isWorkday(DEFAULT_SCHEDULE, d) ? d : nextWorkday(addDays(d, 1));
 
-export const SEED_TABLES =
-  'notifications, hr_audit_logs, leave_requests, leave_balances, attendance_events, holidays, work_schedules, ' +
-  'account_activation_tokens, company_member_departures, company_members, companies, task_audit_logs, tasks, ' +
-  'projects, workspace_members, refresh_tokens, workspaces, users';
-
 /** Xóa sạch rồi dựng lại toàn bộ dữ liệu mẫu. `now` cho test; mặc định giờ thật. */
 export async function seedDatabase(
   prisma: PrismaClient,
@@ -65,8 +63,7 @@ export async function seedDatabase(
   const now = opts.now ?? new Date();
   const today = toLocal(now, TZ).date;
   const start = monthStart(today, 3); // nhiệm kỳ của mọi nhân viên mẫu (3 tháng trước)
-  await prisma.$executeRawUnsafe(`TRUNCATE ${SEED_TABLES} CASCADE`);
-  await prisma.company.create({ data: { id: 1, name: 'Công ty Mẫu' } });
+  await resetSeedTables(prisma); // TRUNCATE + dựng lại dòng migration chèn sẵn (công ty, cài đặt lương)
 
   const users = {} as Record<SeedPerson, string>;
   for (const [name, p] of Object.entries(PEOPLE) as [SeedPerson, (typeof PEOPLE)[SeedPerson]][]) {
