@@ -33,12 +33,15 @@ function deps(overrides: Partial<RateLimitDeps> = {}): RateLimitDeps & { logger:
   } as RateLimitDeps & { logger: SpyLogger };
 }
 
-function appWith(handlers: express.RequestHandler[], status = 200) {
+function appWith(
+  handlers: express.RequestHandler[],
+  status: number | ((req: Request) => number) = 200,
+) {
   const app = express();
   app.set('trust proxy', 1);
   app.use(express.json());
   app.post('/t', ...handlers, (_req, res) => {
-    res.status(status).json({ ok: true });
+    res.status(typeof status === 'function' ? status(_req) : status).json({ ok: true });
   });
   app.use(
     globalErrorHandler({
@@ -134,7 +137,7 @@ describe('createRateLimit', () => {
 
   it('mỗi route chọn rule từ bảng security §6.4; activation/refresh cũng fail-closed', () => {
     expect(RATE_LIMIT_RULES.loginIp.map((r) => [r.id, r.limit, r.windowMs])).toEqual([
-      ['login-ip', 20, 900_000],
+      ['login-ip', 300, 900_000],
     ]);
     // ADR-108: chỉ đếm 401, (IP, email) 10/15 phút, email 100/giờ.
     expect(
@@ -142,7 +145,12 @@ describe('createRateLimit', () => {
     ).toEqual([
       ['login-fail-ip-email', 10, 900_000, [401]],
       ['login-fail-email', 100, 3_600_000, [401]],
+      ['login-fail-ip', 50, 900_000, [401]],
     ]);
+    // Lỗi #2 localhost: cả văn phòng chung IP NAT ⇒ handshake 600/phút/IP, Valkey lỗi ⇒ cho qua.
+    expect(
+      RATE_LIMIT_RULES.socketHandshake.map((r) => [r.id, r.limit, r.windowMs, r.key, r.failMode]),
+    ).toEqual([['socket-handshake-ip', 600, 60_000, 'ip', 'open']]);
     // Mốc 6: `avatar` fail-closed có chủ đích (tốn đĩa + CPU worker sharp — B).
     const closed = [
       'login',
@@ -162,6 +170,62 @@ describe('createRateLimit', () => {
     expect(others.flatMap(([, rules]) => rules).every((r) => r.failMode === 'open')).toBe(true);
     const ids = Object.values(RATE_LIMIT_RULES).flatMap((rules) => rules.map((r) => r.id));
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('một văn phòng chung một IP NAT (T-076, lỗi #2 localhost)', () => {
+  it('mọi luật theo IP đo cho văn phòng ~200 người; luật chống dò theo (IP, email) / email giữ chặt', () => {
+    const ipRules = Object.values(RATE_LIMIT_RULES)
+      .flat()
+      .filter((r) => r.key === 'ip')
+      .map((r) => [r.id, r.limit, r.windowMs]);
+    expect(ipRules).toEqual([
+      ['login-ip', 300, 900_000],
+      ['login-fail-ip', 50, 900_000], // chỉ đếm 401 — chống password spraying (soát B M1)
+      ['activation-ip', 10, 900_000], // chỉ đếm lần sai (400 / 410)
+      ['refresh-ip', 1200, 300_000],
+      ['logout-ip', 120, 60_000],
+      ['api-ip', 600, 60_000],
+      ['api-bearer-ip', 3000, 60_000],
+      ['api-auth-fail-ip', 300, 60_000],
+      ['socket-handshake-ip', 600, 60_000],
+      ['media-ip', 2000, 60_000],
+    ]);
+    expect(RATE_LIMIT_RULES.login.map((r) => r.limit)).toEqual([10, 100, 50]);
+  });
+
+  it('login-fail-ip (soát B M1): 300 lần đăng nhập ĐÚNG không tốn suất; lần sai thứ 51 trên 51 email khác nhau ⇒ 429', async () => {
+    const d = deps();
+    const ok = appWith(createRateLimits(RATE_LIMIT_RULES.login, d));
+    for (let i = 0; i < 300; i++) {
+      const res = await request(ok)
+        .post('/t')
+        .send({ email: `nv${i}@example.com` });
+      expect(res.status, `đúng lần ${i + 1}`).toBe(200);
+    }
+    // Cùng một app (cùng bucket): body `ok` ⇒ handler trả 200 (đăng nhập đúng), còn lại 401.
+    const failing = appWith(createRateLimits(RATE_LIMIT_RULES.login, deps()), (req) =>
+      (req.body as { ok?: boolean }).ok ? 200 : 401,
+    );
+    for (let i = 0; i < 50; i++) {
+      const res = await request(failing)
+        .post('/t')
+        .send({ email: `spray${i}@example.com` });
+      expect(res.status, `sai lần ${i + 1}`).toBe(401);
+    }
+    const blocked = await request(failing).post('/t').send({ email: 'spray50@example.com' });
+    expect(blocked.status).toBe(429);
+    // Soát B: bucket ĐẦY ⇒ cả lần đăng nhập ĐÚNG (handler sẽ trả 200) cũng 429 — chặn trước khi kiểm mật khẩu.
+    const right = await request(failing).post('/t').send({ email: 'nv0@example.com', ok: true });
+    expect(right.status).toBe(429);
+  });
+
+  it('login-ip: 300 lần đăng nhập từ cùng IP trong 15 phút đều qua; lần 301 ⇒ 429', async () => {
+    const app = appWith(createRateLimits(RATE_LIMIT_RULES.loginIp, deps()));
+    for (let i = 0; i < 300; i++) {
+      expect((await request(app).post('/t').send({})).status, `lần ${i + 1}`).toBe(200);
+    }
+    expect((await request(app).post('/t').send({})).status).toBe(429);
   });
 });
 
@@ -207,7 +271,7 @@ describe('createGlobalRateLimit & helpers', () => {
     expect((await request(app).get('/r')).status).toBe(429);
   });
 
-  it('review T-016: "Authorization: Bearer garbage" KHÔNG né được giới hạn IP — sau 30 lần 401 ⇒ 429', async () => {
+  it('review T-016: "Authorization: Bearer garbage" KHÔNG né được giới hạn IP — hết suất 401 ⇒ 429', async () => {
     const app = guardedApp({ authFailure: 3 });
     for (let i = 0; i < 3; i++) {
       expect((await request(app).get('/r').set('Authorization', 'Bearer garbage')).status).toBe(
@@ -251,12 +315,12 @@ describe('createGlobalRateLimit & helpers', () => {
     expect((await request(app).get('/r')).status).toBe(200);
   });
 
-  it('bảng mặc định: 100 / 1000 / 30 lần 401 mỗi phút theo IP', () => {
+  it('bảng mặc định: 600 / 3000 / 300 lần 401 mỗi phút theo IP', () => {
     expect([
       RATE_LIMIT_RULES.anonymous[0].limit,
       RATE_LIMIT_RULES.bearerIp[0].limit,
       RATE_LIMIT_RULES.authFailure[0].limit,
-    ]).toEqual([100, 1000, 30]);
+    ]).toEqual([600, 3000, 300]);
     expect(RATE_LIMIT_RULES.authFailure[0].countOnlyStatuses).toEqual([401]);
     expect(createGlobalRateLimit(deps())).toHaveLength(3);
   });
