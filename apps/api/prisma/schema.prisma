@@ -128,17 +128,22 @@ enum CorrectionStatus {
 }
 
 model User {
-  id                String    @id @default(uuid(7)) @db.Uuid
-  email             String    @unique @db.VarChar(254) // trim+lowercase+NFC ở app; CHECK (email = lower(email)) bằng SQL tay
-  passwordHash      String?   @map("password_hash") // NULL = chờ kích hoạt (ADR-137); argon2id PHC string `$argon2id$v=19$…` (ADR-065)
-  fullName          String    @map("full_name") @db.VarChar(100)
-  tokenVersion      Int       @default(0) @map("token_version") // ADR-025
-  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
-  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(3)
-  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3) // D2; khác null ⇒ login/refresh bị từ chối như sai thông tin; set cùng tx với tăng token_version + thu hồi token (USER_DELETED)
-  avatarVersion     Int?      @map("avatar_version") // Mốc 6 (ADR-142): blob avatars/<id>/<v>/{256,64}; NULL = chữ cái; CHECK 1…999999999 bằng SQL tay
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                   String    @id @default(uuid(7)) @db.Uuid
+  email                String    @unique @db.VarChar(254) // trim+lowercase+NFC ở app; CHECK (email = lower(email)) bằng SQL tay
+  passwordHash         String?   @map("password_hash") // NULL = chờ kích hoạt (ADR-137); argon2id PHC string `$argon2id$v=19$…` (ADR-065)
+  fullName             String    @map("full_name") @db.VarChar(100)
+  tokenVersion         Int       @default(0) @map("token_version") // ADR-025
+  passwordChangedAt    DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz(3)
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(3) // D2; khác null ⇒ login/refresh bị từ chối như sai thông tin; set cùng tx với tăng token_version + thu hồi token (USER_DELETED)
+  avatarVersion        Int?      @map("avatar_version") // Mốc 6 (ADR-142): blob avatars/<id>/<v>/{256,64}; NULL = chữ cái; CHECK 1…999999999 bằng SQL tay
+  // T-075 (data-retention §5): xác nhận thông báo quyền riêng tư theo PHIÊN BẢN + đồng ý riêng cho lý do nghỉ.
+  privacyAckVersion    Int?      @map("privacy_ack_version") // CHECK > 0 bằng SQL tay
+  privacyAckAt         DateTime? @map("privacy_ack_at") @db.Timestamptz(3)
+  consentLeaveReason   Boolean   @default(false) @map("consent_leave_reason")
+  consentLeaveReasonAt DateTime? @map("consent_leave_reason_at") @db.Timestamptz(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   memberships       WorkspaceMember[]
   refreshTokens     RefreshToken[]
@@ -173,10 +178,10 @@ model User {
   profilesUpdated EmployeeProfile[] @relation("ProfileUpdater")
 
   // Mốc 5 (T-055, ADR-129)
-  correctionRequests AttendanceCorrectionRequest[] @relation("CorrectionRequester")
-  correctionsDecided AttendanceCorrectionRequest[] @relation("CorrectionDecider")
+  correctionRequests       AttendanceCorrectionRequest[] @relation("CorrectionRequester")
+  correctionsDecided       AttendanceCorrectionRequest[] @relation("CorrectionDecider")
   // Mốc 6 — trò chuyện (T-069a, ADR-143/144): mọi tham chiếu tới users là Restrict (v1 không xóa cứng user).
-  chatConversationsCreated ChatConversation[] @relation("ChatConversationCreator")
+  chatConversationsCreated ChatConversation[]            @relation("ChatConversationCreator")
   chatParticipations       ChatParticipant[]
   chatReadStates           ChatReadState[]
   chatMessagesSent         ChatMessage[]
@@ -254,10 +259,12 @@ model WorkspaceMember {
 
 /// Đúng MỘT dòng (CHECK id = 1) — tạo bởi `admin:bootstrap` / seed.
 model Company {
-  id        Int      @id @db.SmallInt
-  name      String   @db.VarChar(100)
-  version   Int      @default(1)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             Int      @id @db.SmallInt
+  name           String   @db.VarChar(100)
+  version        Int      @default(1)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  // T-075: đầu mối liên hệ về dữ liệu cá nhân (chữ tự do); NULL ⇒ web hiện "liên hệ quản trị viên".
+  privacyContact String?  @map("privacy_contact") @db.VarChar(200)
 
   @@map("companies")
 }

@@ -9,16 +9,12 @@ import type { IUnitOfWork } from '../../core/persistence/unit-of-work';
 import { AccessTokenAuthenticator } from './application/access-token-authenticator';
 import { ACCESS_TOKEN_TTL_SECONDS } from './application/auth-shared';
 import type { IAccessTokenService } from './application/ports/access-token-service.port';
-import type { IActivationTokenRepository } from './application/ports/activation-token-repository.port';
 import type {
   IAuthRealtimeNotifier,
   ICompanySessionGate,
   IMembershipReader,
 } from './application/ports/collaborators.port';
 import type { IPasswordHasher } from './application/ports/password-hasher.port';
-import type { IRefreshTokenRepository } from './application/ports/refresh-token-repository.port';
-import type { ISessionRevocationStore } from './application/ports/session-revocation-store.port';
-import type { IUserRepository } from './application/ports/user-repository.port';
 import { createAuthAccounts, type AuthAccounts } from './application/auth-accounts';
 import { SessionIssuer } from './application/session-issuer';
 import { createActivation } from './application/use-cases/activation.use-cases';
@@ -38,12 +34,8 @@ import { createAvatarWiring, type AuthAvatarDeps, type AvatarWiring } from './av
 import { createAuthenticate } from './presentation/authenticate';
 import { RefreshCookie } from './presentation/refresh-cookie';
 
-export interface AuthRepositories {
-  users: IUserRepository;
-  refreshTokens: IRefreshTokenRepository;
-  sessions: ISessionRevocationStore;
-  activationTokens: IActivationTokenRepository;
-}
+export type { AuthRepositories } from './auth-repositories';
+import type { AuthRepositories } from './auth-repositories';
 
 export { createInMemoryAuthRepositories } from './infrastructure/persistence/in-memory/in-memory-auth-repositories';
 

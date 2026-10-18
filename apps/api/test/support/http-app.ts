@@ -172,6 +172,18 @@ export function createTestApp(
     return { ip, token: data.accessToken, cookie: refreshCookieOf(res, cookieName) };
   }
 
+  /** T-075: người dùng đồng ý xử lý lý do nghỉ (như `PUT /me/privacy/consent`) — test gửi đơn CÓ `reason`. */
+  const consentLeaveReason = (...users: { id: string }[]) =>
+    persistence.uow.run(async () => {
+      for (const u of users) {
+        await persistence.auth.privacy.setLeaveReasonConsent({
+          userId: u.id,
+          consent: true,
+          at: clock.now(),
+        });
+      }
+    });
+
   return {
     app,
     container,
@@ -182,6 +194,7 @@ export function createTestApp(
     register,
     login,
     nextIp,
+    consentLeaveReason,
   };
 }
 

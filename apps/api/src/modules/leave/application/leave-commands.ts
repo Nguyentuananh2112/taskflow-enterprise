@@ -1,11 +1,17 @@
 import type { LeaveBalanceRowDto, LeaveRequestDto } from './leave-dto';
-import { LeaveKit, type LeaveCommandDeps, type LeaveScope } from './leave-kit';
+import { LeaveKit, type LeaveCommandDeps as KitDeps, type LeaveScope } from './leave-kit';
+import type { ILeaveReasonConsent } from './ports/leave.ports';
 import { AdjustBalanceUseCase, type AdjustBalanceInput } from './use-cases/adjust-balance.use-case';
 import { CancelLeaveUseCase } from './use-cases/cancel-leave.use-case';
 import { DecideLeaveUseCase } from './use-cases/decide-leave.use-case';
 import { SubmitLeaveUseCase, type SubmitLeaveInput } from './use-cases/submit-leave.use-case';
 
-export { PERMISSION_HR_MANAGE, PERMISSION_LEAVE_SELF, type LeaveCommandDeps } from './leave-kit';
+export { PERMISSION_HR_MANAGE, PERMISSION_LEAVE_SELF } from './leave-kit';
+
+export interface LeaveCommandDeps extends KitDeps {
+  /** T-075: thiếu ⇒ không kiểm đồng ý xử lý lý do nghỉ (test cũ). */
+  reasonConsent?: ILeaveReasonConsent | undefined;
+}
 export type { SubmitLeaveInput } from './use-cases/submit-leave.use-case';
 
 /**
@@ -20,7 +26,7 @@ export class LeaveCommands {
 
   constructor(deps: LeaveCommandDeps) {
     const kit = new LeaveKit(deps);
-    this.#submit = new SubmitLeaveUseCase(kit);
+    this.#submit = new SubmitLeaveUseCase(kit, deps.reasonConsent);
     this.#decide = new DecideLeaveUseCase(kit);
     this.#cancel = new CancelLeaveUseCase(kit);
     this.#adjust = new AdjustBalanceUseCase(kit);

@@ -216,3 +216,11 @@ export interface IHrAudit {
     note?: string | null;
   }): Promise<void>;
 }
+
+/**
+ * T-075 (data-retention §5): người gửi đã đồng ý để công ty xử lý LÝ DO NGHỈ chưa — auth hiện thực (cột `users`).
+ * Chưa đồng ý mà đơn có `reason` ⇒ 400 LEAVE_REASON_CONSENT_REQUIRED (lý do vốn tùy chọn ⇒ bỏ trống thì gửi được).
+ */
+export interface ILeaveReasonConsent {
+  hasLeaveReasonConsent(userId: string): Promise<boolean>;
+}

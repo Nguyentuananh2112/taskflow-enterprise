@@ -32,12 +32,24 @@ describe('/company', () => {
     for (const u of [mia, olivia]) {
       const res = await get(u);
       expect(res.status).toBe(200);
-      expect(envelopeOf(res).data).toEqual({ name: 'Công ty Mẫu', version: 1 });
+      expect(envelopeOf(res).data).toEqual({
+        name: 'Công ty Mẫu',
+        version: 1,
+        privacyContact: null,
+      });
     }
     const renamed = await patch(olivia, { name: '  Công ty Mới  ', expectedVersion: 1 });
     expect(renamed.status).toBe(200);
-    expect(envelopeOf(renamed).data).toEqual({ name: 'Công ty Mới', version: 2 });
-    expect(envelopeOf(await get(mia)).data).toEqual({ name: 'Công ty Mới', version: 2 });
+    expect(envelopeOf(renamed).data).toEqual({
+      name: 'Công ty Mới',
+      version: 2,
+      privacyContact: null,
+    });
+    expect(envelopeOf(await get(mia)).data).toEqual({
+      name: 'Công ty Mới',
+      version: 2,
+      privacyContact: null,
+    });
     const audit = (await t.persistence.company.hrAudit.list({ limit: 10 })).items;
     expect(audit).toEqual([
       expect.objectContaining({
@@ -49,13 +61,31 @@ describe('/company', () => {
     ]);
   });
 
+  it('T-075: Admin đặt đầu mối quyền riêng tư (giữ tên, KHÔNG audit); chuỗi rỗng ⇒ xóa; > 200 ⇒ 400', async () => {
+    const set = await patch(olivia, {
+      privacyContact: '  dpo@cty.vn — 0901 234 567 ',
+      expectedVersion: 1,
+    });
+    expect(envelopeOf(set).data).toEqual({
+      name: 'Công ty Mẫu',
+      version: 2,
+      privacyContact: 'dpo@cty.vn — 0901 234 567',
+    });
+    expect((await t.persistence.company.hrAudit.list({ limit: 10 })).items).toEqual([]);
+    const cleared = await patch(olivia, { privacyContact: '', expectedVersion: 2 });
+    expect(envelopeOf<{ privacyContact: string | null }>(cleared).data?.privacyContact).toBeNull();
+    const long = await patch(olivia, { privacyContact: 'x'.repeat(201), expectedVersion: 3 });
+    expect(long.status).toBe(400);
+    expect((await patch(olivia, { expectedVersion: 3 })).status).toBe(400);
+  });
+
   it('expectedVersion cũ ⇒ 409 VERSION_CONFLICT kèm bản hiện tại; không ghi audit', async () => {
     await patch(olivia, { name: 'Lần 1', expectedVersion: 1 });
     const stale = await patch(olivia, { name: 'Lần 2', expectedVersion: 1 });
     expect(stale.status).toBe(409);
     expect(errorOf(stale)).toMatchObject({
       code: 'VERSION_CONFLICT',
-      details: { currentVersion: 2, current: { name: 'Lần 1', version: 2 } },
+      details: { currentVersion: 2, current: { name: 'Lần 1', version: 2, privacyContact: null } },
     });
     expect((await t.persistence.company.hrAudit.list({ limit: 10 })).items).toHaveLength(1);
   });

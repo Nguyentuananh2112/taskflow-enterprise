@@ -8,6 +8,7 @@ import {
   ImageProcessingBusyError,
   ImageProcessingUnavailableError,
   InvalidUploadNameError,
+  LeaveReasonConsentRequiredError,
   SessionRevokedError,
   StorageFullError,
   UnsupportedFileTypeError,
@@ -93,6 +94,8 @@ const CATALOG: [AppError, number, string, unknown][] = [
   [new ImageProcessingBusyError(), 503, 'IMAGE_PROCESSING_BUSY', { retryAfterSec: 5 }],
   [new ImageProcessingUnavailableError(), 503, 'IMAGE_PROCESSING_UNAVAILABLE', null],
   [new StorageFullError(), 507, 'STORAGE_FULL', null],
+  // T-075
+  [new LeaveReasonConsentRequiredError(), 400, 'LEAVE_REASON_CONSENT_REQUIRED', null],
 ];
 
 describe('danh mục lỗi (data-and-api.md §3.2)', () => {

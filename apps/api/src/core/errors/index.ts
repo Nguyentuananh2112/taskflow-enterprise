@@ -26,7 +26,12 @@ export {
   VersionConflictError,
 } from './domain-errors';
 export { InternalError, ServiceUnavailableError } from './server-errors';
-export { ActivationGoneError, ActivationInvalidError, SessionRevokedError } from './account-errors';
+export {
+  ActivationGoneError,
+  ActivationInvalidError,
+  LeaveReasonConsentRequiredError,
+  SessionRevokedError,
+} from './account-errors';
 export {
   ActiveContentError,
   ImageProcessingBusyError,

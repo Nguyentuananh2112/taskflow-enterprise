@@ -137,16 +137,25 @@ export interface LeaveRef {
   status: string;
 }
 
-export const apiSubmitLeave = (
+/** T-075: đơn CÓ lý do cần người gửi đã đồng ý xử lý lý do nghỉ ⇒ đồng ý trước (như người dùng ở trang Quyền riêng tư). */
+export const apiSubmitLeave = async (
   request: APIRequestContext,
   who: HrPerson,
   body: { type: string; startDate: string; endDate: string; reason?: string },
-) =>
-  hrCall<LeaveRef>(request, 'POST', '/leave/requests', {
+) => {
+  if (body.reason?.trim()) {
+    await hrCall(request, 'PUT', '/me/privacy/consent', {
+      token: who.accessToken,
+      body: { leaveReason: true },
+      expected: 200,
+    });
+  }
+  return hrCall<LeaveRef>(request, 'POST', '/leave/requests', {
     token: who.accessToken,
     body: { dayPart: 'FULL', ...body },
     expected: 201,
   });
+};
 
 export const apiDecideLeave = (
   request: APIRequestContext,

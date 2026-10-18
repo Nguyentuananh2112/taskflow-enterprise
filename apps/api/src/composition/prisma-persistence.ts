@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import { PrismaPrivacyStore } from '../modules/auth/infrastructure/persistence/prisma/prisma-privacy.store';
 import { prismaChatRepositories } from './chat-persistence';
 import { PrismaUnitOfWork, type TransactionCapable } from '../core/persistence/prisma-unit-of-work';
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
@@ -74,6 +75,7 @@ export function createPrismaPersistence(d: {
       refreshTokens: new PrismaRefreshTokenRepository(db),
       sessions: new ValkeySessionRevocationStore(d.valkey),
       activationTokens: new PrismaActivationTokenRepository(db),
+      privacy: new PrismaPrivacyStore(db),
     },
     workspace: {
       workspaces: new PrismaWorkspaceRepository(db),
