@@ -42,3 +42,17 @@ describe('dbSqlStateOf (log maintenance.run_failed — TL 18/10)', () => {
     expect(dbSqlStateOf('42P01')).toBeUndefined();
   });
 });
+
+describe('transientDbErrorCode — Prisma P2034 (B 18/10)', () => {
+  it('P2034 không có originalCode ⇒ 40001 (chạy lại); có originalCode deadlock ⇒ giữ 40P01; P2002 ⇒ null', () => {
+    expect(transientDbErrorCode({ code: 'P2034', message: 'write conflict' })).toBe('40001');
+    expect(
+      transientDbErrorCode({
+        code: 'P2034',
+        meta: { driverAdapterError: { cause: { originalCode: '40P01' } } },
+      }),
+    ).toBe('40P01');
+    expect(transientDbErrorCode(new Error('x', { cause: { code: 'P2034' } }))).toBe('40001');
+    expect(transientDbErrorCode({ code: 'P2002' })).toBeNull();
+  });
+});

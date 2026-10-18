@@ -2,7 +2,8 @@
  * Lỗi DB TẠM THỜI — chạy lại cả transaction là có thể thành công (review B T-033 F3/F5):
  * - `40P01` deadlock_detected (hai rebalance chéo cột cùng project);
  * - `40001` serialization_failure;
- * - `55P03` lock_not_available — `lock_timeout` hết khi chờ khóa (khóa cột advisory, khóa dòng).
+ * - `55P03` lock_not_available — `lock_timeout` hết khi chờ khóa (khóa cột advisory, khóa dòng);
+ * - Prisma `P2034` (write conflict / deadlock) không kèm SQLSTATE ⇒ trả `40001`.
  *
  * Đọc SQLSTATE theo cấu trúc lỗi (không phụ thuộc lớp Prisma): `meta.driverAdapterError.cause
  * .originalCode` (Prisma 7 + adapter-pg), `code` của lỗi pg, hoặc trong chuỗi `cause`.
@@ -51,6 +52,8 @@ export function transientDbErrorCode(err: unknown): TransientDbCode | null {
   for (let depth = 0; depth < 4 && isBag(current); depth += 1) {
     const state = sqlStateOf(current);
     if (state !== undefined && TRANSIENT.has(state)) return state as TransientDbCode;
+    // B (L, 18/10): Prisma P2034 "write conflict or a deadlock" có thể KHÔNG kèm originalCode ⇒ coi như 40001.
+    if (current['code'] === 'P2034') return '40001';
     current = current['cause'];
   }
   return null;
