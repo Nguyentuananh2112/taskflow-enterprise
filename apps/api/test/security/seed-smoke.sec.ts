@@ -158,9 +158,9 @@ describe('seed dev + app thật', () => {
     async () => {
       const s = await call('max', 'GET', '/payroll/settings');
       expect(s.status, s.text.slice(0, 200)).toBe(200);
-      expect(
-        (s.json as { data: { seniorityPerYear: number } }).data.seniorityPerYear,
-      ).toBeGreaterThan(0);
+      expect((s.json as { data: { seniorityPerYear: number } }).data.seniorityPerYear).toBe(
+        500_000,
+      );
       const p = await call('pam', 'GET', `/leave/policy?year=${String(year())}`);
       expect(p.status, p.text.slice(0, 200)).toBe(200);
       expect(['DEFAULT', 'INHERITED', 'SET']).toContain(
