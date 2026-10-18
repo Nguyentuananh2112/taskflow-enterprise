@@ -26,10 +26,16 @@ const FIELDS = ['type', 'startDate', 'endDate', 'dayPart', 'reason'] as const;
 const TYPES = LeaveType.options.map((v) => ({ value: v, label: LEAVE_TYPE_NAME[v] }));
 const PARTS = LeaveDayPart.options.map((v) => ({ value: v, label: DAY_PART_NAME[v] }));
 
-type Props = Readonly<{ today: string }>;
+type Props = Readonly<{
+  /**
+   * Ngày mặc định của "Từ ngày / Đến ngày": hôm nay nếu là NGÀY LÀM VIỆC theo lịch công ty, không thì `null` ⇒ để trống
+   * (mở trang vào cuối tuần / ngày lễ không được hiện ngay lỗi "không có ngày làm việc" — lỗi #3, TL 18/10).
+   */
+  defaultDate: string | null;
+}>;
 
 /** Gửi đơn nghỉ (attendance-leave.md §6). Số ngày do SERVER tính theo lịch + ngày lễ. */
-export function LeaveRequestForm({ today }: Props) {
+export function LeaveRequestForm({ defaultDate }: Props) {
   const create = useMutation({
     mutationFn: (body: SubmitLeaveBody) => leaveApi.create(body),
     onSuccess: (_r, _b, _x, context) =>
@@ -45,8 +51,8 @@ export function LeaveRequestForm({ today }: Props) {
     resolver: zodResolver(SubmitLeaveBody),
     defaultValues: {
       type: 'ANNUAL' as const,
-      startDate: today,
-      endDate: today,
+      startDate: defaultDate ?? '',
+      endDate: defaultDate ?? '',
       dayPart: 'FULL' as const,
       reason: '',
     },
@@ -100,14 +106,16 @@ export function LeaveRequestForm({ today }: Props) {
           label="Từ ngày"
           type="date"
           required
-          error={errors.startDate?.message}
+          error={
+            errors.startDate && (startDate ? errors.startDate.message : 'Chọn ngày bắt đầu nghỉ.')
+          }
           {...register('startDate')}
         />
         <Input
           label="Đến ngày"
           type="date"
           required
-          error={errors.endDate?.message}
+          error={errors.endDate && (endDate ? errors.endDate.message : 'Chọn ngày kết thúc nghỉ.')}
           {...register('endDate')}
         />
         <Select

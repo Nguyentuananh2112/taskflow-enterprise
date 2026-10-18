@@ -5,10 +5,12 @@ import { useState } from 'react';
 import { useLeaveBalances } from '@/entities/hr';
 import { LeaveReportButton } from '@/features/hr-export-xlsx';
 import { PolicyDialog } from '@/features/hr-leave-policy';
+import { useMediaQuery } from '@/shared/lib/use-media-query';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
 
+import { BalanceCard } from './balance-card';
 import { BalanceRow } from './balance-row';
 
 type Props = Readonly<{ today: string; isAdmin: boolean; viewerId: string | null }>;
@@ -31,6 +33,8 @@ export function HrBalances({ today, isAdmin, viewerId }: Props) {
   const [year, setYear] = useState(thisYear);
   const list = useLeaveBalances(year);
   const rows = list.data?.pages.flatMap((p) => p.data) ?? [];
+  // < md: thẻ ("Còn lại" nổi bật + Chỉnh); md+: bảng 7 cột (lỗi #E2).
+  const wide = useMediaQuery('(min-width: 768px)', true);
   return (
     <section aria-labelledby="hr-balances" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -65,6 +69,12 @@ export function HrBalances({ today, isAdmin, viewerId }: Props) {
         />
       ) : list.isPending ? (
         <Skeleton className="h-40" />
+      ) : !wide ? (
+        <ul aria-label={`Số phép năm ${year} của từng nhân viên`} className="flex flex-col gap-2">
+          {rows.map((r) => (
+            <BalanceCard key={r.userId} row={r} own={r.userId === viewerId} isAdmin={isAdmin} />
+          ))}
+        </ul>
       ) : (
         <div className="relative overflow-x-auto">
           <table className="w-full min-w-[46rem] border-collapse text-sm">

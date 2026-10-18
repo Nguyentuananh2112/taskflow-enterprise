@@ -81,7 +81,9 @@ export function LeavePage() {
           Gửi đơn mới
         </h2>
         {today ? (
-          <LeaveRequestForm today={today} />
+          <LeaveRequestForm
+            defaultDate={todayQuery.data?.isWorkday && !todayQuery.data.isHoliday ? today : null}
+          />
         ) : todayQuery.isError ? (
           // "Hôm nay" của server chưa có ⇒ không dựng form (min ngày, luật hủy) — báo lỗi, không kẹt skeleton.
           <EmptyState
