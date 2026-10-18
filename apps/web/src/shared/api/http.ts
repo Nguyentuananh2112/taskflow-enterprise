@@ -63,6 +63,13 @@ const buildUrl = (base: string, path: string, query: Query | undefined) => {
   return url;
 };
 
+/**
+ * Request thường: refresh chủ động CHỈ khi token đã HẾT hạn (chừa 1 s lệch đồng hồ) — đúng ca máy thức dậy. KHÔNG dùng
+ * ngưỡng tuyệt đối lớn: TTL ngắn (E2E 10 s) khiến token vừa cấp đã "sắp hết" ⇒ mọi request refresh, đua với restore()
+ * ⇒ 409 REFRESH_IN_PROGRESS ⇒ "Không kết nối được" (cổng fix/round1 798e4c0f). Upload giữ ngưỡng riêng của nó.
+ */
+export const SEND_MIN_TOKEN_MS = 1_000;
+
 export function createHttpClient(deps: HttpDeps) {
   const doFetch = deps.fetch ?? ((input, init) => fetch(input, init));
   const createXhr: CreateXhr = deps.xhr ?? defaultCreateXhr;
@@ -89,10 +96,12 @@ export function createHttpClient(deps: HttpDeps) {
    * TL chốt (T-072): tệp lớn trên mạng chậm mà token hết hạn giữa chừng ⇒ server chỉ trả 401 sau khi nhận HẾT body ⇒
    * tải 2 lần. Token còn < `minMs` ⇒ refresh trước. Refresh lỗi ⇒ vẫn gửi (đường TOKEN_EXPIRED lo phần còn lại).
    */
-  async function refreshIfExpiring(minMs: number | undefined): Promise<void> {
+  function expiring(minMs: number | undefined): boolean {
     const expiresAt = deps.auth?.expiresAt?.() ?? 0;
-    if (!minMs || !refresh || expiresAt === 0 || expiresAt - Date.now() >= minMs) return;
-    await refresh.run().catch(() => undefined);
+    return Boolean(minMs && refresh && expiresAt !== 0 && expiresAt - Date.now() < minMs);
+  }
+  async function refreshIfExpiring(minMs: number | undefined): Promise<void> {
+    if (expiring(minMs)) await refresh?.run().catch(() => undefined);
   }
 
   /** Upload nhị phân qua XHR (header: `uploadHeaders`). */
@@ -115,6 +124,10 @@ export function createHttpClient(deps: HttpDeps) {
 
   async function send(method: Method, path: string, opts: RequestOptions<z.ZodType>) {
     await refresh?.inflight()?.catch(() => undefined); // hàng đợi: chờ refresh đang chạy
+    // Máy thức dậy / tab chạy nền lâu: token đã hết hạn ⇒ refresh MỘT lần (single-flight) TRƯỚC khi gửi, thay vì k
+    // request song song cùng nhận 401 TOKEN_EXPIRED (đếm vào api-auth-fail-ip 300/'/IP — TL 18/10).
+    // Kiểm ĐỒNG BỘ trước: token còn hạn ⇒ không thêm lượt await nào (giữ nguyên thứ tự request như trước).
+    if (expiring(SEND_MIN_TOKEN_MS)) await refreshIfExpiring(SEND_MIN_TOKEN_MS);
     const token = deps.auth?.getAccessToken() ?? null;
     const headers = new Headers({ Accept: opts.accept ?? 'application/json' });
     // T-029 H2: API bắt buộc Content-Type JSON cho MỌI POST/PATCH, kể cả không có body (ép trình

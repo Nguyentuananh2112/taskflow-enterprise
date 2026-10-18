@@ -2,11 +2,14 @@
 // buộc migration 5 (CHECK / partial unique) đều qua, link kích hoạt khớp hash đã lưu, Admin không có quyền ngầm.
 import { createHash } from 'node:crypto';
 
+import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { seedDatabase, type SeedResult } from '../../prisma/seed-data';
+import { workdaysBetween } from '../../prisma/seed-hr';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { createTestPrisma, truncateAll } from './db';
+import { createPrismaTestApp, PRISMA_APP_PASSWORD_HASH } from './support/prisma-http-app';
 
 const prisma: PrismaClient = createTestPrisma();
 const NOW = new Date('2026-11-18T03:00:00.000Z'); // thứ Tư 18/11/2026 10:00 giờ VN
@@ -15,7 +18,7 @@ let seeded: SeedResult;
 beforeEach(async () => {
   await truncateAll(prisma);
   seeded = await seedDatabase(prisma, {
-    passwordHash: 'argon2id-giả-cho-test',
+    passwordHash: PRISMA_APP_PASSWORD_HASH,
     webOrigin: 'http://localhost:3001',
     now: NOW,
   });
@@ -60,22 +63,59 @@ describe('seed dev Mốc 3.5 (CO-07)', () => {
     expect(member.startDate?.toISOString().slice(0, 10)).toBe('2026-11-18');
   });
 
-  it('chấm công 5 ngày làm việc gần nhất (không có hôm nay, không Admin); 3 đơn nghỉ; 2 ngày lễ; thông báo HR', async () => {
+  it('chấm công MỌI ngày làm từ đầu nhiệm kỳ tới hôm qua (không hôm nay, không Admin); 4 đơn nghỉ; 2 ngày lễ; thông báo HR', async () => {
     const events = await prisma.attendanceEvent.findMany({
       where: { userId: { not: seeded.users.Quinn } },
     });
-    expect(events.length).toBe(5 * 5 * 2);
+    const days = workdaysBetween('2026-08-01', '2026-11-18');
+    // 5 người × 2 lượt × mọi ngày làm − 2 ngày nghỉ phép của Mia (4 lượt) − giờ ra thiếu của Vic (1 lượt).
+    expect(events.length).toBe(days.length * 5 * 2 - 4 - 1);
     expect(events.some((e) => e.userId === seeded.users.Olivia)).toBe(false);
-    expect(new Set(events.map((e) => e.workDate.toISOString().slice(0, 10)))).toEqual(
-      new Set(['2026-11-12', '2026-11-13', '2026-11-14', '2026-11-16', '2026-11-17']),
-    );
+    const dates = new Set(events.map((e) => e.workDate.toISOString().slice(0, 10)));
+    expect(dates.has('2026-08-01')).toBe(true);
+    expect(dates.has('2026-11-17')).toBe(true);
+    expect(dates.has('2026-11-18')).toBe(false);
     const leaves = await prisma.leaveRequest.findMany({ orderBy: { startDate: 'asc' } });
-    expect(leaves.map((l) => l.status)).toEqual(['PENDING', 'APPROVED', 'REJECTED']);
+    expect(leaves.map((l) => l.status)).toEqual(['APPROVED', 'PENDING', 'APPROVED', 'REJECTED']);
     expect(await prisma.holiday.count()).toBe(2);
     const notes = await prisma.notification.findMany({ where: { type: 'LEAVE_SUBMITTED' } });
     expect(notes.map((n) => n.recipientId).sort()).toEqual(
       [seeded.users.Pam, seeded.users.Olivia].sort(),
     );
+  });
+
+  it('Mốc 5 (TL 18/10): hồ sơ có ngày vào (thâm niên khác nhau), chính sách phép năm nay, MISSING_OUT + đơn bổ sung giờ PENDING', async () => {
+    const profiles = await prisma.employeeProfile.findMany({ include: { user: true } });
+    const hire = new Map(
+      profiles.map((p) => [p.user.email.split('@')[0], p.hireDate?.toISOString().slice(0, 10)]),
+    );
+    expect(hire.get('pam')).toBe('2016-08-01'); // ≥ 5 năm ⇒ thâm niên
+    expect(hire.get('mia')).toBe('2021-08-01');
+    expect(hire.get('nina')).toBe('2026-11-18');
+    expect(hire.has('olivia')).toBe(false);
+    expect(profiles.every((p) => p.department && p.jobTitle)).toBe(true);
+    expect(await prisma.leavePolicy.findMany()).toMatchObject([
+      { year: 2026, carryOverEnabled: true },
+    ]);
+    const vicLast = await prisma.attendanceEvent.findMany({
+      where: { userId: seeded.users.Vic, workDate: new Date('2026-11-17T00:00:00Z') },
+    });
+    expect(vicLast.map((e) => e.kind)).toEqual(['IN']);
+    expect(await prisma.attendanceCorrectionRequest.findMany()).toMatchObject([
+      { userId: seeded.users.Vic, kind: 'OUT', status: 'PENDING' },
+    ]);
+  });
+
+  it('lỗi #A: company_members.created_at = đầu nhiệm kỳ ⇒ thành viên nhóm "Dự án Sao Mai" đều hiệu lực', async () => {
+    const group = await prisma.chatConversation.findFirstOrThrow({
+      where: { title: 'Dự án Sao Mai' },
+    });
+    const rows = await prisma.$queryRaw<{ user_id: string; ok: boolean }[]>`
+      SELECT p.user_id, (p.left_at IS NULL AND p.joined_at >= cm.created_at) AS ok
+        FROM chat_participants p JOIN company_members cm ON cm.user_id = p.user_id
+       WHERE p.conversation_id = ${group.id}::uuid`;
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.ok)).toBe(true);
   });
 
   it('Olivia (Admin) chỉ ở MỘT workspace — không quyền ngầm vào ws còn lại; chạy seed lần 2 vẫn được', async () => {
@@ -90,5 +130,36 @@ describe('seed dev Mốc 3.5 (CO-07)', () => {
     });
     expect(await prisma.user.count()).toBe(8);
     expect(again.users.Olivia).not.toBe(seeded.users.Olivia);
+    expect(await prisma.payrollSettings.count()).toBe(1);
+  });
+
+  // Bug 18/10 (localhost): TRUNCATE … CASCADE (payroll_settings.updated_by_id → users) xóa dòng singleton của
+  // migration, seed không tạo lại ⇒ POST /payroll/runs/:period 500 P2025.
+  it('cài đặt lương: đúng 1 dòng mặc định của migration; Kế toán tạo nháp kỳ đã kết thúc ⇒ 201, không 500', async () => {
+    expect(await prisma.payrollSettings.findMany()).toMatchObject([
+      { id: 1, seniorityPerYear: 500_000n, version: 1, updatedById: null },
+    ]);
+    const t = createPrismaTestApp(prisma, NOW);
+    const res = await request(t.app)
+      .post('/api/v1/payroll/runs/2026-10')
+      .set(await t.login('max@example.test'))
+      .send({});
+    expect(res.status, res.text).toBe(201);
+    expect(t.logs.some((l) => l.includes('payroll.settings_restored_default'))).toBe(false);
+  });
+
+  it('dòng cài đặt lương bị xóa ngoài ý muốn ⇒ getSettings tạo lại mặc định + log warn, tạo nháp vẫn 201', async () => {
+    await prisma.payrollSettings.deleteMany();
+    const t = createPrismaTestApp(prisma, NOW);
+    const res = await request(t.app)
+      .post('/api/v1/payroll/runs/2026-09')
+      .set(await t.login('max@example.test'))
+      .send({});
+    expect(res.status, res.text).toBe(201);
+    expect(await prisma.payrollSettings.findMany()).toMatchObject([
+      { id: 1, seniorityPerYear: 500_000n, version: 1 },
+    ]);
+    const warn = t.logs.find((l) => l.includes('payroll.settings_restored_default'));
+    expect(warn && JSON.parse(warn)).toMatchObject({ level: 'warn' });
   });
 });

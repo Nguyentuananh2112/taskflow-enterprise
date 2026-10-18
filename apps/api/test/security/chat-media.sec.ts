@@ -207,22 +207,25 @@ describe('/media — chữ ký, hạn, định dạng', () => {
   );
 });
 
+/** `media-ip` (security.md §6.4) — T-076: 2000 / phút cho một văn phòng chung IP NAT. */
+const MEDIA_IP_LIMIT = 2000;
+
 describe('/media — hạn mức IP', () => {
   secCase(
     'SEC-CH-31',
-    '601 GET /media cùng IP trong một phút ⇒ request 601 nhận 429 trang HTML (cùng header an toàn); IP khác vẫn qua',
+    `${MEDIA_IP_LIMIT + 1} GET /media cùng IP trong một phút ⇒ request ${MEDIA_IP_LIMIT + 1} nhận 429 trang HTML (cùng header an toàn); IP khác vẫn qua`,
     AREA,
     async () => {
       await flushRateLimitCounters();
       const ip = `203.0.113.${String(1 + Math.floor(Math.random() * 200))}`;
       const url = signMediaUrl(tuple());
       const statuses: number[] = [];
-      for (let i = 0; i < 600; i += 1) {
+      for (let i = 0; i < MEDIA_IP_LIMIT; i += 1) {
         statuses.push((await media(api, url, { 'x-forwarded-for': ip })).status);
       }
       expect(
         statuses.filter((s) => s === 429),
-        '600 lần đầu không bị chặn',
+        `${MEDIA_IP_LIMIT} lần đầu không bị chặn`,
       ).toEqual([]);
       const limited = await media(api, url, { 'x-forwarded-for': ip });
       expect(limited.status).toBe(429);
@@ -234,6 +237,6 @@ describe('/media — hạn mức IP', () => {
       expect(other.status).toBe(404);
       await flushRateLimitCounters();
     },
-    120_000,
+    300_000,
   );
 });

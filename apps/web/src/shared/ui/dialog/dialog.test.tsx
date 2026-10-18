@@ -52,4 +52,20 @@ describe('Dialog', () => {
     render(<Dialog open title="Thông báo" />);
     expect(screen.getByRole('dialog', { name: 'Thông báo' })).toBeDefined();
   });
+
+  it('nội dung dài: CHỈ thân cuộn — tiêu đề và hàng nút nằm ngoài vùng cuộn (lỗi #B, nút ở y=1882); a11y', async () => {
+    render(
+      <Dialog open title="Thông báo dài" footer={<Button>Tôi đã đọc</Button>}>
+        {Array.from({ length: 60 }, (_, i) => (
+          <p key={i}>Đoạn {i}</p>
+        ))}
+      </Dialog>,
+    );
+    const scroller = screen.getByText('Đoạn 0').parentElement;
+    expect(scroller?.className).toContain('overflow-y-auto');
+    expect(scroller?.contains(screen.getByRole('button', { name: 'Tôi đã đọc' }))).toBe(false);
+    expect(scroller?.contains(screen.getByRole('heading', { name: 'Thông báo dài' }))).toBe(false);
+    expect(screen.getByRole('dialog').className).not.toContain('overflow-y-auto');
+    await expectNoA11yViolations();
+  });
 });

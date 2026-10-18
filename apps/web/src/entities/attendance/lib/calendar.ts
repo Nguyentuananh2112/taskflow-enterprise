@@ -85,12 +85,16 @@ export function dayText(d: AttendanceDayDto, today: string): DayText {
     case 'ABSENT':
       return { label: 'Vắng', detail: null, icon: '✕', tone: 'absent' };
     case 'ON_LEAVE':
-    case 'HOLIDAY':
       return plannedText(d);
+    // TL #A1: làm ngày lễ / ngày nghỉ được ghi nhận ⇒ giữ nhãn ngày, giờ vào–ra ở dòng phụ.
+    case 'HOLIDAY': {
+      const holiday = plannedText(d);
+      return { ...holiday, detail: [holiday.detail, span].filter(Boolean).join(' · ') || null };
+    }
     case 'OFF':
       return {
         label: weekdayMon0(d.date) === 6 ? 'Chủ nhật' : 'Ngày nghỉ',
-        detail: null,
+        detail: span || null,
         icon: '–',
         tone: 'off',
       };

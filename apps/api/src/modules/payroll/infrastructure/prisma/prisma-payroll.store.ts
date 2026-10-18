@@ -6,11 +6,14 @@ import type {
   PayslipRecord,
   SalaryProfileRecord,
 } from '../../application/ports/payroll-store.port';
+import type { ILogger } from '../../../../core/logging/logger';
+import { PAYROLL_SETTINGS_ID } from '../../domain/payroll-settings';
 import { fromBig, payslipData, toPayslip, toRun } from './prisma-payroll-mapping';
+import { readPayrollSettings } from './prisma-payroll-settings';
 
 export type DbProvider = () => Prisma.TransactionClient;
 
-const SETTINGS_ID = 1;
+const SETTINGS_ID = PAYROLL_SETTINGS_ID;
 const WITH_LINES = { lines: { orderBy: { sortOrder: 'asc' } } } as const;
 
 /**
@@ -19,21 +22,18 @@ const WITH_LINES = { lines: { orderBy: { sortOrder: 'asc' } } } as const;
  * = MỘT UPDATE đặt đủ 4 cột; bản điều chỉnh = UPDATE CHỈ `superseded_at` rồi INSERT bản mới đã tính xong.
  */
 export class PrismaPayrollStore implements IPayrollStore {
-  constructor(private readonly db: DbProvider) {}
+  constructor(
+    private readonly db: DbProvider,
+    private readonly logger?: Pick<ILogger, 'warn'>,
+  ) {}
 
   async lockPeriod(period: string): Promise<void> {
     await this.db().$executeRaw`
       SELECT pg_advisory_xact_lock(hashtextextended(${`taskflow:payroll:${period}`}, 0))`;
   }
 
-  async getSettings() {
-    const s = await this.db().payrollSettings.findUniqueOrThrow({ where: { id: SETTINGS_ID } });
-    return {
-      seniorityPerYear: fromBig(s.seniorityPerYear),
-      version: s.version,
-      updatedAt: s.updatedAt,
-      updatedById: s.updatedById,
-    };
+  getSettings() {
+    return readPayrollSettings(this.db(), this.logger);
   }
 
   async updateSettings(input: Parameters<IPayrollStore['updateSettings']>[0]) {

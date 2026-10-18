@@ -430,7 +430,7 @@ Socket là kênh **chỉ đọc** (server → client). Mọi thao tác ghi đi q
 - Client: `io(WS_URL, { transports: ['websocket'], auth: (cb) => cb({ token: getAccessToken(), clientId }), withCredentials: false })` — **chỉ websocket** (ADR-074), không long-polling. Token **không** đặt trong query string (bị ghi vào log proxy). `clientId` = uuid theo tab (giống header REST `X-Client-Id`), Zod validate uuid, lưu `socket.data.clientId`.
 - Server: `transports: ['websocket']`. **Trình duyệt không áp dụng CORS cho WebSocket**, nên phải tự kiểm `Origin` trong `allowRequest`: Origin không thuộc whitelist (hoặc thiếu) ⇒ từ chối handshake. Đây là chặn tấn công cross-site WebSocket hijacking. Rủi ro vốn đã thấp vì xác thực bằng token trong `auth` chứ không bằng cookie, nhưng vẫn bắt buộc (phòng thủ nhiều lớp). Sau đó `io.use(authMiddleware)` chạy đúng các bước 2.5 (verify, `tv`, `sid`). Lỗi → `next(err)` với `err.data = { code: 'TOKEN_EXPIRED' | 'UNAUTHORIZED' }` → client nhận ở `connect_error`, refresh rồi kết nối lại.
 - Thành công: `socket.data.user = { id, sid, exp }`; tự join `user:{userId}` và `session:{sid}` (dùng cho logout / logout-all).
-- Rate limit kết nối: 20 handshake/phút/IP.
+- Rate limit kết nối: 600 handshake/phút/IP (T-076 — trước là 20). Một công ty ⇒ cả văn phòng chung một IP NAT; 8:00 nhiều người mở app hoặc API khởi động lại làm mọi tab nối lại cùng lúc, 20/phút khiến người thứ 21+ mất realtime. Trần IP chỉ còn chống flood thô; lá chắn chính là JWT ở handshake (`tv`, `sid`), tối đa 20 socket / user / instance và hạn mức join / renew theo socket + user. Valkey lỗi ⇒ cho qua.
 
 ### 5.2 `project:join`
 ```
@@ -480,7 +480,7 @@ Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`i
 ### 6.1 Thứ tự middleware Express
 `requestId (pino-http)` → `helmet` → `cors` → kiểm tra Content-Type → `express.json({ limit })` → rate limit toàn cục → routes (rate limit riêng, auth, rbac) → 404 → error handler.
 
-**Mốc 6 (ADR-141, T-067):** `/api/v1/media` gắn **sau** `helmet` + `cors`, **trước** kiểm Content-Type / body parser / `no-store` / rate limit toàn cục: router riêng, **không Bearer** (URL ký HMAC), hạn mức IP riêng 600 / phút, tự đặt header (§6.2) đè helmet. Lỗi của `/media` là MỘT trang HTML không script (không envelope JSON, không lộ lý do).
+**Mốc 6 (ADR-141, T-067):** `/api/v1/media` gắn **sau** `helmet` + `cors`, **trước** kiểm Content-Type / body parser / `no-store` / rate limit toàn cục: router riêng, **không Bearer** (URL ký HMAC), hạn mức IP riêng 2000 / phút (T-076; trước 600), tự đặt header (§6.2) đè helmet. Lỗi của `/media` là MỘT trang HTML không script (không envelope JSON, không lộ lý do).
 
 `app.set('trust proxy', <số hop chính xác>)` (cấu hình bằng `TRUST_PROXY_HOPS`) — **bắt buộc** đúng, nếu không IP dùng cho rate limit sẽ là IP proxy (khóa mọi người) hoặc bị giả mạo qua `X-Forwarded-For`.
 
@@ -505,21 +505,26 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-lim
 
 | Endpoint | Giới hạn | Khóa |
 |---|---|---|
-| `POST /auth/login` | 20 / 15 phút — chạy **trước** validate, đếm mọi request | IP |
+| `POST /auth/login` | 300 / 15 phút — chạy **trước** validate, đếm mọi request (T-076) | IP |
 |  | 10 lần **401** / 15 phút — **sau** validate (ADR-108) | IP + email(hash) |
 |  | 100 lần **401** / giờ — **sau** validate (ADR-108) | email(hash) — chống stuffing phân tán |
-| `POST /auth/register` | 5 / giờ | IP |
-| `POST /auth/refresh` | 60 / 5 phút | IP |
-| `POST /auth/logout`, `/logout-all` | 10 / phút | IP / user |
+|  | 50 lần **401** / 15 phút — **sau** validate (T-076, soát B M1, TL chốt 50); đăng nhập đúng không tốn suất; đầy ⇒ mọi lần đăng nhập từ IP đó (kể cả đúng) 429 tới hết cửa sổ | IP — chống password spraying |
+| `POST /auth/refresh` | 1200 / 5 phút (T-076) | IP |
+| `POST /auth/logout` / `/logout-all` | 120 / phút (T-076) / 10 / phút | IP / user |
 | `POST /auth/change-password` | 5 / 15 phút — **fail-closed** (ADR-108) | user |
 | `PATCH /auth/me` | 30 / giờ | user |
 | `POST ws/members` | 30 / giờ | user |
 | `POST /workspaces` | 10 / giờ | user |
 | `POST ws/restore` | 10 / giờ | user |
 | API đã xác thực (mặc định) | 300 / phút | user |
-| API chưa xác thực khác | 100 / phút | IP |
-| Socket handshake | 20 / phút | IP |
+| Request chưa xác thực (mọi request không `Authorization`, gồm login / refresh / logout) | 600 / phút (T-076) | IP |
+| Request có `Authorization` — trần thô | 3000 / phút (T-076) | IP |
+| Xác thực thất bại (`401`, kể cả `TOKEN_EXPIRED`) | 300 / phút (T-076) | IP |
+| Socket handshake | 600 / phút (T-076) | IP |
+| `/api/v1/media` | 2000 / phút (T-076) | IP |
 | Socket `project:join` | 30 / phút | socket |
+
+**Một văn phòng — một IP (T-076, lỗi #2 localhost 18/10):** sản phẩm phục vụ MỘT công ty, nhân viên thường ngồi chung văn phòng sau MỘT IP NAT. Mọi luật theo IP được đo cho văn phòng ~200 người: sáng thứ Hai cả văn phòng đăng nhập; mỗi lần tải trang (kể cả chưa đăng nhập) gọi `POST /auth/refresh`; mọi tab mở từ hôm qua cùng gửi token hết hạn (`401`); API khởi động lại ⇒ mọi tab handshake lại; cuối giờ đăng xuất. Ngưỡng cũ (login 20 / 15 phút, refresh 60 / 5 phút, handshake 20 / phút, 401 30 / phút, ẩn danh 100 / phút) làm người thứ 21+ bị 429 hoặc mất realtime. Lá chắn chống dò / lạm dụng: login sai theo (IP, email) 10 / 15 phút và theo email 100 / giờ (không đổi), THÊM login sai theo IP 50 / 15 phút (chỉ đếm `401` — chặn password spraying, đăng nhập đúng không tốn suất), activation chỉ đếm lần sai 10 / 15 phút / IP (giữ nguyên — kích hoạt đúng không tốn suất), hạn mức theo user 300 / phút, socket / join / renew theo user. Đánh đổi chấp nhận (R50): bucket 401 theo IP dùng chung cả văn phòng; đầy (50 lần sai / 15 phút) ⇒ MỌI lần đăng nhập từ IP đó, kể cả mật khẩu đúng, nhận 429 tới hết cửa sổ (bị chặn trước khi kiểm mật khẩu); phiên đang đăng nhập (refresh, API) không ảnh hưởng. Chỉ người trong văn phòng gây được (IP không giả được khi `TRUST_PROXY_HOPS` đúng); CAPTCHA / backoff tăng dần thuộc lộ trình sau v1.
 
 **ADR-108 — chống khóa tài khoản từ xa (M4 của T-028):** hai bucket theo email chạy **sau** validate (body sai ⇒ `400`, không bị đếm; email đã chuẩn hóa) và **chỉ đếm `401 INVALID_CREDENTIALS`** — `400` / `429` không đếm, nên chờ hết cửa sổ là mở lại (không gia hạn mãi). Bucket chặt theo cặp (IP, email) chặn dò từ một IP mà không khóa chủ tài khoản ở IP khác; bucket theo email 100/giờ đủ cao để vài chục IP không khóa được người dùng thật. Rủi ro còn lại (kẻ tấn công có ≥ 100 lần 401/giờ trên nhiều IP vẫn làm chậm nạn nhân trong một giờ) được chấp nhận có chủ đích; CAPTCHA / backoff thuộc lộ trình sau v1.
 
@@ -646,6 +651,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-26 | JWT hết hạn | 401 TOKEN_EXPIRED |
 | SEC-27 | Login email không tồn tại vs sai mật khẩu | cùng status, code, message; chênh lệch thời gian trung vị < 50ms (đo 20 lần) |
 | SEC-28 | 11 lần login sai (401) cùng IP + email trong 15 phút (ADR-108) | lần 11: 429 RATE_LIMITED + `Retry-After`; body sai (400) không bị đếm; cùng email từ IP khác vẫn đăng nhập được |
+| SEC-28c | Password spraying: 50 email khác nhau, mỗi email 1 lần sai từ cùng IP (T-076, soát B M1) | lần 51 (email mới): 429 RATE_LIMITED + `Retry-After` |
 | SEC-29 | `POST /auth/refresh` với `Origin` lạ hoặc thiếu Origin | 403 ORIGIN_NOT_ALLOWED, token không bị xoay |
 | SEC-30 | Request CORS từ origin ngoài whitelist | không có `Access-Control-Allow-Origin` |
 | SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |

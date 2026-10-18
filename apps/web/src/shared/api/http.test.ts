@@ -8,6 +8,7 @@ import {
   isApiError,
   type AuthHooks,
 } from './index';
+import { SEND_MIN_TOKEN_MS } from './http';
 
 const BASE = 'http://localhost:4000/api/v1';
 const CLIENT_ID = '0192f0a0-0000-7000-8000-000000000001';
@@ -229,6 +230,40 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     expect(auth.refresh).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(call(1).headers.get('Authorization')).toBe('Bearer new');
+  });
+
+  it('máy thức dậy: token đã hết hạn + 5 request song song ⇒ ĐÚNG 1 refresh trước khi gửi, 0 lần 401 (TL 18/10)', async () => {
+    let expiresAt = Date.now() - 1_000;
+    let token = 'old';
+    const refresh = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      expiresAt = Date.now() + 10 * 60_000;
+      token = 'new';
+      return true;
+    });
+    const auth = fakeAuth({ expiresAt: () => expiresAt, getAccessToken: () => token, refresh });
+    const { http, call, fetchMock } = setup(
+      Array.from({ length: 5 }, (_, i) => () => ok({ id: String(i) })),
+      auth,
+    );
+    await Promise.all(Array.from({ length: 5 }, () => http.get('/me', { schema: Item })));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5); // không có lượt 401 + gửi lại
+    for (let i = 0; i < 5; i++) expect(call(i).headers.get('Authorization')).toBe('Bearer new');
+  });
+
+  it('token còn hạn ⇒ không refresh chủ động, kể cả TTL ngắn 10 s vừa cấp (E2E — hồi quy cổng 798e4c0f); đã hết ⇒ refresh', async () => {
+    let expiresAt = Date.now() + 10_000; // JWT_ACCESS_TTL_SECONDS=10 của E2E, token vừa cấp
+    const auth = fakeAuth({ expiresAt: () => expiresAt });
+    const { http } = setup([ok({ id: 'a' }), ok({ id: 'b' }), ok({ id: 'c' })], auth);
+    await http.get('/me', { schema: Item });
+    expiresAt = Date.now() + 3_000; // còn 3 s: vẫn dùng token cũ, đường TOKEN_EXPIRED lo nếu hết giữa chừng
+    await http.get('/me', { schema: Item });
+    expect(auth.refresh).not.toHaveBeenCalled();
+    expiresAt = Date.now() - 1; // đã hết hạn (máy thức dậy)
+    await http.get('/me', { schema: Item });
+    expect(auth.refresh).toHaveBeenCalledTimes(1);
+    expect(SEND_MIN_TOKEN_MS).toBeLessThanOrEqual(1_000);
   });
 
   it('TOKEN_EXPIRED lần 2 sau khi đã refresh ⇒ không lặp vô hạn, kết thúc phiên', async () => {

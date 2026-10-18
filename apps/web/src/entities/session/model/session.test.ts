@@ -94,6 +94,52 @@ describe('bootstrap (tải trang)', () => {
     expect(sessionStore.get().status).toBe('authenticated');
   });
 
+  it('lỗi #5: refresh 429 ⇒ rate_limited (KHÔNG unreachable) + retryAt theo retryAfterSec; thử lại ⇒ authenticated', async () => {
+    const limited = new ApiError({
+      status: 429,
+      code: 'RATE_LIMITED',
+      message: '',
+      details: { retryAfterSec: 42 },
+    });
+    const refresh = vi
+      .fn<() => Promise<typeof TOKEN>>()
+      .mockRejectedValueOnce(limited)
+      .mockResolvedValueOnce(TOKEN);
+    const { controller } = setup({ refresh });
+    const before = Date.now();
+    await controller.bootstrap();
+    const s = sessionStore.get();
+    expect(s.status).toBe('rate_limited');
+    expect(s.retryAt).toBeGreaterThanOrEqual(before + 42_000);
+    expect(s.retryAt).toBeLessThanOrEqual(Date.now() + 42_000);
+    await controller.bootstrap();
+    expect(sessionStore.get().status).toBe('authenticated');
+    expect(sessionStore.get().retryAt).toBeUndefined();
+  });
+
+  it('409 REFRESH_IN_PROGRESS (tab khác đang xoay) 2 lần rồi thành công ⇒ authenticated, KHÔNG unreachable (TL 18/10)', async () => {
+    const busy = () => new ApiError({ status: 409, code: 'REFRESH_IN_PROGRESS', message: '' });
+    const refresh = vi
+      .fn<() => Promise<typeof TOKEN>>()
+      .mockRejectedValueOnce(busy())
+      .mockRejectedValueOnce(busy())
+      .mockResolvedValueOnce(TOKEN);
+    const { controller } = setup({ refresh });
+    await controller.bootstrap();
+    expect(sessionStore.get().status).toBe('authenticated');
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it('lỗi #5: 429 không có retryAfterSec ⇒ chờ mặc định 30 s', async () => {
+    const refresh = vi
+      .fn<() => Promise<typeof TOKEN>>()
+      .mockRejectedValueOnce(new ApiError({ status: 429, code: 'RATE_LIMITED', message: '' }));
+    const { controller } = setup({ refresh });
+    const before = Date.now();
+    await controller.bootstrap();
+    expect(sessionStore.get().retryAt).toBeGreaterThanOrEqual(before + 30_000);
+  });
+
   it('gọi 2 lần (AuthGate + GuestGate, StrictMode) ⇒ chỉ khôi phục một lần', async () => {
     const { controller, api } = setup();
     await Promise.all([controller.bootstrap(), controller.bootstrap()]);

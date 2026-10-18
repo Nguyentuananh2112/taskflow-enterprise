@@ -93,8 +93,8 @@ const DEFAULT_GLOBAL_RULES: GlobalRateLimitRules = {
 
 /**
  * Giới hạn toàn cục theo IP — MỌI request đều qua ít nhất một bucket IP (security §6.4):
- * - không có `Authorization`: 100/phút/IP;
- * - có `Authorization` (token thật hay rác): trần thô 1000/phút/IP **và** 30 lần 401/phút/IP —
+ * - không có `Authorization`: 600/phút/IP;
+ * - có `Authorization` (token thật hay rác): trần thô 3000/phút/IP **và** 300 lần 401/phút/IP (T-076) —
  *   token rác hết lượt là bị chặn ở đây, trước khi tốn CPU verify.
  * Route đã xác thực gắn thêm `RATE_LIMIT_RULES.authenticated` (300/phút/user) SAU `authenticate`.
  */

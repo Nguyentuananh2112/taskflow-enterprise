@@ -6,3 +6,4 @@ export { sessionKeys, useMe } from './model/use-me';
 export { applyMyAvatar, invalidateAvatarViews, showsAvatars } from './model/avatar-cache';
 export { useCompanyPermission, type CompanyPermissionApi } from './model/use-company-permission';
 export { useLogoutPending, useSession } from './model/use-session';
+export { RateLimitedRetry } from './ui/rate-limited-retry';

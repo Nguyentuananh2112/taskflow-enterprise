@@ -8,7 +8,11 @@ import { addDays, instantOf, toLocal, type LocalDate } from '../src/core/domain/
 import { DEFAULT_SCHEDULE, isWorkday } from '../src/modules/attendance/domain/work-schedule';
 import { CryptoRefreshTokenFactory } from '../src/modules/auth/infrastructure/security/crypto-refresh-token-factory';
 import { seedChat, type SeedStore } from './seed-chat';
+import { seedAttendanceHistory, seedHr } from './seed-hr';
 import { seedWorkspaces } from './seed-projects';
+import { resetSeedTables } from './seed-reset';
+
+export { SEED_TABLES } from './seed-reset';
 
 const TZ = DEFAULT_SCHEDULE.timezone;
 const ACTIVATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // = ACTIVATION_TTL_MS của auth (link nhân viên 7 ngày)
@@ -52,11 +56,6 @@ function workdaysBefore(before: LocalDate, count: number): LocalDate[] {
 const nextWorkday = (d: LocalDate): LocalDate =>
   isWorkday(DEFAULT_SCHEDULE, d) ? d : nextWorkday(addDays(d, 1));
 
-export const SEED_TABLES =
-  'notifications, hr_audit_logs, leave_requests, leave_balances, attendance_events, holidays, work_schedules, ' +
-  'account_activation_tokens, company_member_departures, company_members, companies, task_audit_logs, tasks, ' +
-  'projects, workspace_members, refresh_tokens, workspaces, users';
-
 /** Xóa sạch rồi dựng lại toàn bộ dữ liệu mẫu. `now` cho test; mặc định giờ thật. */
 export async function seedDatabase(
   prisma: PrismaClient,
@@ -65,8 +64,7 @@ export async function seedDatabase(
   const now = opts.now ?? new Date();
   const today = toLocal(now, TZ).date;
   const start = monthStart(today, 3); // nhiệm kỳ của mọi nhân viên mẫu (3 tháng trước)
-  await prisma.$executeRawUnsafe(`TRUNCATE ${SEED_TABLES} CASCADE`);
-  await prisma.company.create({ data: { id: 1, name: 'Công ty Mẫu' } });
+  await resetSeedTables(prisma); // TRUNCATE + dựng lại dòng migration chèn sẵn (công ty, cài đặt lương)
 
   const users = {} as Record<SeedPerson, string>;
   for (const [name, p] of Object.entries(PEOPLE) as [SeedPerson, (typeof PEOPLE)[SeedPerson]][]) {
@@ -86,6 +84,9 @@ export async function seedDatabase(
         role: p.role,
         grants: 'grants' in p ? [...p.grants] : [],
         startDate: p.role === 'EMPLOYEE' ? day(pending ? today : start) : null,
+        // Lỗi #A (H 18/10): dòng company_members "được tạo lúc vào làm" (ADR-143) — để mặc định now() thì participant
+        // nhóm chat seed (joined_at = now − 3 giờ) không hiệu lực ⇒ nhóm "Dự án Sao Mai" biến mất với cả nhóm.
+        createdAt: pending ? now : instantOf(start, 0, TZ),
       },
     });
   }
@@ -104,7 +105,9 @@ export async function seedDatabase(
   });
 
   const activationLink = await issueActivation(prisma, users.Nina, users.Pam, now, opts.webOrigin);
-  await seedAttendance(prisma, users, today, lastMonthEnd);
+  await seedAttendance(prisma, users, lastMonthEnd);
+  await seedHr(prisma, users, { today, start });
+  await seedAttendanceHistory(prisma, users, { today, start, now });
   await seedLeave(prisma, users, today, now);
   await seedWorkspaces(prisma, users);
   await seedChat(prisma, users, now, opts.store);
@@ -131,11 +134,10 @@ async function issueActivation(
   return `${webOrigin}/activate#t=${token}`;
 }
 
-/** Lượt Vào/Ra WEB: 5 ngày làm việc gần nhất cho nhân viên đang làm; Quinn 3 ngày cuối tháng trước. */
+/** Quinn 3 ngày cuối tháng trước + ngày lễ (nhân viên đang làm: seed-hr.ts — mọi ngày làm từ đầu nhiệm kỳ). */
 async function seedAttendance(
   prisma: PrismaClient,
   u: Record<SeedPerson, string>,
-  today: LocalDate,
   lastMonthEnd: LocalDate,
 ) {
   const punch = (userId: string, date: LocalDate, kind: 'IN' | 'OUT', minute: number) => ({
@@ -147,18 +149,12 @@ async function seedAttendance(
     createdById: userId,
   });
   const rows = [];
-  for (const [i, name] of (['Pam', 'Max', 'Mia', 'Vic', 'Otto'] as const).entries()) {
-    for (const date of workdaysBefore(today, 5)) {
-      rows.push(punch(u[name], date, 'IN', 7 * 60 + 50 + i * 3)); // 07:50…08:02 — Otto đi muộn
-      rows.push(punch(u[name], date, 'OUT', 17 * 60 + 35 + i));
-    }
-  }
   for (const date of workdaysBefore(addDays(lastMonthEnd, 1), 3)) {
     rows.push(punch(u.Quinn, date, 'IN', 7 * 60 + 55), punch(u.Quinn, date, 'OUT', 17 * 60 + 31));
   }
   await prisma.attendanceEvent.createMany({ data: rows });
   // Hai ngày lễ bịa ở tháng sau (lịch làm việc = mặc định, không lưu phiên bản nào).
-  const nextMonth = monthStart(today, -1);
+  const nextMonth = monthStart(addDays(lastMonthEnd, 1), -1);
   await prisma.holiday.createMany({
     data: [
       { date: day(addDays(nextMonth, 9)), name: 'Ngày lễ mẫu (bịa) 1' },

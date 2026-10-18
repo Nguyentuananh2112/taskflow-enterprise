@@ -1,3 +1,4 @@
+import type { ILogger } from '../../core/logging/logger';
 import type { RequestHandler, Router } from 'express';
 
 import type { ExportLimits } from '../../core/export/export-limits';
@@ -29,8 +30,11 @@ export interface PayrollRepositories {
   store: IPayrollStore;
 }
 
-export const createPrismaPayrollRepositories = (db: DbProvider): PayrollRepositories => ({
-  store: new PrismaPayrollStore(db),
+export const createPrismaPayrollRepositories = (
+  db: DbProvider,
+  logger?: Pick<ILogger, 'warn'>,
+): PayrollRepositories => ({
+  store: new PrismaPayrollStore(db, logger),
 });
 
 export const createInMemoryPayrollRepositories = () => ({ store: new InMemoryPayrollStore() });

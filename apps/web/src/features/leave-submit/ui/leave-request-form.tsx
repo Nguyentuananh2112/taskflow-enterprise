@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
-import { DAY_PART_NAME, LEAVE_TYPE_NAME, leaveApi, leaveKeys } from '@/entities/leave';
+import { DAY_PART_NAME, LEAVE_TYPE_NAME, daysText, leaveApi, leaveKeys } from '@/entities/leave';
 import { privacyKeys, usePrivacy } from '@/entities/privacy';
 import { SubmitLeaveBody } from '@taskflow/contracts/leave';
 import { applyServerErrors } from '@/shared/lib/form-errors';
@@ -26,14 +26,26 @@ const FIELDS = ['type', 'startDate', 'endDate', 'dayPart', 'reason'] as const;
 const TYPES = LeaveType.options.map((v) => ({ value: v, label: LEAVE_TYPE_NAME[v] }));
 const PARTS = LeaveDayPart.options.map((v) => ({ value: v, label: DAY_PART_NAME[v] }));
 
-type Props = Readonly<{ today: string }>;
+type Props = Readonly<{
+  /**
+   * Ngày mặc định của "Từ ngày / Đến ngày": hôm nay nếu là NGÀY LÀM VIỆC theo lịch công ty, không thì `null` ⇒ để trống
+   * (mở trang vào cuối tuần / ngày lễ không được hiện ngay lỗi "không có ngày làm việc" — lỗi #3, TL 18/10).
+   */
+  defaultDate: string | null;
+}>;
 
 /** Gửi đơn nghỉ (attendance-leave.md §6). Số ngày do SERVER tính theo lịch + ngày lễ. */
-export function LeaveRequestForm({ today }: Props) {
+export function LeaveRequestForm({ defaultDate }: Props) {
   const create = useMutation({
     mutationFn: (body: SubmitLeaveBody) => leaveApi.create(body),
-    onSuccess: (_r, _b, _x, context) =>
-      void context.client.invalidateQueries({ queryKey: leaveKeys.all() }),
+    onSuccess: (_r, _b, _x, context) => {
+      // #A4: KHÔNG làm mới xem trước — bản nháp vừa gửi mà xem trước lại sẽ ra 409 trùng đơn; xóa luôn cache xem trước.
+      context.client.removeQueries({ queryKey: leaveKeys.previews() });
+      void context.client.invalidateQueries({
+        queryKey: leaveKeys.all(),
+        predicate: (q) => q.queryKey[2] !== 'preview',
+      });
+    },
     // Đồng ý vừa đổi ở nơi khác ⇒ tải lại để ô lý do khóa / mở đúng (T-075).
     onError: (_e, _b, _x, context) =>
       void context.client.invalidateQueries({ queryKey: privacyKeys.me() }),
@@ -45,8 +57,8 @@ export function LeaveRequestForm({ today }: Props) {
     resolver: zodResolver(SubmitLeaveBody),
     defaultValues: {
       type: 'ANNUAL' as const,
-      startDate: today,
-      endDate: today,
+      startDate: defaultDate ?? '',
+      endDate: defaultDate ?? '',
       dayPart: 'FULL' as const,
       reason: '',
     },
@@ -70,8 +82,10 @@ export function LeaveRequestForm({ today }: Props) {
   const onSubmit = handleSubmit(async (values) => {
     try {
       const created = await create.mutateAsync(values);
-      reset({ ...values, reason: '' });
-      toast({ title: `Đã gửi đơn — ${created.days} ngày, chờ duyệt`, tone: 'success' });
+      // #A4: xóa ngày đã gửi ⇒ không còn bản nháp ⇒ dòng xem trước biến mất (giữ lại thì xem trước chạy lại ra 409 trùng
+      // đơn vừa gửi). #A5: số ngày định dạng vi-VN ("0,5 ngày", không "0.5").
+      reset({ ...values, startDate: '', endDate: '', reason: '' });
+      toast({ title: `Đã gửi đơn — ${daysText(created.days)}, chờ duyệt`, tone: 'success' });
     } catch (error) {
       const known = leaveSubmitError(error);
       if (known.field) return setError(known.field, { type: 'server', message: known.message });
@@ -100,14 +114,16 @@ export function LeaveRequestForm({ today }: Props) {
           label="Từ ngày"
           type="date"
           required
-          error={errors.startDate?.message}
+          error={
+            errors.startDate && (startDate ? errors.startDate.message : 'Chọn ngày bắt đầu nghỉ.')
+          }
           {...register('startDate')}
         />
         <Input
           label="Đến ngày"
           type="date"
           required
-          error={errors.endDate?.message}
+          error={errors.endDate && (endDate ? errors.endDate.message : 'Chọn ngày kết thúc nghỉ.')}
           {...register('endDate')}
         />
         <Select
