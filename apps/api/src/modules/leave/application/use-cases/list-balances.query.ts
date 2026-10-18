@@ -2,15 +2,9 @@ import type { PageMeta } from '@taskflow/contracts';
 import * as z from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../../../core/http/cursor';
-import { DEFAULT_ENTITLED_HALF_DAYS } from '../../domain/leave-balance';
 import type { LeaveTenure } from '../../domain/leave-tenure';
 import { toBalanceDto, type LeaveBalanceRowDto } from '../leave-dto';
-import {
-  PERMISSION_HR_MANAGE,
-  summarizeStored,
-  type LeaveKit,
-  type LeaveScope,
-} from '../leave-kit';
+import { PERMISSION_HR_MANAGE, type LeaveKit, type LeaveScope } from '../leave-kit';
 import type {
   EmployeeKey,
   ILeaveEmployeeDirectory,
@@ -53,25 +47,27 @@ export class ListBalancesQuery {
     const ids = people.map((p) => p.id);
     const from = `${String(query.year)}-01-01`;
     const to = `${String(query.year)}-12-31`;
-    const [stored, holding, calendar, tenures] = await Promise.all([
+    const [stored, holding, tenures, today] = await Promise.all([
       this.readModel.findBalances(ids, query.year),
       this.readModel.listHoldingFor(ids, query.year),
-      ids.length > 0 ? this.kit.yearCalendar(query.year) : Promise.resolve([]),
       this.kit.d.company.tenuresOf({ userIds: ids, from, to }),
+      this.kit.today(),
     ]);
-    const items = people.map((user) => ({
-      userId: user.id,
-      user,
-      ...toBalanceDto(
-        query.year,
-        summarizeStored(
-          stored.get(user.id) ?? { entitled: DEFAULT_ENTITLED_HALF_DAYS, adjustment: 0 },
-          holding.filter((r) => r.userId === user.id),
-          calendar,
-          { tenure: latestTenure(tenures.get(user.id)) },
-        ),
-      ),
-    }));
+    // Một bộ tính cho cả trang: chính sách + lịch năm cache một lần (phép chuyển sang tạm tính chỉ truy vấn thêm
+    // cho người có nhiệm kỳ liên tục qua giao thừa khi năm trước bật chuyển phép).
+    const calc = this.kit.readCalculator(this.readModel);
+    const items: LeaveBalanceRowDto[] = [];
+    for (const user of people) {
+      const view = await calc.compute({
+        userId: user.id,
+        year: query.year,
+        today,
+        tenure: latestTenure(tenures.get(user.id)),
+        holding: holding.filter((r) => r.userId === user.id),
+        stored: stored.get(user.id) ?? null,
+      });
+      items.push({ userId: user.id, user, ...toBalanceDto(view) });
+    }
     const last = people.at(-1);
     return {
       items,

@@ -49,6 +49,15 @@ export function notificationText(n: NotificationDto): string {
       return 'Phiếu lương của bạn vừa được điều chỉnh';
     case 'PAYROLL_REMINDER':
       return 'Nhắc: bảng lương tháng trước chưa phát hành';
+    // Mốc 5 (ADR-129): không mang lý do của nhân viên (B-H2) — chi tiết ở trang chấm công / tab Nhân sự.
+    case 'CORRECTION_SUBMITTED':
+      return `${who} gửi đơn bổ sung giờ`;
+    case 'CORRECTION_APPROVED':
+      return 'Đơn bổ sung giờ của bạn đã được duyệt';
+    case 'CORRECTION_REJECTED':
+      return 'Đơn bổ sung giờ của bạn bị từ chối';
+    case 'CORRECTION_CANCELLED':
+      return `${who} đã hủy đơn bổ sung giờ`;
   }
 }
 
@@ -76,5 +85,11 @@ export function notificationHref(n: NotificationDto): string {
       return '/payslips';
     case 'PAYROLL_REMINDER':
       return '/payroll';
+    case 'CORRECTION_SUBMITTED':
+    case 'CORRECTION_CANCELLED':
+      return '/hr?tab=corrections';
+    case 'CORRECTION_APPROVED':
+    case 'CORRECTION_REJECTED':
+      return '/attendance';
   }
 }

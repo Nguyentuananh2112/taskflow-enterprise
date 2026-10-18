@@ -6,6 +6,23 @@ import * as z from 'zod';
  * Secret không bao giờ được chấp nhận ở production (security.md §6.9): placeholder của
  * `.env.example` (`change-me-…`) và giá trị test cố định (`test-only-…`).
  */
+/** Số nguyên tùy chọn; chuỗi rỗng = không đặt (không coi là 0). */
+const testOnlyInt = (min: number, max: number) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().int().min(min).max(max).optional(),
+  );
+
+/** Biến CHỈ cho APP_ENV=test — nơi khác có ⇒ từ chối khởi động (không âm thầm bỏ qua). */
+const TEST_ONLY_KEYS = [
+  'JWT_ACCESS_TTL_SECONDS',
+  'TEST_CLOCK_ANCHOR',
+  'EXPORT_MAX_EMPLOYEES',
+  'EXPORT_MAX_LEAVE_ROWS',
+  'EXPORT_BATCH_SIZE',
+  'EXPORT_BATCH_DELAY_MS',
+] as const;
+
 export const NON_PRODUCTION_SECRET = /^(change-me|test-only-)/;
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
@@ -55,6 +72,12 @@ const EnvSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.iso.datetime({ offset: true }).optional(),
     ),
+    // CHỈ APP_ENV=test (T-055, F XL-05 / XL-07 / SEC-HR-54): trần + nhịp đọc của báo cáo .xlsx — core/export/
+    // export-limits.ts giữ mặc định. Môi trường khác có biến nào ⇒ từ chối khởi động.
+    EXPORT_MAX_EMPLOYEES: testOnlyInt(1, 1_000_000),
+    EXPORT_MAX_LEAVE_ROWS: testOnlyInt(1, 1_000_000),
+    EXPORT_BATCH_SIZE: testOnlyInt(1, 10_000),
+    EXPORT_BATCH_DELAY_MS: testOnlyInt(0, 5_000),
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
@@ -93,6 +116,10 @@ const EnvSchema = z
     // T-049 (F, CLK-PAY-02…04): job nhắc làm lương — CHỈ APP_ENV=test: chạy một lượt khi khởi động / đổi chu kỳ.
     PAYROLL_REMINDER_ON_START: z.stringbool().optional(),
     PAYROLL_REMINDER_INTERVAL_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
+    // T-057 (F, CLK-HR-13 / LP-12): job chụp phép chuyển sang — CHỈ APP_ENV=test: chạy một lượt TRƯỚC khi listen;
+    // rút ngắn interval (mặc định 1 giờ).
+    LEAVE_CARRYOVER_ON_START: z.stringbool().optional(),
+    LEAVE_CARRYOVER_INTERVAL_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
     // T-043 / R27 (data-retention.md §3): thời hạn lưu dữ liệu cá nhân Mốc 3, đơn vị NGÀY, mặc định =
     // phương án B. `min` chặn cấu hình nhầm (vd 0 ⇒ xóa sạch).
     RETENTION_CLIENT_INFO_DAYS: z.coerce.number().int().min(30).max(3_660).default(395),
@@ -113,11 +140,13 @@ const EnvSchema = z
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
     }
     if (env.METRICS_PORT === env.PORT) fail('METRICS_PORT', 'phải khác PORT (cổng nội bộ riêng)');
-    if (env.JWT_ACCESS_TTL_SECONDS !== undefined && env.APP_ENV !== 'test') {
-      fail('JWT_ACCESS_TTL_SECONDS', 'chỉ được đặt khi APP_ENV=test');
+    for (const key of TEST_ONLY_KEYS) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
-    if (env.TEST_CLOCK_ANCHOR !== undefined && env.APP_ENV !== 'test') {
-      fail('TEST_CLOCK_ANCHOR', 'chỉ được đặt khi APP_ENV=test');
+    for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS'] as const) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
     for (const key of ['PAYROLL_REMINDER_ON_START', 'PAYROLL_REMINDER_INTERVAL_MS'] as const) {
       if (env[key] !== undefined && env.APP_ENV !== 'test')

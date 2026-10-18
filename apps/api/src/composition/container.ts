@@ -15,9 +15,9 @@ import { createNotificationsModule } from '../modules/notifications/notification
 import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
-import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
-import { wireLeave } from './leave-wiring';
-import { wireProfileAndPayroll } from './payroll-wiring';
+import { attendanceShared, wireAttendance } from './attendance-adapters';
+import { wireLeaveAndProfile } from './hr-wiring';
+import { wirePayroll } from './payroll-wiring';
 import { apiRouters } from './api-routers';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
@@ -86,11 +86,11 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
     accounts: accountsRef,
     collaborators: () =>
-      employmentCollaborators({ workspace, leave, notifications, realtime, hrProfile }),
+      employmentCollaborators({ workspace, leave, attendance, notifications, realtime, hrProfile }),
     ...companyAdminDeps(
       () => notifications,
       realtime,
-      () => leave.employment,
+      () => ({ employment: leave.employment, attendance }),
       () => workspace.adminWorkspaces,
     ),
   });
@@ -123,11 +123,11 @@ export function createContainer(d: ContainerDeps): Container {
   });
   workspaceRef.current = workspace;
   // Chấm công (T-063). Đơn nghỉ gắn trễ: leave cần lịch của attendance + `authenticate` của auth ⇒ dựng sau, `bind`.
-  const approvedLeaves = new LateApprovedLeavePort();
+  const { approvedLeaves, exportSlots } = attendanceShared();
   const attendance = wireAttendance(
     { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
     { company: () => company, notifications, leaves: approvedLeaves },
-    { responder, limit },
+    { responder, limit, exports: { limits: config.exportLimits, slots: exportSlots } },
   );
   const auth = createAuthModule({
     repos: persistence.auth,
@@ -156,27 +156,25 @@ export function createContainer(d: ContainerDeps): Container {
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
   });
   accountsRef.current = auth.accounts;
-  // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
-  const leave = wireLeave(
-    { persistence, clock: business, ids },
+  // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
+  const { leave, hrProfile } = wireLeaveAndProfile(
+    { persistence, clock: business, ids, logger },
     {
-      company: () => ({ ...company, clock: business }),
-      hrAudit: () => company.hrAudit,
+      company,
       attendance,
       notifications,
       auth,
+      // Cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
+      exportSlots,
+      exportLimits: config.exportLimits,
     },
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
-  // Hồ sơ nhân viên (Mốc 5, T-054): quyền / người / audit ← company; phép âm ← leave (T-057).
-  const {
-    hrProfile,
-    payroll,
-    routers: people,
-  } = wireProfileAndPayroll(
-    { persistence, clock: business, ids, logger },
-    { company, notifications, attendance, timeZone: () => attendance.timeZoneNow() },
+  // Lương (Mốc 4, T-049): quyền / audit ← company, công ← attendance, `hireDate` ← hồ sơ (ADR-128).
+  const payroll = wirePayroll(
+    { persistence, clock: business, ids },
+    { company, attendance, hrProfile, notifications },
     { responder, limit },
   );
 
@@ -184,7 +182,8 @@ export function createContainer(d: ContainerDeps): Container {
   const routers = apiRouters({
     auth,
     company,
-    people,
+    hrProfile,
+    payroll,
     task,
     attendance,
     leave,

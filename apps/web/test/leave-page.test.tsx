@@ -63,7 +63,7 @@ describe('trang Nghỉ phép', () => {
     expect(within(list).getByText('Chờ duyệt')).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByRole('region', { name: /Phép năm 2026/ }).textContent).toContain(
-        'đang chờ duyệt 2 ngày',
+        'Đang chờ 2 ngày',
       ),
     );
   });

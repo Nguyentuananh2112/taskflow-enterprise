@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import type { IReadSnapshot } from '../core/persistence/read-snapshot';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
@@ -17,6 +18,7 @@ import {
 } from '../modules/payroll/payroll.module';
 import { InMemoryEmployeeProfiles } from '../modules/hr-profile/infrastructure/in-memory/in-memory-employee-profiles';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeavePolicyStore } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave-policy.store';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import {
   createInMemoryNotificationStore,
@@ -74,7 +76,8 @@ export interface Persistence {
   refreshTokenPurger?: IRefreshTokenPurger;
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
-  uow: IUnitOfWork;
+  /** `snapshot`: ảnh chụp đọc REPEATABLE READ READ ONLY cho báo cáo .xlsx (ADR-130, T-055y). */
+  uow: IUnitOfWork & { snapshot: IReadSnapshot };
 }
 
 /** Lưu trữ trong bộ nhớ — chỉ local/test, MẤT DỮ LIỆU khi khởi động lại. */
@@ -106,7 +109,13 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const leaveStore = new InMemoryLeaveRepository();
   const profiles = new InMemoryEmployeeProfiles();
   const payroll = createInMemoryPayrollRepositories();
-  const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
+  const leavePolicies = new InMemoryLeavePolicyStore();
+  const leave = memoryLeaveRepositories(
+    leaveStore,
+    leavePolicies,
+    companyStore,
+    task.db.state.users,
+  );
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -121,9 +130,11 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       hrAudit,
       attendance.events,
       attendance.calendar,
+      attendance.corrections,
       leaveStore,
       profiles,
       payroll.store,
+      leavePolicies,
     ],
     logger,
   );

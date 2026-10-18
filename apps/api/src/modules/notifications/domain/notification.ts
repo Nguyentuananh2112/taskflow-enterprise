@@ -15,6 +15,10 @@ export const NOTIFICATION_TYPES = [
   'PAYSLIP_PUBLISHED',
   'PAYSLIP_REVISED',
   'PAYROLL_REMINDER',
+  'CORRECTION_SUBMITTED',
+  'CORRECTION_APPROVED',
+  'CORRECTION_REJECTED',
+  'CORRECTION_CANCELLED',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -26,6 +30,9 @@ export const HR_AUDIENCE_TYPES: readonly NotificationType[] = [
   'LEAVE_SUBMITTED',
   'LEAVE_CANCELLED',
   'OFFBOARD_CLEANUP',
+  // Mốc 5 (ADR-129, B review v2): đơn bổ sung giờ gửi / hủy ⇒ chỉ người HIỆN còn `hr:manage` thấy (SEC-HR-50).
+  'CORRECTION_SUBMITTED',
+  'CORRECTION_CANCELLED',
 ];
 
 /**

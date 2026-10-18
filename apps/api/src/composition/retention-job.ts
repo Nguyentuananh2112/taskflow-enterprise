@@ -70,6 +70,11 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
   const { cutoffDate: recordsDate, cutoffYear: recordsYear } = recordsRetentionCutoff(p, now);
   const reasonDate = dateOf(before(p.leaveReasonDays));
   return [
+    // D9 TRƯỚC D2: đơn APPROVED trỏ tới lượt ADJUSTMENT cùng ngày (`created_event_id`, FK NO ACTION).
+    {
+      name: 'attendance_corrections',
+      run: (n) => s.attendance.deleteCorrections(recordsDate, n),
+    },
     { name: 'attendance_events', run: (n) => s.attendance.deleteEvents(recordsDate, n) },
     { name: 'leave_requests', run: (n) => s.leave.deleteRequestsBeforeYear(recordsYear, n) },
     { name: 'leave_balances', run: (n) => s.leave.deleteBalancesBeforeYear(recordsYear, n) },
@@ -86,6 +91,10 @@ export function retentionSteps(s: RetentionStores, p: RetentionPolicy, now: Date
       run: (n) => s.attendance.scrubClientInfo(before(p.clientInfoDays), n),
     },
     { name: 'leave_reasons', run: (n) => s.leave.scrubReasons(reasonDate, n) },
+    {
+      name: 'correction_reasons',
+      run: (n) => s.attendance.scrubCorrectionReasons(reasonDate, n),
+    },
     {
       name: 'hr_audit_notes',
       run: (n) => s.company.scrubHrAuditNotes(before(p.leaveReasonDays), n),

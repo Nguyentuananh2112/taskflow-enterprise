@@ -15,8 +15,8 @@ type Routes = { routes(authenticate: RequestHandler): Router };
 export function apiRouters(m: {
   auth: { router: Router; authenticate: RequestHandler };
   company: { routers(authenticate: RequestHandler): Mount[] };
-  /** hr-profile + payroll (`wireProfileAndPayroll`). */
-  people: (authenticate: RequestHandler) => Mount[];
+  hrProfile: { routers(authenticate: RequestHandler): Mount[] };
+  payroll: { routers(authenticate: RequestHandler): Mount[] };
   task: Routes;
   attendance: Routes;
   leave: { router: Router };
@@ -27,7 +27,8 @@ export function apiRouters(m: {
   return [
     { path: '/auth', router: m.auth.router },
     ...m.company.routers(auth),
-    ...m.people(auth),
+    ...m.hrProfile.routers(auth),
+    ...m.payroll.routers(auth),
     // Task TRƯỚC /workspaces: router workspace gắn authenticate + limiter cho mọi đường dẫn con ⇒
     // request task đi qua nó trước sẽ bị xác thực + đếm limiter 2 lần (audit T-028 F1).
     { path: TASKS_PATH, router: m.task.routes(auth) },

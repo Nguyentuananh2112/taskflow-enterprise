@@ -8,7 +8,6 @@ import type { CompanyModule } from '../modules/company';
 import type { HrProfileModule } from '../modules/hr-profile/hr-profile.module';
 import type { NotificationsModule } from '../modules/notifications/notifications.module';
 import { createPayrollModule, type PayrollModule } from '../modules/payroll/payroll.module';
-import { wireHrProfile } from './hr-profile-wiring';
 import type { Persistence } from './persistence';
 
 /**
@@ -56,22 +55,4 @@ export function wirePayroll(
     ids: d.ids,
     ...http,
   });
-}
-
-/** Hồ sơ nhân viên + lương dựng cùng lúc (lương đọc `hireDate` của hồ sơ — ADR-128); gom để container gọn. */
-export function wireProfileAndPayroll(
-  d: Parameters<typeof wireHrProfile>[0] & Parameters<typeof wirePayroll>[0],
-  m: Parameters<typeof wireHrProfile>[1] & Omit<Parameters<typeof wirePayroll>[1], 'hrProfile'>,
-  http: Parameters<typeof wirePayroll>[2],
-) {
-  const hrProfile = wireHrProfile(d, m, http);
-  const payroll = wirePayroll(d, { ...m, hrProfile }, http);
-  return {
-    hrProfile,
-    payroll,
-    routers: (authenticate: RequestHandler) => [
-      ...hrProfile.routers(authenticate),
-      ...payroll.routers(authenticate),
-    ],
-  };
 }

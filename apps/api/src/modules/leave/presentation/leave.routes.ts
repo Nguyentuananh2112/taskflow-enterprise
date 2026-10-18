@@ -4,10 +4,14 @@ import {
   DecideLeaveBody,
   LeaveBalanceParams,
   LeaveBalanceQuery,
+  LeaveExportQuery,
+  LeavePolicyParams,
+  LeavePolicyQuery,
   LeavePreviewQuery,
   LeaveRequestParams,
   ListLeaveBalancesQuery,
   ListLeaveRequestsQuery,
+  PutLeavePolicyBody,
   RevokeLeaveBody,
   SubmitLeaveBody,
 } from '@taskflow/contracts';
@@ -18,10 +22,12 @@ import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-li
 import { validate } from '../../../core/http/validate';
 import type { ILeaveCompany } from '../application/ports/leave.ports';
 import { listPermission, permitLeave } from './leave-access';
+import type { LeavePolicyController } from './leave-policy.controller';
 import type { LeaveController } from './leave.controller';
 
 export interface LeaveRouteDeps {
   controller: LeaveController;
+  policy: LeavePolicyController;
   company: Pick<ILeaveCompany, 'reloadActor'>;
   authenticate: RequestHandler;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
@@ -90,6 +96,20 @@ export function leaveRoutes(d: LeaveRouteDeps): Router {
     '/balances/:userId/:year',
     ...guard(LeaveBalanceParams, HR, { body: AdjustLeaveBalanceBody }),
     c.adjustBalance,
+  );
+  // T-057 (ADR-131): chính sách phép — hr:manage TRƯỚC validate (body sai vẫn 403).
+  router.get('/policy', ...guard(null, HR, { query: LeavePolicyQuery }), d.policy.get);
+  router.put(
+    '/policy/:year',
+    ...guard(LeavePolicyParams, HR, { body: PutLeavePolicyBody }),
+    d.policy.put,
+  );
+  // Báo cáo phép .xlsx: dùng CHUNG hạn mức xuất file 20/giờ/user với bảng công (F).
+  router.get(
+    '/export.xlsx',
+    ...guard(null, HR, { query: LeaveExportQuery }),
+    ...d.limit(RATE_LIMIT_RULES.attendanceExport),
+    d.policy.exportXlsx,
   );
   return router;
 }

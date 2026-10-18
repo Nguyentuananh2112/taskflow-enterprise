@@ -70,6 +70,17 @@ export const BusinessRule = z.enum([
   'PERIOD_NOT_ENDED',
   'PUBLISH_BLOCKED',
   'ATTENDANCE_RETENTION_EXPIRED',
+  // Mốc 5 (T-057, ADR-131): chính sách phép năm đã qua chỉ đọc.
+  'POLICY_YEAR_LOCKED',
+  // Mốc 5 (hr-extended ADR-129/130, T-056): đơn bổ sung giờ + xuất Excel bảng công.
+  'CORRECTION_DATE_OUT_OF_RANGE',
+  'CORRECTION_IN_FUTURE',
+  'CORRECTION_EVENT_EXISTS',
+  'CORRECTION_TIME_ORDER',
+  'CORRECTION_DAY_ON_LEAVE',
+  'REQUESTER_NOT_EMPLOYEE',
+  'PERIOD_NOT_STARTED',
+  'EXPORT_TOO_LARGE',
 ]);
 export type BusinessRule = z.infer<typeof BusinessRule>;
 
@@ -104,6 +115,8 @@ export const NotFoundDetails = z.object({
     // Mốc 4 (T-049): bảng lương tháng / phiếu chưa có
     'payroll_run',
     'payslip',
+    // Mốc 5 (T-056)
+    'correction_request',
   ]),
 });
 export type NotFoundDetails = z.infer<typeof NotFoundDetails>;
@@ -121,6 +134,8 @@ export const HrConflictReason = z.enum([
   'invalid_transition',
   'overlapping_leave',
   'requester_not_member',
+  // Mốc 5 (T-056): đã có đơn bổ sung giờ PENDING cùng (ngày, loại).
+  'correction_pending_exists',
 ]);
 export type HrConflictReason = z.infer<typeof HrConflictReason>;
 

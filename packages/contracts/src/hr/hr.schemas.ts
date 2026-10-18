@@ -43,6 +43,11 @@ export const NotificationType = z.enum([
   'PAYSLIP_PUBLISHED',
   'PAYSLIP_REVISED',
   'PAYROLL_REMINDER',
+  // Mốc 5 (ADR-129): đơn bổ sung giờ — refId = id đơn; KHÔNG mang lý do (B-H2). SUBMITTED / CANCELLED dành cho HR.
+  'CORRECTION_SUBMITTED',
+  'CORRECTION_APPROVED',
+  'CORRECTION_REJECTED',
+  'CORRECTION_CANCELLED',
 ]);
 export type NotificationType = z.infer<typeof NotificationType>;
 
@@ -107,6 +112,8 @@ export const HrAuditAction = z.enum([
   'WORKSPACE_OWNER_ASSIGNED',
   'WORKSPACE_ARCHIVED',
   'COMPANY_RENAMED',
+  // Mốc 5 (T-057, ADR-131): HR đặt chính sách phép một năm (lý do ở `after.note`).
+  'POLICY_SET',
   // Mốc 5 (ADR-128): hồ sơ nhân viên — before/after KHÔNG có workPhone (chỉ cờ), lý do ở `after.note`.
   'PROFILE_SET',
   // Mốc 4 (payroll.md §6, T-048): before/after CÓ số tiền ⇒ chỉ Admin đọc. Tiền tố `PAYROLL_` là ranh giới retention:
@@ -121,6 +128,10 @@ export const HrAuditAction = z.enum([
   'PAYROLL_PAYSLIP_REVISE',
   'PAYROLL_PAYSLIP_VIEW',
   'PAYROLL_EXPORT',
+  // Mốc 5 (ADR-129): đơn bổ sung giờ — before/after KHÔNG có `reason` của nhân viên; ghi chú HR ở `after.note`.
+  'CORRECTION_SUBMIT',
+  'CORRECTION_CANCEL',
+  'CORRECTION_DECIDE',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

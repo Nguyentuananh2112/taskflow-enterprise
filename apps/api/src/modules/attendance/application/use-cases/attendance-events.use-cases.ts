@@ -10,9 +10,10 @@ import {
   ResourceConflictError,
   ResourceNotFoundError,
 } from '../../../../core/errors';
-import { addDays, instantOf, type LocalDate } from '../../domain/local-time';
+import type { LocalDate } from '../../domain/local-time';
 import { employedOn } from '../../domain/tenure';
 import { effectiveSchedule } from '../../domain/work-schedule';
+import { appendAdjustment } from '../adjustment-writer';
 import { toEventDtos } from '../attendance-event-dto';
 import type { AttendanceDeps } from '../attendance-days';
 import { monthTotalsOf } from '../attendance-totals';
@@ -63,6 +64,9 @@ export class AttendanceEventsUseCases {
     const { d } = this;
     const id = d.ids.next();
     await d.uow.run(async () => {
+      // Bảng khóa ADR-136: `punch:<user>` (bậc 4) TRƯỚC dòng company_members (bậc 5) — HR thêm IN ‖ duyệt đơn bổ sung IN
+      // ‖ nhân viên bấm Vào tuần tự hóa (hr-extended ADR-129).
+      await d.events.lockUserPunch(body.userId);
       await d.company.authorizeWrite({ actorId, targetUserId: body.userId });
       // A S2 (company-level ADR-136): người đang làm HOẶC đã nghỉ, miễn `date` thuộc một nhiệm kỳ EMPLOYEE của họ
       // (HR sửa được công tháng cuối sau khi nghỉ việc). Chưa từng là nhân viên ⇒ 404 user.
@@ -72,7 +76,7 @@ export class AttendanceEventsUseCases {
         to: EVER.to,
       });
       if (tenures.length === 0) throw new ResourceNotFoundError('user');
-      // Thứ tự lỗi đã chốt: 404 tài nguyên con TRƯỚC 422 (review B, LOW-1).
+      // Thứ tự lỗi đã chốt: 404 tài nguyên con TRƯỚC 422 (review B, LOW-1); retention TRƯỚC nhiệm kỳ.
       assertInsideRetention(d.retention, body.date);
       if (!employedOn(tenures, body.date)) {
         throw new BusinessRuleViolationError(
@@ -80,36 +84,16 @@ export class AttendanceEventsUseCases {
           'Ngày này nằm ngoài thời gian người đó làm việc ở công ty.',
         );
       }
-      const versions = await d.calendar.scheduleVersions();
-      const { timezone } = effectiveSchedule(versions, body.date);
       const [h, m] = body.time.split(':').map(Number) as [number, number];
-      const occurredAt = instantOf(
-        body.nextDay ? addDays(body.date, 1) : body.date,
-        h * 60 + m,
-        timezone,
-      );
-      await d.events.add({
+      await appendAdjustment(d, {
         id,
+        actorId,
         userId: body.userId,
         kind: body.kind,
-        source: 'ADJUSTMENT',
-        occurredAt,
-        workDate: body.date,
-        ip: null,
-        userAgent: null,
-        idempotencyKey: null,
+        date: body.date,
+        minuteOfDay: h * 60 + m,
+        nextDay: body.nextDay,
         note: body.reason,
-        createdBy: actorId,
-        voidedAt: null,
-        voidedBy: null,
-        voidReason: null,
-      });
-      await d.audit.record({
-        actorId,
-        action: 'EVENT_ADJUST',
-        targetUserId: body.userId,
-        refId: id,
-        after: { kind: body.kind, workDate: body.date, occurredAt: occurredAt.toISOString() },
       });
       if (body.userId !== actorId) {
         await d.notifier.attendanceAdjusted({
@@ -131,6 +115,9 @@ export class AttendanceEventsUseCases {
     await d.uow.run(async () => {
       const event = await d.events.findById(q.id);
       if (!event) throw new ResourceNotFoundError('attendance_event');
+      // Chủ lượt không đổi ⇒ đọc trước khóa để biết khóa ai; `punch:<user>` (bậc 4) rồi mới quyền (bậc 5, ADR-136). Hủy
+      // ‖ duyệt đơn bổ sung cùng loại tuần tự ⇒ luật "không thay thế" thấy đúng lượt còn hiệu lực.
+      await d.events.lockUserPunch(event.userId);
       // Cần chủ của lượt chấm cho luật "không tự hủy" ⇒ chốt sau khi đọc lượt, vẫn TRƯỚC lệnh ghi.
       await d.company.authorizeWrite({ actorId, targetUserId: event.userId });
       assertInsideRetention(d.retention, event.workDate);
