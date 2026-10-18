@@ -45,11 +45,11 @@ export function Dialog({
           {...(description ? {} : { 'aria-describedby': undefined })}
           className={cn(
             'fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
-            'flex-col gap-4 overflow-y-auto rounded-card bg-surface p-6 text-text shadow-raised',
+            'flex-col gap-4 rounded-card bg-surface p-6 text-text shadow-raised',
             className,
           )}
         >
-          <div className="flex flex-col gap-1">
+          <div className="flex shrink-0 flex-col gap-1">
             <RadixDialog.Title className={cn('text-lg font-semibold', titleClassName)}>
               {title}
             </RadixDialog.Title>
@@ -59,8 +59,14 @@ export function Dialog({
               </RadixDialog.Description>
             )}
           </div>
-          {children}
-          {footer && <div className="flex justify-end gap-2">{footer}</div>}
+          {/* Chỉ THÂN cuộn; tiêu đề + hàng nút luôn thấy (lỗi #B: nút ở y=1882 khi nội dung dài). -mx/px giữ vòng
+              focus của ô sát mép không bị cắt. */}
+          {children && (
+            <div className="-mx-6 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-0.5">
+              {children}
+            </div>
+          )}
+          {footer && <div className="flex shrink-0 justify-end gap-2">{footer}</div>}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>
