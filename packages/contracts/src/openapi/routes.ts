@@ -140,6 +140,7 @@ import {
   WorkspaceParams,
 } from '../workspace';
 import { CHAT_API_ROUTES } from './chat-routes';
+import { PRIVACY_API_ROUTES } from './privacy-routes';
 import type { ApiRoute } from './route-types';
 
 export type { ApiRoute, HttpMethod, Security, Tag } from './route-types';
@@ -1181,4 +1182,5 @@ export const API_ROUTES: readonly ApiRoute[] = [
     response: { status: 200, data: z.array(AuditLogDto), paged: true },
   },
   ...CHAT_API_ROUTES,
+  ...PRIVACY_API_ROUTES,
 ];

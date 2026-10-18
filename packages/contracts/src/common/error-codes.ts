@@ -37,6 +37,8 @@ export const ErrorCode = z.enum([
   'IMAGE_PROCESSING_BUSY',
   'IMAGE_PROCESSING_UNAVAILABLE',
   'STORAGE_FULL',
+  // T-075: gửi `reason` của đơn nghỉ khi chưa đồng ý xử lý lý do nghỉ (400 — reason vốn tùy chọn, bỏ trống thì gửi được)
+  'LEAVE_REASON_CONSENT_REQUIRED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
