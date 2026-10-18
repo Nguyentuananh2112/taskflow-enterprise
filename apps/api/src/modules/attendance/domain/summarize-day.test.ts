@@ -244,6 +244,22 @@ describe('summarizeDay — lễ, OFF, vắng, chưa tới (SD-19..SD-26b, SD-34)
     ).toBe(true);
   });
 
+  it('SD-22e ngày nghỉ KHÔNG có IN (trống / chỉ OUT mồ côi) ⇒ không "đang làm", 0 phút, OUT giữ giờ thô', () => {
+    expect(day(SUN, [], { nowLocal: '12:00' })).toMatchObject({
+      status: 'OFF',
+      workedMin: 0,
+      flags: { inProgress: false },
+    });
+    const orphan = day(SUN, [ev('OUT', SUN, '11:00')], { nowLocal: '12:00' });
+    expect(orphan).toMatchObject({
+      status: 'OFF',
+      workedMin: 0,
+      firstIn: null,
+      flags: { inProgress: false },
+    });
+    expect(orphan.lastOut).toEqual(at(SUN, '11:00'));
+  });
+
   it('SD-22d ngày nghỉ IN rồi OUT cùng phút ⇒ đã ra (không còn đang làm), 0 phút', () => {
     const r = day(
       SUN,
