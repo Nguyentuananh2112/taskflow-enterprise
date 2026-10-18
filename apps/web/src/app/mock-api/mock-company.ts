@@ -7,6 +7,7 @@ import {
   type MeCompanyDto,
 } from '@taskflow/contracts/company';
 
+import { MockPrivacy } from './mock-privacy';
 import { MockProfiles } from './mock-profiles';
 
 // Mốc 3.5 (ADR-133/137): MỘT công ty — dòng `company_members` có ⇔ đang thuộc công ty; nghỉ việc = xóa dòng + ghi
@@ -32,6 +33,10 @@ export class MockCompany {
 
   name = 'Công ty Mẫu';
   version = 1;
+  /** T-075: đầu mối liên hệ về dữ liệu cá nhân; null ⇒ web hiện "quản trị viên". */
+  privacyContact: string | null = null;
+  /** T-075: phiên bản thông báo đã đọc + đồng ý lý do nghỉ, theo người. */
+  readonly privacy = new MockPrivacy();
   private readonly rows = new Map<string, Row>();
   /** Người đã nghỉ: ngày làm cuối (departure gần nhất). */
   readonly departures = new Map<string, { lastDay: string }>();

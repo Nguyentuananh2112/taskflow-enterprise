@@ -17,6 +17,7 @@ import { LeavePage } from '@/views/leave';
 import { BoardPage } from '@/views/board';
 import { MembersPage } from '@/views/members';
 import { MyProfilePage } from '@/views/my-profile';
+import { PrivacyPage } from '@/views/privacy';
 import { ProjectListPage } from '@/views/project-list';
 import { ProjectSettingsPage } from '@/views/project-settings';
 import { WorkspaceNewPage } from '@/views/workspace-new';
@@ -38,6 +39,7 @@ const ROUTES: ReadonlyArray<readonly [RegExp, () => ReactNode]> = [
   [/^\/hr$/, () => <HrPage />],
   [/^\/hr\/employees$/, () => <HrEmployeesPage />],
   [/^\/my-profile$/, () => <MyProfilePage />],
+  [/^\/privacy$/, () => <PrivacyPage />],
   [/^\/admin$/, () => <AdminPage />],
   [/^\/admin\/access$/, () => <AdminAccessPage />],
   [/^\/admin\/workspaces$/, () => <AdminWorkspacesPage />],

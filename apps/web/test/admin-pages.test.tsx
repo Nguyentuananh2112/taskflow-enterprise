@@ -115,7 +115,8 @@ describe('/admin', () => {
     const input = await screen.findByLabelText(/^Tên công ty/);
     await u.clear(input);
     await u.type(input, 'Công ty ABC');
-    await u.click(screen.getByRole('button', { name: 'Lưu' }));
+    const form = screen.getByRole('form', { name: 'Thông tin công ty' });
+    await u.click(within(form).getByRole('button', { name: 'Lưu' }));
     expect(await screen.findByText('Đã lưu tên công ty')).toBeTruthy();
     expect(mock.db.company.name).toBe('Công ty ABC');
     await waitFor(() => expect(screen.getByRole('banner').textContent).toContain('Công ty ABC'));

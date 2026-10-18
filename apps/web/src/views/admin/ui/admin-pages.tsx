@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAccessList, useCompanyInfo } from '@/entities/company';
 import { useCompanyPermission, useSession } from '@/entities/session';
 import { AccessRow } from '@/features/admin-access';
-import { CompanyNameForm } from '@/features/company-rename';
+import { CompanyNameForm, PrivacyContactForm } from '@/features/company-rename';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 
@@ -68,14 +68,17 @@ export function AdminAccessPage() {
   );
 }
 
-/** `/admin/company`: tên công ty. */
+/** `/admin/company`: tên công ty + đầu mối liên hệ dữ liệu cá nhân (T-075). */
 export function AdminCompanyPage() {
   const allowed = useCompanyPermission().can('company:admin');
   const info = useCompanyInfo(allowed);
   return (
     <AdminFrame title="Thông tin công ty">
       {info.data ? (
-        <CompanyNameForm key={info.data.version} company={info.data} />
+        <div className="flex flex-col gap-8">
+          <CompanyNameForm key={`name-${String(info.data.version)}`} company={info.data} />
+          <PrivacyContactForm key={`contact-${String(info.data.version)}`} company={info.data} />
+        </div>
       ) : info.isError ? (
         <EmptyState
           title="Không tải được thông tin công ty"
