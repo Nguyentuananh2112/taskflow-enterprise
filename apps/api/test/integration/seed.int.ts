@@ -2,11 +2,13 @@
 // buộc migration 5 (CHECK / partial unique) đều qua, link kích hoạt khớp hash đã lưu, Admin không có quyền ngầm.
 import { createHash } from 'node:crypto';
 
+import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { seedDatabase, type SeedResult } from '../../prisma/seed-data';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { createTestPrisma, truncateAll } from './db';
+import { createPrismaTestApp, PRISMA_APP_PASSWORD_HASH } from './support/prisma-http-app';
 
 const prisma: PrismaClient = createTestPrisma();
 const NOW = new Date('2026-11-18T03:00:00.000Z'); // thứ Tư 18/11/2026 10:00 giờ VN
@@ -15,7 +17,7 @@ let seeded: SeedResult;
 beforeEach(async () => {
   await truncateAll(prisma);
   seeded = await seedDatabase(prisma, {
-    passwordHash: 'argon2id-giả-cho-test',
+    passwordHash: PRISMA_APP_PASSWORD_HASH,
     webOrigin: 'http://localhost:3001',
     now: NOW,
   });
@@ -90,5 +92,36 @@ describe('seed dev Mốc 3.5 (CO-07)', () => {
     });
     expect(await prisma.user.count()).toBe(8);
     expect(again.users.Olivia).not.toBe(seeded.users.Olivia);
+    expect(await prisma.payrollSettings.count()).toBe(1);
+  });
+
+  // Bug 18/10 (localhost): TRUNCATE … CASCADE (payroll_settings.updated_by_id → users) xóa dòng singleton của
+  // migration, seed không tạo lại ⇒ POST /payroll/runs/:period 500 P2025.
+  it('cài đặt lương: đúng 1 dòng mặc định của migration; Kế toán tạo nháp kỳ đã kết thúc ⇒ 201, không 500', async () => {
+    expect(await prisma.payrollSettings.findMany()).toMatchObject([
+      { id: 1, seniorityPerYear: 500_000n, version: 1, updatedById: null },
+    ]);
+    const t = createPrismaTestApp(prisma, NOW);
+    const res = await request(t.app)
+      .post('/api/v1/payroll/runs/2026-10')
+      .set(await t.login('max@example.test'))
+      .send({});
+    expect(res.status, res.text).toBe(201);
+    expect(t.logs.some((l) => l.includes('payroll.settings_restored_default'))).toBe(false);
+  });
+
+  it('dòng cài đặt lương bị xóa ngoài ý muốn ⇒ getSettings tạo lại mặc định + log warn, tạo nháp vẫn 201', async () => {
+    await prisma.payrollSettings.deleteMany();
+    const t = createPrismaTestApp(prisma, NOW);
+    const res = await request(t.app)
+      .post('/api/v1/payroll/runs/2026-09')
+      .set(await t.login('max@example.test'))
+      .send({});
+    expect(res.status, res.text).toBe(201);
+    expect(await prisma.payrollSettings.findMany()).toMatchObject([
+      { id: 1, seniorityPerYear: 500_000n, version: 1 },
+    ]);
+    const warn = t.logs.find((l) => l.includes('payroll.settings_restored_default'));
+    expect(warn && JSON.parse(warn)).toMatchObject({ level: 'warn' });
   });
 });

@@ -68,7 +68,7 @@ export function createPrismaPersistence(d: {
   const userRefs = new PrismaUserRefReader(db);
   const leave = prismaLeaveRepositories(db);
   const profiles = new PrismaEmployeeProfiles(db);
-  const payroll = createPrismaPayrollRepositories(db);
+  const payroll = createPrismaPayrollRepositories(db, d.logger);
   return {
     kind: 'prisma',
     modules: allModules('prisma'),

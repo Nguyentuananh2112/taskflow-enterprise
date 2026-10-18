@@ -1,6 +1,10 @@
 // Backend Postgres cho harness payroll (LSP T-049, như attendance): cùng hợp đồng `PayrollBackend` với bản in-memory ⇒
 // chạy lại nguyên bộ test use case tầng A trên `PrismaPayrollStore` + PrismaUnitOfWork + migration 7 thật (trigger
 // bất biến sau phát hành, partial unique bản hiệu lực, CHECK).
+import {
+  DEFAULT_SENIORITY_PER_YEAR,
+  PAYROLL_SETTINGS_ID,
+} from '../../../src/modules/payroll/domain/payroll-settings';
 import { PrismaPayrollStore } from '../../../src/modules/payroll/infrastructure/prisma/prisma-payroll.store';
 import { NAMES } from '../../../src/modules/payroll/testing/payroll-fixture';
 import type { PayrollBackend } from '../../../src/modules/payroll/testing/payroll-harness';
@@ -25,10 +29,10 @@ export function prismaPayrollBackend(): PayrollBackend {
 export async function resetPayrollDatabase(): Promise<void> {
   await resetDatabase();
   const p = testPrisma();
-  await p.$executeRawUnsafe(
-    `INSERT INTO payroll_settings (id, seniority_per_year, version, updated_by_id, updated_at)
-     VALUES (1, 500000, 1, NULL, now()) ON CONFLICT (id) DO NOTHING`,
-  );
+  await p.payrollSettings.createMany({
+    data: [{ id: PAYROLL_SETTINGS_ID, seniorityPerYear: BigInt(DEFAULT_SENIORITY_PER_YEAR) }],
+    skipDuplicates: true,
+  });
   for (const [id, fullName] of Object.entries(NAMES)) {
     await p.user.create({ data: { id, email: `${id}@example.test`, fullName, passwordHash: 'x' } });
   }

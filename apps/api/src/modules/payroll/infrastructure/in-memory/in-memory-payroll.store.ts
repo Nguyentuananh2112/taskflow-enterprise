@@ -1,3 +1,4 @@
+import { DEFAULT_SENIORITY_PER_YEAR } from '../../domain/payroll-settings';
 import type {
   IPayrollStore,
   PayrollRunRecord,
@@ -22,7 +23,12 @@ const copy = <T>(v: T): T => structuredClone(v);
  */
 export class InMemoryPayrollStore implements IPayrollStore {
   #s: State = {
-    settings: { seniorityPerYear: 500_000, version: 1, updatedAt: new Date(0), updatedById: null },
+    settings: {
+      seniorityPerYear: DEFAULT_SENIORITY_PER_YEAR,
+      version: 1,
+      updatedAt: new Date(0),
+      updatedById: null,
+    },
     profiles: [],
     runs: [],
     payslips: [],
