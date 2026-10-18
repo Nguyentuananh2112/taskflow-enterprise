@@ -88,7 +88,8 @@ export function notificationHref(n: NotificationDto): string {
       return '/attendance';
     case 'PAYSLIP_PUBLISHED':
     case 'PAYSLIP_REVISED':
-      return '/payslips';
+      // payroll.md §4: mở đúng tháng; kỳ chưa join được (phiếu hết hạn lưu) ⇒ phiếu mới nhất.
+      return n.payslip ? `/payslips/${n.payslip.period}` : '/payslips';
     case 'PAYROLL_REMINDER':
       return '/payroll';
   }
