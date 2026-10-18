@@ -46,7 +46,7 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 | D7 HrAuditLog | 2 năm | **5 năm** (không chứa D1/D3) | 10 năm |
 | D12 / D14 trò chuyện (Mốc 6 — **người dùng chốt 17/10**) | — | **12 tháng** kể từ `created_at` (`CHAT_RETENTION_DAYS=365`); tin bị xóa: thân NULL **ngay**, blob ≤ 1 giờ; upload mồ côi 24 giờ; purge ws cascade | — |
 | D13 ảnh đại diện | — | tự xóa / bị gỡ / rời công ty ⇒ blob xóa sau **30 ngày** (đổi ảnh: bản cũ xóa khi version mới đã lên) | — |
-| D10 lương (Mốc 4) — bảng lương, phiếu, hồ sơ lương, audit `PAYROLL_*` | — | **ngoài mọi bước trên**; hạn lưu chứng từ lương riêng (đề xuất 10 năm — Luật Kế toán, kế toán xác nhận) | — |
+| D15 hồ sơ lương, phiếu lương (Mốc 4 — TL chốt 18/10) | — | **10 năm** kể từ kỳ lương — chứng từ kế toán (Luật Kế toán 2015 Đ.41, NĐ 174/2016 Đ.12); giữ cả sau khi nghỉ việc; ẩn danh tài khoản vẫn giữ tên trên phiếu; lý do sửa công (`overrideReason`) và lý do bản điều chỉnh (`revisionReason`) lưu cùng phiếu (kế toán xác nhận loại chứng từ trước go-live — R27 Q2). v1 chưa có job xóa — **backlog có hạn**: thêm bước retention D15 trước kỳ lương đầu tiên + 10 năm; bản backup còn thêm tới hết tầng giữ (R48); kể cả audit `PAYROLL_*` (gồm `after.note`) — ngoài D7 / D7' | — |
 
 **Khuyến nghị B** vì:
 - 13 tháng phủ thời hiệu tranh chấp 1 năm cộng 1 tháng xử lý;
@@ -54,7 +54,7 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 - app giữ đủ 2 năm cho HR xem lại và xuất lại, nghĩa vụ 5–10 năm do hồ sơ CSV của kế toán gánh;
 - D7 dài hơn D2 để giữ trách nhiệm giải trình cho thao tác quản trị, mà không giữ lại dữ liệu nhạy cảm.
 
-**D10 (Mốc 4, TL chốt 18/10):** phiếu lương là chứng từ kế toán ⇒ không theo D2/D7. Lý do sửa công / lý do điều chỉnh (có thể nhắc sức khỏe) nằm trên phiếu và trong `after.note` của audit `PAYROLL_*` ⇒ giữ cùng hạn phiếu (không scrub theo D3). Giảm thiểu: form sửa công nhắc "Nhân viên sẽ thấy lý do này — không ghi chẩn đoán/bệnh"; chỉ kế toán, Admin và chính nhân viên đọc được; không vào thông báo / log / Sentry. Mẫu thông báo §5 cần thêm 1 câu về lương trước khi deploy Mốc 4.
+**D15 — audit lương (Mốc 4, TL chốt 18/10):** phiếu lương là chứng từ kế toán ⇒ không theo D2 / D7. Lý do sửa công / lý do bản điều chỉnh (có thể nhắc sức khỏe) nằm trên phiếu và trong `after.note` của audit `PAYROLL_*` ⇒ giữ cùng hạn phiếu (không scrub theo D3). Ranh giới kỹ thuật: D7 / D7' bỏ qua `action LIKE 'PAYROLL\_%'` (RD-11). Giảm thiểu: form sửa công nhắc "Nhân viên sẽ thấy lý do này — không ghi chẩn đoán/bệnh"; phiếu chỉ chính nhân viên, Kế toán, Admin đọc (audit lương chỉ Admin); không vào thông báo / log / Sentry.
 
 Hạn chế của B, cần người dùng chấp nhận: sau 2 năm HR không xuất lại được bảng công cũ từ app; phải lấy từ kho CSV của kế toán.
 
@@ -97,6 +97,15 @@ Hiển thị một lần khi nhân viên vào màn Chấm công / Nghỉ phép l
 > - Tin nhắn **không mã hóa đầu-cuối**: quản trị viên và nhân sự **không** đọc được trò chuyện của bạn qua ứng dụng, nhưng người vận hành máy chủ về kỹ thuật có thể truy cập dữ liệu lưu trữ. Đừng gửi mật khẩu, số thẻ hay thông tin sức khỏe qua trò chuyện.
 > - Ảnh đại diện hiện cho mọi người trong công ty. Bạn đổi hoặc xóa được bất cứ lúc nào; khi bạn rời công ty ảnh bị xóa sau 30 ngày.
 > - Muốn xem hoặc xóa trò chuyện của mình: liên hệ **[đầu mối]** — v1 xử lý thủ công, có biên bản (không có nút tự phục vụ).
+
+**Đoạn thêm khi bật Mốc 4 (phiếu lương, TL 18/10)** — hiển thị trong cùng thông báo, lần đầu mở Phiếu lương:
+
+> **Phiếu lương**
+> - Công ty xử lý **hồ sơ lương** (bậc, lương cơ bản, phụ cấp) và **phiếu lương hằng tháng** của bạn để trả lương. Chỉ bạn, người được giao quyền Kế toán và quản trị viên xem được. Thông báo có phiếu mới **không** chứa số tiền. Người vận hành máy chủ về kỹ thuật có thể truy cập dữ liệu lưu trữ; bản sao lưu được mã hóa.
+> - Phiếu lương đã phát hành là chứng từ kế toán nên được lưu **10 năm** kể từ kỳ lương, kể cả sau khi bạn nghỉ việc.
+> - Trong thời hạn lưu bắt buộc này, công ty **không xóa** phiếu lương theo yêu cầu (nghĩa vụ pháp lý), nhưng bạn có thể yêu cầu **sửa** thông tin sai.
+> - Nếu kế toán điều chỉnh công hoặc lương của bạn, lý do điều chỉnh hiện trên phiếu để bạn xem và được lưu cùng phiếu.
+> - Có thắc mắc về phiếu lương hoặc muốn yêu cầu sửa: liên hệ **[đầu mối]**.
 
 ## 6. Câu hỏi cần người dùng chốt
 
