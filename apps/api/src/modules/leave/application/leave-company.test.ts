@@ -139,7 +139,8 @@ describe('CO-04 offboardCleanup — hành động hệ thống (D H1)', () => {
       decisionNote: OFFBOARD_NOTE,
       version: 2,
     });
-    expect(h.locks).toEqual([`taskflow:leave:${U.Mia}`]);
+    // ADR-131 + ADR-136: policy SHARED (bậc 1) TRƯỚC leave:<user> (bậc 3).
+    expect(h.locks).toEqual(['taskflow:leave-policy:shared', `taskflow:leave:${U.Mia}`]);
     expect(h.notifier.sent).toEqual([
       { type: 'OFFBOARD_CLEANUP', requestId: U.Mia, actorId: U.Hana, recipient: { kind: 'hr' } },
     ]);

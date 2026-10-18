@@ -32,22 +32,10 @@ import { HR_PATH, HrController, hrRoutes } from './presentation/hr.routes';
 import type { EmploymentCollaborators } from './application/ports/employment-collaborators.port';
 import type { ICompanyOffboardingRepository } from './application/ports/offboarding.port';
 import { createEmployment, employeeRefOf, lateAccounts } from './employment.wiring';
-import {
-  effectiveCompanyPermissions,
-  type CompanyGrant,
-  type CompanyPermission,
-  type CompanyRole,
-} from './domain/roles';
+import type { MeCompanyView } from './me-company-view';
+import { effectiveCompanyPermissions, type CompanyPermission } from './domain/roles';
 
-/** Khớp cấu trúc `MeCompanyDto` (contracts) — `GET /auth/me`. */
-export interface MeCompanyView {
-  name: string | null;
-  role: CompanyRole;
-  grants: CompanyGrant[];
-  permissions: CompanyPermission[];
-  status: 'ACTIVE' | 'OFFBOARDING';
-  offboardLastDay: string | null;
-}
+export type { MeCompanyView } from './me-company-view';
 
 export interface CompanyRepositories {
   company: ICompanyRepository;
@@ -81,6 +69,8 @@ export interface CompanyModuleDeps {
   accessEvents: ICompanyAccessEvents;
   /** Dữ liệu workspace cho Admin (module workspace — dựng SAU company ⇒ đọc trễ). */
   adminWorkspaces: () => IAdminWorkspaces;
+  /** Mốc 6 (ADR-142): URL ký variant 64 cho `EmployeeDto.avatarUrl`; thiếu ⇒ không gắn. */
+  avatars?: Parameters<typeof createEmployment>[0]['avatars'];
 }
 
 export interface CompanyModule {
@@ -150,6 +140,7 @@ export function createCompanyModule(d: CompanyModuleDeps): CompanyModule {
     timeZone,
     logger: d.logger,
     permissionsOf,
+    avatars: d.avatars,
   });
   const meOf = async (userId: string): Promise<MeCompanyView | null> => {
     const m = await active(userId);

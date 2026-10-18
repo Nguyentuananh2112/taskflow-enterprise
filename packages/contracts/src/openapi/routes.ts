@@ -23,6 +23,16 @@ import {
   VoidAttendanceBody,
   WorkScheduleDto,
 } from '../attendance/attendance.schemas';
+import {
+  AttendanceExportXlsxQuery,
+  CancelCorrectionBody,
+  CorrectionApprovedDto,
+  CorrectionDto,
+  CorrectionParams,
+  DecideCorrectionBody,
+  ListCorrectionsQuery,
+  SubmitCorrectionBody,
+} from '../attendance/correction.schemas';
 import { AuditLogDto, ListAuditLogsQuery } from '../audit/audit.schemas';
 import {
   HrAuditLogDto,
@@ -40,12 +50,18 @@ import {
   LeaveBalanceParams,
   LeaveBalanceQuery,
   LeaveBalanceRowDto,
+  LeaveExportQuery,
+  LeavePolicyDto,
+  LeavePolicyParams,
+  LeavePolicyQuery,
   LeavePreviewDto,
   LeavePreviewQuery,
   LeaveRequestDto,
   LeaveRequestParams,
   ListLeaveBalancesQuery,
   ListLeaveRequestsQuery,
+  PutLeavePolicyBody,
+  PutLeavePolicyResponse,
   RevokeLeaveBody,
   SubmitLeaveBody,
 } from '../leave';
@@ -87,8 +103,8 @@ import {
   MeResponse,
   UpdateMeBody,
   UserDto,
+  AvatarUploadResponseDto,
 } from '../auth/auth.schemas';
-import type { ErrorCode } from '../common/error-codes';
 import {
   CreateProjectBody,
   ListProjectsQuery,
@@ -123,48 +139,23 @@ import {
   WorkspaceDto,
   WorkspaceParams,
 } from '../workspace';
+import { CHAT_API_ROUTES } from './chat-routes';
+import type { ApiRoute } from './route-types';
+
+export type { ApiRoute, HttpMethod, Security, Tag } from './route-types';
+
+/** `X-Upload-Name` = `encodeURIComponent(tên gốc)` — ≤ 255 byte UTF-8 sau giải mã (ADR-141). */
+const AvatarUploadHeaders = z.object({ 'x-upload-name': z.string().min(1).max(765) });
+
+const WS = '/workspaces/{wsId}';
+const PROJECT = `${WS}/projects/{projectId}`;
+const TASKS = `${PROJECT}/tasks`;
 
 /**
  * Danh mục route HTTP của `/api/v1` — NGUỒN của OpenAPI (A2, sinh từ Zod, không viết tay). Test
  * parity ở apps/api so khớp danh mục này với router Express thật (thiếu/thừa route ⇒ đỏ). Bảng mô tả
  * nghiệp vụ: docs/design/data-and-api.md §2.
  */
-export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
-export type Security = 'bearer' | 'refreshCookie' | 'none';
-export type Tag =
-  'auth' | 'workspaces' | 'members' | 'projects' | 'tasks' | 'hr' | 'company' | 'notifications';
-
-export interface ApiRoute {
-  method: HttpMethod;
-  /** Tương đối `/api/v1`, tham số dạng `{wsId}` (OpenAPI). */
-  path: string;
-  summary: string;
-  tag: Tag;
-  security: Security;
-  params?: z.ZodObject;
-  query?: z.ZodType;
-  body?: z.ZodType;
-  /** Header bắt buộc (vd `Idempotency-Key`) ⇒ `parameter` `in: header`. */
-  headers?: z.ZodObject;
-  /**
-   * 204 ⇒ không body; còn lại `data` của envelope; `paged` ⇒ có `meta.page`; `csv` ⇒ thân `text/csv` (không
-   * envelope); `alsoOk` ⇒ lặp lại idempotent trả 200 cùng `data` (check-in cùng Idempotency-Key).
-   */
-  response: {
-    status: 200 | 201 | 204;
-    data?: z.ZodType;
-    paged?: boolean;
-    csv?: boolean;
-    alsoOk?: boolean;
-  };
-  /** Mã lỗi đặc thù của route (ngoài lỗi chung 400/401/403/404/429). */
-  errors?: readonly ErrorCode[];
-}
-
-const WS = '/workspaces/{wsId}';
-const PROJECT = `${WS}/projects/{projectId}`;
-const TASKS = `${PROJECT}/tasks`;
-
 export const API_ROUTES: readonly ApiRoute[] = [
   // ---------- auth ----------
   {
@@ -428,6 +419,16 @@ export const API_ROUTES: readonly ApiRoute[] = [
     ],
   },
   {
+    method: 'delete',
+    path: '/hr/employees/{userId}/avatar',
+    summary: 'Gỡ ảnh đại diện không phù hợp của nhân viên — audit AVATAR_REMOVED (Mốc 6)',
+    tag: 'hr',
+    security: 'bearer',
+    params: EmployeeParams,
+    response: { status: 204 },
+    errors: ['SESSION_REVOKED', 'FORBIDDEN_ACCESS', 'VALIDATION_ERROR', 'RESOURCE_NOT_FOUND'],
+  },
+  {
     method: 'post',
     path: '/auth/refresh',
     summary: 'Xoay refresh token (cookie + kiểm Origin)',
@@ -469,6 +470,36 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     body: UpdateMeBody,
     response: { status: 200, data: UserDto },
+  },
+  {
+    method: 'put',
+    path: '/me/avatar',
+    summary: 'Đặt ảnh đại diện — thân nhị phân ≤ 5 MB, tên gốc trong X-Upload-Name (Mốc 6)',
+    tag: 'auth',
+    security: 'bearer',
+    headers: AvatarUploadHeaders,
+    binaryBody: true,
+    response: { status: 200, data: AvatarUploadResponseDto },
+    errors: [
+      'SESSION_REVOKED',
+      'INVALID_UPLOAD_NAME',
+      'PAYLOAD_TOO_LARGE',
+      'UNSUPPORTED_MEDIA_TYPE',
+      'UNSUPPORTED_FILE_TYPE',
+      'BUSINESS_RULE_VIOLATION',
+      'IMAGE_PROCESSING_BUSY',
+      'IMAGE_PROCESSING_UNAVAILABLE',
+      'STORAGE_FULL',
+    ],
+  },
+  {
+    method: 'delete',
+    path: '/me/avatar',
+    summary: 'Gỡ ảnh đại diện của chính mình (Mốc 6)',
+    tag: 'auth',
+    security: 'bearer',
+    response: { status: 204 },
+    errors: ['SESSION_REVOKED'],
   },
   {
     method: 'post',
@@ -702,6 +733,40 @@ export const API_ROUTES: readonly ApiRoute[] = [
     query: AttendanceCompanyMonthQuery,
     response: { status: 200, data: z.array(AttendanceMemberMonthDto), paged: true },
   },
+  // ---------- chính sách phép + báo cáo phép (Mốc 5, T-057, ADR-130/131) ----------
+  {
+    method: 'get',
+    path: '/leave/policy',
+    summary:
+      'Chính sách phép của một năm (hr:manage) — dòng riêng, kế thừa năm gần nhất, hoặc mức luật',
+    tag: 'hr',
+    security: 'bearer',
+    query: LeavePolicyQuery,
+    response: { status: 200, data: LeavePolicyDto },
+  },
+  {
+    method: 'put',
+    path: '/leave/policy/{year}',
+    summary:
+      'Đặt chính sách phép năm hiện tại / năm sau (hr:manage, expectedVersion; 0 = tạo) — trả nhân viên bị âm phép',
+    tag: 'hr',
+    security: 'bearer',
+    params: LeavePolicyParams,
+    body: PutLeavePolicyBody,
+    response: { status: 200, data: PutLeavePolicyResponse },
+    errors: ['BUSINESS_RULE_VIOLATION', 'VERSION_CONFLICT'],
+  },
+  {
+    method: 'get',
+    path: '/leave/export.xlsx',
+    summary:
+      'Báo cáo phép .xlsx (hr:manage) — số dư phân rã + đơn đã duyệt trong khoảng, audit EXPORT',
+    tag: 'hr',
+    security: 'bearer',
+    query: LeaveExportQuery,
+    response: { status: 200, xlsx: true },
+    errors: ['RATE_LIMITED'],
+  },
   {
     method: 'get',
     path: `/attendance/export.csv`,
@@ -711,6 +776,73 @@ export const API_ROUTES: readonly ApiRoute[] = [
     security: 'bearer',
     query: AttendanceMonthQuery,
     response: { status: 200, csv: true },
+  },
+  {
+    method: 'get',
+    path: `/attendance/export.xlsx`,
+    summary:
+      'Xuất Excel bảng công tháng cả công ty (hr:manage, ADR-130) — tháng chưa bắt đầu / quá trần người ⇒ 422 trước header; 429 chung hạn mức CSV + 2 export đồng thời/công ty',
+    tag: 'hr',
+    security: 'bearer',
+    query: AttendanceExportXlsxQuery,
+    response: { status: 200, xlsx: true },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RATE_LIMITED'],
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections`,
+    summary:
+      'Gửi đơn bổ sung giờ (attendance:self, ADR-129) — lặp cùng Idempotency-Key ⇒ 200 đơn cũ; 422 luật gửi; 409 correction_pending_exists; 20/giờ',
+    tag: 'hr',
+    security: 'bearer',
+    headers: IdempotencyKeyHeaders,
+    body: SubmitCorrectionBody,
+    response: { status: 201, data: CorrectionDto, alsoOk: true },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT', 'RATE_LIMITED'],
+  },
+  {
+    method: 'get',
+    path: `/attendance/corrections`,
+    summary:
+      'Đơn bổ sung giờ — mine=1: của mình (attendance:self); không mine: cả công ty (hr:manage), mới nhất trước',
+    tag: 'hr',
+    security: 'bearer',
+    query: ListCorrectionsQuery,
+    response: { status: 200, data: z.array(CorrectionDto), paged: true },
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections/{requestId}/cancel`,
+    summary: 'Người gửi hủy đơn PENDING (đơn người khác ⇒ 404)',
+    tag: 'hr',
+    security: 'bearer',
+    params: CorrectionParams,
+    body: CancelCorrectionBody,
+    response: { status: 200, data: CorrectionDto },
+    errors: ['RESOURCE_CONFLICT', 'VERSION_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections/{requestId}/approve`,
+    summary:
+      'Duyệt đơn bổ sung giờ (hr:manage, khác người gửi) ⇒ một lượt ADJUSTMENT; 422 luật gửi / REQUESTER_NOT_EMPLOYEE',
+    tag: 'hr',
+    security: 'bearer',
+    params: CorrectionParams,
+    body: DecideCorrectionBody,
+    response: { status: 200, data: CorrectionApprovedDto },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RESOURCE_CONFLICT', 'VERSION_CONFLICT'],
+  },
+  {
+    method: 'post',
+    path: `/attendance/corrections/{requestId}/reject`,
+    summary: 'Từ chối đơn bổ sung giờ (hr:manage, khác người gửi; ghi chú tùy chọn)',
+    tag: 'hr',
+    security: 'bearer',
+    params: CorrectionParams,
+    body: DecideCorrectionBody,
+    response: { status: 200, data: CorrectionDto },
+    errors: ['RESOURCE_CONFLICT', 'VERSION_CONFLICT'],
   },
   {
     method: 'get',
@@ -1048,4 +1180,5 @@ export const API_ROUTES: readonly ApiRoute[] = [
     query: ListAuditLogsQuery,
     response: { status: 200, data: z.array(AuditLogDto), paged: true },
   },
+  ...CHAT_API_ROUTES,
 ];

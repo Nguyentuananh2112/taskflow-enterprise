@@ -1,6 +1,8 @@
 import { countLeaveHalfDays, type CalendarDate } from '../../domain/leave-days';
 import { offboardCleanupPlan } from '../../domain/leave-tenure';
-import { auditView, yearOf, type LeaveKit } from '../leave-kit';
+import { auditView, countingTenure, yearOf, type LeaveKit } from '../leave-kit';
+import type { ILeaveReadModel } from '../ports/leave-read-model.port';
+import { halfDaysToDecimal } from '../../domain/leave-balance';
 import type { LeaveRequestRecord } from '../ports/leave.ports';
 
 /** Ghi chú hệ thống trên đơn bị dọn khi nghỉ việc / nâng Admin (company-level ADR-137 bước 4). */
@@ -10,12 +12,44 @@ export const REHIRE_NOTE = 'Nhận lại — đặt lại điều chỉnh';
 /**
  * Port leave cho vòng đời nhân viên của company (T-062 — `IOffboardLeavePort` do company sở hữu, adapter ở đây). Cả
  * hai lệnh chạy TRONG transaction của bên gọi (`uow.run` lồng nhau dùng chung transaction) và lấy
- * `taskflow:leave:<user>` (bậc 3 bảng khóa ADR-136 — bên gọi đã giữ `taskflow:company:admins` bậc 2 nếu cần).
+ * `taskflow:leave-policy` SHARED (bậc 1) rồi `taskflow:leave:<user>` (bậc 3 bảng khóa ADR-136 — bên gọi đã giữ
+ * `taskflow:company:admins` bậc 2 nếu cần).
  * Bên gọi PHẢI lấy `taskflow:leave:<user>` TRƯỚC khi DELETE/UPDATE dòng `company_members` (bậc 5) — nếu không sẽ
  * deadlock với submit đang giữ khóa này và chờ FOR SHARE dòng đó; khóa advisory xact tái nhập nên gọi lại vô hại.
  */
 export class EmploymentLeaveHooks {
-  constructor(private readonly kit: LeaveKit) {}
+  constructor(
+    private readonly kit: LeaveKit,
+    private readonly readModel: Pick<ILeaveReadModel, 'findBalance'>,
+  ) {}
+
+  /**
+   * T-054 PUT hồ sơ (ADR-128/131): nếu `hireDate` của người này đổi thành giá trị mới thì năm HIỆN TẠI và năm SAU còn
+   * lại bao nhiêu — chỉ trả năm `< 0`. CHỈ ĐỌC (không tạo dòng số dư); bên gọi đã giữ policy SHARED rồi leave:<user>.
+   */
+  async negativeBalancesIfHireDate(input: {
+    userId: string;
+    hireDate: CalendarDate | null;
+  }): Promise<{ year: number; remainingDays: number }[]> {
+    const today = await this.kit.today();
+    const current = yearOf(today);
+    const hireDates = {
+      hireDateOf: (userId: string) =>
+        userId === input.userId
+          ? Promise.resolve(input.hireDate)
+          : this.kit.d.hireDates.hireDateOf(userId),
+    };
+    const calc = this.kit.readCalculator(this.readModel, hireDates);
+    const tenure = countingTenure(await this.kit.d.company.employmentOf(input.userId));
+    const out: { year: number; remainingDays: number }[] = [];
+    for (const year of [current, current + 1]) {
+      const view = await calc.compute({ userId: input.userId, year, today, tenure });
+      if (view.balance.remaining < 0) {
+        out.push({ year, remainingDays: halfDaysToDecimal(view.balance.remaining) });
+      }
+    }
+    return out;
+  }
 
   /**
    * HÀNH ĐỘNG HỆ THỐNG khi hoàn tất nghỉ việc / nâng EMPLOYEE→ADMIN (D H1) — không qua bảng chuyển của người dùng:
@@ -29,7 +63,7 @@ export class EmploymentLeaveHooks {
   }): Promise<{ cancelled: number; revoked: number }> {
     const d = this.kit.d;
     return d.uow.run(async () => {
-      await d.requests.lockUser(input.userId);
+      await this.kit.lockFor(input.userId); // policy SHARED → leave:<user> (ADR-131/136)
       const open = await d.requests.listOpen(input.userId);
       const plan = offboardCleanupPlan(open, input.lastDay);
       const byId = new Map(open.map((r) => [r.id, r]));
@@ -92,7 +126,7 @@ export class EmploymentLeaveHooks {
   async resetOnRehire(input: { userId: string; year: number; actorId: string }): Promise<boolean> {
     const d = this.kit.d;
     return d.uow.run(async () => {
-      await d.requests.lockUser(input.userId);
+      await this.kit.lockFor(input.userId);
       const before = await d.requests.getOrCreateBalance(input.userId, input.year);
       if (before.adjustment === 0) return false;
       await d.requests.setBalanceAdjustment(input.userId, input.year, 0);

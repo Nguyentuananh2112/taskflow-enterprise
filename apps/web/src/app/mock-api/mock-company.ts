@@ -27,6 +27,9 @@ type Token = { userId: string; expiresAt: number; usedAt: number | null; revoked
 const sha256 = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export class MockCompany {
+  /** Mốc 6 (ADR-142): URL avatar hiện tại (variant 64) — createMockApi nối vào MockAvatars. */
+  avatarOf: (userId: string) => string | null = () => null;
+
   name = 'Công ty Mẫu';
   version = 1;
   private readonly rows = new Map<string, Row>();

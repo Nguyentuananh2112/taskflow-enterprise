@@ -58,6 +58,11 @@ export interface AppDependencies {
   metrics?: AppMetrics;
   /** Báo lỗi 5xx ra Sentry (T-035). */
   errorReporter?: IErrorReporter;
+  /**
+   * Mốc 6 (ADR-141): `/api/v1/media` — URL ký, KHÔNG Bearer. Gắn TRƯỚC body parser, `no-store` và rate limit
+   * toàn cục (có hạn mức IP riêng); router tự đặt CSP sandbox / CORP / Cache-Control đè lên helmet.
+   */
+  media?: Router;
 }
 
 /**
@@ -82,6 +87,7 @@ export function createApp(deps: AppDependencies): Express {
       isShuttingDown: deps.isShuttingDown,
     }),
   );
+  if (deps.media) app.use('/api/v1/media', markRouteBase('/api/v1/media'), deps.media);
   app.use(requireJsonContentType);
   app.use(jsonBody(config.bodyLimit));
   // L4 của T-028: mặc định KHÔNG cache mọi response API (dữ liệu có xác thực, PII như email thành

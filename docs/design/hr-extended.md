@@ -320,3 +320,9 @@ Thứ tự: **Mốc 3.5 → T-054 → T-048 → (T-049 ‖ T-055) → (T-056 ‖
 4. **Cấp công ty** (Mốc 3.5): Admin không phải nhân viên — không hồ sơ "của tôi", không phép, không đơn bổ sung; vào làm/nghỉ việc ở Mốc 3.5.
 
 Không có câu hỏi mới cho người dùng. R27 Q2/Q4/Q5 vẫn mở như trước (trước deploy).
+
+## 12. Cập nhật khi triển khai (TL, 18/10 — gộp `main` 007c82a6)
+
+- ADR-128: ghi chú (a)–(e) của B ở T-054; `hireDate` tương lai ⇒ 422 `HIRE_DATE_IN_FUTURE`, cận dưới 1950 ⇒ 400.
+- ADR-130: ô ngày = số serial Excel + định dạng dd/mm/yyyy; audit `EXPORT` ghi {report, period, from?, to?, rows (tổng dòng dữ liệu mọi sheet), format}; tên sheet số dư "Số dư YYYY".
+- ADR-131: số truy vấn của trang số dư cố định ≤ 12/trang (T-057d); job chụp `carried` có jitter 5 s.

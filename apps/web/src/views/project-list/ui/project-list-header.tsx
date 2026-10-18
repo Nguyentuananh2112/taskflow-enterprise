@@ -18,6 +18,10 @@ export function ProjectListHeader({ wsId, canCreate }: Props) {
     <div className="flex flex-wrap items-center gap-3">
       <h1 className="text-xl font-semibold">Dự án</h1>
       <nav aria-label="Workspace" className="ml-auto flex items-center gap-2 text-sm">
+        {/* Mốc 6 (ADR-143): phòng trò chuyện của workspace — mọi role kể cả VIEWER. */}
+        <Link href={`/chat/ws/${wsId}`} className="rounded-control px-3 py-1.5 hover:bg-bg-subtle">
+          Trò chuyện
+        </Link>
         <Link
           href={`/w/${wsId}/settings/members`}
           className="rounded-control px-3 py-1.5 hover:bg-bg-subtle"

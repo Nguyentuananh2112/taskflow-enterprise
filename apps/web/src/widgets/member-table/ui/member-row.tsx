@@ -31,7 +31,14 @@ export function MemberRow({ wsId, member, permission, onLeft }: Props) {
     <tr className="border-t border-border">
       <td className="py-2 pr-3">
         <span className="flex items-center gap-2">
-          <Avatar name={member.fullName} colorKey={member.userId} size="sm" decorative />
+          <Avatar
+            name={member.fullName}
+            colorKey={member.userId}
+            src={member.avatarUrl}
+            size="sm"
+            loading="lazy"
+            decorative
+          />
           <span className="flex flex-col">
             <span className="font-medium">
               {member.fullName}

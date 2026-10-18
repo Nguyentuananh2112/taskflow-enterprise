@@ -57,8 +57,28 @@ export interface AttendanceNotifier {
   attendanceAdjusted(q: { recipientId: string; eventId: string; actorId: string }): Promise<void>;
 }
 
+/**
+ * Thông báo đơn bổ sung giờ (hr-extended ADR-129) — như `ILeaveNotifier`: ghi TRONG transaction, payload chỉ id + loại
+ * (KHÔNG lý do). `hr` ⇒ mọi người có `hr:manage` hiện tại + Admin, trừ actor (adapter tự mở rộng danh sách).
+ */
+export interface CorrectionNotifier {
+  notify(input: {
+    type:
+      | 'CORRECTION_SUBMITTED'
+      | 'CORRECTION_APPROVED'
+      | 'CORRECTION_REJECTED'
+      | 'CORRECTION_CANCELLED';
+    requestId: string;
+    actorId: string;
+    recipient: { kind: 'user'; userId: string } | { kind: 'hr' };
+  }): Promise<void>;
+}
+
 export type HrAuditAction =
   'EVENT_ADJUST' | 'EVENT_VOID' | 'SCHEDULE_SET' | 'HOLIDAY_SET' | 'HOLIDAY_DELETE' | 'EXPORT';
+
+/** Mốc 5 (T-056) — enum DB thêm ở migration 8 (T-055); tách khỏi `HrAuditAction` tới khi adapter composition có đủ. */
+export type CorrectionAuditAction = 'CORRECTION_SUBMIT' | 'CORRECTION_CANCEL' | 'CORRECTION_DECIDE';
 
 /**
  * Ghi `HrAuditLog` (cấp công ty — chỉ Admin đọc): chỉ thêm, trong cùng transaction. `before`/`after` KHÔNG có khóa
@@ -73,4 +93,13 @@ export interface IHrAuditRecorder {
     before?: Readonly<Record<string, unknown>> | null;
     after?: Readonly<Record<string, unknown>> | null;
   }): Promise<void>;
+}
+
+/** Audit của đơn bổ sung giờ: như `IHrAuditRecorder` (dùng được cho `appendAdjustment`) + action `CORRECTION_*`. */
+export interface ICorrectionAuditRecorder {
+  record(
+    entry: Omit<Parameters<IHrAuditRecorder['record']>[0], 'action'> & {
+      action: HrAuditAction | CorrectionAuditAction;
+    },
+  ): Promise<void>;
 }

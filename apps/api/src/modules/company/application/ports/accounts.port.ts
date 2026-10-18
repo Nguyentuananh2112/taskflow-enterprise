@@ -32,4 +32,12 @@ export interface ICompanyAccounts {
    * + ghi `tv` mới lên Valkey TRƯỚC commit (lỗi ⇒ 503, rollback); `disconnectUser` SAU commit.
    */
   revokeSessions(userId: string, reason: 'OFFBOARDED' | 'LOGOUT_ALL'): Promise<void>;
+  /**
+   * Mốc 6 (ADR-142): gỡ ảnh đại diện của `userId` TRONG transaction của bên gọi (audit cùng commit). Không có ảnh ⇒
+   * `previousVersion: null`. Ảnh đại diện chưa bật ở process này ⇒ 503.
+   */
+  removeAvatar(input: {
+    userId: string;
+    actorId: string;
+  }): Promise<{ previousVersion: number | null }>;
 }

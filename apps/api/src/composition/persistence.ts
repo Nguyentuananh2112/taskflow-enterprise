@@ -1,4 +1,5 @@
 import type { ILogger } from '../core/logging/logger';
+import type { IReadSnapshot } from '../core/persistence/read-snapshot';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import { createInMemoryAuthRepositories, type AuthRepositories } from '../modules/auth/auth.module';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
@@ -7,12 +8,18 @@ import {
   type AttendanceRepositories,
 } from '../modules/attendance/attendance.module';
 import type { CompanyRepositories } from '../modules/company/company.module';
+import type { IAvatarDirectory } from '../modules/auth/application/ports/avatar-directory.port';
+import { SystemClock } from '../core/infrastructure/system';
+import { memoryAvatarDirectory } from './avatar-sweep';
+import { memoryChatDirectory, memoryChatRepositories } from './chat-persistence';
+import type { ChatRepositories } from '../modules/chat/chat.module';
 import { InMemoryCompanyOffboarding } from '../modules/company/infrastructure/in-memory/in-memory-company-offboarding';
 import { InMemoryCompanyStore } from '../modules/company/infrastructure/in-memory/in-memory-company';
 import { InMemoryHrAuditLog } from '../modules/company/infrastructure/in-memory/in-memory-hr-audit-log';
 import type { HrProfileRepositories } from '../modules/hr-profile/hr-profile.module';
 import { InMemoryEmployeeProfiles } from '../modules/hr-profile/infrastructure/in-memory/in-memory-employee-profiles';
 import type { LeaveRepositories } from '../modules/leave/leave.module';
+import { InMemoryLeavePolicyStore } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave-policy.store';
 import { InMemoryLeaveRepository } from '../modules/leave/infrastructure/persistence/in-memory/in-memory-leave.repository';
 import {
   createInMemoryNotificationStore,
@@ -68,7 +75,12 @@ export interface Persistence {
   refreshTokenPurger?: IRefreshTokenPurger;
   /** Bước dọn của job retention (T-043, R27) — chỉ có ở Prisma. */
   retention?: RetentionStores;
-  uow: IUnitOfWork;
+  /** Mốc 6 (T-068): avatar theo lô — hiển thị, `/media`, sweep. */
+  avatarDirectory: IAvatarDirectory;
+  /** Mốc 6 (T-069): trò chuyện — store của D (T-069a). */
+  chat: ChatRepositories;
+  /** `snapshot`: ảnh chụp đọc REPEATABLE READ READ ONLY cho báo cáo .xlsx (ADR-130, T-055y). */
+  uow: IUnitOfWork & { snapshot: IReadSnapshot };
 }
 
 /** Lưu trữ trong bộ nhớ — chỉ local/test, MẤT DỮ LIỆU khi khởi động lại. */
@@ -99,7 +111,21 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
   const attendance = createInMemoryAttendanceRepositories();
   const leaveStore = new InMemoryLeaveRepository();
   const profiles = new InMemoryEmployeeProfiles();
-  const leave = memoryLeaveRepositories(leaveStore, companyStore, task.db.state.users);
+  const leavePolicies = new InMemoryLeavePolicyStore();
+  const leave = memoryLeaveRepositories(
+    leaveStore,
+    leavePolicies,
+    companyStore,
+    task.db.state.users,
+  );
+  const chat = memoryChatRepositories(
+    memoryChatDirectory({
+      members: companyStore,
+      users,
+      workspaces: ws.workspaces,
+      memberships: ws.memberships,
+    }),
+  );
   const uow = new InMemoryUnitOfWork(
     [
       auth.users,
@@ -114,8 +140,11 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
       hrAudit,
       attendance.events,
       attendance.calendar,
+      attendance.corrections,
       leaveStore,
       profiles,
+      leavePolicies,
+      chat.state,
     ],
     logger,
   );
@@ -145,6 +174,8 @@ export function createMemoryPersistence(logger: ILogger): Persistence {
     attendance,
     leave,
     hrProfile: { profiles, locks: profiles },
+    avatarDirectory: memoryAvatarDirectory(users, companyStore, new SystemClock()),
+    chat: chat.repos,
     uow,
   };
 }

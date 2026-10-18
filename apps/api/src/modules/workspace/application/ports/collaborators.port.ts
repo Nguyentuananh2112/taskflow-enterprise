@@ -5,6 +5,8 @@ export interface UserSummary {
   id: string;
   email: string;
   fullName: string;
+  /** Mốc 6 (ADR-142): URL ký variant 64 — composition gắn; thiếu ⇒ không có ảnh. */
+  avatarUrl?: string | null;
 }
 
 /**
@@ -84,6 +86,8 @@ export interface MemberCandidate {
   id: string;
   fullName: string;
   email: string;
+  /** Mốc 6 (ADR-142): URL ký variant 64 — composition gắn. */
+  avatarUrl?: string | null;
 }
 
 /**

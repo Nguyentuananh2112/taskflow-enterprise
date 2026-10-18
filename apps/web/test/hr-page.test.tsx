@@ -271,7 +271,7 @@ describe('trang Nhân sự — các tab', () => {
     expect(await within(dialog).findByText(/HR điều chỉnh/)).toBeTruthy();
   });
 
-  it('Xuất CSV: tải Blob với tên file từ server', async () => {
+  it('Tải Excel bảng công: tải Blob, tên file từ Content-Disposition', async () => {
     const { open } = seed();
     const created: Blob[] = [];
     const createObjectURL = vi.fn((b: Blob) => {
@@ -283,11 +283,13 @@ describe('trang Nhân sự — các tab', () => {
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => undefined);
     open('/hr?tab=timesheet');
-    await user().click(await screen.findByRole('button', { name: 'Xuất CSV' }));
+    await user().click(await screen.findByRole('button', { name: 'Tải Excel' }));
     await waitFor(() => expect(click).toHaveBeenCalled());
     const anchor = click.mock.contexts[0] as HTMLAnchorElement;
-    expect(anchor.download).toBe('cham-cong-2026-10.csv');
-    expect(await created[0]?.text()).toContain('Nguyễn An');
+    expect(anchor.download).toBe('bang-cong-2026-10.xlsx');
+    expect(created[0]?.type).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     click.mockRestore();
     vi.unstubAllGlobals();
   });

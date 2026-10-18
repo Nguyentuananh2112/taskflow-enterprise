@@ -1,3 +1,9 @@
+import { isAbsolute } from 'node:path';
+
+import { FILES_ENV_SHAPE, FILES_TEST_ONLY_VARS, jwtSecret } from './env-files';
+
+export { FILES_TEST_ONLY_VARS } from './env-files';
+
 import * as z from 'zod';
 
 // Nơi DUY NHẤT đọc process.env (devops.md §2.2–2.4, ESLint chặn chỗ khác). Thêm biến ⇒ sửa ở đây.
@@ -6,16 +12,32 @@ import * as z from 'zod';
  * Secret không bao giờ được chấp nhận ở production (security.md §6.9): placeholder của
  * `.env.example` (`change-me-…`) và giá trị test cố định (`test-only-…`).
  */
+/** Số nguyên tùy chọn; chuỗi rỗng = không đặt (không coi là 0). */
+const testOnlyInt = (min: number, max: number) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().int().min(min).max(max).optional(),
+  );
+
 export const NON_PRODUCTION_SECRET = /^(change-me|test-only-)/;
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
-/** Khóa HS256 = byte UTF-8 của chuỗi (security.md §2.1: `TextEncoder().encode(secret)`), ≥ 32 byte. */
-const jwtSecret = z
-  .string()
-  .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, 'phải ≥ 32 byte');
-
 const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ });
+
+/**
+ * Biến CHỈ cho APP_ENV=test — nơi khác có ⇒ từ chối khởi động (không âm thầm bỏ qua). MỘT danh sách, MỘT vòng lặp
+ * (Mốc 5 T-055 của B + Mốc 6 ADR-141 gộp khi hai mốc gặp nhau).
+ */
+const TEST_ONLY_KEYS = [
+  'JWT_ACCESS_TTL_SECONDS',
+  'TEST_CLOCK_ANCHOR',
+  'EXPORT_MAX_EMPLOYEES',
+  'EXPORT_MAX_LEAVE_ROWS',
+  'EXPORT_BATCH_SIZE',
+  'EXPORT_BATCH_DELAY_MS',
+  ...FILES_TEST_ONLY_VARS,
+] as const;
 const redisUrl = z.url({ protocol: /^rediss?$/ });
 
 const originList = z
@@ -55,6 +77,12 @@ const EnvSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.iso.datetime({ offset: true }).optional(),
     ),
+    // CHỈ APP_ENV=test (T-055, F XL-05 / XL-07 / SEC-HR-54): trần + nhịp đọc của báo cáo .xlsx — core/export/
+    // export-limits.ts giữ mặc định. Môi trường khác có biến nào ⇒ từ chối khởi động.
+    EXPORT_MAX_EMPLOYEES: testOnlyInt(1, 1_000_000),
+    EXPORT_MAX_LEAVE_ROWS: testOnlyInt(1, 1_000_000),
+    EXPORT_BATCH_SIZE: testOnlyInt(1, 10_000),
+    EXPORT_BATCH_DELAY_MS: testOnlyInt(0, 5_000),
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
@@ -90,6 +118,10 @@ const EnvSchema = z
     PURGE_JITTER_MS: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
     // T-043: job retention XÓA dữ liệu ⇒ cờ riêng; local/test chỉ chạy khi = true (composition tính).
     RETENTION_JOB_ENABLED: z.stringbool().optional(),
+    // T-057 (F, CLK-HR-13 / LP-12): job chụp phép chuyển sang — CHỈ APP_ENV=test: chạy một lượt TRƯỚC khi listen;
+    // rút ngắn interval (mặc định 1 giờ).
+    LEAVE_CARRYOVER_ON_START: z.stringbool().optional(),
+    LEAVE_CARRYOVER_INTERVAL_MS: z.coerce.number().int().min(1_000).max(86_400_000).optional(),
     // T-043 / R27 (data-retention.md §3): thời hạn lưu dữ liệu cá nhân Mốc 3, đơn vị NGÀY, mặc định =
     // phương án B. `min` chặn cấu hình nhầm (vd 0 ⇒ xóa sạch).
     RETENTION_CLIENT_INFO_DAYS: z.coerce.number().int().min(30).max(3_660).default(395),
@@ -101,6 +133,7 @@ const EnvSchema = z
     // T-020/T-024: lưu trữ của MỌI module (auth, workspace, task) — Prisma + Valkey, hoặc `memory`
     // (bộ nhớ, MẤT dữ liệu khi khởi động lại; chỉ local/test). Không còn trạng thái "lai" theo module.
     PERSISTENCE: z.enum(['prisma', 'memory']).default('prisma'),
+    ...FILES_ENV_SHAPE,
   })
   .superRefine((env, ctx) => {
     const fail = (path: keyof typeof env, message: string) =>
@@ -110,11 +143,30 @@ const EnvSchema = z
       fail('JWT_ACCESS_SECRET_PREVIOUS', 'trùng JWT_ACCESS_SECRET');
     }
     if (env.METRICS_PORT === env.PORT) fail('METRICS_PORT', 'phải khác PORT (cổng nội bộ riêng)');
-    if (env.JWT_ACCESS_TTL_SECONDS !== undefined && env.APP_ENV !== 'test') {
-      fail('JWT_ACCESS_TTL_SECONDS', 'chỉ được đặt khi APP_ENV=test');
+    for (const key of TEST_ONLY_KEYS) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
-    if (env.TEST_CLOCK_ANCHOR !== undefined && env.APP_ENV !== 'test') {
-      fail('TEST_CLOCK_ANCHOR', 'chỉ được đặt khi APP_ENV=test');
+    for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS'] as const) {
+      if (env[key] !== undefined && env.APP_ENV !== 'test')
+        fail(key, 'chỉ được đặt khi APP_ENV=test');
+    }
+    if (env.FILE_STORE_DIR !== undefined && !isAbsolute(env.FILE_STORE_DIR)) {
+      fail('FILE_STORE_DIR', 'phải là đường dẫn tuyệt đối');
+    }
+    const jwtSecrets = [env.JWT_ACCESS_SECRET, env.JWT_ACCESS_SECRET_PREVIOUS];
+    for (const key of ['FILE_URL_SECRET', 'FILE_URL_SECRET_PREVIOUS'] as const) {
+      if (env[key] !== undefined && jwtSecrets.includes(env[key]))
+        fail(key, 'phải khác JWT_ACCESS_SECRET');
+    }
+    if (
+      env.FILE_URL_SECRET_PREVIOUS !== undefined &&
+      env.FILE_URL_SECRET_PREVIOUS === env.FILE_URL_SECRET
+    ) {
+      fail('FILE_URL_SECRET_PREVIOUS', 'trùng FILE_URL_SECRET');
+    }
+    if (env.FILE_URL_SECRET_PREVIOUS !== undefined && env.FILE_URL_SECRET === undefined) {
+      fail('FILE_URL_SECRET_PREVIOUS', 'cần FILE_URL_SECRET');
     }
     if (env.NODE_ENV === 'production' && !isDeployed(env.APP_ENV)) {
       fail('APP_ENV', 'NODE_ENV=production chỉ đi với APP_ENV staging|production');
@@ -132,9 +184,19 @@ const EnvSchema = z
     if (env.CORS_ORIGINS.some((origin) => !origin.startsWith('https://'))) {
       fail('CORS_ORIGINS', 'production chỉ chấp nhận https://');
     }
-    for (const key of ['JWT_ACCESS_SECRET', 'JWT_ACCESS_SECRET_PREVIOUS'] as const) {
+    for (const key of [
+      'JWT_ACCESS_SECRET',
+      'JWT_ACCESS_SECRET_PREVIOUS',
+      'FILE_URL_SECRET',
+      'FILE_URL_SECRET_PREVIOUS',
+    ] as const) {
       if (NON_PRODUCTION_SECRET.test(env[key] ?? '')) fail(key, 'secret mẫu/test');
     }
+    // Mốc 6 (ADR-141): kho tệp + URL ký bắt buộc tường minh khi triển khai.
+    if (!env.FILE_STORE_DIR) fail('FILE_STORE_DIR', 'bắt buộc ở staging/production');
+    if (!env.FILE_URL_SECRET) fail('FILE_URL_SECRET', 'bắt buộc ở staging/production');
+    if (!env.MEDIA_BASE_URL.startsWith('https://'))
+      fail('MEDIA_BASE_URL', 'staging/production bắt buộc https://');
     // Staging + production (khối này chỉ chạy khi isDeployed).
     if (!env.METRICS_TOKEN) fail('METRICS_TOKEN', 'bắt buộc ở staging/production');
     // DSN là địa chỉ ingest: http ⇒ event đi dạng rõ (review B L3). Có thì phải https.

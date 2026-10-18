@@ -1,4 +1,4 @@
-import type { IncomingMessage, Server as HttpServer } from 'node:http';
+import type { Server as HttpServer } from 'node:http';
 
 import { Server, type ServerOptions } from 'socket.io';
 
@@ -29,6 +29,10 @@ import {
 } from './local-rooms';
 import { LocalRealtimeQuota, type IRealtimeQuota } from './quota';
 import { UserNotifications } from './user-notifications';
+import { clientIp } from './client-ip';
+
+export { clientIp } from './client-ip';
+import * as chat from './chat-realtime';
 import { registerSocketHandlers, type AppSocket } from './socket-handlers';
 
 export interface RealtimeGatewayOptions {
@@ -45,16 +49,8 @@ export interface RealtimeGatewayOptions {
   adapter?: ServerOptions['adapter'];
   /** Hạn mức theo user (ADR-115). Mặc định: chỉ đếm trong instance (`LocalRealtimeQuota`). */
   quota?: IRealtimeQuota;
-}
-
-/** IP client sau `TRUST_PROXY_HOPS` proxy tin cậy (cùng quy tắc `trust proxy` của Express). */
-export function clientIp(req: IncomingMessage, trustProxyHops: number): string {
-  const forwarded = String(req.headers['x-forwarded-for'] ?? '')
-    .split(',')
-    .map((ip) => ip.trim())
-    .filter(Boolean);
-  const chain = [...forwarded, req.socket.remoteAddress ?? ''];
-  return chain[Math.max(0, chain.length - 1 - trustProxyHops)] ?? '';
+  /** Mốc 6 (T-070): quyền + người nhận `chat:typing` (module chat). Thiếu ⇒ bỏ qua `chat:typing`. */
+  chatTyping?: chat.IChatTypingAccess;
 }
 
 /**
@@ -135,12 +131,14 @@ export class RealtimeGateway {
     // `verified` nên không vào được phòng nào trước khi phiên được xác thực lại.
     const { userId } = socket.data;
     socket.on('disconnect', () => void this.quota.releaseSocket(userId));
-    registerSocketHandlers(socket, {
-      ...this.o,
-      quota: this.quota,
-      verified: joinPersonalRooms(socket, this.o),
-    });
+    const verified = joinPersonalRooms(socket, this.o);
+    registerSocketHandlers(socket, { ...this.o, quota: this.quota, verified });
+    if (this.o.chatTyping)
+      chat.registerChatTyping(socket, { ...this.o, access: this.o.chatTyping, verified });
   }
+
+  /** Mốc 6 (T-070, ADR-145): event chat tới `user:{id}` của từng người nhận — MỘT lần `io.to([...])`. */
+  readonly emitChat = (e: chat.ChatEmission): Promise<void> => chat.emitChat(this.io, this.o, e);
 
   // ---------- IAuthRealtimeNotifier (security §5.4) ----------
   // Thu hồi luôn chạy LOCAL trước rồi mới phát cho cụm: với redis-adapter, thao tác cụm chỉ áp
@@ -186,6 +184,8 @@ export class RealtimeGateway {
     this.#users.companyAccessChanged(i, m);
   readonly notifyNotification: UserNotifications['notification'] = (i, m) =>
     this.#users.notification(i, m);
+  readonly broadcastAvatarChanged: UserNotifications['avatarChanged'] = (i, m) =>
+    this.#users.avatarChanged(i, m);
 
   /** Workspace xóa mềm: báo từng thành viên qua phòng user, rồi rời mọi phòng project (data-and-api §1.7). */
   closeWorkspace(

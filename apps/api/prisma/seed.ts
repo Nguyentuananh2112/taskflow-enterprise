@@ -4,10 +4,13 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaClient } from '../src/generated/prisma/client';
 import { Argon2idPasswordHasher } from '../src/modules/auth/infrastructure/security/argon2id-password-hasher';
+import { LocalFileStore } from '../src/core/files/infrastructure/local-file-store';
 import { seedDatabase } from './seed-data';
 
 // eslint-disable-next-line no-restricted-properties -- script CLI ngoài app, không qua loadEnv của server
 const { DATABASE_URL, NODE_ENV, APP_ENV, SEED_PASSWORD, CORS_ORIGINS } = process.env;
+// eslint-disable-next-line no-restricted-properties -- như trên (Mốc 6: kho tệp cho ảnh mẫu)
+const { FILE_STORE_DIR } = process.env;
 if (!DATABASE_URL) throw new Error('Thiếu DATABASE_URL');
 if (NODE_ENV === 'production' || APP_ENV === 'production' || APP_ENV === 'staging') {
   throw new Error('Không seed dữ liệu giả vào production / staging');
@@ -26,7 +29,13 @@ const WEB_ORIGIN = CORS_ORIGINS?.split(',')[0]?.trim() || 'http://localhost:3001
 try {
   // Băm một lần (argon2id ~46 MiB/lần, ADR-065) rồi dùng chung cho mọi user mẫu.
   const passwordHash = await (await Argon2idPasswordHasher.create()).hash(DEV_PASSWORD);
-  const { activationLink } = await seedDatabase(prisma, { passwordHash, webOrigin: WEB_ORIGIN });
+  // Mốc 6: ảnh đại diện mẫu chỉ khi có kho tệp (FILE_STORE_DIR) — không có ⇒ chữ cái.
+  const store = FILE_STORE_DIR ? await LocalFileStore.create(FILE_STORE_DIR) : undefined;
+  const { activationLink } = await seedDatabase(prisma, {
+    passwordHash,
+    webOrigin: WEB_ORIGIN,
+    ...(store ? { store } : {}),
+  });
   console.info(
     [
       'Seed xong — Công ty Mẫu:',
@@ -34,6 +43,8 @@ try {
       '  Quinn đã nghỉ (chỉ còn nhiệm kỳ cũ) · Nina chờ kích hoạt — link (7 ngày, chỉ dev):',
       `  ${activationLink}`,
       '  2 workspace (Olivia chỉ ở "Nhóm Sản phẩm"), 2 project, 30 task; chấm công 5 ngày, 3 đơn nghỉ, 2 ngày lễ bịa.',
+      '  Trò chuyện: Mia↔Vic, nhóm "Dự án Sao Mai", phòng "Nhóm Sản phẩm"' +
+        (store ? '; ảnh đại diện Mia, Vic.' : '.'),
     ].join('\n'),
   );
 } finally {

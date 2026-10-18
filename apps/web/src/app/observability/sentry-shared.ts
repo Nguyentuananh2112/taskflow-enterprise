@@ -11,6 +11,8 @@ type TransactionEvent = Parameters<NonNullable<InitOptions['beforeSendTransactio
 export const SENTRY_TUNNEL_PATH = '/monitoring';
 
 const SCRUBBERS: readonly [RegExp, string][] = [
+  // Mốc 6 (ADR-141, F-11): URL media ký là bearer — chữ ký trong chuỗi tự do (vd lỗi tải ảnh có src) không được lọt.
+  [/([?&]sig=)[^&\s#"'`)]+/gi, '$1[REDACTED]'],
   [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@'],
   [/\$argon2(?:id|i|d)\$[^\s)"'`]*/g, '[REDACTED_HASH]'],
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]'],

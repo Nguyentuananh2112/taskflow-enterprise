@@ -18,6 +18,30 @@ export function offboardLeaveFrom(
 }
 
 /**
+ * Đóng nhiệm kỳ (nghỉ việc / nâng Admin) còn hủy mọi đơn bổ sung giờ PENDING của người đó (hr-extended ADR-129, T-056) —
+ * cùng transaction, SAU khi leave dọn đơn nghỉ; khóa `punch:<user>` đã do `lockEmployeeWork` của bên gọi giữ (ADR-136).
+ */
+/** `AttendanceModule.cancelPendingCorrections` (T-056). */
+export interface CorrectionCleanup {
+  cancelPendingCorrections(userId: string): Promise<number>;
+}
+
+export function withCorrectionCleanup(
+  employment: IOffboardLeavePort & EmploymentCollaborators['rehireLeave'],
+  attendance: CorrectionCleanup,
+): IOffboardLeavePort & EmploymentCollaborators['rehireLeave'] {
+  return {
+    offboardCleanup: async (q) => {
+      const done = await employment.offboardCleanup(q);
+      await attendance.cancelPendingCorrections(q.userId);
+      return done;
+    },
+    resetOnRehire: (q) => employment.resetOnRehire(q),
+    pendingCount: (userId) => employment.pendingCount(userId),
+  };
+}
+
+/**
  * Đổi role / grant công ty (T-061a): thông báo bền `ACCESS_CHANGED` (cùng transaction, refId = userId) + realtime
  * `company:access-changed` sau commit. `notifications` đọc trễ — module company dựng TRƯỚC notifications.
  */
@@ -25,7 +49,11 @@ export function offboardLeaveFrom(
 export function companyAdminDeps(
   notifications: () => Pick<NotificationsModule, 'publisher'>,
   realtime: Pick<LateBoundRealtime, 'notifyCompanyAccessChanged'>,
-  employment: () => Pick<IOffboardLeavePort, 'offboardCleanup'>,
+  /** Leave + attendance (đơn bổ sung giờ) đọc trễ — dựng SAU company. */
+  late: () => {
+    employment: IOffboardLeavePort & EmploymentCollaborators['rehireLeave'];
+    attendance: CorrectionCleanup;
+  },
   adminWorkspaces: () => IAdminWorkspaces,
 ): {
   offboardLeave: IOffboardLeavePort;
@@ -34,7 +62,9 @@ export function companyAdminDeps(
 } {
   return {
     adminWorkspaces,
-    offboardLeave: offboardLeaveFrom(employment),
+    offboardLeave: offboardLeaveFrom(() =>
+      withCorrectionCleanup(late().employment, late().attendance),
+    ),
     accessEvents: companyAccessEvents(notifications, realtime),
   };
 }
@@ -74,6 +104,7 @@ export function employmentCollaborators(m: {
   leave: {
     employment: EmploymentCollaborators['offboardLeave'] & EmploymentCollaborators['rehireLeave'];
   };
+  attendance: CorrectionCleanup;
   notifications: Pick<NotificationsModule, 'publisher'>;
   realtime: Pick<LateBoundRealtime, 'notifyCompanyAccessChanged'>;
   hrProfile: {
@@ -83,7 +114,7 @@ export function employmentCollaborators(m: {
 }): EmploymentCollaborators {
   return {
     workspaceExit: m.workspace.exit,
-    offboardLeave: m.leave.employment,
+    offboardLeave: withCorrectionCleanup(m.leave.employment, m.attendance),
     rehireLeave: m.leave.employment,
     notifier: m.notifications.publisher,
     realtime: m.realtime,

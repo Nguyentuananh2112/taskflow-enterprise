@@ -58,4 +58,15 @@ export interface IUserRepository {
   bumpTokenVersion(id: string, at: Date): Promise<number | null>;
   /** Chỉ `full_name` (đã chuẩn hóa bởi aggregate). `false` ⇒ user không còn. */
   updateProfile(input: { id: string; fullName: string; at: Date }): Promise<boolean>;
+
+  // ---- Mốc 6 — ảnh đại diện (ADR-142, T-068) ----
+  /**
+   * Trong transaction: `SELECT avatar_version … WHERE id AND deleted_at IS NULL FOR UPDATE` — khóa dòng ⇒ hai lần đặt
+   * ảnh đồng thời nhận version KHÁC nhau (B M-a). `null` ⇒ user không có / đã xóa.
+   */
+  lockAvatar(userId: string): Promise<{ version: number | null } | null>;
+  /** Đặt `avatar_version` (sau `lockAvatar` cùng transaction). `false` ⇒ user không còn. */
+  setAvatarVersion(input: { id: string; version: number | null; at: Date }): Promise<boolean>;
+  /** `avatar_version` khác NULL của các user CHƯA xóa — MỘT truy vấn; `[]` ⇒ không truy vấn. */
+  avatarVersions(ids: readonly string[]): Promise<ReadonlyMap<string, number>>;
 }

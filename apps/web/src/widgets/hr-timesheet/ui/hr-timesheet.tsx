@@ -3,9 +3,9 @@
 import { useState } from 'react';
 
 import { duration, shiftMonth } from '@/entities/attendance';
-import { useTimesheet } from '@/entities/hr';
+import { hrAttendanceApi, useTimesheet } from '@/entities/hr';
 import { daysText } from '@/entities/leave';
-import { ExportCsvButton } from '@/features/hr-export-csv';
+import { XlsxButton } from '@/features/hr-export-xlsx';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -54,7 +54,11 @@ export function HrTimesheet({ today, isAdmin, viewerId }: Props) {
           >
             Tháng sau ›
           </Button>
-          <ExportCsvButton month={month} />
+          <XlsxButton
+            label="Tải Excel"
+            fallbackName={`bang-cong-${month}.xlsx`}
+            download={() => hrAttendanceApi.exportXlsx(month)}
+          />
         </div>
       </div>
       {sheet.isError ? (

@@ -480,6 +480,8 @@ Mọi hành động sau đều chạy **sau commit**. Dùng API cấp server (`i
 ### 6.1 Thứ tự middleware Express
 `requestId (pino-http)` → `helmet` → `cors` → kiểm tra Content-Type → `express.json({ limit })` → rate limit toàn cục → routes (rate limit riêng, auth, rbac) → 404 → error handler.
 
+**Mốc 6 (ADR-141, T-067):** `/api/v1/media` gắn **sau** `helmet` + `cors`, **trước** kiểm Content-Type / body parser / `no-store` / rate limit toàn cục: router riêng, **không Bearer** (URL ký HMAC), hạn mức IP riêng 600 / phút, tự đặt header (§6.2) đè helmet. Lỗi của `/media` là MỘT trang HTML không script (không envelope JSON, không lộ lý do).
+
 `app.set('trust proxy', <số hop chính xác>)` (cấu hình bằng `TRUST_PROXY_HOPS`) — **bắt buộc** đúng, nếu không IP dùng cho rate limit sẽ là IP proxy (khóa mọi người) hoặc bị giả mạo qua `X-Forwarded-For`.
 
 ### 6.2 Helmet / header
@@ -488,13 +490,15 @@ API chỉ trả JSON:
 - `strictTransportSecurity`: `max-age=31536000; includeSubDomains` — **chỉ prod**.
 - `crossOriginResourcePolicy: same-site`, `referrerPolicy: no-referrer`, `xPoweredBy` tắt, `noSniff` (mặc định helmet).
 - Response chứa token (`/auth/*`) thêm `Cache-Control: no-store`.
+- **`/media` (Mốc 6):** `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox` · `X-Content-Type-Options: nosniff` · `Referrer-Policy: no-referrer` · `Cross-Origin-Resource-Policy` = `MEDIA_CORP` (`same-site` khi web + API chung eTLD+1, không thì `cross-origin` có chủ ý). Ảnh: `image/webp` (luôn mã hóa lại), `inline`, `Cache-Control: private, max-age=<giây còn lại của exp>` + `ETag` (304 chỉ sau khi đã kiểm DB). Tệp: `application/octet-stream`, `attachment; filename*=UTF-8''…`, `no-store`.
 
 Header của web (Next.js) và CSP nonce: xem **6.8** (yêu cầu cho ticket Phase 4).
 
 ### 6.3 CORS & CSRF
 - `origin`: so khớp **chính xác** với danh sách `CORS_ORIGINS` (env, phân cách dấu phẩy). Không regex wildcard, không phản chiếu Origin. `credentials: true`.
-- `methods`: GET, POST, PATCH, DELETE. `allowedHeaders`: `Content-Type, Authorization, X-Request-Id, X-Client-Id`. `exposedHeaders`: `X-Request-Id, Retry-After, RateLimit-Policy, RateLimit`. `maxAge`: 600.
+- `methods`: GET, POST, PUT, PATCH, DELETE. `allowedHeaders`: `Content-Type, Authorization, X-Request-Id, X-Client-Id, Idempotency-Key`. `exposedHeaders`: `X-Request-Id, Retry-After, RateLimit-Policy, RateLimit` (+ `Content-Disposition` cho báo cáo .xlsx — T-055). `maxAge`: 600. Mốc 6 thêm `X-Upload-Name` vào `allowedHeaders` (tên tệp upload, mã hóa percent; server làm sạch, không bao giờ làm tên trên đĩa).
 - CSRF cho endpoint cookie (`/auth/refresh`, `/auth/logout`): SameSite=Strict + **kiểm tra header `Origin` ∈ whitelist** (thiếu Origin cũng từ chối) → `403 ORIGIN_NOT_ALLOWED`. Mọi POST/PATCH bắt buộc `Content-Type: application/json` (`415 UNSUPPORTED_MEDIA_TYPE`), buộc trình duyệt preflight.
+- **Ngoại lệ content-type (Mốc 6, B M1) — đúng cặp method + path, không theo tiền tố:** chỉ `PUT /api/v1/me/avatar` và `POST /api/v1/chat/uploads` nhận `application/octet-stream` (body nhị phân, không multipart). So path sau khi bỏ `/` cuối + chữ thường (như Express định tuyến); route khác hoặc đúng path sai method gửi octet-stream ⇒ 415. Vẫn an toàn với CSRF: `application/octet-stream` không thuộc nhóm "CORS-safelisted" ⇒ trình duyệt vẫn preflight; hai route chỉ nhận Bearer (không cookie).
 
 ### 6.4 Rate limit (Valkey store, ADR-028)
 Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-limit` 8, `standardHeaders: "draft-8"`, store `rate-limit-redis` qua node-redis). Key tính theo IP thật (sau `trust proxy`). `keyGenerator` tự viết có dùng IP **phải** đi qua `ipKeyGenerator(ip)` — IPv6 được gom theo /56, nếu không kẻ tấn công xoay địa chỉ trong một dải IPv6 để né giới hạn.
@@ -545,6 +549,13 @@ Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dị
 - pino `redact`: `req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.currentPassword`, `*.newPassword`, `*.token`, `*.accessToken`, `*.refreshToken`. Log sự kiện bảo mật (login thất bại, reuse, logout-all, đổi role, xóa member) ở mức `warn`/`info` có `userId`, `ip`, `requestId`.
 - Env được validate bằng Zod lúc khởi động; thiếu/yếu → không chạy.
 
+### 6.7b Upload tệp (Mốc 6 — ADR-141, T-067; B review T-074)
+- **Thứ tự `rawUpload`:** 415 (content-type) → 400 (`X-Upload-Name`) → 413 khi `Content-Length` > trần (**chưa đọc byte nào**) → 429 khi ≥ 3 upload đồng thời / người hoặc ≥ 12 / tiến trình → ghi bản tạm (đếm byte, SHA-256). Vượt trần giữa chừng ⇒ xóa tmp, 413 + `Connection: close`, xả tối đa 5 s **và** 2 MB rồi hủy socket. Im lặng 15 s (không tính lúc server tự dừng đọc vì ghi đĩa chậm) / tổng 180 s / client hủy ⇒ hủy kết nối, xóa tmp ngay.
+- **Kiểm nội dung trên bản tạm, trước khi blob xuất hiện:** sniff theo byte (không theo đuôi / `Content-Type` client); danh sách cho phép hẹp; cấm tệp nén / chạy được; Office kiểm theo central directory (macro, externalLink, OLE ⇒ từ chối). Không quét virus (người dùng — R45).
+- **Ảnh:** chỉ JPEG / PNG / WebP / GIF (một hằng số dùng chung cho sniff và worker) vào **sharp trong worker** (`cache(false)`, `concurrency(1)`, `pages: 1`, `limitInputPixels`, `failOn: 'error'`); `metadata().format` phải = loại đã sniff, kiểm số điểm ảnh TRƯỚC biến đổi; luôn xuất WebP mới, không `withMetadata` (bỏ EXIF / GPS / XMP / ICC). Worker: timeout 10 s ⇒ terminate; hàng chờ có trần ⇒ 503. SVG / PDF / HEIF / TIFF không bao giờ vào sharp.
+- **Lưu:** khóa do server sinh (128 bit base32, hoặc `avatars/<uuid>/<version>/<variant>`), kiểm regex trước MỌI thao tác đĩa; commit bằng hard link — **không bao giờ ghi đè**; trần dung lượng ⇒ 507.
+- **Phục vụ:** chỉ qua `/media` (§6.1, §6.2): chữ ký HMAC trên tuple chuẩn hóa, so sánh constant-time, khóa hiện tại + `_PREVIOUS`; sai / hết hạn ⇒ 404 không chạm DB / đĩa; hợp lệ vẫn kiểm DB mỗi lần. Query (`sig`) không vào log API / Sentry / proxy (R43).
+
 ---
 
 ### 6.8 Web: CSP nonce và chống XSS (yêu cầu cho ticket Phase 4)
@@ -558,7 +569,7 @@ Valkey lỗi: rate limit **fail-open** cho API thường (không làm sập dị
 default-src 'self';
 script-src 'self' 'nonce-{N}' 'strict-dynamic';
 style-src 'self' 'nonce-{N}';
-img-src 'self' data: blob:;
+img-src 'self' data: blob: https://{API_HOST};
 font-src 'self';
 connect-src 'self' https://{API_HOST} wss://{API_HOST};
 object-src 'none';
@@ -570,6 +581,7 @@ upgrade-insecure-requests
 - **Cấm** `'unsafe-inline'` và `'unsafe-eval'` trong `script-src` ở production.
 - `style-src 'unsafe-inline'` chỉ được thêm nếu một thư viện UI bắt buộc, và phải có Tech Lead duyệt bằng văn bản. Style gán qua `element.style` (React `style={}`) không bị CSP chặn nên thường không cần.
 - `{API_HOST}` lấy từ env, không dùng wildcard `https:` hay `*`.
+- `img-src https://{API_HOST}` (Mốc 6): ảnh đại diện / ảnh chat là URL `/media` ký của API (không Bearer). Web và API cùng origin qua reverse proxy ⇒ `'self'` là đủ, bỏ host. Không thêm `media-src` / `frame-src` (tệp không ảnh luôn tải xuống, không nhúng).
 
 **W-CSP-3 — Development.** Chỉ khi `NODE_ENV=development` mới được nới cho HMR: thêm `'unsafe-eval'` vào `script-src`, thêm `ws://localhost:*` và `http://localhost:4000` vào `connect-src`. Build production có test khẳng định header không chứa `unsafe-eval`.
 

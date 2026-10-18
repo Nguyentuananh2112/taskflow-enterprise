@@ -3,13 +3,13 @@ import type * as z from 'zod';
 import type { LeaveRequestDto } from '@taskflow/contracts/leave';
 
 import type { MockAttendance } from './mock-attendance';
+import { MockPolicies, endOfMonth, yearsAtEndOf } from './mock-policy';
 import type { CompanyContext } from './mock-guard';
 import { fail } from './respond';
 
 // Kho đơn nghỉ giả + luật kiểm đơn dùng chung cho gửi và xem trước (leave-handlers.ts).
 
 export type Leave = z.infer<typeof LeaveRequestDto> & { workspaceId: string };
-const ENTITLED = 12;
 
 const dayList = (start: string, end: string) => {
   const out: string[] = [];
@@ -30,12 +30,58 @@ export class MockLeave {
   items: Leave[] = [];
   /** HR chỉnh số dư (T-041c): `adjustmentDays` tuyệt đối theo `${ws}|${user}|${year}`. */
   adjustments = new Map<string, number>();
+  /** Chính sách phép theo năm (Mốc 5, ADR-131). */
+  readonly policies = new MockPolicies(() => this.today());
+  /** Ngày vào công ty (hồ sơ — ADR-128); index nối vào `db.company.profiles`. */
+  hireDateOf: (userId: string) => string | null = () => null;
   constructor(
     private readonly attendance: MockAttendance,
     private readonly now: () => number,
   ) {}
 
   balance(wsId: string, userId: string, year: number) {
+    const own = this.#own(wsId, userId, year);
+    const p = this.policies.fields(year);
+    const hire = this.hireDateOf(userId);
+    const seniorityYears = hire ? yearsAtEndOf(hire, year) : null;
+    const bonus =
+      seniorityYears === null
+        ? 0
+        : p.seniorityBonusDays * Math.floor(seniorityYears / p.seniorityStepYears);
+    const entitledDays = p.annualDays + bonus;
+    // Phép chuyển sang (ADR-131, rút gọn): theo chính sách năm trước, trần, không chuyển tiếp lần 2; dùng trước hết
+    // tháng hạn — mock coi mọi ngày đã dùng là "trước hạn" nếu đơn bắt đầu ≤ hạn.
+    const prev = this.policies.fields(year - 1);
+    const before = this.#own(wsId, userId, year - 1);
+    const carriedOverDays = prev.carryOverEnabled
+      ? Math.min(prev.carryOverMaxDays, Math.max(0, before.remainingDays))
+      : 0;
+    const expires = carriedOverDays > 0 ? endOfMonth(year, prev.carryOverExpiryMonth) : null;
+    const early = expires ? own.usedBy(expires) : 0;
+    const late = own.usedDays - early;
+    const usable = expires && this.today() <= expires ? Math.max(0, carriedOverDays - early) : 0;
+    return {
+      year,
+      entitledDays,
+      adjustmentDays: own.adjustmentDays,
+      usedDays: own.usedDays,
+      pendingDays: own.pendingDays,
+      remainingDays:
+        entitledDays + own.adjustmentDays - Math.max(0, early - carriedOverDays) - late + usable,
+      baseDays: entitledDays,
+      seniorityBonusDays: bonus,
+      seniorityYears,
+      entitledSource: 'POLICY' as const,
+      missingHireDate: hire === null,
+      carriedOverDays,
+      carriedFinal: true,
+      carriedExpiresOn: expires,
+      carriedUsableDays: usable,
+    };
+  }
+
+  /** Số liệu của riêng năm (không phép chuyển sang) — cũng là "còn lại cuối năm" để tính chuyển sang năm sau. */
+  #own(wsId: string, userId: string, year: number) {
     const mine = this.items.filter(
       (l) =>
         l.workspaceId === wsId &&
@@ -45,15 +91,17 @@ export class MockLeave {
     );
     const sum = (s: string) => mine.filter((l) => l.status === s).reduce((n, l) => n + l.days, 0);
     const usedDays = sum('APPROVED');
-    const pendingDays = sum('PENDING');
     const adjustmentDays = this.adjustments.get(`${wsId}|${userId}|${year}`) ?? 0;
+    const p = this.policies.fields(year);
     return {
-      year,
-      entitledDays: ENTITLED,
-      adjustmentDays,
       usedDays,
-      pendingDays,
-      remainingDays: ENTITLED + adjustmentDays - usedDays,
+      pendingDays: sum('PENDING'),
+      adjustmentDays,
+      remainingDays: p.annualDays + adjustmentDays - usedDays,
+      usedBy: (date: string) =>
+        mine
+          .filter((l) => l.status === 'APPROVED' && l.startDate <= date)
+          .reduce((n, l) => n + l.days, 0),
     };
   }
 

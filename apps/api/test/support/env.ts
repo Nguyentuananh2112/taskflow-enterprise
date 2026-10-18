@@ -30,6 +30,10 @@ export function productionEnvVars(
     JWT_ACCESS_SECRET: 'prod-like-secret-for-env-validation-only-0123',
     SENTRY_DSN: 'https://public@o1.ingest.sentry.io/1',
     METRICS_TOKEN: 'm'.repeat(32),
+    // Mốc 6 (ADR-141): bắt buộc khi triển khai.
+    FILE_STORE_DIR: '/var/lib/taskflow/files',
+    FILE_URL_SECRET: 'prod-like-file-url-secret-for-env-validation-01',
+    MEDIA_BASE_URL: 'https://api.example.com',
     ...overrides,
   });
 }

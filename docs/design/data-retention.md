@@ -14,6 +14,9 @@
 | D5 | Nhiệm kỳ đã kết thúc (ngày vào, ngày rời, vai trò, lý do REMOVED/LEFT) | `workspace_member_departures` | cá nhân | hệ thống (bảng công), không có API đọc trực tiếp | không tính "Vắng" ngoài nhiệm kỳ |
 | D6 | Thông báo trong app | `notifications` (chỉ id / loại / người gây ra; không có lý do nghỉ) | cá nhân (thấp) | người nhận | chuông |
 | D7 | Nhật ký thao tác nhân sự | `hr_audit_logs` (trạng thái / ngày / số; ghi chú quản trị trong `after.note`; không có lý do nghỉ) | cá nhân | chỉ OWNER | trách nhiệm giải trình |
+| D12 | Tin nhắn + tệp trò chuyện (Mốc 6) | thân tin, tệp đính kèm (blob trên ổ) | cá nhân (có thể nhạy cảm — người dùng tự gõ) | người tham gia cuộc trò chuyện; **không** Admin / HR qua app | liên lạc nội bộ |
+| D13 | Ảnh đại diện | blob avatar (`avatars/<user>/<version>/…`), `users.avatar_version` | cá nhân | mọi người trong công ty (danh bạ — R49) | nhận diện |
+| D14 | Metadata tệp | tên đã làm sạch, loại, kích thước, SHA-256, người gửi | cá nhân | như D12 | hiển thị, chống trùng, hạn mức |
 
 Đã có sẵn (không cần quyết lại): lý do nghỉ không vào CSV / thông báo / log / audit; CSV không có IP/UA; mọi response `no-store`.
 
@@ -41,6 +44,8 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 | D5 nhiệm kỳ đã kết thúc | xóa cùng D2 | **xóa cùng D2 (2 năm)** — cần cho bảng công chừng nào còn lượt chấm | 10 năm |
 | D6 thông báo | 90 ngày | **180 ngày** | 1 năm |
 | D7 HrAuditLog | 2 năm | **5 năm** (không chứa D1/D3) | 10 năm |
+| D12 / D14 trò chuyện (Mốc 6 — **người dùng chốt 17/10**) | — | **12 tháng** kể từ `created_at` (`CHAT_RETENTION_DAYS=365`); tin bị xóa: thân NULL **ngay**, blob ≤ 1 giờ; upload mồ côi 24 giờ; purge ws cascade | — |
+| D13 ảnh đại diện | — | tự xóa / bị gỡ / rời công ty ⇒ blob xóa sau **30 ngày** (đổi ảnh: bản cũ xóa khi version mới đã lên) | — |
 | D10 lương (Mốc 4) — bảng lương, phiếu, hồ sơ lương, audit `PAYROLL_*` | — | **ngoài mọi bước trên**; hạn lưu chứng từ lương riêng (đề xuất 10 năm — Luật Kế toán, kế toán xác nhận) | — |
 
 **Khuyến nghị B** vì:
@@ -84,6 +89,14 @@ Hiển thị một lần khi nhân viên vào màn Chấm công / Nghỉ phép l
 > ☐ Tôi đã đọc thông báo này. ☐ Tôi đồng ý để công ty xử lý lý do nghỉ (nếu tôi ghi) cho mục đích duyệt nghỉ.
 
 (Thời hạn trong mẫu theo phương án B; đổi theo phương án được chốt.)
+
+**Đoạn thêm khi bật Mốc 6 (ADR-147, B T-074)** — hiển thị trong cùng thông báo, lần đầu mở Trò chuyện:
+
+> **Trò chuyện & ảnh đại diện**
+> - Tin nhắn và tệp bạn gửi được lưu **12 tháng** rồi tự xóa. Tin bạn xóa biến khỏi ứng dụng ngay; bản sao lưu (đã mã hóa) có thể còn tới hết hạn giữ bản sao lưu.
+> - Tin nhắn **không mã hóa đầu-cuối**: quản trị viên và nhân sự **không** đọc được trò chuyện của bạn qua ứng dụng, nhưng người vận hành máy chủ về kỹ thuật có thể truy cập dữ liệu lưu trữ. Đừng gửi mật khẩu, số thẻ hay thông tin sức khỏe qua trò chuyện.
+> - Ảnh đại diện hiện cho mọi người trong công ty. Bạn đổi hoặc xóa được bất cứ lúc nào; khi bạn rời công ty ảnh bị xóa sau 30 ngày.
+> - Muốn xem hoặc xóa trò chuyện của mình: liên hệ **[đầu mối]** — v1 xử lý thủ công, có biên bản (không có nút tự phục vụ).
 
 ## 6. Câu hỏi cần người dùng chốt
 

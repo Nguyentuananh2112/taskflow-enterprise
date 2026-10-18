@@ -8,10 +8,10 @@ import type {
   LeaveBalanceRecord,
   LeaveRequestRecord,
 } from '../../../application/ports/leave.ports';
-import { halfDaysFromDecimal } from '../../../domain/leave-balance';
 import type { CalendarDate } from '../../../domain/leave-days';
 import { fromDateOnly, toDateOnly, type DbProvider } from './db';
 import { toRecord } from './prisma-leave.repository';
+import { BALANCE_SELECT, balanceFromRow } from './balance-row';
 
 /** Phía đọc leave trên Postgres (CQRS-lite, ADR-015) — phạm vi công ty; không ghi. */
 export class PrismaLeaveReadModel implements ILeaveReadModel {
@@ -75,17 +75,9 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
   ): Promise<ReadonlyMap<string, LeaveBalanceRecord>> {
     const rows = await this.db().leaveBalance.findMany({
       where: { year, userId: { in: [...userIds] } },
-      select: { userId: true, entitledDays: true, adjustmentDays: true },
+      select: { userId: true, ...BALANCE_SELECT },
     });
-    return new Map(
-      rows.map((r) => [
-        r.userId,
-        {
-          entitled: halfDaysFromDecimal(r.entitledDays),
-          adjustment: halfDaysFromDecimal(r.adjustmentDays),
-        },
-      ]),
-    );
+    return new Map(rows.map((r) => [r.userId, balanceFromRow(r)]));
   }
 
   async listHoldingFor(userIds: readonly string[], year: number): Promise<LeaveRequestRecord[]> {
@@ -106,13 +98,8 @@ export class PrismaLeaveReadModel implements ILeaveReadModel {
   async findBalance(userId: string, year: number): Promise<LeaveBalanceRecord | null> {
     const row = await this.db().leaveBalance.findUnique({
       where: { userId_year: { userId, year } },
-      select: { entitledDays: true, adjustmentDays: true },
+      select: BALANCE_SELECT,
     });
-    return row
-      ? {
-          entitled: halfDaysFromDecimal(row.entitledDays),
-          adjustment: halfDaysFromDecimal(row.adjustmentDays),
-        }
-      : null;
+    return row ? balanceFromRow(row) : null;
   }
 }

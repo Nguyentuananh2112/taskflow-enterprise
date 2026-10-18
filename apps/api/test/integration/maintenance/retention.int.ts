@@ -232,8 +232,9 @@ describe('job retention (T-043, phương án B)', () => {
   it('chạm trần lô ⇒ dừng, chưa complete; lượt sau làm tiếp', async () => {
     for (let i = 0; i < 5; i++) await event(ago(800 + i));
     const { job } = instance();
-    expect(await job.execute({ batchSize: 2, maxBatches: 2 })).toMatchObject({
-      batches: 2,
+    // Lô 1 = D9 (đơn bổ sung — rỗng, T-055 chạy TRƯỚC D2), lô 2–3 = D2 xóa 4/5 lượt chấm ⇒ chạm trần, còn 1.
+    expect(await job.execute({ batchSize: 2, maxBatches: 3 })).toMatchObject({
+      batches: 3,
       complete: false,
     });
     expect(await testPrisma().attendanceEvent.count()).toBe(1);

@@ -1,4 +1,3 @@
-import { ROLE_PERMISSIONS } from '@taskflow/contracts';
 import { createApp } from '../app';
 import { InProcessEventBus } from '../core/events/event-bus';
 import { HttpResponder } from '../core/http/envelope';
@@ -10,7 +9,7 @@ import {
 } from '../core/http/rate-limit/rate-limit';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import { createAuthModule } from '../modules/auth/auth.module';
-import type { IRolePermissions } from '../modules/task/application/task-actor';
+import { rolePermissions } from './role-permissions';
 import { TASKS_PATH } from '../modules/task/presentation/task.routes';
 import {
   NOTIFICATIONS_PATH,
@@ -20,30 +19,25 @@ import { createCompanyModule } from '../modules/company/company.module';
 import type { ICompanyAccounts } from '../modules/company';
 import { companyAdminDeps, employmentCollaborators, workspaceGate } from './company-adapters';
 import { ATTENDANCE_PATH } from '../modules/attendance/presentation/attendance.routes';
-import { LateApprovedLeavePort, wireAttendance } from './attendance-adapters';
+import { attendanceShared, wireAttendance } from './attendance-adapters';
 import { LEAVE_PATH } from '../modules/leave/presentation/leave.routes';
-import { wireLeave } from './leave-wiring';
-import { wireHrProfile } from './hr-profile-wiring';
+import { wireLeaveAndProfile } from './hr-wiring';
 import { createTaskModule } from '../modules/task/task.module';
 import { createWorkspaceModule, type WorkspaceModule } from '../modules/workspace/workspace.module';
-import { companyGatedSocketAuthenticator, socketAuthenticatorFrom } from '../core/realtime/ports';
-import { LateBoundRealtime } from './late-realtime';
-import { AuthUserDirectory } from './users';
+import { gatedSocketAuth, gatewayOptions, LateBoundRealtime } from './late-realtime';
 import type { Container, ContainerDeps } from './container-types';
+import { avatarAuthDeps, ME_PATH, withAvatarRefs } from './avatar-refs';
+import { chatRouters } from './chat-wiring';
 
 export type { Container, ContainerConfig, ContainerDeps } from './container-types';
-
-/** Ma trận quyền dùng chung (contracts) — nguồn của `IRolePermissions` cho module Task. */
-const rolePermissions: IRolePermissions = {
-  allows: (role, permission) => ROLE_PERMISSIONS[role].includes(permission),
-};
 
 /**
  * Composition root (ADR-016): wire mọi module với nhau qua port (ADR-093) và gắn router vào app.
  * Dùng chung cho `main.ts` (production/dev) và test HTTP (InMemory, store rate limit bộ nhớ).
  */
 export function createContainer(d: ContainerDeps): Container {
-  const { config, logger, clock, ids, random, persistence } = d;
+  const { config, logger, clock, ids, random } = d;
+  const persistence = withAvatarRefs(d.persistence, d.files); // Mốc 6: ảnh trong UserRefDto (T-068)
   const business = d.businessClock ?? clock;
   // meta.timestamp của MỌI envelope theo giờ nghiệp vụ: web suy độ lệch giờ server từ đó (E).
   const responder = new HttpResponder(business);
@@ -80,6 +74,7 @@ export function createContainer(d: ContainerDeps): Container {
   // Auth cần cổng công ty; company cần tài khoản của auth (thêm nhân viên) ⇒ tham chiếu trễ một chiều.
   const accountsRef: { current: ICompanyAccounts | null } = { current: null };
   const company = createCompanyModule({
+    avatars: persistence.avatarRefs,
     repos: persistence.company,
     // ADR-120: ngày công / access_until theo múi giờ lịch công ty (attendance dựng sau ⇒ đọc trễ lúc chạy).
     timeZone: () => attendance.timeZoneNow(),
@@ -91,11 +86,11 @@ export function createContainer(d: ContainerDeps): Container {
     limit,
     accounts: accountsRef,
     collaborators: () =>
-      employmentCollaborators({ workspace, leave, notifications, realtime, hrProfile }),
+      employmentCollaborators({ workspace, leave, attendance, notifications, realtime, hrProfile }),
     ...companyAdminDeps(
       () => notifications,
       realtime,
-      () => leave.employment,
+      () => ({ employment: leave.employment, attendance }),
       () => workspace.adminWorkspaces,
     ),
   });
@@ -112,7 +107,7 @@ export function createContainer(d: ContainerDeps): Container {
   });
   const workspace = createWorkspaceModule({
     repos: persistence.workspace,
-    users: new AuthUserDirectory(persistence.auth.users),
+    users: persistence.userDirectory,
     notifier: realtime,
     // HIGH-2: loadMembership / project:join chặn người đã nghỉ việc ĐÚNG giờ `access_until`; thêm thành viên chỉ
     // người chưa có lịch nghỉ (ADR-134).
@@ -128,11 +123,11 @@ export function createContainer(d: ContainerDeps): Container {
   });
   workspaceRef.current = workspace;
   // Chấm công (T-063). Đơn nghỉ gắn trễ: leave cần lịch của attendance + `authenticate` của auth ⇒ dựng sau, `bind`.
-  const approvedLeaves = new LateApprovedLeavePort();
+  const { approvedLeaves, exportSlots } = attendanceShared();
   const attendance = wireAttendance(
     { persistence, ids, clock: business, retentionCutoff: d.retentionCutoff },
     { company: () => company, notifications, leaves: approvedLeaves },
-    { responder, limit },
+    { responder, limit, exports: { limits: config.exportLimits, slots: exportSlots } },
   );
   const auth = createAuthModule({
     repos: persistence.auth,
@@ -159,28 +154,26 @@ export function createContainer(d: ContainerDeps): Container {
     responder,
     limit,
     ...(d.accessTokens ? { accessTokens: d.accessTokens } : {}),
+    ...avatarAuthDeps(d, persistence.avatarDirectory, realtime, business),
   });
   accountsRef.current = auth.accounts;
-  // Nghỉ phép cấp công ty (T-064): quyền / nhiệm kỳ / audit ← company, lịch ← attendance.
-  const leave = wireLeave(
-    { persistence, clock: business, ids },
+  // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
+  const { leave, hrProfile } = wireLeaveAndProfile(
+    { persistence, clock: business, ids, logger },
     {
-      company: () => ({ ...company, clock: business }),
-      hrAudit: () => company.hrAudit,
+      company,
       attendance,
       notifications,
       auth,
+      // Cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
+      exportSlots,
+      exportLimits: config.exportLimits,
     },
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
-  // Hồ sơ nhân viên (Mốc 5, T-054): quyền / người / audit ← company; phép âm ← leave (T-057).
-  const hrProfile = wireHrProfile(
-    { persistence, clock: business, logger },
-    { company, notifications, timeZone: () => attendance.timeZoneNow() },
-    { responder, limit },
-  );
 
+  const chat = chatRouters(d, { persistence, auth, company, responder, limit, business, realtime });
   // Router của module dưới `/api/v1` — trả ra ngoài để test parity OpenAPI (A2) duyệt route thật.
   const routers = [
     { path: '/auth', router: auth.router },
@@ -194,6 +187,8 @@ export function createContainer(d: ContainerDeps): Container {
     { path: LEAVE_PATH, router: leave.router },
     { path: '/workspaces', router: workspace.routes(auth.authenticate) },
     { path: NOTIFICATIONS_PATH, router: notifications.routes(auth.authenticate) },
+    ...(auth.avatar ? [{ path: ME_PATH, router: auth.avatar.meRouter }] : []),
+    ...chat.routers,
   ];
   const app = createApp({
     config,
@@ -205,12 +200,10 @@ export function createContainer(d: ContainerDeps): Container {
     rateLimit: createGlobalRateLimit(rateLimitDeps),
     ...(d.metrics ? { metrics: d.metrics } : {}),
     ...(d.errorReporter ? { errorReporter: d.errorReporter } : {}),
+    ...(d.files ? { media: d.files.media } : {}),
     routers,
   });
-  const socketAuth = companyGatedSocketAuthenticator(
-    socketAuthenticatorFrom(auth.authenticator),
-    (userId) => company.sessionGate.isActive(userId),
-  );
+  const socketAuth = gatedSocketAuth(auth.authenticator, company.sessionGate);
   return {
     app,
     auth,
@@ -223,5 +216,6 @@ export function createContainer(d: ContainerDeps): Container {
     socketAuth,
     realtime,
     routers,
+    gateway: gatewayOptions(socketAuth, workspace.accessChecker, chat.typing),
   };
 }
