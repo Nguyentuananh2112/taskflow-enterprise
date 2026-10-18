@@ -76,12 +76,19 @@ Schema / migration / trigger thuộc T-048 (B).
   - `payroll-schema.int.ts` (B): 8/8;
   - 4 file LSP chạy lại test use case lương trên `PrismaPayrollStore` + PrismaUnitOfWork: 21/21;
   - `notifications-persistence`: 9/9.
+- XL-PAY (TL, kiểm tự động, file mẫu dữ liệu bịa `bang-luong-2026-11.xlsx` sinh qua `PayrollExportUseCase` +
+  `FflateXlsxWriter` thật): **đạt mức tự động**.
+  - ZIP + XML hợp lệ; không `<f>` / hyperlink / VBA / liên kết ngoài; creator TaskFlow.
+  - 2 sheet đúng tên; ngày vào công ty là ô ngày dd/mm/yyyy; ô tiền là số.
+  - 4 nhãn bắt đầu bằng `= + - @` có `quotePrefix`; lý do sửa công / điều chỉnh không có trong file.
+  - Số học khớp `computePayslip` (Kai 19 155 000, Mia 10 875 000, Max 10 800 000).
+  - Mở Excel vi-VN / LibreOffice thật: để sau.
 - Chưa chạy: Stryker payroll-math (đã cấu hình `3d9c876d`, ngưỡng 90 %) — chờ lượt máy.
 
 ## Việc còn lại
 
 1. Stryker payroll-math (A, cần lượt máy).
-2. D + F kiểm `bang-luong-<kỳ>.xlsx` trên Excel vi-VN (ô tiền là số, nhãn bắt đầu bằng `=` hiển thị đúng chữ).
+2. Mở `bang-luong-<kỳ>.xlsx` trên Excel vi-VN + LibreOffice thật (D + F, như XL-08). Mức tự động đã đạt (TL).
 3. Hai tiến trình vitest mồ côi của lượt integration hỏng đầu tiên (PID 21140 / 36828, worktree T-024). Lượt đó treo
    do vòng import `vi.mock` ↔ backend Prisma, đã sửa bằng `payroll-fixture.ts`. Chúng chỉ giữ khóa của DB đã xóa +
    Valkey db 13. Người dùng quyết định tắt (lệnh kill của A bị từ chối).
