@@ -18,6 +18,7 @@
     "./hr": "./src/hr/hr.schemas.ts",
     "./company": "./src/company/index.ts",
     "./chat": "./src/chat/index.ts",
+    "./privacy": "./src/privacy/index.ts",
     "./system": "./src/system/healthz.schemas.ts"
   },
   "scripts": {
