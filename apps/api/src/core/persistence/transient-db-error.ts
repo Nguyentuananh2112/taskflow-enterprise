@@ -11,6 +11,8 @@ export type TransientDbCode = '40P01' | '40001' | '55P03';
 
 const TRANSIENT = new Set<string>(['40P01', '40001', '55P03']);
 const SQLSTATE = /^[0-9A-Z]{5}$/;
+/** Mã lỗi của Prisma (P1xxx…P6xxx) trùng dạng 5 ký tự nhưng KHÔNG phải SQLSTATE (Postgres chỉ có lớp P0). */
+const PRISMA_CODE = /^P[1-6][0-9]{3}$/;
 
 type Bag = Record<string, unknown>;
 const isBag = (v: unknown): v is Bag => typeof v === 'object' && v !== null;
@@ -21,10 +23,27 @@ function sqlStateOf(err: Bag): string | undefined {
     const adapter = meta['driverAdapterError'];
     const cause = isBag(adapter) ? adapter['cause'] : undefined;
     const original = isBag(cause) ? cause['originalCode'] : undefined;
-    if (typeof original === 'string') return original;
+    if (typeof original === 'string' && SQLSTATE.test(original)) return original;
   }
   const code = err['code'];
-  return typeof code === 'string' && SQLSTATE.test(code) ? code : undefined;
+  return typeof code === 'string' && SQLSTATE.test(code) && !PRISMA_CODE.test(code)
+    ? code
+    : undefined;
+}
+
+/**
+ * SQLSTATE gốc đầu tiên trong chuỗi lỗi (Prisma P2010 / P2039 / lỗi pg…) — CHỈ mã 5 ký tự, không message (message
+ * của lỗi DB có thể chứa dữ liệu truy vấn). Dùng cho log `maintenance.run_failed` (TL 18/10: E2E P2039 = bảng chưa có
+ * ⇒ `42P01`, đọc log là biết ngay).
+ */
+export function dbSqlStateOf(err: unknown): string | undefined {
+  let current: unknown = err;
+  for (let depth = 0; depth < 4 && isBag(current); depth += 1) {
+    const state = sqlStateOf(current);
+    if (state !== undefined) return state;
+    current = current['cause'];
+  }
+  return undefined;
 }
 
 export function transientDbErrorCode(err: unknown): TransientDbCode | null {

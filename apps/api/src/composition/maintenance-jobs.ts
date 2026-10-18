@@ -1,5 +1,6 @@
 import type { IClock } from '../core/domain';
 import type { ILogger } from '../core/logging/logger';
+import { dbSqlStateOf } from '../core/persistence/transient-db-error';
 import type { IUnitOfWork } from '../core/persistence/unit-of-work';
 import type { IRefreshTokenPurger } from '../modules/auth/application/ports/refresh-token-purger.port';
 import { PurgeExpiredRefreshTokensJob } from '../modules/auth/application/use-cases/purge-expired-refresh-tokens.job';
@@ -85,6 +86,7 @@ export class MaintenanceScheduler {
             durationMs: Date.now() - startedAt,
             errName: (err as Error | undefined)?.name,
             errCode: (err as { code?: unknown } | undefined)?.code,
+            sqlState: dbSqlStateOf(err),
           },
           'maintenance.run_failed',
         ),

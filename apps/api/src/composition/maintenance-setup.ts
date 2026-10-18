@@ -94,7 +94,22 @@ export function maintenanceJobs(d: {
       }),
     );
   }
-  return jobs;
+  return delayFirstRuns(jobs, env.MAINTENANCE_FIRST_RUN_AFTER_MS);
+}
+
+/**
+ * Test-only (E2E): lượt ĐẦU của mọi job không sớm hơn `atLeastMs` (giữ mốc riêng của job nếu đã muộn hơn); không đổi
+ * nhịp các lượt sau. Không đặt ⇒ nguyên danh sách (production không bao giờ có biến này — env.ts từ chối).
+ */
+export function delayFirstRuns(
+  jobs: ScheduledJob[],
+  atLeastMs: number | undefined,
+): ScheduledJob[] {
+  if (atLeastMs === undefined) return jobs;
+  return jobs.map((j) => ({
+    ...j,
+    firstRunAfterMs: Math.max(j.firstRunAfterMs ?? j.intervalMs, atLeastMs),
+  }));
 }
 
 /** R40: socket đã nối của người hết `access_until` bị ngắt trễ tối đa ~1 phút. */
