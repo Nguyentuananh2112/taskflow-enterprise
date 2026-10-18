@@ -508,7 +508,7 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-lim
 | `POST /auth/login` | 300 / 15 phút — chạy **trước** validate, đếm mọi request (T-076) | IP |
 |  | 10 lần **401** / 15 phút — **sau** validate (ADR-108) | IP + email(hash) |
 |  | 100 lần **401** / giờ — **sau** validate (ADR-108) | email(hash) — chống stuffing phân tán |
-| `POST /auth/register` | 5 / giờ | IP |
+|  | 30 lần **401** / 15 phút — **sau** validate (T-076, soát B M1); đăng nhập đúng không tốn suất | IP — chống password spraying |
 | `POST /auth/refresh` | 1200 / 5 phút (T-076) | IP |
 | `POST /auth/logout` / `/logout-all` | 120 / phút (T-076) / 10 / phút | IP / user |
 | `POST /auth/change-password` | 5 / 15 phút — **fail-closed** (ADR-108) | user |
@@ -524,7 +524,7 @@ Trả `429 RATE_LIMITED` + `Retry-After` + header `RateLimit` (`express-rate-lim
 | `/api/v1/media` | 2000 / phút (T-076) | IP |
 | Socket `project:join` | 30 / phút | socket |
 
-**Một văn phòng — một IP (T-076, lỗi #2 localhost 18/10):** sản phẩm phục vụ MỘT công ty, nhân viên thường ngồi chung văn phòng sau MỘT IP NAT. Mọi luật theo IP được đo cho văn phòng ~200 người: sáng thứ Hai cả văn phòng đăng nhập; mỗi lần tải trang (kể cả chưa đăng nhập) gọi `POST /auth/refresh`; mọi tab mở từ hôm qua cùng gửi token hết hạn (`401`); API khởi động lại ⇒ mọi tab handshake lại; cuối giờ đăng xuất. Ngưỡng cũ (login 20 / 15 phút, refresh 60 / 5 phút, handshake 20 / phút, 401 30 / phút, ẩn danh 100 / phút) làm người thứ 21+ bị 429 hoặc mất realtime. Lá chắn chống dò / lạm dụng KHÔNG đổi: login sai theo (IP, email) 10 / 15 phút và theo email 100 / giờ, activation chỉ đếm lần sai 10 / 15 phút / IP (giữ nguyên — kích hoạt đúng không tốn suất), hạn mức theo user 300 / phút, socket / join / renew theo user. Đánh đổi chấp nhận: một IP có thể rải tối đa 300 lần đăng nhập / 15 phút trên NHIỀU email khác nhau (password spraying) — mỗi email vẫn chỉ 10 lần sai / 15 phút từ IP đó; CAPTCHA / backoff tăng dần thuộc lộ trình sau v1.
+**Một văn phòng — một IP (T-076, lỗi #2 localhost 18/10):** sản phẩm phục vụ MỘT công ty, nhân viên thường ngồi chung văn phòng sau MỘT IP NAT. Mọi luật theo IP được đo cho văn phòng ~200 người: sáng thứ Hai cả văn phòng đăng nhập; mỗi lần tải trang (kể cả chưa đăng nhập) gọi `POST /auth/refresh`; mọi tab mở từ hôm qua cùng gửi token hết hạn (`401`); API khởi động lại ⇒ mọi tab handshake lại; cuối giờ đăng xuất. Ngưỡng cũ (login 20 / 15 phút, refresh 60 / 5 phút, handshake 20 / phút, 401 30 / phút, ẩn danh 100 / phút) làm người thứ 21+ bị 429 hoặc mất realtime. Lá chắn chống dò / lạm dụng: login sai theo (IP, email) 10 / 15 phút và theo email 100 / giờ (không đổi), THÊM login sai theo IP 30 / 15 phút (chỉ đếm `401` — chặn password spraying, đăng nhập đúng không tốn suất), activation chỉ đếm lần sai 10 / 15 phút / IP (giữ nguyên — kích hoạt đúng không tốn suất), hạn mức theo user 300 / phút, socket / join / renew theo user. Đánh đổi chấp nhận (R50): bucket 401 theo IP chung cho cả văn phòng — một người gõ sai 30 lần / 15 phút làm người khác bị 429 khi gõ SAI (gõ đúng vẫn qua); CAPTCHA / backoff tăng dần thuộc lộ trình sau v1.
 
 **ADR-108 — chống khóa tài khoản từ xa (M4 của T-028):** hai bucket theo email chạy **sau** validate (body sai ⇒ `400`, không bị đếm; email đã chuẩn hóa) và **chỉ đếm `401 INVALID_CREDENTIALS`** — `400` / `429` không đếm, nên chờ hết cửa sổ là mở lại (không gia hạn mãi). Bucket chặt theo cặp (IP, email) chặn dò từ một IP mà không khóa chủ tài khoản ở IP khác; bucket theo email 100/giờ đủ cao để vài chục IP không khóa được người dùng thật. Rủi ro còn lại (kẻ tấn công có ≥ 100 lần 401/giờ trên nhiều IP vẫn làm chậm nạn nhân trong một giờ) được chấp nhận có chủ đích; CAPTCHA / backoff thuộc lộ trình sau v1.
 
@@ -651,6 +651,7 @@ Ký hiệu: ws A (OWNER Alice, PM Pam, MEMBER Mia, VIEWER Vic), ws B (OWNER Bob)
 | SEC-26 | JWT hết hạn | 401 TOKEN_EXPIRED |
 | SEC-27 | Login email không tồn tại vs sai mật khẩu | cùng status, code, message; chênh lệch thời gian trung vị < 50ms (đo 20 lần) |
 | SEC-28 | 11 lần login sai (401) cùng IP + email trong 15 phút (ADR-108) | lần 11: 429 RATE_LIMITED + `Retry-After`; body sai (400) không bị đếm; cùng email từ IP khác vẫn đăng nhập được |
+| SEC-28c | Password spraying: 30 email khác nhau, mỗi email 1 lần sai từ cùng IP (T-076, soát B M1) | lần 31 (email mới): 429 RATE_LIMITED + `Retry-After` |
 | SEC-29 | `POST /auth/refresh` với `Origin` lạ hoặc thiếu Origin | 403 ORIGIN_NOT_ALLOWED, token không bị xoay |
 | SEC-30 | Request CORS từ origin ngoài whitelist | không có `Access-Control-Allow-Origin` |
 | SEC-31 | Body JSON 200kb; POST với `Content-Type: text/plain` | 413 PAYLOAD_TOO_LARGE; 415 UNSUPPORTED_MEDIA_TYPE |

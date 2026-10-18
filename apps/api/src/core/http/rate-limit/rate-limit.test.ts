@@ -142,6 +142,7 @@ describe('createRateLimit', () => {
     ).toEqual([
       ['login-fail-ip-email', 10, 900_000, [401]],
       ['login-fail-email', 100, 3_600_000, [401]],
+      ['login-fail-ip', 30, 900_000, [401]],
     ]);
     // Lỗi #2 localhost: cả văn phòng chung IP NAT ⇒ handshake 600/phút/IP, Valkey lỗi ⇒ cho qua.
     expect(
@@ -177,6 +178,7 @@ describe('một văn phòng chung một IP NAT (T-076, lỗi #2 localhost)', () 
       .map((r) => [r.id, r.limit, r.windowMs]);
     expect(ipRules).toEqual([
       ['login-ip', 300, 900_000],
+      ['login-fail-ip', 30, 900_000], // chỉ đếm 401 — chống password spraying (soát B M1)
       ['activation-ip', 10, 900_000], // chỉ đếm lần sai (400 / 410)
       ['refresh-ip', 1200, 300_000],
       ['logout-ip', 120, 60_000],
@@ -186,7 +188,27 @@ describe('một văn phòng chung một IP NAT (T-076, lỗi #2 localhost)', () 
       ['socket-handshake-ip', 600, 60_000],
       ['media-ip', 2000, 60_000],
     ]);
-    expect(RATE_LIMIT_RULES.login.map((r) => r.limit)).toEqual([10, 100]);
+    expect(RATE_LIMIT_RULES.login.map((r) => r.limit)).toEqual([10, 100, 30]);
+  });
+
+  it('login-fail-ip (soát B M1): 300 lần đăng nhập ĐÚNG không tốn suất; lần sai thứ 31 trên 31 email khác nhau ⇒ 429', async () => {
+    const d = deps();
+    const ok = appWith(createRateLimits(RATE_LIMIT_RULES.login, d));
+    for (let i = 0; i < 300; i++) {
+      const res = await request(ok)
+        .post('/t')
+        .send({ email: `nv${i}@example.com` });
+      expect(res.status, `đúng lần ${i + 1}`).toBe(200);
+    }
+    const failing = appWith(createRateLimits(RATE_LIMIT_RULES.login, deps()), 401);
+    for (let i = 0; i < 30; i++) {
+      const res = await request(failing)
+        .post('/t')
+        .send({ email: `spray${i}@example.com` });
+      expect(res.status, `sai lần ${i + 1}`).toBe(401);
+    }
+    const blocked = await request(failing).post('/t').send({ email: 'spray30@example.com' });
+    expect(blocked.status).toBe(429);
   });
 
   it('login-ip: 300 lần đăng nhập từ cùng IP trong 15 phút đều qua; lần 301 ⇒ 429', async () => {

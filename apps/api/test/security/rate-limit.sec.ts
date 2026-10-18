@@ -127,5 +127,29 @@ describe('Rate limit theo endpoint', () => {
       expect((await login(`other-${victim}`, 'wrong-passphrase')).status).toBe(401);
     },
   );
+  secCase(
+    'SEC-28c',
+    // T-076 (soát B M1): luật IP nới cho văn phòng chung NAT ⇒ thêm bucket 401 theo IP 30 / 15 phút.
+    'Password spraying: 30 email khác nhau, mỗi email 1 lần sai từ cùng IP ⇒ lần 31 (email mới) bị 429',
+    'auth routes (T-076)',
+    async () => {
+      const login = (email: string) =>
+        api.request({
+          method: 'POST',
+          path: '/api/v1/auth/login',
+          headers: { 'content-type': 'application/json', origin: api.webOrigin },
+          body: JSON.stringify({ email, password: 'Spring2026!spray' }),
+        });
+      const run = Date.now();
+      for (let i = 1; i <= 30; i += 1) {
+        expect((await login(`spray${i}-${run}@sec.example`)).status, `email ${i}`).toBe(401);
+      }
+      const blocked = await login(`spray31-${run}@sec.example`);
+      expect(blocked.status, 'email 31').toBe(429);
+      expect(errorEnvelope(blocked).error.code).toBe('RATE_LIMITED');
+      expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    },
+    60_000,
+  );
   // SEC-28b nằm ở `valkey-outage.sec.ts` (cần container Valkey riêng để tắt).
 });

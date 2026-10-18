@@ -423,6 +423,7 @@ describe('Đăng nhập & mật khẩu', () => {
       'Login email lạ vs sai mật khẩu: chênh trung vị < 50ms (chỉ local, SEC_TIMING=1)',
       AUTH,
       async () => {
+        await flushRateLimitCounters(); // 18 lần 401 cùng IP — không cộng dồn với ca trước (login-fail-ip 30)
         const alice = await actors.register('timing');
         const attempt = async (email: string) => {
           const started = performance.now();

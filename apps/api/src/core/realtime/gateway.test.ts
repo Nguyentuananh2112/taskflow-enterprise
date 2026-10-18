@@ -771,7 +771,12 @@ describe('handshake rate limit, đóng gateway, IP client', () => {
       storeFor: () => new MemoryStore(),
       logger: new SpyLogger(),
     });
-    rt = await startRealtime({ handshakeLimiter: limiter });
+    const verdicts: boolean[] = [];
+    rt = await startRealtime({
+      handshakeLimiter: {
+        hit: (key) => limiter.hit(key).then((r) => (verdicts.push(r.allowed), r)),
+      },
+    });
     // Cả văn phòng chung một IP NAT (127.0.0.1 ở đây), mỗi người một tài khoản.
     for (let i = 0; i < 50; i++) {
       const socket = rt.client({ token: `user:office${i}:s${i}` });
@@ -780,6 +785,8 @@ describe('handshake rate limit, đóng gateway, IP client', () => {
     }
     for (let i = 50; i < rule.limit; i++) await limiter.hit('127.0.0.1');
     expect((await connectError(rt.client({ token: 'user:late:s1' }))).message).not.toBe('');
+    // Bị từ chối đúng vì HẠN MỨC (token hợp lệ): 50 lượt đầu cho qua, lượt cuối limiter trả allowed=false.
+    expect(verdicts).toEqual([...Array<boolean>(50).fill(true), false]);
     expect((await limiter.hit('10.0.0.2')).allowed).toBe(true);
   });
 
