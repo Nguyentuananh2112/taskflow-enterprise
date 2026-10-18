@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { useMe } from '@/entities/session';
 import { LogoutAllSection } from '@/features/auth-logout';
 import { AvatarSection } from '@/features/avatar-upload';
@@ -13,7 +15,8 @@ import { PageMain } from '@/shared/ui/page';
 
 const CARD = 'flex flex-col gap-4 rounded-card border border-border bg-surface p-6 shadow-card';
 
-/** `/account` (frontend.md §1.2): hồ sơ (ADR-083), ảnh đại diện (ADR-142), đổi mật khẩu, đăng xuất mọi thiết bị. */
+/** `/account` (frontend.md §1.2): hồ sơ (ADR-083), ảnh đại diện (ADR-142), đổi mật khẩu, quyền riêng tư (T-075),
+ * đăng xuất mọi thiết bị. */
 export function AccountPage() {
   const me = useMe();
   return (
@@ -57,6 +60,17 @@ export function AccountPage() {
           Giao diện
         </h2>
         <ThemeSelect />
+      </section>
+      <section aria-labelledby="privacy-heading" className={CARD}>
+        <h2 id="privacy-heading" className="text-base font-semibold">
+          Quyền riêng tư
+        </h2>
+        <p className="text-sm text-text-muted">
+          Công ty xử lý dữ liệu gì của bạn, lưu bao lâu, và đồng ý cho lý do nghỉ.
+        </p>
+        <Link href="/privacy" className="self-start text-sm underline">
+          Xem thông báo quyền riêng tư
+        </Link>
       </section>
       <div className={CARD}>
         <LogoutAllSection />

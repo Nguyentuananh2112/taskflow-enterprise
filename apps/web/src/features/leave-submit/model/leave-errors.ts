@@ -15,11 +15,19 @@ const Reason = z.object({ reason: z.string() });
 
 /** Câu báo lỗi cho người dùng (không lộ mã kỹ thuật) + field gắn lỗi nếu có. */
 export function leaveSubmitError(error: unknown): {
-  field?: 'endDate' | 'startDate';
+  field?: 'endDate' | 'startDate' | 'reason';
   message: string;
 } {
   if (isApiError(error, 'BUSINESS_RULE_VIOLATION')) {
     const d = Rule.safeParse(error.details).data;
+    // T-075: chưa đồng ý xử lý lý do nghỉ (vd vừa rút lại ở tab khác) ⇒ 422; lý do trống thì gửi được.
+    if (d?.rule === 'LEAVE_REASON_CONSENT_REQUIRED') {
+      return {
+        field: 'reason',
+        message:
+          'Bạn chưa đồng ý để công ty xử lý lý do nghỉ — xóa lý do để gửi đơn, hoặc bật đồng ý ở trang Quyền riêng tư.',
+      };
+    }
     if (d?.rule === 'LEAVE_SPANS_YEARS') {
       return {
         field: 'endDate',

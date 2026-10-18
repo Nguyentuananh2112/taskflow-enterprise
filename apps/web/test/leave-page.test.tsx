@@ -41,6 +41,8 @@ async function submit(start: string, end: string, reason = '') {
   fireEvent.change(within(form).getByLabelText(/^Từ ngày/), { target: { value: start } });
   fireEvent.change(within(form).getByLabelText(/^Đến ngày/), { target: { value: end } });
   const why = within(form).getByLabelText(/^Lý do/);
+  // T-075: ô lý do chỉ mở khi đã đồng ý (ca có lý do bật đồng ý trước khi mở trang).
+  if (reason) await waitFor(() => expect(why).toHaveProperty('disabled', false));
   fireEvent.change(why, { target: { value: reason } });
   await userEvent
     .setup({ delay: null })
@@ -83,7 +85,7 @@ describe('trang Nghỉ phép', () => {
   });
 
   it('hủy đơn chờ duyệt (có xác nhận); lý do hiển thị như chữ', async () => {
-    open();
+    open('EMPLOYEE', (f) => mock.db.company.privacy.setConsent(f.owner.id, true));
     await submit('2026-10-19', '2026-10-19', '<b>đi khám</b>');
     const list = screen.getByRole('region', { name: 'Đơn của tôi' });
     // Lý do hiển thị như TEXT (E2E-HR-08).

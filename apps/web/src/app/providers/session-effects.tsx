@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { session } from '@/entities/session';
+import { privacyLater } from '@/features/privacy-ack';
 import { toast } from '@/shared/ui/toast';
 import { promptMemory } from '@/widgets/attendance-card';
 
@@ -19,6 +20,7 @@ export function SessionEffects() {
       queryClient.clear();
       // Máy dùng chung: không để lại dấu vết user/workspace của dialog nhắc chấm công (T-045, review B LOW-1).
       promptMemory.forgetAll();
+      privacyLater.forgetAll(); // "Để sau" của thông báo quyền riêng tư (T-075) không sang người sau
       if (reason !== 'logout') {
         toast({
           title: 'Phiên đăng nhập đã hết',

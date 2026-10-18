@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
-import { dismissCheckinPrompt, loginViaUi, type E2EUser } from './fixtures';
+import { dismissCheckinPrompt, dismissPrivacyPrompt, loginViaUi, type E2EUser } from './fixtures';
 
 /**
  * Người dùng thứ hai/ba trong context riêng (realtime nhiều người). Có cùng bộ bắt vi phạm CSP như
@@ -24,6 +24,9 @@ export async function openAs(
     await dismissCheckinPrompt(page);
     context.on('page', (p) => void dismissCheckinPrompt(p));
   }
+  // T-075: thông báo quyền riêng tư "lần đầu" — luôn "Để sau" ở context riêng (ca kiểm chính nó dùng context mặc định).
+  await dismissPrivacyPrompt(page);
+  context.on('page', (p) => void dismissPrivacyPrompt(p));
   await loginViaUi(page, user);
   return {
     context,

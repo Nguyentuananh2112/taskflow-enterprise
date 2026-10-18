@@ -3,10 +3,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LeaveDayPart, LeaveType } from '@taskflow/contracts/hr';
 import { useMutation } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
 import { DAY_PART_NAME, LEAVE_TYPE_NAME, leaveApi, leaveKeys } from '@/entities/leave';
+import { privacyKeys, usePrivacy } from '@/entities/privacy';
 import { SubmitLeaveBody } from '@taskflow/contracts/leave';
 import { applyServerErrors } from '@/shared/lib/form-errors';
 import { Alert } from '@/shared/ui/alert';
@@ -32,7 +34,13 @@ export function LeaveRequestForm({ today }: Props) {
     mutationFn: (body: SubmitLeaveBody) => leaveApi.create(body),
     onSuccess: (_r, _b, _x, context) =>
       void context.client.invalidateQueries({ queryKey: leaveKeys.all() }),
+    // Đồng ý vừa đổi ở nơi khác ⇒ tải lại để ô lý do khóa / mở đúng (T-075).
+    onError: (_e, _b, _x, context) =>
+      void context.client.invalidateQueries({ queryKey: privacyKeys.me() }),
   });
+  // T-075: chưa đồng ý xử lý lý do nghỉ (hoặc chưa biết) ⇒ ô lý do khóa (field disabled ⇒ không gửi `reason`).
+  const privacy = usePrivacy().data;
+  const reasonLocked = privacy?.consentLeaveReason !== true;
   const { register, handleSubmit, setError, reset, control, setValue, formState } = useForm({
     resolver: zodResolver(SubmitLeaveBody),
     defaultValues: {
@@ -115,10 +123,19 @@ export function LeaveRequestForm({ today }: Props) {
         label="Lý do (không bắt buộc)"
         rows={3}
         maxLength={1000}
-        hint="Không cần ghi bệnh hay chẩn đoán — chỉ HR và bạn xem được."
+        hint={
+          privacy && reasonLocked
+            ? 'Bạn chưa đồng ý để công ty xử lý lý do nghỉ nên chưa ghi được lý do — đơn vẫn gửi được.'
+            : 'Không cần ghi bệnh hay chẩn đoán — chỉ HR và bạn xem được.'
+        }
         error={errors.reason?.message}
-        {...register('reason')}
+        {...register('reason', { disabled: reasonLocked })}
       />
+      {privacy && reasonLocked && (
+        <Link href="/privacy" className="-mt-2 self-start text-sm underline">
+          Đồng ý ở trang Quyền riêng tư
+        </Link>
+      )}
       <Button type="submit" loading={isSubmitting} className="self-start">
         Gửi đơn
       </Button>

@@ -94,14 +94,45 @@ export async function dismissCheckinPrompt(page: Page): Promise<void> {
   });
 }
 
+/** T-075: thông báo quyền riêng tư "lần đầu" — modal ở /attendance, /leave, /chat, /payslips khi chưa xác nhận. */
+export const privacyPrompt = (page: Page) =>
+  page.getByRole('dialog', { name: 'Thông báo về xử lý dữ liệu cá nhân' });
+
+/**
+ * Mọi người E2E mới tạo đều CHƯA xác nhận ⇒ hộp thoại che các màn trên. Handler bấm "Để sau" (nhớ trong phiên của tab)
+ * như dialog nhắc chấm công; ca kiểm chính hộp thoại dùng `test.use({ privacyPrompt: 'keep' })`.
+ */
+export async function dismissPrivacyPrompt(page: Page): Promise<void> {
+  await page.addLocatorHandler(privacyPrompt(page), async (dialog) => {
+    await dialog
+      .getByRole('button', { name: 'Để sau', exact: true })
+      .click({ timeout: 2_000 })
+      .catch(() => undefined);
+  });
+}
+
 export const test = base.extend<{
   cleanRateLimits: undefined;
   noCspViolations: undefined;
   /** `'keep'` cho ca kiểm chính dialog T-045 (`test.use({ checkinPrompt: 'keep' })`). */
   checkinPrompt: 'dismiss' | 'keep';
   autoDismissCheckinPrompt: undefined;
+  /** `'keep'` cho ca kiểm chính thông báo quyền riêng tư (T-075). */
+  privacyPrompt: 'dismiss' | 'keep';
+  autoDismissPrivacyPrompt: undefined;
 }>({
   checkinPrompt: ['dismiss', { option: true }],
+  privacyPrompt: ['dismiss', { option: true }],
+  autoDismissPrivacyPrompt: [
+    async ({ context, page, privacyPrompt: mode }, use) => {
+      if (mode === 'dismiss') {
+        await dismissPrivacyPrompt(page);
+        context.on('page', (p) => void dismissPrivacyPrompt(p));
+      }
+      await use(undefined);
+    },
+    { auto: true },
+  ],
   autoDismissCheckinPrompt: [
     async ({ context, page, checkinPrompt: mode }, use) => {
       if (mode === 'dismiss') {

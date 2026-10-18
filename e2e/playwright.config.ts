@@ -15,7 +15,8 @@ const CI = !!process.env.CI;
 // Mốc 5: hr-extended.e2e.ts cùng dữ liệu một công ty ⇒ cùng lane tuần tự (F soát c000228b).
 // Mốc 4: payroll.e2e.ts — bảng lương cả công ty, MỘT kỳ (tháng trước) cho cả lượt ⇒ lane tuần tự, và CHỈ một trình
 // duyệt (chromium): trình duyệt thứ hai tạo người sau khi bảng đã có / đã phát hành ⇒ không có phiếu (test-spec-payroll §0.4).
-const HR_SPECS = /(hr|hr-extended|company|payroll)\.e2e\.ts$/;
+// T-075: privacy.e2e.ts đổi đầu mối liên hệ của công ty (một dòng cho cả công ty) ⇒ cùng lane tuần tự.
+const HR_SPECS = /(hr|hr-extended|company|payroll|privacy)\.e2e\.ts$/;
 const PAYROLL_SPEC = /payroll\.e2e\.ts$/;
 function withHrLane<P extends { name: string }>(project: P, { payroll = false } = {}) {
   return [
