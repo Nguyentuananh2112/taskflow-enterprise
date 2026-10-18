@@ -36,6 +36,9 @@ const TEST_ONLY_KEYS = [
   'EXPORT_MAX_LEAVE_ROWS',
   'EXPORT_BATCH_SIZE',
   'EXPORT_BATCH_DELAY_MS',
+  // T-049 (F, CLK-PAY-02…04): job nhắc làm lương — lượt đầu ngay khi khởi động / rút ngắn chu kỳ.
+  'PAYROLL_REMINDER_ON_START',
+  'PAYROLL_REMINDER_INTERVAL_MS',
   ...FILES_TEST_ONLY_VARS,
 ] as const;
 const redisUrl = z.url({ protocol: /^rediss?$/ });
@@ -151,10 +154,6 @@ const EnvSchema = z
         fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
     for (const key of ['LEAVE_CARRYOVER_ON_START', 'LEAVE_CARRYOVER_INTERVAL_MS'] as const) {
-      if (env[key] !== undefined && env.APP_ENV !== 'test')
-        fail(key, 'chỉ được đặt khi APP_ENV=test');
-    }
-    for (const key of ['PAYROLL_REMINDER_ON_START', 'PAYROLL_REMINDER_INTERVAL_MS'] as const) {
       if (env[key] !== undefined && env.APP_ENV !== 'test')
         fail(key, 'chỉ được đặt khi APP_ENV=test');
     }
