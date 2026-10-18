@@ -185,4 +185,34 @@ describe('đơn bổ sung giờ (T-058b)', () => {
       }).disabled,
     ).toBe(true);
   });
+
+  it('trang chính: "Ngày 14/10 chưa chấm ra" + link mở thẳng chi tiết ngày; đã gửi đơn ⇒ không nhắc nữa (T-050)', async () => {
+    const f = seedBoard(mock);
+    missingOut(f.owner);
+    f.signInAs(f.owner);
+    openApp('/w', new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id));
+    const alert = await screen.findByRole('region', { name: 'Chưa chấm ra' });
+    expect(
+      within(alert).getByText(/Ngày 14\/10.* chưa chấm ra — chưa được tính công/),
+    ).toBeTruthy();
+    const link = within(alert).getByRole('link', { name: /^Xin bổ sung giờ ra/ });
+    expect(link.getAttribute('href')).toBe('/attendance?month=2026-10&day=2026-10-14');
+    cleanupApp();
+
+    f.signInAs(f.owner);
+    openApp(
+      '/attendance?month=2026-10&day=2026-10-14',
+      new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id),
+    );
+    const dialog = await screen.findByRole('dialog', { name: /14\/10$/ });
+    expect(await within(dialog).findByRole('button', { name: 'Xin bổ sung giờ ra' })).toBeTruthy();
+    cleanupApp();
+
+    await submitAs(f.owner, OUT_1745);
+    f.signInAs(f.owner);
+    openApp('/w', new FakeRealtimeHub(mock.board, mock.db).client(getClientId(), f.owner.id));
+    await screen.findByRole('navigation', { name: 'Lối tắt chấm công và nghỉ phép' });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.queryByRole('region', { name: 'Chưa chấm ra' })).toBeNull();
+  });
 });
