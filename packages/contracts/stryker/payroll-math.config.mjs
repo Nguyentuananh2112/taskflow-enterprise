@@ -10,7 +10,9 @@ export default {
   testRunner: 'command',
   commandRunner: { command: `${VITEST} src/payroll` },
   coverageAnalysis: 'off',
-  mutate: ['src/payroll/**/*.ts', '!**/*.test.ts', '!src/payroll/index.ts'],
+  // Chỉ logic thuần (như các nhóm domain của API): khai báo zod (`payroll.schemas.ts`, T-048) và hằng (`limits.ts`)
+  // không thuộc nhóm này — đột biến thông báo / ràng buộc schema được kiểm bằng test contract của T-048.
+  mutate: ['src/payroll/payslip-math.ts', 'src/payroll/payroll-export.ts'],
   concurrency: 2,
   timeoutMS: 30_000,
   reporters: ['clear-text', 'progress', 'json', 'html'],
