@@ -4,7 +4,6 @@ import type { Page } from '@playwright/test';
 import { adaToken, adaUser, apiCreateUser } from '../support/company';
 import { expect, loginViaUi, newUser, test, type E2EUser } from '../support/fixtures';
 import { hrCall } from '../support/hr';
-import { awaiting } from '../support/pending';
 import {
   PAYROLL,
   apiAddSalaryProfile,
@@ -24,7 +23,7 @@ import {
 import { arm, assertInert } from '../support/xss';
 
 // E2E-PAY-01…09 (test-spec-payroll §10, Mốc 4 — H viết thay F, F soát). Selector theo web của E (feat/T-050-payroll-web
-// @90e4a58: role + tên tiếng Việt). Backend T-049 chưa vào ⇒ fixme tới khi E2E_RUN_PENDING chứa T-049,T-050.
+// @90e4a58: role + tên tiếng Việt). Chạy trên API T-048/T-049 + web T-050 thật (feat/m4-payroll 036dd6af).
 //
 // Cách ly §0.4: bảng lương CẢ CÔNG TY, unique (period) ⇒ MỘT kỳ cho cả file (= tháng trước của mốc — startDate chỉ lùi
 // ≤ 31 ngày), lane HR tuần tự (workers 1), tạo bảng ở beforeAll; mọi ca sửa NHÁP chạy trước, ca phát hành (03) rồi các
@@ -34,8 +33,6 @@ import { arm, assertInert } from '../support/xss';
 // (`apiUnblockOthers`), không đụng số liệu khác của họ.
 // Lệch spec (TL duyệt 18/10): (1) chỉ có MỘT tháng có phiếu ⇒ ‹ › giữa hai tháng không dựng được bằng hộp đen — phủ ở
 // test component của E (/payslips, T-050); ca 01 khẳng định không có link. (2) 02 không gắn @main (xem ca 02).
-
-const PENDING = awaiting('T-049', 'T-050');
 
 /** Bẫy XSS (09) — nhãn dòng / ghi chú (nháp, qua API) và lý do điều chỉnh (sau phát hành). */
 const XSS = {
@@ -57,8 +54,6 @@ const noHorizontalScroll = (page: Page) =>
 const preview = (page: Page) => page.getByRole('region', { name: 'Tổng thực lĩnh (xem trước)' });
 
 test.describe.serial('E2E-PAY bảng lương / phiếu lương', () => {
-  test.fixme(PENDING, '[PENDING T-049/T-050] backend + web phiếu lương chưa vào nhánh tích hợp');
-
   const { period } = suitePeriod();
   let kay: E2EUser; // Kế toán (PAYROLL_MANAGE), nhiệm kỳ từ hôm nay ⇒ KHÔNG có phiếu kỳ này
   let mia: E2EUser & { userId: string }; // nhân viên xem phiếu (01, 04, 05, 09)
