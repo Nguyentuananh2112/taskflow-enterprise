@@ -38,7 +38,8 @@ export function EmployeeRow({ employee: e, ready, locked, self, onOpen, onRemove
       aria-label={e.fullName}
       className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-border bg-surface p-4"
     >
-      <div className="min-w-0 flex-1">
+      {/* < sm: chữ chiếm cả hàng, nút xuống dưới (2 nút cạnh chữ ép cột chữ còn ~80 px — lỗi #E1). */}
+      <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
         <p className="flex flex-wrap items-center gap-2 font-medium">
           {e.fullName}
           <Badge>{EMPLOYEE_STATUS_LABEL[e.status]}</Badge>
