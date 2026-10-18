@@ -31,6 +31,18 @@ export const HR_AUDIT_ACTIONS = [
   'CORRECTION_SUBMIT',
   'CORRECTION_CANCEL',
   'CORRECTION_DECIDE',
+  // Mốc 6 (ADR-142): HR / Admin gỡ ảnh đại diện không phù hợp của nhân viên.
+  'AVATAR_REMOVED',
+  'PAYROLL_SETTINGS_SET',
+  'PAYROLL_SALARY_SET',
+  'PAYROLL_RUN_CREATE',
+  'PAYROLL_RECALCULATE',
+  'PAYROLL_ADD_MISSING',
+  'PAYROLL_PAYSLIP_SET',
+  'PAYROLL_PUBLISH',
+  'PAYROLL_PAYSLIP_REVISE',
+  'PAYROLL_PAYSLIP_VIEW',
+  'PAYROLL_EXPORT',
 ] as const;
 export type HrAuditAction = (typeof HR_AUDIT_ACTIONS)[number];
 

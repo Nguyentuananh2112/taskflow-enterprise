@@ -58,6 +58,30 @@ describe('Combobox', () => {
     expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('mở mà không có option: chữ "trống" / "đang tìm" là status NGOÀI listbox; axe không có aria-required-children (E2E-CH-07)', async () => {
+    function Empty({ loading }: { loading: boolean }) {
+      return (
+        <Combobox
+          label="Tìm người"
+          options={[]}
+          selectedLabel=""
+          query=""
+          onQueryChange={() => undefined}
+          onSelect={() => undefined}
+          loading={loading}
+          emptyText="Gõ tên để tìm"
+        />
+      );
+    }
+    const { rerender } = render(<Empty loading={false} />);
+    await userEvent.setup({ delay: null }).click(screen.getByRole('combobox'));
+    expect(screen.getByRole('status').textContent).toBe('Gõ tên để tìm');
+    expect(screen.queryByRole('listbox')).toBeNull(); // rỗng ⇒ ẩn, không phải listbox không có option
+    await expectNoA11yViolations();
+    rerender(<Empty loading />);
+    expect(screen.getByRole('status').textContent).toBe('Đang tìm…');
+  });
+
   it('Esc đóng không chọn; ↑ từ đầu vòng về cuối', async () => {
     const onSelect = vi.fn();
     render(<Harness onSelect={onSelect} />);

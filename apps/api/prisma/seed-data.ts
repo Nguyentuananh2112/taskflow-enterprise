@@ -7,6 +7,7 @@ import type { CompanyGrant } from '../src/generated/prisma/enums';
 import { addDays, instantOf, toLocal, type LocalDate } from '../src/core/domain/local-time';
 import { DEFAULT_SCHEDULE, isWorkday } from '../src/modules/attendance/domain/work-schedule';
 import { CryptoRefreshTokenFactory } from '../src/modules/auth/infrastructure/security/crypto-refresh-token-factory';
+import { seedChat, type SeedStore } from './seed-chat';
 import { seedWorkspaces } from './seed-projects';
 
 const TZ = DEFAULT_SCHEDULE.timezone;
@@ -59,7 +60,7 @@ export const SEED_TABLES =
 /** Xóa sạch rồi dựng lại toàn bộ dữ liệu mẫu. `now` cho test; mặc định giờ thật. */
 export async function seedDatabase(
   prisma: PrismaClient,
-  opts: { passwordHash: string; webOrigin: string; now?: Date },
+  opts: { passwordHash: string; webOrigin: string; now?: Date; store?: SeedStore },
 ): Promise<SeedResult> {
   const now = opts.now ?? new Date();
   const today = toLocal(now, TZ).date;
@@ -106,6 +107,7 @@ export async function seedDatabase(
   await seedAttendance(prisma, users, today, lastMonthEnd);
   await seedLeave(prisma, users, today, now);
   await seedWorkspaces(prisma, users);
+  await seedChat(prisma, users, now, opts.store);
   return { users, activationLink };
 }
 

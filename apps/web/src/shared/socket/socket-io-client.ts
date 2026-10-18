@@ -166,5 +166,8 @@ export function createSocketIoClient({
     joinProject: (payload) => ack(() => timed().emitWithAck('project:join', payload)),
     leaveProject: (payload) => ack(() => timed().emitWithAck('project:leave', payload)),
     renewAuth: (token) => ack(() => timed().emitWithAck('auth:renew', { token })),
+    sendTyping: (payload) => {
+      if (socket.connected) socket.emit('chat:typing', payload);
+    },
   };
 }

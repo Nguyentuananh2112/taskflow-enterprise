@@ -110,6 +110,8 @@ export function securityHeaders(options: SecurityOptions): RequestHandler[] {
         'X-Request-Id',
         'X-Client-Id',
         'Idempotency-Key',
+        // Mốc 6 (ADR-141): tên gốc của upload nhị phân — thiếu ⇒ preflight của trình duyệt chặn upload thật.
+        'X-Upload-Name',
       ],
       // Content-Disposition (T-055, A): web đọc tên file .xlsx của báo cáo khi tải qua fetch.
       exposedHeaders: [
@@ -153,12 +155,33 @@ export function parseContentType(header: string | undefined): {
 const UTF8 = new Set(['utf-8', 'utf8']);
 
 /**
+ * Ngoại lệ content-type ĐÚNG cặp method + path (ADR-141, B M1): chỉ các route upload nhị phân nhận
+ * `application/octet-stream`; route khác — hoặc đúng path sai method — gửi octet-stream ⇒ 415 như cũ. Lớp
+ * chống CSRF chính của các route này là Bearer (không cookie). Path so sau khi bỏ `/` cuối, chữ thường
+ * (Express mặc định không phân biệt hoa thường / `/` cuối khi định tuyến).
+ */
+export const RAW_UPLOAD_ROUTES: readonly { method: string; path: string }[] = [
+  { method: 'PUT', path: '/api/v1/me/avatar' },
+  { method: 'POST', path: '/api/v1/chat/uploads' },
+];
+export const RAW_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
+
+export function isRawUploadRoute(method: string, path: string): boolean {
+  const normalized = path.toLowerCase().replace(/\/+$/, '');
+  return RAW_UPLOAD_ROUTES.some((r) => r.method === method && r.path === normalized);
+}
+
+/**
  * POST/PUT/PATCH bắt buộc `Content-Type: application/json` (kể cả khi không có body) để trình duyệt
  * luôn preflight — một lớp chống CSRF (security.md §6.3). JSON chỉ được là UTF-8 (RFC 8259): mọi
  * `charset` khác (utf-7, utf-16…) ⇒ 415, kể cả DELETE có body (QA F, T-021 finding A5). Sai ⇒ 415.
  */
 export const requireJsonContentType: RequestHandler = (req, _res, next) => {
   const { type, charset, ambiguous } = parseContentType(req.headers['content-type']);
+  if (type === RAW_UPLOAD_CONTENT_TYPE && isRawUploadRoute(req.method, req.path)) {
+    next();
+    return;
+  }
   const bodyRequired = METHODS_WITH_BODY.has(req.method);
   const wrongType = bodyRequired && type !== 'application/json';
   const wrongCharset =

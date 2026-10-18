@@ -10,7 +10,8 @@ import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import { BusinessRuleViolationError } from '../../../core/errors';
 import { consumesAnnualBalance, halfDaysToDecimal, type LeaveType } from '../domain/leave-balance';
 import type { CalendarDate, HalfDays, LeaveSpan } from '../domain/leave-days';
-import { AnnualBalanceCalculator } from './annual-balance';
+import { AnnualBalanceCalculator, type BalanceSources } from './annual-balance';
+import { prefetchedSources } from './balance-prefetch';
 import { localDate } from '../domain/leave-status';
 import type { LeaveTenure } from '../domain/leave-tenure';
 import { toLeaveDto, type LeaveRequestDto } from './leave-dto';
@@ -24,7 +25,6 @@ import type {
   ILeaveRepository,
   IWorkCalendarPort,
   LeaveActor,
-  LeaveBalanceRecord,
   LeaveEmployment,
   LeaveRequestRecord,
   WorkCalendarDay,
@@ -135,7 +135,9 @@ export class LeaveKit {
 
   /** Bộ tính số dư cho ĐƯỜNG GHI (trong khóa): đọc repo, tạo lười dòng số dư. */
   calculator(): AnnualBalanceCalculator {
-    return this.#calc((userId, year) => this.d.requests.getOrCreateBalance(userId, year));
+    const storedOf = (userId: string, year: number) =>
+      this.d.requests.getOrCreateBalance(userId, year);
+    return new AnnualBalanceCalculator(this.#sources(storedOf));
   }
 
   /**
@@ -146,21 +148,29 @@ export class LeaveKit {
     read: Pick<ILeaveReadModel, 'findBalance'>,
     hireDates: ILeaveHireDates = this.d.hireDates,
   ): AnnualBalanceCalculator {
-    return this.#calc((userId, year) => read.findBalance(userId, year), hireDates);
+    return new AnnualBalanceCalculator(this.#sources((u, y) => read.findBalance(u, y), hireDates));
   }
 
-  #calc(
-    storedOf: (userId: string, year: number) => Promise<LeaveBalanceRecord | null>,
-    hireDates: ILeaveHireDates = this.d.hireDates,
-  ): AnnualBalanceCalculator {
-    return new AnnualBalanceCalculator({
-      policies: this.d.policies,
+  /** Bộ tính đọc cho CẢ NHÓM người một năm — nạp theo lô (T-057d, balance-prefetch.ts). */
+  async readCalculatorFor(
+    read: Pick<ILeaveReadModel, 'findBalance' | 'findBalances' | 'listHoldingFor'>,
+    input: { userIds: readonly string[]; year: number; currentYearLoaded: boolean },
+  ): Promise<AnnualBalanceCalculator> {
+    const base = this.#sources((userId, year) => read.findBalance(userId, year));
+    return new AnnualBalanceCalculator(await prefetchedSources(base, read, input));
+  }
+
+  #sources(storedOf: BalanceSources['storedOf'], hireDates = this.d.hireDates): BalanceSources {
+    const { policies, company } = this.d;
+    const holdingOf = (userId: string, year: number) => this.d.requests.listHolding(userId, year);
+    return {
+      policies,
       hireDates,
-      company: this.d.company,
-      holdingOf: (userId, year) => this.d.requests.listHolding(userId, year),
+      company,
+      holdingOf,
       storedOf,
-      calendarOf: (year) => this.yearCalendar(year),
-    });
+      calendarOf: (y) => this.yearCalendar(y),
+    };
   }
 
   /**

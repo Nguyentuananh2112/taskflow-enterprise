@@ -16,6 +16,9 @@ export const NOTIFICATION_TYPES = [
   'CORRECTION_APPROVED',
   'CORRECTION_REJECTED',
   'CORRECTION_CANCELLED',
+  'PAYSLIP_PUBLISHED',
+  'PAYSLIP_REVISED',
+  'PAYROLL_REMINDER',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

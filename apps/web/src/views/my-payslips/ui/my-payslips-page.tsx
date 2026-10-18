@@ -20,8 +20,8 @@ const PERIOD = /^\/payslips\/(\d{4}-(?:0[1-9]|1[0-2]))$/;
  * có phiếu lương.
  */
 export function MyPayslipsPage() {
-  const { company } = useCompanyPermission();
-  const employee = company?.role === 'EMPLOYEE';
+  const { company, can } = useCompanyPermission();
+  const employee = can('payslip:self');
   const list = useMyPayslips(employee);
   const asked = PERIOD.exec(usePathname())?.[1] ?? null;
   const rev = Number(useSearchParams().get('rev')) || null;

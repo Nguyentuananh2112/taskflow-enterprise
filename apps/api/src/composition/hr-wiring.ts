@@ -52,6 +52,11 @@ export function wireLeaveAndProfile(
           if (!ref.profile) throw new Error('hr-profile chưa được dựng');
           return (await ref.profile.hireDates({ userIds: [userId] })).get(userId) ?? null;
         },
+        // T-057d: một truy vấn cho cả trang số dư / báo cáo (không N+1).
+        hireDatesOf: (userIds) => {
+          if (!ref.profile) throw new Error('hr-profile chưa được dựng');
+          return ref.profile.hireDates({ userIds });
+        },
       },
     },
     http,

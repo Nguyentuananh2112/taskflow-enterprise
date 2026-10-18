@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 
+import { useChatUnread } from '@/entities/chat';
 import { useCompanyPermission } from '@/entities/session';
 import { cn } from '@/shared/lib/cn';
 
@@ -17,13 +18,16 @@ type Item = Readonly<{
   manage?: boolean;
 }>;
 
+// Thứ tự TL chốt (dùng chung Mốc 4/5/6): Trang chính · Bảng công của tôi · Nghỉ phép · Hồ sơ của tôi · Phiếu lương ·
+// Trò chuyện · Nhân sự · Bảng lương · Quản trị.
 const ITEMS: readonly Item[] = [
   { href: '/w', label: 'Trang chính' },
   { href: '/attendance', label: 'Bảng công của tôi', needs: 'attendance:self' },
   { href: '/leave', label: 'Nghỉ phép', needs: 'leave:self' },
   { href: '/my-profile', label: 'Hồ sơ của tôi', needs: 'profile:self' },
-  // TẠM: `payslip:self` (T-048 B) chưa có — cùng tập người với `attendance:self` (chỉ nhân viên).
-  { href: '/payslips', label: 'Phiếu lương', needs: 'attendance:self' },
+  { href: '/payslips', label: 'Phiếu lương', needs: 'payslip:self' },
+  // Mốc 6 (avatar-chat.md §7 E9): ai thuộc công ty cũng có (kể cả Admin). ≥ md: icon cạnh chuông thay cho link.
+  { href: '/chat', label: 'Trò chuyện' },
   { href: '/hr', label: 'Nhân sự', needs: 'hr:manage', manage: true },
   { href: '/payroll', label: 'Bảng lương', needs: 'payroll:manage', manage: true },
   { href: '/admin', label: 'Quản trị', needs: 'company:admin', manage: true },
@@ -69,6 +73,7 @@ export function CompanyLinks() {
 export function CompanyMenu() {
   const { items, pathname } = useItems();
   const [open, setOpen] = useState(false);
+  const chatUnread = (useChatUnread().data ?? 0) > 0;
   const panelId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -97,8 +102,15 @@ export function CompanyMenu() {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex size-10 items-center justify-center rounded-control text-text hover:bg-bg-subtle md:hidden"
+        className="relative inline-flex size-10 items-center justify-center rounded-control text-text hover:bg-bg-subtle md:hidden"
       >
+        {/* Mốc 6 (§7 E9): có tin chưa đọc ⇒ chấm trên ☰ (chỉ trang trí; số ở ô trang chính / icon ≥ md). */}
+        {chatUnread && !open && (
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 right-1.5 size-2 rounded-full bg-danger"
+          />
+        )}
         <span aria-hidden="true" className="text-lg leading-none">
           {open ? '✕' : '☰'}
         </span>

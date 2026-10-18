@@ -252,6 +252,12 @@ export function taskflow({ rootDir, api, web, ignores = [] }) {
       },
     },
     {
+      // Upload có tiến độ % + hủy (avatar-chat.md §7 E2): XHR CHỈ ở transport này, mọi thứ khác vẫn qua `http`.
+      name: 'taskflow/web-shared-upload',
+      files: [w('src/shared/api/upload.ts')],
+      rules: { 'no-restricted-globals': restrictGlobals('localStorage', 'sessionStorage') },
+    },
+    {
       name: 'taskflow/web-shared-storage',
       files: [w('src/shared/lib/storage.ts')],
       rules: { 'no-restricted-globals': restrictGlobals('fetch', 'XMLHttpRequest') },

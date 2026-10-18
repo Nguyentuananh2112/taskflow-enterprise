@@ -138,6 +138,13 @@ export class FakeRealtimeClient implements RealtimeClient {
     return Promise.resolve({ ok: true });
   }
 
+  /** `chat:typing` client gửi (test kiểm throttle); hub không phát lại — server làm ở T-070. */
+  readonly typingLog: string[] = [];
+
+  sendTyping({ conversationId }: { conversationId: string }): void {
+    this.typingLog.push(conversationId);
+  }
+
   renewAuth(token: string): Promise<SocketAck> {
     this.renewLog.push(token);
     return Promise.resolve({ ok: true });

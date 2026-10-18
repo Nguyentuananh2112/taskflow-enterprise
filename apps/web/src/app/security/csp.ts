@@ -31,7 +31,8 @@ const toWsOrigin = (url: string) => new URL(url).origin.replace(/^http/, 'ws');
 
 /** W-CSP-2 (prod) + W-CSP-3 (dev). */
 export function buildCsp({ nonce, apiUrl, wsUrl, isDev, appEnv }: CspInput): string {
-  const connect = new Set(["'self'", new URL(apiUrl).origin, toWsOrigin(wsUrl)]);
+  const apiOrigin = new URL(apiUrl).origin;
+  const connect = new Set(["'self'", apiOrigin, toWsOrigin(wsUrl)]);
   const script = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
   if (isDev) {
     // W-CSP-3: chỉ khi development, cho HMR.
@@ -43,7 +44,8 @@ export function buildCsp({ nonce, apiUrl, wsUrl, isDev, appEnv }: CspInput): str
     "default-src 'self'",
     `script-src ${script.join(' ')}`,
     `style-src 'self' 'nonce-${nonce}'`,
-    "img-src 'self' data: blob:",
+    // Mốc 6 (ADR-141, E3): avatar / ảnh chat là URL ký trên `/media` của API — chỉ origin, không path.
+    `img-src 'self' data: blob: ${apiOrigin}`,
     "font-src 'self'",
     `connect-src ${[...connect].join(' ')}`,
     "object-src 'none'",

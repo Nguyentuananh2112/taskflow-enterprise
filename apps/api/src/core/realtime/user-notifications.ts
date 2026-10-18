@@ -39,4 +39,17 @@ export class UserNotifications {
     this.#emit(rooms.user(recipientId), 'notification:new', { notificationId, type }, meta);
     return Promise.resolve();
   }
+
+  /**
+   * Mốc 6 (ADR-142): `user:avatar-changed` tới phòng `company` = mọi socket đã xác thực lại + qua cổng công ty (TL, B:
+   * một công ty ⇒ danh bạ R49; khe R40 ≤ 1 phút chấp nhận). CHỈ `{userId, avatarUrl 64 | null}` — không avatarUrlLarge.
+   */
+  avatarChanged(
+    input: { userId: string; avatarUrl: string | null },
+    meta: RealtimeEventMeta,
+  ): Promise<void> {
+    const data = { userId: input.userId, avatarUrl: input.avatarUrl };
+    this.#emit(rooms.company(), 'user:avatar-changed', data, meta);
+    return Promise.resolve();
+  }
 }

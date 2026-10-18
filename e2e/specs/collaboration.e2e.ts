@@ -130,6 +130,12 @@ test('E2E-06: xung đột sửa tiêu đề ⇒ B thấy khối hòa giải; s�
   await openDrawer(userB.page, 'TODO', 'Tiêu đề của B');
   await moveViaMenu(page, task.key, 'Đang làm');
   await expect(card(column(page, 'IN_PROGRESS'), 'Tiêu đề của B')).toBeVisible();
+  // B phải NHẬN realtime "A di chuyển" (drawer B đổi Trạng thái) TRƯỚC khi sửa — đúng kịch bản thiết kế (B mở drawer,
+  // A chỉ kéo, B sửa mô tả). Không chờ: máy tải nặng ⇒ event tới GIỮA lúc B gõ / lưu ⇒ form rebase giữa chừng ⇒ không
+  // có PATCH thành công trong 60 s (cổng Mốc 6 18/10, Mốc 5 lượt 1 — chạy riêng luôn xanh).
+  await expect(
+    userB.page.getByRole('dialog').getByRole('combobox', { name: 'Trạng thái' }),
+  ).toHaveValue('IN_PROGRESS', { timeout: 10_000 });
   // Tự rebase có thể là 409 rồi web tự gửi lại ⇒ chờ PATCH THÀNH CÔNG (không chấp nhận 409 cuối cùng).
   const rebased = userB.page.waitForResponse(
     (res) =>

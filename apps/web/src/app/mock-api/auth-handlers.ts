@@ -9,6 +9,7 @@ import {
 } from '@taskflow/contracts/auth';
 import { http, type HttpHandler } from 'msw';
 
+import type { MockAvatars } from './mock-avatars';
 import type { MockDb } from './mock-db';
 import { rejectsOrigin } from './request-guards';
 import { authenticate as authenticateRequest } from './mock-guard';
@@ -41,11 +42,14 @@ export function createAuthHandlers(
   baseUrl: string,
   db: MockDb,
   allowedOrigins: ReadonlySet<string>,
+  avatars: MockAvatars,
 ): HttpHandler[] {
   const url = (path: string) => `${baseUrl}${path}`;
   const basePath = new URL(baseUrl).pathname;
   const setCookie = (token: string | null) => ({ 'Set-Cookie': cookieHeader(basePath, token) });
   const loginFailures = new Map<string, number>();
+  // Mốc 6 (ADR-142): người dùng hiện tại kèm avatarUrl (64) + avatarUrlLarge (256).
+  const userDto = (user: UserDto) => ({ ...UserDto.parse(user), ...avatars.fieldsOf(user.id) });
 
   const authenticate = (request: Request) => {
     const auth = authenticateRequest(request, db);
@@ -77,7 +81,7 @@ export function createAuthHandlers(
       loginFailures.delete(email);
       return ok(
         LoginResponse,
-        { ...db.issueAccess(user), user: UserDto.parse(user) },
+        { ...db.issueAccess(user), user: userDto(user) },
         { headers: setCookie(db.issueRefresh(user.id)) },
       );
     }),
@@ -115,7 +119,7 @@ export function createAuthHandlers(
       // ADR-135: không thuộc công ty ⇒ 401 SESSION_REVOKED (không có "đăng nhập mà không thuộc công ty").
       if (!company) return fail(401, 'SESSION_REVOKED');
       return ok(MeResponse, {
-        user: UserDto.parse(auth.user),
+        user: userDto(auth.user),
         memberships: db.membershipsOf(auth.user.id),
         company,
       });
@@ -127,7 +131,7 @@ export function createAuthHandlers(
       const body = await parseBody(request, UpdateMeBody);
       if (body.response) return body.response;
       auth.user.fullName = body.data.fullName;
-      return ok(UserDto, UserDto.parse(auth.user));
+      return ok(UserDto, userDto(auth.user));
     }),
 
     http.post(url('/auth/change-password'), async ({ request }) => {

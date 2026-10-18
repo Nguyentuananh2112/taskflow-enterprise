@@ -120,6 +120,7 @@ export function createSessionController(deps: SessionDeps) {
         getAccessToken: tokenStore.get,
         refresh: renew,
         onSessionEnded: (reason) => end(reason),
+        expiresAt: tokenStore.expiresAt,
       });
       channel = (deps.openChannel ?? openAuthChannel)(onChannel);
     },

@@ -1,5 +1,6 @@
 import * as z from 'zod';
 
+import { UserRefDto } from '../auth/auth.schemas';
 import { Cursor, DateOnly, IsoDateTime, Uuid, limitQuery } from '../common/primitives';
 
 /**
@@ -44,6 +45,10 @@ export const NotificationType = z.enum([
   'CORRECTION_APPROVED',
   'CORRECTION_REJECTED',
   'CORRECTION_CANCELLED',
+  // Mốc 4 (payroll.md §4): KHÔNG số tiền; refId = id phiếu (PUBLISHED / REVISED) hoặc id bảng lương (REMINDER).
+  'PAYSLIP_PUBLISHED',
+  'PAYSLIP_REVISED',
+  'PAYROLL_REMINDER',
 ]);
 export type NotificationType = z.infer<typeof NotificationType>;
 
@@ -56,7 +61,8 @@ export const NotificationDto = z.object({
   id: Uuid,
   type: NotificationType,
   refId: Uuid,
-  actor: z.object({ id: Uuid, fullName: z.string() }).nullable(),
+  /** Mốc 6 (ADR-142): `UserRefDto` ⇒ có `avatarUrl` (variant 64) tùy chọn. */
+  actor: UserRefDto.nullable(),
   leave: z.object({ type: LeaveType, startDate: DateOnly, endDate: DateOnly }).nullable(),
   readAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
@@ -111,6 +117,20 @@ export const HrAuditAction = z.enum([
   'CORRECTION_SUBMIT',
   'CORRECTION_CANCEL',
   'CORRECTION_DECIDE',
+  // Mốc 6 (ADR-142): HR / Admin gỡ ảnh đại diện không phù hợp của nhân viên.
+  'AVATAR_REMOVED',
+  // Mốc 4 (payroll.md §6, T-048): before/after CÓ số tiền ⇒ chỉ Admin đọc. Tiền tố `PAYROLL_` là ranh giới retention:
+  // mọi bước D7 / D7' BỎ QUA các action này (RD-11 — hạn lưu lương riêng). ≤ 32 ký tự.
+  'PAYROLL_SETTINGS_SET',
+  'PAYROLL_SALARY_SET',
+  'PAYROLL_RUN_CREATE',
+  'PAYROLL_RECALCULATE',
+  'PAYROLL_ADD_MISSING',
+  'PAYROLL_PAYSLIP_SET',
+  'PAYROLL_PUBLISH',
+  'PAYROLL_PAYSLIP_REVISE',
+  'PAYROLL_PAYSLIP_VIEW',
+  'PAYROLL_EXPORT',
 ]);
 export type HrAuditAction = z.infer<typeof HrAuditAction>;
 

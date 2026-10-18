@@ -22,11 +22,7 @@ export function createPayslipHandlers(
 ): HttpHandler[] {
   const base = `${baseUrl}/payslips`;
   const guard = (request: Request) => {
-    const ctx = requireCompany(request, db);
-    if (ctx.response) return ctx;
-    if (ctx.ok.company.role !== 'EMPLOYEE')
-      return { response: fail(403, 'FORBIDDEN_ACCESS', { required: 'payslip:self' }) };
-    return ctx;
+    return requireCompany(request, db, 'payslip:self');
   };
   const published = (period: string) => {
     const run = payroll.runs.get(period);

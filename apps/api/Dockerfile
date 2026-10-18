@@ -91,6 +91,8 @@ WORKDIR /app
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /out/dist ./dist
+# Mốc 6 (ADR-141): điểm mount kho tệp, chủ `node` — volume tên mới được Docker khởi tạo theo quyền của thư mục này.
+RUN mkdir -p /var/lib/taskflow/files && chown node:node /var/lib/taskflow/files
 ARG GIT_SHA=dev
 ENV GIT_SHA=${GIT_SHA}
 LABEL org.opencontainers.image.title="taskflow-api" \

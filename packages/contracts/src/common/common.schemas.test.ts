@@ -78,7 +78,7 @@ describe('envelope', () => {
       ApiError.safeParse({ success: false, error: { ...body, code: 'TEAPOT' }, meta: META })
         .success,
     ).toBe(false);
-    expect(ErrorCode.options).toHaveLength(24);
+    expect(ErrorCode.options).toHaveLength(30); // +6 kho tệp Mốc 6 (ADR-141)
   });
 });
 

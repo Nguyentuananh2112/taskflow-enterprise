@@ -2,7 +2,9 @@
 // (PERSISTENCE = prisma) phải khởi động được — guard "không module bộ nhớ ở
 // staging/production" (T-020) không còn chặn vì `modules.task = prisma`.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { resolve } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -16,7 +18,12 @@ const API_DIR = resolve(import.meta.dirname, '../../..');
 const PORT = await availablePort();
 const STARTUP_TIMEOUT_MS = 120_000;
 const children: ChildProcess[] = [];
-afterAll(() => stopChildren(children));
+// Mốc 6 (ADR-141): staging bắt buộc FILE_STORE_DIR TỒN TẠI + ghi được (không thì từ chối khởi động).
+const FILE_STORE_DIR = await mkdtemp(join(tmpdir(), 'tf-startup-files-'));
+afterAll(async () => {
+  await stopChildren(children);
+  await rm(FILE_STORE_DIR, { recursive: true, force: true });
+});
 
 describe('khởi động main.ts với Prisma đầy đủ (T-023)', () => {
   it(
@@ -29,6 +36,7 @@ describe('khởi động main.ts với Prisma đầy đủ (T-023)', () => {
         PORT: String(PORT),
         APP_ENV: 'staging',
         DATABASE_URL: testDatabaseUrl(),
+        FILE_STORE_DIR,
       });
       // Không đặt PERSISTENCE: khẳng định giá trị MẶC ĐỊNH là prisma.
       delete env.PERSISTENCE;

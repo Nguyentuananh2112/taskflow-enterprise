@@ -29,6 +29,13 @@ export interface EmployeeView {
   jobTitle: string | null;
   missingHireDate: boolean;
   seniority: { years: number; months: number } | null;
+  /** Mốc 6: có ⇒ web hiện "Gỡ ảnh đại diện" (T-071). Chỉ gắn khi có `avatars`. */
+  avatarUrl?: string | null;
+}
+
+/** Mốc 6 (ADR-142): URL ký variant 64 theo lô — chỉ người còn thuộc công ty có ảnh. */
+export interface IEmployeeAvatars {
+  urlsOf(userIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 export type EmployeeStatusFilter = 'active' | 'pending' | 'offboarding' | 'left';
@@ -66,6 +73,7 @@ export class EmployeeQueries {
       timeZone: () => Promise<string>;
       /** Module hr-profile (T-054) — tham chiếu trễ. */
       profileColumns: () => IProfileColumnsPort;
+      avatars?: IEmployeeAvatars | undefined;
     },
   ) {}
 
@@ -128,14 +136,17 @@ export class EmployeeQueries {
         ...members.map((m) => m.userId),
         ...departed.map((m) => m.userId),
       ]);
-      const out: Omit<EmployeeView, ProfileColumn>[] = [];
+      const avatars = await this.d.avatars?.urlsOf(members.map((m) => m.userId));
+      const withAvatar = (v: BaseView): BaseView =>
+        avatars ? { ...v, avatarUrl: avatars.get(v.userId) ?? null } : v;
+      const out: BaseView[] = [];
       for (const m of members) {
         const p = profiles.get(m.userId);
-        if (p && !p.deleted) out.push(currentView(m, p));
+        if (p && !p.deleted) out.push(withAvatar(currentView(m, p)));
       }
       for (const m of departed) {
         const p = profiles.get(m.userId);
-        if (p && !p.deleted) out.push(leftView(m, p));
+        if (p && !p.deleted) out.push(withAvatar(leftView(m, p))); // đã nghỉ ⇒ null (ADR-142)
       }
       const columns = await this.d.profileColumns().columnsOf(out.map((e) => e.userId));
       return out.map((e) => withProfile(e, columns.get(e.userId), today));
@@ -145,6 +156,7 @@ export class EmployeeQueries {
 
 type Profile = { fullName: string; email: string; hasPassword: boolean };
 type ProfileColumn = 'hireDate' | 'department' | 'jobTitle' | 'missingHireDate' | 'seniority';
+type BaseView = Omit<EmployeeView, ProfileColumn>;
 
 function withProfile(
   e: Omit<EmployeeView, ProfileColumn>,
