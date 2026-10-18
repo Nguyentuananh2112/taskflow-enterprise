@@ -46,7 +46,7 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 | D7 HrAuditLog | 2 năm | **5 năm** (không chứa D1/D3) | 10 năm |
 | D12 / D14 trò chuyện (Mốc 6 — **người dùng chốt 17/10**) | — | **12 tháng** kể từ `created_at` (`CHAT_RETENTION_DAYS=365`); tin bị xóa: thân NULL **ngay**, blob ≤ 1 giờ; upload mồ côi 24 giờ; purge ws cascade | — |
 | D13 ảnh đại diện | — | tự xóa / bị gỡ / rời công ty ⇒ blob xóa sau **30 ngày** (đổi ảnh: bản cũ xóa khi version mới đã lên) | — |
-| D15 hồ sơ lương, phiếu lương (Mốc 4 — TL chốt 18/10) | — | **10 năm** kể từ kỳ lương — chứng từ kế toán (Luật Kế toán 2015 Đ.41, NĐ 174/2016 Đ.12); giữ cả sau khi nghỉ việc; ẩn danh tài khoản vẫn giữ tên trên phiếu; lý do điều chỉnh (`overrideReason`) lưu cùng phiếu. v1 chưa có job xóa (phiếu cũ nhất mới vài tháng) — thêm trước khi chạm 10 năm | — |
+| D15 hồ sơ lương, phiếu lương (Mốc 4 — TL chốt 18/10) | — | **10 năm** kể từ kỳ lương — chứng từ kế toán (Luật Kế toán 2015 Đ.41, NĐ 174/2016 Đ.12); giữ cả sau khi nghỉ việc; ẩn danh tài khoản vẫn giữ tên trên phiếu; lý do sửa công (`overrideReason`) và lý do bản điều chỉnh (`revisionReason`) lưu cùng phiếu (kế toán xác nhận loại chứng từ trước go-live — R27 Q2). v1 chưa có job xóa — **backlog có hạn**: thêm bước retention D15 trước kỳ lương đầu tiên + 10 năm; bản backup còn thêm tới hết tầng giữ (R48) | — |
 
 **Khuyến nghị B** vì:
 - 13 tháng phủ thời hiệu tranh chấp 1 năm cộng 1 tháng xử lý;
@@ -99,8 +99,9 @@ Hiển thị một lần khi nhân viên vào màn Chấm công / Nghỉ phép l
 **Đoạn thêm khi bật Mốc 4 (phiếu lương, TL 18/10)** — hiển thị trong cùng thông báo, lần đầu mở Phiếu lương:
 
 > **Phiếu lương**
-> - Công ty xử lý **hồ sơ lương** (bậc, lương cơ bản, phụ cấp) và **phiếu lương hằng tháng** của bạn để trả lương. Chỉ bạn, người được giao quyền Kế toán và quản trị viên xem được. Thông báo có phiếu mới **không** chứa số tiền.
+> - Công ty xử lý **hồ sơ lương** (bậc, lương cơ bản, phụ cấp) và **phiếu lương hằng tháng** của bạn để trả lương. Chỉ bạn, người được giao quyền Kế toán và quản trị viên xem được. Thông báo có phiếu mới **không** chứa số tiền. Người vận hành máy chủ về kỹ thuật có thể truy cập dữ liệu lưu trữ; bản sao lưu được mã hóa.
 > - Phiếu lương đã phát hành là chứng từ kế toán nên được lưu **10 năm** kể từ kỳ lương, kể cả sau khi bạn nghỉ việc.
+> - Trong thời hạn lưu bắt buộc này, công ty **không xóa** phiếu lương theo yêu cầu (nghĩa vụ pháp lý), nhưng bạn có thể yêu cầu **sửa** thông tin sai.
 > - Nếu kế toán điều chỉnh công hoặc lương của bạn, lý do điều chỉnh hiện trên phiếu để bạn xem và được lưu cùng phiếu.
 > - Có thắc mắc về phiếu lương hoặc muốn yêu cầu sửa: liên hệ **[đầu mối]**.
 
