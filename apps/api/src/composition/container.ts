@@ -157,24 +157,18 @@ export function createContainer(d: ContainerDeps): Container {
   });
   accountsRef.current = auth.accounts;
   // Nghỉ phép (T-064/T-057) + hồ sơ (T-054) — phụ thuộc vòng (ngày vào ↔ phép âm) ⇒ dựng chung (hr-wiring.ts).
+  // Báo cáo .xlsx của phép / lương: cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
+  const xlsx = { exportSlots, exportLimits: config.exportLimits };
   const { leave, hrProfile } = wireLeaveAndProfile(
     { persistence, clock: business, ids, logger },
-    {
-      company,
-      attendance,
-      notifications,
-      auth,
-      // Cùng bộ suất với bảng công (attendanceShared — SEC-HR-54) + cùng trần T-055.
-      exportSlots,
-      exportLimits: config.exportLimits,
-    },
+    { company, attendance, notifications, auth, ...xlsx },
     { responder, limit },
   );
   approvedLeaves.bind(leave.approvedLeaves);
   // Lương (Mốc 4, T-049): quyền / audit ← company, công ← attendance, `hireDate` ← hồ sơ (ADR-128).
   const payroll = wirePayroll(
     { persistence, clock: business, ids },
-    { company, attendance, hrProfile, notifications },
+    { company, attendance, hrProfile, notifications, ...xlsx },
     { responder, limit },
   );
 

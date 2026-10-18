@@ -1,9 +1,14 @@
 import type { RequestHandler, Router } from 'express';
 
+import type { ExportLimits } from '../../core/export/export-limits';
+import type { ExportSlots } from '../../core/export/export-slots';
+import type { ISpreadsheetWriter } from '../../core/export/xlsx/xlsx-writer';
 import type { HttpResponder } from '../../core/http/envelope';
+import type { IReadSnapshot } from '../../core/persistence/read-snapshot';
 import type { RateLimitRule } from '../../core/http/rate-limit/rules';
 import type { PayrollDeps } from './application/payroll-kit';
 import type { IPayrollStore } from './application/ports/payroll-store.port';
+import { PayrollExportUseCase } from './application/use-cases/payroll-export.use-case';
 import { PayrollQueries } from './application/use-cases/payroll.queries';
 import { PayrollReminderUseCase } from './application/use-cases/payroll-reminder.use-case';
 import { PayrollRunsUseCases } from './application/use-cases/payroll-runs.use-cases';
@@ -38,6 +43,13 @@ export interface PayrollModuleDeps extends Omit<PayrollDeps, 'store'> {
   permissionsOf(userId: string): Promise<ReadonlySet<string> | null>;
   responder: HttpResponder;
   limit: (rules: readonly RateLimitRule[]) => RequestHandler[];
+  /** Xuất .xlsx (ADR-130): snapshot đọc + suất đồng thời DÙNG CHUNG với bảng công / phép + trần T-055. */
+  exports: {
+    snapshot: IReadSnapshot;
+    slots: Pick<ExportSlots, 'acquire'>;
+    limits: ExportLimits;
+    writer: ISpreadsheetWriter;
+  };
 }
 
 export interface PayrollModule {
@@ -55,6 +67,8 @@ export function createPayrollModule(m: PayrollModuleDeps): PayrollModule {
     publish: new PublishPayrollUseCase(d),
     edits: new PayslipEditsUseCases(d),
     queries: new PayrollQueries(d),
+    exporter: new PayrollExportUseCase({ ...d, ...m.exports }),
+    writer: m.exports.writer,
     store: d.store,
     responder: m.responder,
   });

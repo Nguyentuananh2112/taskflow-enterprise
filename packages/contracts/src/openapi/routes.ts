@@ -1264,6 +1264,17 @@ export const API_ROUTES: readonly ApiRoute[] = [
     errors: ['BUSINESS_RULE_VIOLATION'],
   },
   {
+    method: 'get',
+    path: `/payroll/runs/{period}/export.xlsx`,
+    summary:
+      'Xuất Excel bảng lương tháng (payroll:manage, ADR-130) — chỉ bản hiệu lực + cột Bản; ô tiền số nguyên; audit PAYROLL_EXPORT; 404 chưa có bảng; quá trần ⇒ 422 trước header; 429 chung hạn mức export + 2 export đồng thời/công ty',
+    tag: 'payroll',
+    security: 'bearer',
+    params: PayrollPeriodParams,
+    response: { status: 200, xlsx: true },
+    errors: ['BUSINESS_RULE_VIOLATION', 'RATE_LIMITED'],
+  },
+  {
     method: 'post',
     path: `/payroll/runs/{period}/recalculate/preview`,
     summary: 'Xem trước "Tính lại công": số phiếu sẽ đổi (không ghi)',

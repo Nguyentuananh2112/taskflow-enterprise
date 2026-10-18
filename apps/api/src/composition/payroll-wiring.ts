@@ -1,6 +1,9 @@
 import type { RequestHandler } from 'express';
 
 import type { IClock, IIdGenerator } from '../core/domain';
+import { DEFAULT_EXPORT_LIMITS, type ExportLimits } from '../core/export/export-limits';
+import type { ExportSlots } from '../core/export/export-slots';
+import { FflateXlsxWriter } from '../core/export/xlsx/xlsx-writer';
 import type { HttpResponder } from '../core/http/envelope';
 import type { RateLimitRule } from '../core/http/rate-limit/rules';
 import type { AttendanceModule } from '../modules/attendance/attendance.module';
@@ -25,6 +28,9 @@ export function wirePayroll(
     attendance: Pick<AttendanceModule, 'payroll' | 'timeZoneNow'>;
     hrProfile: Pick<HrProfileModule, 'hireDates'>;
     notifications: Pick<NotificationsModule, 'publisher'>;
+    /** Cùng bộ suất với bảng công / phép (attendanceShared — SEC-HR-54) + cùng trần T-055. */
+    exportSlots: ExportSlots;
+    exportLimits?: ExportLimits | undefined;
   },
   http: { responder: HttpResponder; limit: (rules: readonly RateLimitRule[]) => RequestHandler[] },
 ): PayrollModule {
@@ -53,6 +59,12 @@ export function wirePayroll(
     uow: d.persistence.uow,
     clock: d.clock,
     ids: d.ids,
+    exports: {
+      snapshot: d.persistence.uow.snapshot,
+      slots: m.exportSlots,
+      limits: m.exportLimits ?? DEFAULT_EXPORT_LIMITS,
+      writer: new FflateXlsxWriter(),
+    },
     ...http,
   });
 }

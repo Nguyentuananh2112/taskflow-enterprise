@@ -13,7 +13,11 @@ import {
 import { Router, type RequestHandler } from 'express';
 
 import { ForbiddenError, SessionRevokedError } from '../../../core/errors';
-import { RATE_LIMIT_RULES, type RateLimitRule } from '../../../core/http/rate-limit/rules';
+import {
+  EXPORT_RATE_LIMIT,
+  RATE_LIMIT_RULES,
+  type RateLimitRule,
+} from '../../../core/http/rate-limit/rules';
 import { requireUser } from '../../../core/http/request-user';
 import { validate } from '../../../core/http/validate';
 import type { PayrollController } from './payroll.controller';
@@ -72,6 +76,14 @@ export function payrollRoutes(d: RouteDeps): Router {
   router.get('/runs', ...m, c.listRuns);
   router.get('/runs/:period', ...m, validate(run), c.getRun);
   router.post('/runs/:period', ...m, validate(run), c.createRun);
+  // ADR-130: chung bucket hạn mức export (EXPORT_RATE_LIMIT) với bảng công / phép; suất đồng thời + 422 + audit ở use case.
+  router.get(
+    '/runs/:period/export.xlsx',
+    ...m,
+    validate(run),
+    ...d.limit(EXPORT_RATE_LIMIT),
+    c.exportXlsx,
+  );
   router.post('/runs/:period/recalculate/preview', ...m, validate(run), c.previewRecalculate);
   router.post('/runs/:period/recalculate', ...m, validate(run), c.recalculate);
   router.post('/runs/:period/add-missing', ...m, validate(run), c.addMissing);

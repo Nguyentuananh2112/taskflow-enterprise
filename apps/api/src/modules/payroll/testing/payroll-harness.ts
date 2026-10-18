@@ -1,30 +1,27 @@
 import { FakeClock, FakeUnitOfWork, SequentialIdGenerator } from '../../../../test/support';
 import { ForbiddenError } from '../../../core/errors';
+import type { IUnitOfWork } from '../../../core/persistence/unit-of-work';
 import type { PayrollDeps } from '../application/payroll-kit';
 import type {
   IPayrollNotifier,
   PayrollAuditAction,
   PayrollDaysResult,
 } from '../application/ports/collaborators.port';
+import type { IPayrollStore } from '../application/ports/payroll-store.port';
 import { InMemoryPayrollStore } from '../infrastructure/in-memory/in-memory-payroll.store';
 
-/** Bối cảnh chuẩn (payroll.md §7): Kai Kế toán, Olivia Admin (không có phiếu), Mia / Max nhân viên. */
-export const KAI = '0199e5a2-0000-7000-8000-00000000a001';
-export const OLIVIA = '0199e5a2-0000-7000-8000-00000000a000';
-export const MIA = '0199e5a2-0000-7000-8000-00000000b001';
-export const MAX = '0199e5a2-0000-7000-8000-00000000b002';
-export const NAMES: Record<string, string> = {
-  [KAI]: 'Kai',
-  [OLIVIA]: 'Olivia',
-  [MIA]: 'Mia',
-  [MAX]: 'Max',
-};
+import { KAI, MAX, MIA, NAMES, NOW, OLIVIA } from './payroll-fixture';
 
-/** Ngày đầu tháng 12/2026 10:00 giờ VN — kỳ 2026-11 đã kết thúc. */
-export const NOW = '2026-12-01T03:00:00.000Z';
+export { KAI, MAX, MIA, NAMES, NOW, OLIVIA } from './payroll-fixture';
 
-export function createPayrollHarness(now = NOW) {
-  const store = new InMemoryPayrollStore();
+/** Lưu trữ + transaction thay được (LSP — integration chạy lại cùng bộ test trên Prisma). */
+export interface PayrollBackend {
+  store: IPayrollStore & { readonly locks: string[] };
+  uow: IUnitOfWork;
+}
+
+export function createPayrollHarness(now = NOW, backend?: PayrollBackend) {
+  const store = backend?.store ?? new InMemoryPayrollStore();
   const clock = new FakeClock(now);
   /** Người có `payroll:manage` HIỆN TẠI. */
   const managers = new Set([KAI, OLIVIA]);
@@ -96,7 +93,7 @@ export function createPayrollHarness(now = NOW) {
     },
     company: { companyName: () => Promise.resolve(company.name) },
     timeZoneNow: () => Promise.resolve('Asia/Ho_Chi_Minh'),
-    uow: new FakeUnitOfWork(),
+    uow: backend?.uow ?? new FakeUnitOfWork(),
     clock,
     ids: new SequentialIdGenerator(),
   };

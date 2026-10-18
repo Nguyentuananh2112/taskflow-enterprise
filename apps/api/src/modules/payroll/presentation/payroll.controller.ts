@@ -10,9 +10,12 @@ import type {
 } from '@taskflow/contracts/payroll';
 import type { Request, Response } from 'express';
 
+import { sendXlsx } from '../../../core/export/xlsx/xlsx-response';
+import type { ISpreadsheetWriter } from '../../../core/export/xlsx/xlsx-writer';
 import type { HttpResponder } from '../../../core/http/envelope';
 import { requireUser } from '../../../core/http/request-user';
 import { payslipDto } from '../application/payroll-dto';
+import type { PayrollExportUseCase } from '../application/use-cases/payroll-export.use-case';
 import type { PayrollRunsUseCases } from '../application/use-cases/payroll-runs.use-cases';
 import type { PayrollQueries } from '../application/use-cases/payroll.queries';
 import type { PayslipEditsUseCases } from '../application/use-cases/payslip-edits.use-cases';
@@ -26,6 +29,8 @@ export interface PayrollControllerDeps {
   publish: PublishPayrollUseCase;
   edits: PayslipEditsUseCases;
   queries: PayrollQueries;
+  exporter: PayrollExportUseCase;
+  writer: ISpreadsheetWriter;
   store: Pick<IPayrollStore, 'findRun'>;
   responder: HttpResponder;
 }
@@ -36,6 +41,12 @@ const periodOf = (req: Request) => (req.params as unknown as PayrollPeriodParams
 /** Route lương (payroll.md §4). Quyền + validate ở router; controller chỉ gọi use case. Mọi lệnh trả bảng tháng mới. */
 export class PayrollController {
   constructor(private readonly d: PayrollControllerDeps) {}
+
+  exportXlsx = async (req: Request, res: Response) => {
+    await this.d.exporter.run(meOf(req), periodOf(req), (filename, sheets) =>
+      sendXlsx(res, this.d.writer, filename, sheets),
+    );
+  };
 
   getSettings = async (_req: Request, res: Response) => {
     this.d.responder.ok(res, await this.d.settings.settings());
