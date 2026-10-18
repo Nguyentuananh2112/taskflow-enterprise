@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_RENEW_FAILURES, createSocketIoClient, type SocketAuthHooks } from './socket-io-client';
+import {
+  MAX_RENEW_FAILURES,
+  RECONNECT_BASE_MS,
+  RECONNECT_MAX_MS,
+  createSocketIoClient,
+  type SocketAuthHooks,
+} from './socket-io-client';
 
 // Adapter socket.io (frontend.md §3.5, security.md §5): socket.io-client được giả lập ở mức module
 // để kiểm cấu hình handshake và các nhánh xác thực mà không cần server thật.
@@ -105,6 +111,16 @@ describe('createSocketIoClient', () => {
     expect(cb).toHaveBeenCalledWith({ token: 'access-1', clientId: CLIENT_ID });
     expect(auth.token).toHaveBeenCalled();
     expect(JSON.stringify(fake.state.options)).not.toContain('query');
+  });
+
+  it('nối lại tự động của socket.io: trần 30 s (= RECONNECT_MAX_MS) + randomizationFactor (T-076 — tránh bão handshake)', () => {
+    setup();
+    expect(fake.state.options).toMatchObject({
+      reconnectionDelay: RECONNECT_BASE_MS,
+      reconnectionDelayMax: RECONNECT_MAX_MS,
+      randomizationFactor: 0.5,
+    });
+    expect(RECONNECT_MAX_MS).toBe(30_000);
   });
 
   it('extraHeaders chỉ khi truyền (test Node với API thật); app không truyền', () => {

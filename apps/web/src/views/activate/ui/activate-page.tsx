@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { callName } from '@/entities/attendance';
-import { authApi, session, useSession } from '@/entities/session';
+import { RateLimitedRetry, authApi, session, useSession } from '@/entities/session';
 import {
   ActivateForm,
   forgetActivationToken,
@@ -25,9 +25,13 @@ const GONE = 'Link không còn hiệu lực — xin bộ phận nhân sự link 
  * đăng nhập về /w và nuốt mất link (máy dùng chung). Mở trang KHÔNG tiêu token: chỉ đọc fragment ⇒ xóa khỏi URL ⇒
  * `inspect` (chỉ đọc); token chỉ bị tiêu khi bấm "Kích hoạt". Mọi câu là lời thường, không mã lỗi.
  */
+/** Lỗi #5: token kích hoạt đã rời thanh địa chỉ (ADR-137) ⇒ tải lại trang là MẤT link — chỉ bấm "Thử lại". */
+const NO_RELOAD =
+  'Đừng tải lại trang (link kích hoạt đã được xóa khỏi thanh địa chỉ) — hãy bấm "Thử lại".';
+
 export function ActivatePage() {
   if (typeof window !== 'undefined') session.prestart();
-  const { status, user } = useSession();
+  const { status, user, retryAt } = useSession();
   const token = useActivationToken();
   const router = useRouter();
   const [gone, setGone] = useState(false);
@@ -72,10 +76,19 @@ export function ActivatePage() {
       </>,
     );
   }
+  if (status === 'rate_limited') {
+    return card(
+      'Thử lại sau ít giây',
+      <RateLimitedRetry retryAt={retryAt ?? 0} hint={NO_RELOAD} />,
+    );
+  }
   if (status === 'unreachable') {
     return card(
       'Không kết nối được',
-      <Button onClick={() => void session.bootstrap()}>Thử lại</Button>,
+      <>
+        <p>Kiểm tra kết nối mạng. {NO_RELOAD}</p>
+        <Button onClick={() => void session.bootstrap()}>Thử lại</Button>
+      </>,
     );
   }
   const e = inspect.error;

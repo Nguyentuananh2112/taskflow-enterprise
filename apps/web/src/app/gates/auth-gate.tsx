@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
-import { session, useSession } from '@/entities/session';
+import { RateLimitedRetry, session, useSession } from '@/entities/session';
 import { Button } from '@/shared/ui/button';
 import { EmptyState } from '@/shared/ui/empty-state';
 import { Spinner } from '@/shared/ui/spinner';
@@ -17,7 +17,7 @@ export function AuthGate({ children }: Readonly<{ children: ReactNode }>) {
   // T-044 S2a: mở khôi phục phiên NGAY ở lượt render đầu (trước effect bên dưới); chỉ route có gate — landing / 404
   // không gửi refresh (review E). Tác dụng phụ có chủ ý trong render: idempotent, không đổi store (session.prestart).
   if (typeof window !== 'undefined') session.prestart();
-  const { status } = useSession();
+  const { status, retryAt } = useSession();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -30,6 +30,14 @@ export function AuthGate({ children }: Readonly<{ children: ReactNode }>) {
   }, [status, router, pathname]);
 
   if (status === 'authenticated') return children;
+  if (status === 'rate_limited') {
+    // Lỗi #5: 429 khi khôi phục phiên ≠ mất mạng — đếm ngược theo server rồi tự thử lại.
+    return (
+      <main className="mx-auto max-w-md px-4 py-16">
+        <RateLimitedRetry retryAt={retryAt ?? 0} />
+      </main>
+    );
+  }
   if (status === 'unreachable') {
     return (
       <main className="mx-auto max-w-md px-4 py-16">
