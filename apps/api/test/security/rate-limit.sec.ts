@@ -129,8 +129,8 @@ describe('Rate limit theo endpoint', () => {
   );
   secCase(
     'SEC-28c',
-    // T-076 (soát B M1): luật IP nới cho văn phòng chung NAT ⇒ thêm bucket 401 theo IP 30 / 15 phút.
-    'Password spraying: 30 email khác nhau, mỗi email 1 lần sai từ cùng IP ⇒ lần 31 (email mới) bị 429',
+    // T-076 (soát B M1, TL chốt 50): luật IP nới cho văn phòng chung NAT ⇒ thêm bucket 401 theo IP 50 / 15 phút.
+    'Password spraying: 50 email khác nhau, mỗi email 1 lần sai từ cùng IP ⇒ lần 51 (email mới) bị 429',
     'auth routes (T-076)',
     async () => {
       const login = (email: string) =>
@@ -141,11 +141,11 @@ describe('Rate limit theo endpoint', () => {
           body: JSON.stringify({ email, password: 'Spring2026!spray' }),
         });
       const run = Date.now();
-      for (let i = 1; i <= 30; i += 1) {
+      for (let i = 1; i <= 50; i += 1) {
         expect((await login(`spray${i}-${run}@sec.example`)).status, `email ${i}`).toBe(401);
       }
-      const blocked = await login(`spray31-${run}@sec.example`);
-      expect(blocked.status, 'email 31').toBe(429);
+      const blocked = await login(`spray51-${run}@sec.example`);
+      expect(blocked.status, 'email 51').toBe(429);
       expect(errorEnvelope(blocked).error.code).toBe('RATE_LIMITED');
       expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
     },

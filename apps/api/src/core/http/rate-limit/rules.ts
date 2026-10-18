@@ -55,9 +55,10 @@ export const RATE_LIMIT_RULES = {
    * (IP, emailHash) chặn dò từ một IP mà không khóa chủ tài khoản ở IP khác; bucket theo email đủ cao
    * (100/giờ) để vài chục IP không khóa được người dùng thật, vẫn chặn stuffing phân tán quy mô lớn.
    * Request bị 429 không được đếm (không phải 401) ⇒ chờ hết cửa sổ là mở, không gia hạn mãi.
-   * Lớp 3 (T-076, soát B M1): 401 theo IP 30 / 15 phút — chặn password spraying (mỗi email 1–2 mật khẩu phổ biến lọt
-   * hai bucket theo email). Đăng nhập ĐÚNG không tốn suất ⇒ cả văn phòng chung IP vẫn đăng nhập được; đánh đổi: một
-   * người trong văn phòng gõ sai 30 lần làm người khác bị 429 khi gõ SAI (đúng vẫn qua) — R50.
+   * Lớp 3 (T-076, soát B M1, TL chốt 50): 401 theo IP 50 / 15 phút — chặn password spraying (mỗi email 1–2 mật khẩu
+   * phổ biến lọt hai bucket theo email). Đăng nhập ĐÚNG không tốn suất (đếm trước handler, trừ lại khi thành công).
+   * Đánh đổi (R50): bucket chung cả văn phòng; ĐẦY (50 lần sai / 15 phút) ⇒ MỌI lần đăng nhập từ IP đó, kể cả đúng,
+   * nhận 429 tới hết cửa sổ (chặn trước khi kiểm mật khẩu); phiên đang đăng nhập (refresh, API) không ảnh hưởng.
    */
   login: [
     rule({
@@ -79,7 +80,7 @@ export const RATE_LIMIT_RULES = {
     rule({
       id: 'login-fail-ip',
       windowMs: 15 * MINUTE,
-      limit: 30,
+      limit: 50,
       key: 'ip',
       failMode: 'closed',
       countOnlyStatuses: [401],
