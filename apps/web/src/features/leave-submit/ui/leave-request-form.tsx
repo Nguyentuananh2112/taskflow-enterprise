@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
-import { DAY_PART_NAME, LEAVE_TYPE_NAME, leaveApi, leaveKeys } from '@/entities/leave';
+import { DAY_PART_NAME, LEAVE_TYPE_NAME, daysText, leaveApi, leaveKeys } from '@/entities/leave';
 import { privacyKeys, usePrivacy } from '@/entities/privacy';
 import { SubmitLeaveBody } from '@taskflow/contracts/leave';
 import { applyServerErrors } from '@/shared/lib/form-errors';
@@ -38,8 +38,14 @@ type Props = Readonly<{
 export function LeaveRequestForm({ defaultDate }: Props) {
   const create = useMutation({
     mutationFn: (body: SubmitLeaveBody) => leaveApi.create(body),
-    onSuccess: (_r, _b, _x, context) =>
-      void context.client.invalidateQueries({ queryKey: leaveKeys.all() }),
+    onSuccess: (_r, _b, _x, context) => {
+      // #A4: KHÔNG làm mới xem trước — bản nháp vừa gửi mà xem trước lại sẽ ra 409 trùng đơn; xóa luôn cache xem trước.
+      context.client.removeQueries({ queryKey: leaveKeys.previews() });
+      void context.client.invalidateQueries({
+        queryKey: leaveKeys.all(),
+        predicate: (q) => q.queryKey[2] !== 'preview',
+      });
+    },
     // Đồng ý vừa đổi ở nơi khác ⇒ tải lại để ô lý do khóa / mở đúng (T-075).
     onError: (_e, _b, _x, context) =>
       void context.client.invalidateQueries({ queryKey: privacyKeys.me() }),
@@ -76,8 +82,10 @@ export function LeaveRequestForm({ defaultDate }: Props) {
   const onSubmit = handleSubmit(async (values) => {
     try {
       const created = await create.mutateAsync(values);
-      reset({ ...values, reason: '' });
-      toast({ title: `Đã gửi đơn — ${created.days} ngày, chờ duyệt`, tone: 'success' });
+      // #A4: xóa ngày đã gửi ⇒ không còn bản nháp ⇒ dòng xem trước biến mất (giữ lại thì xem trước chạy lại ra 409 trùng
+      // đơn vừa gửi). #A5: số ngày định dạng vi-VN ("0,5 ngày", không "0.5").
+      reset({ ...values, startDate: '', endDate: '', reason: '' });
+      toast({ title: `Đã gửi đơn — ${daysText(created.days)}, chờ duyệt`, tone: 'success' });
     } catch (error) {
       const known = leaveSubmitError(error);
       if (known.field) return setError(known.field, { type: 'server', message: known.message });

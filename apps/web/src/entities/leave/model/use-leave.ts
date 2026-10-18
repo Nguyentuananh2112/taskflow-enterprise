@@ -13,6 +13,7 @@ export const leaveKeys = {
   mine: () => ['company', 'leave', 'mine'] as const,
   minePending: () => ['company', 'leave', 'mine-pending'] as const,
   balance: (year: number) => ['company', 'leave', 'balance', year] as const,
+  previews: () => ['company', 'leave', 'preview'] as const,
   preview: (d: Draft | null) => ['company', 'leave', 'preview', d] as const,
 };
 

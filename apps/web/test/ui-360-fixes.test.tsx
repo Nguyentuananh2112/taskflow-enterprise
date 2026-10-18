@@ -91,4 +91,26 @@ describe('sửa sau thăm dò (#3, #E1, #E2)', () => {
     expect(info?.className).toContain('basis-full');
     expect(info?.className).toContain('sm:flex-1');
   });
+
+  it('#A4 + #A5 gửi nửa ngày ⇒ toast "0,5 ngày"; form xóa ngày, không còn xem trước, không hiện "trùng ngày"', async () => {
+    const { open } = start('2026-10-15T03:00:00.000Z');
+    open('/leave');
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const u = userEvent.setup({ delay: null });
+    const form = await screen.findByRole('form', { name: 'Gửi đơn nghỉ' });
+    const from = within(form).getByLabelText<HTMLInputElement>(/^Từ ngày/);
+    const to = within(form).getByLabelText<HTMLInputElement>(/^Đến ngày/);
+    await u.clear(from);
+    await u.type(from, '2026-10-20');
+    await u.clear(to);
+    await u.type(to, '2026-10-20');
+    await u.selectOptions(within(form).getByLabelText(/^Buổi/), 'AM');
+    expect(await within(form).findByText(/Đơn này: 0,5 ngày làm việc/)).toBeTruthy();
+    await u.click(within(form).getByRole('button', { name: 'Gửi đơn' }));
+    expect(await screen.findByText('Đã gửi đơn — 0,5 ngày, chờ duyệt')).toBeTruthy();
+    expect(from.value).toBe('');
+    await new Promise((r) => setTimeout(r, 700)); // quá debounce xem trước
+    expect(within(form).queryByText(/Đơn này:/)).toBeNull();
+    expect(screen.queryByText(/Trùng ngày với một đơn/)).toBeNull();
+  });
 });
