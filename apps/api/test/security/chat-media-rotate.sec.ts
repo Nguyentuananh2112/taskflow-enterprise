@@ -23,12 +23,22 @@ const { api } = useChatApi({
 });
 const AREA = 'Mốc 6 /media xoay khóa (T-067)';
 
-async function passesSignature(url: string): Promise<boolean> {
-  const before = api.logs().filter((l) => l.includes('media.sig_invalid')).length;
+/**
+ * Chữ ký có qua không (không có log `media.sig_invalid` mới). `expectPass`: kỳ vọng QUA ⇒ chờ 800 ms rồi khẳng định
+ * vẫn không có log; kỳ vọng BỊ CHẶN ⇒ poll tới khi dòng log tới (≤ 3 s). Log đi qua stdout process con — trễ khi máy tải.
+ */
+async function passesSignature(url: string, expectPass: boolean): Promise<boolean> {
+  const count = () => api.logs().filter((l) => l.includes('media.sig_invalid')).length;
+  const before = count();
   const res = await media(api, url);
   expectMedia404(res, url.slice(0, 60));
-  await new Promise((r) => setTimeout(r, 150));
-  return api.logs().filter((l) => l.includes('media.sig_invalid')).length === before;
+  if (expectPass) {
+    await new Promise((r) => setTimeout(r, 800));
+  } else {
+    const deadline = Date.now() + 3_000;
+    while (count() === before && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  }
+  return count() === before;
 }
 
 const urlWith = (secret: string) =>
@@ -44,20 +54,21 @@ describe('xoay khóa', () => {
     AREA,
     async () => {
       expect(
-        await passesSignature(urlWith(TEST_FILE_URL_SECRET)),
+        await passesSignature(urlWith(TEST_FILE_URL_SECRET), true),
         'khóa cũ khi còn _PREVIOUS',
       ).toBe(true);
-      expect(await passesSignature(urlWith(NEW_SECRET)), 'khóa mới').toBe(true);
-      expect(await passesSignature(urlWith(randomBytes(32).toString('hex'))), 'khóa lạ').toBe(
-        false,
-      );
+      expect(await passesSignature(urlWith(NEW_SECRET), true), 'khóa mới').toBe(true);
+      expect(
+        await passesSignature(urlWith(randomBytes(32).toString('hex')), false),
+        'khóa lạ',
+      ).toBe(false);
 
       await api.restart({ FILE_URL_SECRET_PREVIOUS: '' });
       expect(
-        await passesSignature(urlWith(TEST_FILE_URL_SECRET)),
+        await passesSignature(urlWith(TEST_FILE_URL_SECRET), false),
         'khóa cũ sau khi bỏ _PREVIOUS',
       ).toBe(false);
-      expect(await passesSignature(urlWith(NEW_SECRET)), 'khóa mới sau restart').toBe(true);
+      expect(await passesSignature(urlWith(NEW_SECRET), true), 'khóa mới sau restart').toBe(true);
     },
     60_000,
   );
