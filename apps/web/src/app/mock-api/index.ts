@@ -1,5 +1,6 @@
 import { createActivationHandlers } from './activation-handlers';
 import { createAdminHandlers } from './admin-handlers';
+import { createPrivacyHandlers } from './privacy-handlers';
 import { createAvatarHandlers } from './avatar-handlers';
 import { createChatGroupHandlers } from './chat-group-handlers';
 import { createChatHandlers } from './chat-handlers';
@@ -92,6 +93,7 @@ export function createMockApi(baseUrl: string, options: MockApiOptions = {}) {
       ...createChatMessageHandlers(baseUrl, db, chat, limit),
       ...createActivationHandlers(baseUrl, db),
       ...createAdminHandlers(baseUrl, db),
+      ...createPrivacyHandlers(baseUrl, db, leave),
       ...createWorkspaceHandlers(baseUrl, db, board, limit),
       ...createMemberHandlers(baseUrl, db, board, limit),
       ...createProjectHandlers(baseUrl, db, board),

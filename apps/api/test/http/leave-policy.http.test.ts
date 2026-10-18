@@ -30,6 +30,7 @@ beforeEach(async () => {
   t = createTestApp();
   hana = await t.register('Hana', undefined, { grants: ['HR_MANAGE'] });
   mia = await t.register('Mia');
+  await t.consentLeaveReason(hana, mia); // T-075: ca dưới gửi đơn CÓ lý do
 });
 
 describe('/leave/policy', () => {

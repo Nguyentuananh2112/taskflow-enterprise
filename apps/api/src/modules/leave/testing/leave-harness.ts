@@ -112,6 +112,11 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
   // T-057: khóa policy ghi vào CÙNG `requests.locks` (thứ tự policy SHARED → leave:<user>); ngày vào công ty giả.
   const policies = new RecordingLeavePolicyStore(backend.policies, requests.locks);
   const hireDates = new FakeHireDates();
+  /** T-075: đồng ý xử lý lý do nghỉ — mặc định ai cũng đã đồng ý; thêm id vào `denied` để thử 422. */
+  const reasonConsent = {
+    denied: new Set<string>(),
+    hasLeaveReasonConsent: (id: string) => Promise.resolve(!reasonConsent.denied.has(id)),
+  };
   const deps = {
     requests,
     policies,
@@ -124,6 +129,7 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
     clock,
     ids,
     users,
+    reasonConsent,
   };
   const leave = new LeaveCommands(deps);
   const employees = new FakeEmployeeDirectory(company, users);
@@ -172,6 +178,7 @@ export async function createLeaveHarness(backend: LeaveBackend = inMemoryLeaveBa
     kit,
     policies: backend.policies,
     hireDates,
+    reasonConsent,
     notifier,
     audit,
     uow,

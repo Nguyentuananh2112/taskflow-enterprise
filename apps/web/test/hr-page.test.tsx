@@ -42,8 +42,11 @@ function seed() {
     openApp(url, tab);
     return tab;
   };
-  const submitLeave = (by: typeof an, body: Record<string, unknown>) =>
-    f.apiAs(by, 'POST', '/leave/requests', body);
+  const submitLeave = (by: typeof an, body: Record<string, unknown>) => {
+    // T-075: có lý do ⇒ người gửi phải đồng ý xử lý lý do nghỉ (server 400 nếu chưa).
+    mock.db.company.privacy.setConsent(by.id, true);
+    return f.apiAs(by, 'POST', '/leave/requests', body);
+  };
   const grantHr = (to: { id: string }) => f.setCompanyAccess(to as typeof f.owner, 'HR');
   return { f, an, open, submitLeave, grantHr };
 }

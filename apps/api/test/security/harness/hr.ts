@@ -148,11 +148,20 @@ export function leaveOf(res: RawResponse): LeaveDto {
   return (res.json as { data: LeaveDto }).data;
 }
 
-export const submitLeave = (
+/**
+ * Gửi đơn nghỉ. T-075: đơn CÓ lý do cần người gửi đã đồng ý xử lý lý do nghỉ (`PUT /me/privacy/consent`) — harness
+ * đồng ý trước để các ca cũ (kiểm lý do chỉ người gửi + HR thấy…) giữ nguyên ý; ca 400 của T-075 gọi route trực tiếp.
+ */
+export const submitLeave = async (
   actors: Actors,
   who: Pick<CompanyActor, 'accessToken'>,
   body: { type: string; startDate: string; endDate: string; dayPart?: string; reason?: string },
-) => actors.json('POST', HR.leaveRequests, who.accessToken, { dayPart: 'FULL', ...body });
+) => {
+  if (body.reason?.trim()) {
+    await actors.json('PUT', '/me/privacy/consent', who.accessToken, { leaveReason: true });
+  }
+  return actors.json('POST', HR.leaveRequests, who.accessToken, { dayPart: 'FULL', ...body });
+};
 
 export interface AttendanceEventDto {
   id: string;

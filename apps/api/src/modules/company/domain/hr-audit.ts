@@ -43,6 +43,7 @@ export const HR_AUDIT_ACTIONS = [
   'PAYROLL_PAYSLIP_REVISE',
   'PAYROLL_PAYSLIP_VIEW',
   'PAYROLL_EXPORT',
+  'COMPANY_PRIVACY_CONTACT_SET',
 ] as const;
 export type HrAuditAction = (typeof HR_AUDIT_ACTIONS)[number];
 

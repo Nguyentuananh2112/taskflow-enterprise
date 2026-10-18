@@ -315,7 +315,7 @@ describe('mock quản trị', () => {
       name: 'Công ty ABC',
       expectedVersion: 1,
     });
-    expect(renamed.body.data).toEqual({ name: 'Công ty ABC', version: 2 });
+    expect(renamed.body.data).toEqual({ name: 'Công ty ABC', version: 2, privacyContact: null });
     expect(
       (await send('PATCH', '/company', adminToken, { name: 'X', expectedVersion: 1 })).status,
     ).toBe(409);

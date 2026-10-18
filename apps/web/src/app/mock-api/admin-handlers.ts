@@ -21,6 +21,11 @@ import { fail, ok, parseBody } from './respond';
 
 export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] {
   const company = db.company;
+  const companyDto = () => ({
+    name: company.name,
+    version: company.version,
+    privacyContact: company.privacyContact,
+  });
   const access = (userId: string): AccessDto | undefined => {
     const user = db.getUser(userId);
     const row = company.row(userId);
@@ -143,7 +148,7 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
     http.get(`${baseUrl}/company`, ({ request }) => {
       const ctx = requireCompany(request, db);
       if (ctx.response) return ctx.response;
-      return ok(CompanyDto, { name: company.name, version: company.version });
+      return ok(CompanyDto, companyDto());
     }),
 
     http.patch(`${baseUrl}/company`, async ({ request }) => {
@@ -152,9 +157,12 @@ export function createAdminHandlers(baseUrl: string, db: MockDb): HttpHandler[] 
       const body = await parseBody(request, UpdateCompanyBody);
       if (body.response) return body.response;
       if (body.data.expectedVersion !== company.version) return fail(409, 'VERSION_CONFLICT');
-      company.name = body.data.name;
+      const { name, privacyContact } = body.data;
+      if (name !== undefined) company.name = name;
+      // T-075: chuỗi rỗng / null ⇒ xóa đầu mối.
+      if (privacyContact !== undefined) company.privacyContact = privacyContact || null;
       company.version += 1;
-      return ok(CompanyDto, { name: company.name, version: company.version });
+      return ok(CompanyDto, companyDto());
     }),
   ];
 }

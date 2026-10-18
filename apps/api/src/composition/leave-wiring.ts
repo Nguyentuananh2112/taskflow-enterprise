@@ -36,7 +36,7 @@ const NO_HIRE_DATES: ILeaveHireDates = {
 
 export function wireLeave(
   d: {
-    persistence: Pick<Persistence, 'leave' | 'task' | 'uow'>;
+    persistence: Pick<Persistence, 'leave' | 'task' | 'uow' | 'auth'>;
     clock: IClock;
     ids: IIdGenerator;
     logger: ILogger;
@@ -58,6 +58,8 @@ export function wireLeave(
   return createLeaveModule({
     ...d.persistence.leave,
     users: d.persistence.task.users,
+    // T-075: đồng ý xử lý lý do nghỉ ← cột `users` (auth).
+    reasonConsent: d.persistence.auth.privacy,
     calendar: m.attendance.workCalendar,
     notifier: leaveNotifierFrom(m.notifications.publisher),
     company: leaveCompanyFrom(m.company),

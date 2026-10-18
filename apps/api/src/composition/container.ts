@@ -24,6 +24,7 @@ import { gatedSocketAuth, gatewayOptions, LateBoundRealtime } from './late-realt
 import type { Container, ContainerDeps } from './container-types';
 import { avatarAuthDeps, ME_PATH, withAvatarRefs } from './avatar-refs';
 import { chatRouters } from './chat-wiring';
+import { privacyRouters } from './privacy-wiring';
 
 export type { Container, ContainerConfig, ContainerDeps } from './container-types';
 
@@ -185,6 +186,7 @@ export function createContainer(d: ContainerDeps): Container {
     }),
     ...(auth.avatar ? [{ path: ME_PATH, router: auth.avatar.meRouter }] : []),
     ...chat.routers,
+    ...privacyRouters({ persistence, auth, company, responder, limit, clock }),
   ];
   const app = createApp({
     config,
