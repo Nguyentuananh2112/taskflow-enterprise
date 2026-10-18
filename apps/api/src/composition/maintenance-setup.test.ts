@@ -11,6 +11,7 @@ import {
 } from '../../test/support';
 import { loadEnv } from '../config/env';
 import {
+  delayFirstRuns,
   isRetentionActive,
   LEAVE_CARRYOVER_JOB,
   maintenanceJobs,
@@ -194,5 +195,49 @@ describe('T-057: job leave-carryover', () => {
       (j) => j.name === LEAVE_CARRYOVER_JOB,
     );
     expect(job).toMatchObject({ intervalMs: 2_000, jitterMs: 0 });
+  });
+});
+
+describe('MAINTENANCE_FIRST_RUN_AFTER_MS (TL 18/10 — E2E: API khởi động trước globalSetup)', () => {
+  const jobs = (vars: NodeJS.ProcessEnv) =>
+    maintenanceJobs({
+      persistence: prismaLike,
+      env: loadEnv(vars),
+      clock: new FakeClock(),
+      businessClock: new FakeClock(),
+      logger: new SpyLogger(),
+      offboarding: { completeDueOffboardings: noop },
+      carryover: { runOnce: noop },
+    });
+
+  it('test: lượt ĐẦU mọi job ≥ mốc (giữ mốc riêng nếu muộn hơn); nhịp các lượt sau không đổi', () => {
+    const before = jobs(testEnvVars({ APP_ENV: 'test' }));
+    const after = jobs(testEnvVars({ APP_ENV: 'test', MAINTENANCE_FIRST_RUN_AFTER_MS: '60000' }));
+    expect(after.map((j) => j.name)).toEqual(before.map((j) => j.name));
+    for (const j of after) expect(j.firstRunAfterMs, j.name).toBeGreaterThanOrEqual(60_000);
+    expect(after.map((j) => [j.intervalMs, j.jitterMs])).toEqual(
+      before.map((j) => [j.intervalMs, j.jitterMs]),
+    );
+    expect(
+      delayFirstRuns(
+        [
+          {
+            name: 'x',
+            intervalMs: 1,
+            jitterMs: 0,
+            firstRunAfterMs: 90_000,
+            run: () => Promise.resolve(),
+          },
+        ],
+        60_000,
+      )[0],
+    ).toMatchObject({ firstRunAfterMs: 90_000 });
+    expect(before.find((j) => j.name === 'complete-offboardings')?.firstRunAfterMs).toBe(5_000);
+  });
+
+  it('ngoài APP_ENV=test ⇒ từ chối khởi động', () => {
+    expect(() => loadEnv(productionEnvVars({ MAINTENANCE_FIRST_RUN_AFTER_MS: '60000' }))).toThrow(
+      /MAINTENANCE_FIRST_RUN_AFTER_MS/,
+    );
   });
 });

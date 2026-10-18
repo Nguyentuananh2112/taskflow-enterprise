@@ -46,5 +46,9 @@ export function apiServerEnv(): Record<string, string> {
     MEDIA_BASE_URL: API_ORIGIN,
     // Kho tệp riêng của E2E (không lẫn kho dev mặc định `<tmp>/taskflow-files`).
     FILE_STORE_DIR: fileStoreDir,
+    // TL 18/10 (A): webServer API khởi động TRƯỚC globalSetup (DROP SCHEMA + migrate deploy) ⇒ job bảo trì lượt đầu
+    // 5 s SELECT gặp bảng chưa có (`maintenance.run_failed` P2039, nhiễu log). Lượt đầu ≥ 60 s = sau globalSetup;
+    // nhịp các lượt sau giữ nguyên (hoàn tất nghỉ việc vẫn mỗi 60 s). Biến chỉ nhận ở APP_ENV=test.
+    MAINTENANCE_FIRST_RUN_AFTER_MS: '60000',
   };
 }

@@ -39,6 +39,7 @@ const TEST_ONLY_KEYS = [
   // T-049 (F, CLK-PAY-02…04): job nhắc làm lương — lượt đầu ngay khi khởi động / rút ngắn chu kỳ.
   'PAYROLL_REMINDER_ON_START',
   'PAYROLL_REMINDER_INTERVAL_MS',
+  'MAINTENANCE_FIRST_RUN_AFTER_MS',
   ...FILES_TEST_ONLY_VARS,
 ] as const;
 const redisUrl = z.url({ protocol: /^rediss?$/ });
@@ -86,6 +87,9 @@ const EnvSchema = z
     EXPORT_MAX_LEAVE_ROWS: testOnlyInt(1, 1_000_000),
     EXPORT_BATCH_SIZE: testOnlyInt(1, 10_000),
     EXPORT_BATCH_DELAY_MS: testOnlyInt(0, 5_000),
+    // CHỈ APP_ENV=test (TL 18/10, A: E2E P2039): lượt ĐẦU của mọi job bảo trì không sớm hơn mốc này — webServer API
+    // khởi động TRƯỚC globalSetup (DROP SCHEMA + migrate) ⇒ job lượt đầu 5 s gặp bảng chưa có. Lượt sau giữ nhịp.
+    MAINTENANCE_FIRST_RUN_AFTER_MS: testOnlyInt(0, 600_000),
     // ADR-097: web local ở :3001. Production không có mặc định thực tế — https-only bên dưới bắt buộc ghi rõ.
     CORS_ORIGINS: z.string().default('http://localhost:3001').pipe(originList),
     COOKIE_SECURE: z.stringbool(),
