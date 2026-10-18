@@ -8,6 +8,7 @@ import {
   isApiError,
   type AuthHooks,
 } from './index';
+import { SEND_MIN_TOKEN_MS } from './http';
 
 const BASE = 'http://localhost:4000/api/v1';
 const CLIENT_ID = '0192f0a0-0000-7000-8000-000000000001';
@@ -229,6 +230,37 @@ describe('http — xác thực (hook để trống ở T-012, Phase 4 nối)', (
     expect(auth.refresh).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(call(1).headers.get('Authorization')).toBe('Bearer new');
+  });
+
+  it('máy thức dậy: token đã hết hạn + 5 request song song ⇒ ĐÚNG 1 refresh trước khi gửi, 0 lần 401 (TL 18/10)', async () => {
+    let expiresAt = Date.now() - 1_000;
+    let token = 'old';
+    const refresh = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      expiresAt = Date.now() + 10 * 60_000;
+      token = 'new';
+      return true;
+    });
+    const auth = fakeAuth({ expiresAt: () => expiresAt, getAccessToken: () => token, refresh });
+    const { http, call, fetchMock } = setup(
+      Array.from({ length: 5 }, (_, i) => () => ok({ id: String(i) })),
+      auth,
+    );
+    await Promise.all(Array.from({ length: 5 }, () => http.get('/me', { schema: Item })));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5); // không có lượt 401 + gửi lại
+    for (let i = 0; i < 5; i++) expect(call(i).headers.get('Authorization')).toBe('Bearer new');
+  });
+
+  it('token còn hạn dài ⇒ không refresh chủ động; còn < 10 s ⇒ refresh trước', async () => {
+    let expiresAt = Date.now() + 5 * 60_000;
+    const auth = fakeAuth({ expiresAt: () => expiresAt });
+    const { http } = setup([ok({ id: 'a' }), ok({ id: 'b' })], auth);
+    await http.get('/me', { schema: Item });
+    expect(auth.refresh).not.toHaveBeenCalled();
+    expiresAt = Date.now() + SEND_MIN_TOKEN_MS - 1_000;
+    await http.get('/me', { schema: Item });
+    expect(auth.refresh).toHaveBeenCalledTimes(1);
   });
 
   it('TOKEN_EXPIRED lần 2 sau khi đã refresh ⇒ không lặp vô hạn, kết thúc phiên', async () => {
