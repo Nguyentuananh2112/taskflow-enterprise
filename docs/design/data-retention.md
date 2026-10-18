@@ -46,6 +46,7 @@ Mốc tính: D1/D2 theo `occurred_at`; D3/D4 theo `end_date` của đơn; D5 the
 | D7 HrAuditLog | 2 năm | **5 năm** (không chứa D1/D3) | 10 năm |
 | D12 / D14 trò chuyện (Mốc 6 — **người dùng chốt 17/10**) | — | **12 tháng** kể từ `created_at` (`CHAT_RETENTION_DAYS=365`); tin bị xóa: thân NULL **ngay**, blob ≤ 1 giờ; upload mồ côi 24 giờ; purge ws cascade | — |
 | D13 ảnh đại diện | — | tự xóa / bị gỡ / rời công ty ⇒ blob xóa sau **30 ngày** (đổi ảnh: bản cũ xóa khi version mới đã lên) | — |
+| D15 hồ sơ lương, phiếu lương (Mốc 4 — TL chốt 18/10) | — | **10 năm** kể từ kỳ lương — chứng từ kế toán (Luật Kế toán 2015 Đ.41, NĐ 174/2016 Đ.12); giữ cả sau khi nghỉ việc; ẩn danh tài khoản vẫn giữ tên trên phiếu; lý do điều chỉnh (`overrideReason`) lưu cùng phiếu. v1 chưa có job xóa (phiếu cũ nhất mới vài tháng) — thêm trước khi chạm 10 năm | — |
 
 **Khuyến nghị B** vì:
 - 13 tháng phủ thời hiệu tranh chấp 1 năm cộng 1 tháng xử lý;
@@ -94,6 +95,14 @@ Hiển thị một lần khi nhân viên vào màn Chấm công / Nghỉ phép l
 > - Tin nhắn **không mã hóa đầu-cuối**: quản trị viên và nhân sự **không** đọc được trò chuyện của bạn qua ứng dụng, nhưng người vận hành máy chủ về kỹ thuật có thể truy cập dữ liệu lưu trữ. Đừng gửi mật khẩu, số thẻ hay thông tin sức khỏe qua trò chuyện.
 > - Ảnh đại diện hiện cho mọi người trong công ty. Bạn đổi hoặc xóa được bất cứ lúc nào; khi bạn rời công ty ảnh bị xóa sau 30 ngày.
 > - Muốn xem hoặc xóa trò chuyện của mình: liên hệ **[đầu mối]** — v1 xử lý thủ công, có biên bản (không có nút tự phục vụ).
+
+**Đoạn thêm khi bật Mốc 4 (phiếu lương, TL 18/10)** — hiển thị trong cùng thông báo, lần đầu mở Phiếu lương:
+
+> **Phiếu lương**
+> - Công ty xử lý **hồ sơ lương** (bậc, lương cơ bản, phụ cấp) và **phiếu lương hằng tháng** của bạn để trả lương. Chỉ bạn, người được giao quyền Kế toán và quản trị viên xem được. Thông báo có phiếu mới **không** chứa số tiền.
+> - Phiếu lương đã phát hành là chứng từ kế toán nên được lưu **10 năm** kể từ kỳ lương, kể cả sau khi bạn nghỉ việc.
+> - Nếu kế toán điều chỉnh công hoặc lương của bạn, lý do điều chỉnh hiện trên phiếu để bạn xem và được lưu cùng phiếu.
+> - Có thắc mắc về phiếu lương hoặc muốn yêu cầu sửa: liên hệ **[đầu mối]**.
 
 ## 6. Câu hỏi cần người dùng chốt
 
