@@ -122,7 +122,7 @@ export function PrivacyNotice({ companyName, contact, level = 2 }: Props) {
       </p>
       <p className="text-sm text-text-muted">
         Lần bạn xác nhận đã đọc thông báo này và lần bạn đồng ý / rút lại đồng ý được lưu{' '}
-        <strong>5 năm</strong> làm bằng chứng.
+        <strong>5 năm</strong> làm bằng chứng; lần gần nhất luôn được giữ.
       </p>
     </div>
   );
