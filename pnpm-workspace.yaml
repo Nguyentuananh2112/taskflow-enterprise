@@ -6,17 +6,17 @@ packages:
 # Một nơi duy nhất chốt phiên bản dùng chung (docs/research/stack-versions.md, ADR-060).
 # package.json tham chiếu bằng "catalog:". Pin chính xác, không dùng ^/~.
 catalog:
-  '@axe-core/playwright': 4.13.0
+  '@axe-core/playwright': 4.14.0
   '@eslint/js': 10.0.1
-  '@next/eslint-plugin-next': 16.4.1
+  '@next/eslint-plugin-next': 16.4.2
   # T-026: 1.64.1 (2026-10-14) chưa qua minimumReleaseAge 24h lúc chọn ⇒ 1.64.0 (2026-10-07).
-  '@playwright/test': 1.64.0
+  '@playwright/test': 1.64.1
   '@node-rs/argon2': 2.2.2
-  '@prisma/adapter-pg': 7.10.0
+  '@prisma/adapter-pg': 7.10.1
   '@stryker-mutator/core': 10.0.0
-  '@prisma/client': 7.10.0
-  '@sentry/nextjs': 11.7.0
-  '@sentry/node': 11.7.0
+  '@prisma/client': 7.10.1
+  '@sentry/nextjs': 11.8.0
+  '@sentry/node': 11.8.0
   '@socket.io/redis-adapter': 8.3.0
   '@tailwindcss/postcss': 4.3.3
   '@testing-library/dom': 10.4.2
@@ -29,11 +29,11 @@ catalog:
   '@types/react-dom': 19.3.0
   '@types/supertest': 7.2.1
   '@vitejs/plugin-react': 6.1.2
-  '@vitest/coverage-v8': 5.0.4
+  '@vitest/coverage-v8': 5.0.5
   cors: 2.8.6
-  dependency-cruiser: 18.6.0
+  dependency-cruiser: 18.7.0
   fractional-indexing: 4.0.0
-  eslint: 10.12.0
+  eslint: 10.13.0
   eslint-config-prettier: 10.1.8
   eslint-plugin-react-hooks: 7.1.1
   express: 5.3.0
@@ -42,18 +42,18 @@ catalog:
   fflate: 0.8.3
   globals: 17.13.0
   helmet: 8.3.0
-  jose: 6.2.12
-  jsdom: 30.1.2
+  jose: 6.2.13
+  jsdom: 30.1.3
   lefthook: 2.2.2
-  next: 16.4.1
+  next: 16.4.2
   pg: 8.23.1
   pino: 10.4.0
   pino-http: 11.0.0
   prom-client: 15.1.3
-  postcss: 8.5.30
+  postcss: 8.5.31
   prettier: 3.9.10
   # Prisma pin CHÍNH XÁC 7.10.0 (ADR-060); chỉ chạy CLI bằng `pnpm exec prisma` (ADR-061).
-  prisma: 7.10.0
+  prisma: 7.10.1
   rate-limit-redis: 6.0.1
   # Mốc 6 (ADR-141): ghim CHÍNH XÁC; libvips LGPL-3.0 liên kết động (prebuilt @img/*) — NOTICE ở THIRD_PARTY.
   sharp: 0.35.5
@@ -67,9 +67,9 @@ catalog:
   tsdown: 0.23.1
   tsx: 4.23.15
   typescript: 6.0.3
-  typescript-eslint: 8.71.2
+  typescript-eslint: 8.72.0
   vite: 8.3.4
-  vitest: 5.0.4
+  vitest: 5.0.5
   zod: 4.6.7
 
 # pnpm 11 chặn install script mặc định — chỉ cho phép gói cần build/tải binary.
